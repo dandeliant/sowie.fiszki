@@ -18,6 +18,7 @@ const DB = (() => {
   let _profile        = null;   // zsynchronizowany profil użytkownika
   let _userId         = null;   // auth.users.id (UUID)
   let _adminRequests  = [];     // cache próśb o admina (tylko dla admina)
+  let _saveTimer      = null;   // debounce zapisu profilu
 
   // ─── Domyślny profil ─────────────────────────────────────────
   function emptyProfile(username) {
@@ -65,10 +66,11 @@ const DB = (() => {
     };
   }
 
-  // ─── Zapis profilu do Supabase (w tle) ───────────────────────
-  function _save() {
-    if (!_profile || !_userId) return;
-    supabase.from('profiles').update({
+  // ─── Budowanie payloadu profilu ──────────────────────────────
+  function _profilePayload() {
+    return {
+      id:              _userId,
+      username:        _profile.username,
       xp:              _profile.xp,
       level:           _profile.level,
       streak:          _profile.streak,
@@ -81,9 +83,21 @@ const DB = (() => {
       daily_xp:        _profile.dailyXP,
       daily_xp_date:   _profile.dailyXPDate,
       speed_best:      _profile.speedBest
-    }).eq('id', _userId).then(({ error }) => {
-      if (error) console.warn('[DB] Błąd zapisu profilu:', error.message);
-    });
+    };
+  }
+
+  // ─── Zapis profilu do Supabase — debounce 600ms ───────────────
+  //  Kilka szybkich zapisów scala się w jeden request z najnowszymi
+  //  wartościami, eliminując race condition "starszy request wygrywa".
+  function _save() {
+    if (!_profile || !_userId) return;
+    clearTimeout(_saveTimer);
+    _saveTimer = setTimeout(() => {
+      const payload = _profilePayload();
+      supabase.from('profiles').upsert(payload, { onConflict: 'id' }).then(({ error }) => {
+        if (error) console.warn('[DB] Błąd zapisu profilu:', error.message);
+      });
+    }, 600);
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -383,20 +397,10 @@ const DB = (() => {
   // ═══════════════════════════════════════════════════════════════
   async function flush() {
     if (!_profile || !_userId) return;
-    await supabase.from('profiles').update({
-      xp:              _profile.xp,
-      level:           _profile.level,
-      streak:          _profile.streak,
-      longest_streak:  _profile.longestStreak,
-      last_study_date: _profile.lastStudyDate,
-      total_sessions:  _profile.totalSessions,
-      total_answers:   _profile.totalAnswers,
-      correct_answers: _profile.correctAnswers,
-      achievements:    _profile.achievements,
-      daily_xp:        _profile.dailyXP,
-      daily_xp_date:   _profile.dailyXPDate,
-      speed_best:      _profile.speedBest
-    }).eq('id', _userId);
+    clearTimeout(_saveTimer); // anuluj oczekujący debounce
+    const { error } = await supabase.from('profiles')
+      .upsert(_profilePayload(), { onConflict: 'id' });
+    if (error) console.warn('[DB] Flush error:', error.message);
   }
 
   // ─── PUBLICZNE API ───────────────────────────────────────────
