@@ -129,11 +129,9 @@ const DB = (() => {
     const email = `${username}@sowie-fiszki.app`;
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
-      if (error.message.includes('Invalid login credentials'))
-        throw new Error('Nieprawidłowa nazwa użytkownika lub hasło.');
-      if (error.message.includes('Email not confirmed'))
-        throw new Error('Konto nie zostało jeszcze potwierdzone. Skontaktuj się z administratorem.');
-      throw new Error(error.message);
+      if (error.code === 'email_not_confirmed' || error.message.includes('Email not confirmed'))
+        throw new Error('Konto wymaga potwierdzenia e-mail. Wyłącz "Confirm email" w Supabase → Auth → Providers → Email.');
+      throw new Error('Nieprawidłowa nazwa użytkownika lub hasło.');
     }
     // Sprawdź, czy profil istnieje (maybeSingle nie rzuca błędu gdy brak wiersza)
     const { data: prof } = await supabase
@@ -161,10 +159,6 @@ const DB = (() => {
     if (!data.user) throw new Error('Rejestracja nieudana — spróbuj ponownie.');
 
     // Profil tworzony automatycznie przez trigger on_auth_user_created.
-    // Fallback na wypadek gdyby trigger nie zadziałał (np. stary projekt Supabase).
-    await supabase.from('profiles')
-      .upsert({ id: data.user.id, username }, { onConflict: 'id', ignoreDuplicates: true });
-
     return username;
   }
 

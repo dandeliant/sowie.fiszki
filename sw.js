@@ -40,6 +40,9 @@ self.addEventListener('activate', event => {
 // Fetch — Cache-first, fallback sieć
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
+  // Ignoruj żądania spoza http/https (np. chrome-extension://)
+  if (!event.request.url.startsWith('http')) return;
+
   event.respondWith(
     caches.match(event.request).then(cached => {
       if (cached) return cached;
