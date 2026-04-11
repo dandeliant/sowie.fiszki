@@ -336,33 +336,18 @@ const DB = (() => {
   }
 
   /**
-   * Wysyła prośbę o uprawnienia admina.
+   * Wysyła prośbę o uprawnienia admina przez funkcję SECURITY DEFINER
+   * (działa też bez zalogowanego użytkownika — ze strony logowania).
    * Rzuca wyjątek przy błędzie. Zwraca false jeśli prośba już istnieje.
    */
   async function addAdminRequest(username) {
-    // Pobierz user_id po nazwie użytkownika
-    const { data: profRows, error } = await supabase
-      .rpc('get_profile_by_username', { p_username: username });
-    if (error || !profRows || profRows.length === 0)
-      throw new Error('Nie znaleziono użytkownika o takiej nazwie.');
-    const targetId = profRows[0].id;
-    if (profRows[0].is_admin)
-      throw new Error('To konto już ma uprawnienia administratora!');
-
-    // Sprawdź czy prośba już istnieje
-    const { data: existing } = await supabase
-      .from('admin_requests')
-      .select('id')
-      .eq('user_id', targetId)
-      .eq('status', 'pending')
-      .maybeSingle();
-    if (existing) return false; // już oczekuje
-
-    const { error: insErr } = await supabase
-      .from('admin_requests')
-      .insert({ user_id: targetId, username });
-    if (insErr) throw new Error(insErr.message);
-    return true;
+    const { data: result, error } = await supabase
+      .rpc('submit_admin_request', { p_username: username });
+    if (error) throw new Error(error.message);
+    if (result === 'not_found')      throw new Error('Nie znaleziono użytkownika o takiej nazwie.');
+    if (result === 'already_admin')  throw new Error('To konto już ma uprawnienia administratora!');
+    if (result === 'already_pending') return false;
+    return true; // 'ok'
   }
 
   /**
