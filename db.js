@@ -378,10 +378,32 @@ const DB = (() => {
     return _adminRequests.filter(r => r.status === 'pending').length;
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  //  FLUSH — wymuś zapis przed wylogowaniem (await!)
+  // ═══════════════════════════════════════════════════════════════
+  async function flush() {
+    if (!_profile || !_userId) return;
+    await supabase.from('profiles').update({
+      xp:              _profile.xp,
+      level:           _profile.level,
+      streak:          _profile.streak,
+      longest_streak:  _profile.longestStreak,
+      last_study_date: _profile.lastStudyDate,
+      total_sessions:  _profile.totalSessions,
+      total_answers:   _profile.totalAnswers,
+      correct_answers: _profile.correctAnswers,
+      achievements:    _profile.achievements,
+      daily_xp:        _profile.dailyXP,
+      daily_xp_date:   _profile.dailyXPDate,
+      speed_best:      _profile.speedBest
+    }).eq('id', _userId);
+  }
+
   // ─── PUBLICZNE API ───────────────────────────────────────────
   return {
     // init / auth
     init,
+    flush,
     login,
     register,
     logout,
