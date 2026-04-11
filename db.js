@@ -131,11 +131,13 @@ const DB = (() => {
     if (error) {
       if (error.message.includes('Invalid login credentials'))
         throw new Error('Nieprawidłowa nazwa użytkownika lub hasło.');
+      if (error.message.includes('Email not confirmed'))
+        throw new Error('Konto nie zostało jeszcze potwierdzone. Skontaktuj się z administratorem.');
       throw new Error(error.message);
     }
-    // Sprawdź, czy profil zawiera username (zabezpieczenie przed kolizją emaili)
+    // Sprawdź, czy profil istnieje (maybeSingle nie rzuca błędu gdy brak wiersza)
     const { data: prof } = await supabase
-      .from('profiles').select('username').eq('id', data.user.id).single();
+      .from('profiles').select('username').eq('id', data.user.id).maybeSingle();
     if (!prof || prof.username !== username)
       throw new Error('Nieprawidłowa nazwa użytkownika lub hasło.');
     return username;
@@ -150,15 +152,18 @@ const DB = (() => {
     if (exists) throw new Error('Ta nazwa jest już zajęta.');
 
     const email = `${username}@sowie-fiszki.app`;
-    const { data, error } = await supabase.auth.signUp({ email, password });
+    // Przekaż username w metadanych — trigger handle_new_user() użyje tego do stworzenia profilu
+    const { data, error } = await supabase.auth.signUp({
+      email, password,
+      options: { data: { username } }
+    });
     if (error) throw new Error(error.message);
     if (!data.user) throw new Error('Rejestracja nieudana — spróbuj ponownie.');
 
-    // Utwórz profil
-    const { error: profErr } = await supabase
-      .from('profiles')
-      .insert({ id: data.user.id, username });
-    if (profErr) throw new Error('Nie udało się utworzyć profilu: ' + profErr.message);
+    // Profil tworzony automatycznie przez trigger on_auth_user_created.
+    // Fallback na wypadek gdyby trigger nie zadziałał (np. stary projekt Supabase).
+    await supabase.from('profiles')
+      .upsert({ id: data.user.id, username }, { onConflict: 'id', ignoreDuplicates: true });
 
     return username;
   }
