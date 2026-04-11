@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sowie Fiszki 🦉 — Logowanie</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1a1040">
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase-config.js"></script>
+<script src="db.js"></script>
+<style>
+:root{
+  --bg:#1a1040;--surface:#2a1d6e;--surface2:#332280;
+  --border:rgba(255,255,255,.1);--accent:#ffd166;--accent2:#06d6a0;
+  --pink:#ff6b9d;--purple:#a29bfe;
+  --text:#f8f4ff;--muted:#9b8ec4;--danger:#ff7675;--success:#55efc4;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{
+  background:var(--bg);color:var(--text);font-family:'Nunito',sans-serif;
+  min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:20px 16px;
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% -10%,rgba(162,155,254,.22) 0%,transparent 60%),
+    radial-gradient(ellipse 40% 40% at 10% 90%,rgba(255,107,157,.1) 0%,transparent 50%),
+    radial-gradient(ellipse 40% 40% at 90% 80%,rgba(6,214,160,.09) 0%,transparent 50%);
+}
+
+/* Stars */
+.stars{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;overflow:hidden;z-index:0;}
+.star{position:absolute;background:#fff;border-radius:50%;animation:twinkle linear infinite;}
+@keyframes twinkle{0%,100%{opacity:.12;transform:scale(1)}50%{opacity:.65;transform:scale(1.4)}}
+
+/* Card */
+.login-wrap{
+  position:relative;z-index:1;
+  width:100%;max-width:420px;
+  background:var(--surface);
+  border:1.5px solid rgba(162,155,254,.22);
+  border-radius:24px;
+  padding:40px 36px 36px;
+  box-shadow:0 24px 64px rgba(0,0,0,.55),0 0 0 1px rgba(162,155,254,.08),inset 0 1px 0 rgba(255,255,255,.07);
+  animation:slideUp .55s cubic-bezier(.34,1.56,.64,1) both;
+}
+@keyframes slideUp{from{opacity:0;transform:translateY(28px) scale(.97)}to{opacity:1;transform:translateY(0) scale(1)}}
+
+/* Owl */
+.owl-hero{text-align:center;margin-bottom:24px;}
+.owl-emoji{font-size:4rem;display:inline-block;animation:owlBob 3s ease-in-out infinite;filter:drop-shadow(0 4px 16px rgba(162,155,254,.45));}
+@keyframes owlBob{0%,100%{transform:translateY(0) rotate(0)}50%{transform:translateY(-7px) rotate(2deg)}}
+.owl-hero h1{font-family:'Playfair Display',serif;font-size:1.9rem;color:var(--accent);margin-top:10px;letter-spacing:-.02em;}
+.owl-hero p{font-size:.75rem;color:var(--muted);letter-spacing:.12em;text-transform:uppercase;font-weight:700;margin-top:5px;}
+
+/* Tabs */
+.tabs{display:flex;background:var(--surface2);border-radius:12px;padding:4px;gap:3px;margin-bottom:26px;}
+.tab{flex:1;background:transparent;border:none;color:var(--muted);font-family:'Nunito',sans-serif;font-size:.82rem;font-weight:700;padding:8px;border-radius:9px;cursor:pointer;transition:all .2s;}
+.tab.active{background:var(--surface);color:var(--text);box-shadow:0 2px 10px rgba(0,0,0,.3);}
+
+/* Form */
+.form-group{margin-bottom:16px;}
+label{display:block;font-size:.72rem;font-weight:800;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin-bottom:7px;}
+input[type=text],input[type=password]{
+  width:100%;background:var(--surface2);border:2px solid var(--border);
+  color:var(--text);border-radius:12px;padding:12px 15px;
+  font-family:'Nunito',sans-serif;font-size:.93rem;font-weight:600;
+  outline:none;transition:border-color .2s,box-shadow .2s;
+}
+input:focus{border-color:rgba(162,155,254,.5);box-shadow:0 0 0 3px rgba(162,155,254,.1);}
+input.err{border-color:rgba(255,118,117,.6);}
+
+.error-msg{
+  background:rgba(255,118,117,.08);border:1.5px solid rgba(255,118,117,.28);
+  border-radius:10px;padding:9px 13px;font-size:.78rem;font-weight:700;color:var(--danger);
+  margin-bottom:16px;display:none;text-align:center;
+}
+.error-msg.show{display:block;}
+
+.success-msg{
+  background:rgba(6,214,160,.08);border:1.5px solid rgba(6,214,160,.28);
+  border-radius:10px;padding:9px 13px;font-size:.78rem;font-weight:700;color:var(--success);
+  margin-bottom:16px;display:none;text-align:center;
+}
+.success-msg.show{display:block;}
+
+.btn-login{
+  width:100%;font-family:'Nunito',sans-serif;font-size:.95rem;font-weight:800;
+  padding:14px;background:linear-gradient(135deg,var(--accent),#ff9f43);
+  color:#1a1040;border:none;border-radius:12px;cursor:pointer;
+  box-shadow:0 4px 20px rgba(255,209,102,.3);transition:all .2s;margin-top:4px;
+}
+.btn-login:hover{transform:translateY(-2px);box-shadow:0 6px 28px rgba(255,209,102,.48);}
+.btn-login:active{transform:scale(.97);}
+
+/* Demo accounts hint */
+.demo-hint{
+  margin-top:22px;padding:14px;
+  background:rgba(162,155,254,.07);border:1.5px solid rgba(162,155,254,.18);
+  border-radius:12px;
+}
+.demo-hint p{font-size:.72rem;color:var(--muted);font-weight:700;text-align:center;margin-bottom:10px;letter-spacing:.05em;text-transform:uppercase;}
+.demo-accounts{display:flex;flex-direction:column;gap:6px;}
+.demo-acc{
+  display:flex;align-items:center;justify-content:space-between;
+  background:var(--surface2);border-radius:9px;padding:8px 12px;cursor:pointer;
+  transition:all .2s;border:1.5px solid transparent;
+}
+.demo-acc:hover{border-color:rgba(162,155,254,.3);}
+.demo-acc-info{font-size:.75rem;font-weight:700;color:var(--text);}
+.demo-acc-info span{color:var(--muted);font-weight:600;margin-left:5px;}
+.demo-acc-btn{font-size:.65rem;font-weight:800;color:var(--purple);background:rgba(162,155,254,.12);border:1px solid rgba(162,155,254,.25);border-radius:100px;padding:3px 9px;}
+
+/* Guest button */
+.btn-guest{
+  width:100%;font-family:'Nunito',sans-serif;font-size:.97rem;font-weight:800;
+  padding:15px;margin-top:12px;
+  background:linear-gradient(135deg,#a29bfe,#6c5ce7);
+  color:#fff;border:none;border-radius:12px;cursor:pointer;
+  box-shadow:0 4px 20px rgba(162,155,254,.35);transition:all .2s;
+  display:flex;align-items:center;justify-content:center;gap:9px;
+}
+.btn-guest:hover{transform:translateY(-2px);box-shadow:0 6px 28px rgba(162,155,254,.5);}
+.btn-guest:active{transform:scale(.97);}
+.guest-note{font-size:.66rem;color:var(--muted);font-weight:600;text-align:center;margin-top:7px;line-height:1.5;}
+.or-divider{display:flex;align-items:center;gap:10px;margin:16px 0 4px;color:var(--muted);font-size:.7rem;font-weight:700;letter-spacing:.08em;}
+.or-divider::before,.or-divider::after{content:'';flex:1;height:1px;background:var(--border);}
+
+/* Footer */
+.login-footer{margin-top:22px;text-align:center;font-size:.65rem;color:var(--muted);font-weight:600;}
+
+/* Spinner */
+@keyframes spin{to{transform:rotate(360deg)}}
+.spinner{display:inline-block;width:16px;height:16px;border:2.5px solid rgba(26,16,64,.4);border-top-color:#1a1040;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:6px;}
+</style>
+</head>
+<body>
+<div class="stars" id="stars"></div>
+
+<div class="login-wrap">
+  <div class="owl-hero">
+    <div class="owl-emoji">🦉</div>
+    <h1>Sowie Fiszki</h1>
+    <p>Nauka angielskiego</p>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab active" id="tabLogin" onclick="switchTab('login')">Zaloguj się</button>
+    <button class="tab" id="tabRegister" onclick="switchTab('register')">Rejestracja</button>
+  </div>
+
+  <!-- Error / Success -->
+  <div class="error-msg" id="errMsg"></div>
+  <div class="success-msg" id="sucMsg"></div>
+
+  <!-- LOGIN FORM -->
+  <div id="formLogin">
+    <div class="form-group">
+      <label for="loginUser">Nazwa użytkownika</label>
+      <input type="text" id="loginUser" placeholder="Wpisz nazwę…" autocomplete="username" autocorrect="off" autocapitalize="off" spellcheck="false">
+    </div>
+    <div class="form-group">
+      <label for="loginPass">Hasło</label>
+      <input type="password" id="loginPass" placeholder="Wpisz hasło…" autocomplete="current-password">
+    </div>
+    <button class="btn-login" onclick="doLogin()">Zaloguj się 🦉</button>
+    <div class="or-divider">lub</div>
+    <button class="btn-guest" onclick="enterGuest()">
+      <span style="font-size:1.3rem">🚶</span>
+      <span>Wejdź bez logowania</span>
+    </button>
+    <div class="guest-note">Tryb gościa — przeglądaj słówka i ćwicz bez rejestracji.<br>Postępy nie są zapisywane.</div>
+  </div>
+
+  <!-- REGISTER FORM -->
+  <div id="formRegister" style="display:none;">
+    <div class="form-group">
+      <label for="regUser">Nazwa użytkownika</label>
+      <input type="text" id="regUser" placeholder="Wymyśl nazwę…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+    </div>
+    <div class="form-group">
+      <label for="regPass">Hasło</label>
+      <input type="password" id="regPass" placeholder="Min. 4 znaki…" autocomplete="new-password">
+    </div>
+    <div class="form-group">
+      <label for="regPass2">Powtórz hasło</label>
+      <input type="password" id="regPass2" placeholder="Powtórz hasło…" autocomplete="new-password">
+    </div>
+    <button class="btn-login" onclick="doRegister()">Zarejestruj się 🌱</button>
+  </div>
+
+  <!-- Demo hint -->
+  <div class="demo-hint">
+    <p>Konto demonstracyjne — kliknij, aby wypełnić</p>
+    <div class="demo-accounts">
+      <div class="demo-acc" onclick="fillDemo('uczen','uczen123')">
+        <div class="demo-acc-info">uczen <span>hasło: uczen123</span></div>
+        <div class="demo-acc-btn">Użyj</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Admin request section -->
+  <div class="admin-req-wrap" id="adminReqWrap" style="display:none;margin-top:16px;padding:14px;background:rgba(162,155,254,.07);border:1.5px solid rgba(162,155,254,.2);border-radius:12px;">
+    <p style="font-size:.72rem;color:var(--muted);font-weight:700;text-align:center;margin-bottom:10px;letter-spacing:.05em;text-transform:uppercase;">Prośba o uprawnienia administratora</p>
+    <div class="form-group">
+      <label for="reqUser">Twoja nazwa użytkownika</label>
+      <input type="text" id="reqUser" placeholder="Wpisz swoją nazwę…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+    </div>
+    <div class="error-msg" id="reqErr" style="display:none;margin-bottom:10px;"></div>
+    <div class="success-msg" id="reqSuc" style="display:none;margin-bottom:10px;"></div>
+    <button class="btn-login" onclick="sendAdminRequest()" style="margin-top:4px">📜 Wyślij prośbę do admina</button>
+  </div>
+
+  <div class="login-footer" style="margin-top:18px;">© 2026 Daniel Ostrowski · Sowie Fiszki</div>
+  <div style="margin-top:10px;text-align:center;">
+    <span onclick="toggleAdminReq()" style="cursor:pointer;font-size:.68rem;color:var(--muted);font-weight:700;opacity:.55;transition:opacity .2s;padding:4px 8px;border-radius:8px;" onmouseover="this.style.opacity='.9'" onmouseout="this.style.opacity='.55'">📜 Admin</span>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  SOWIE FISZKI — Logowanie / Rejestracja (Supabase Auth)
+// ═══════════════════════════════════════════════════════════════
+
+// ─── POMOCNICZE ─────────────────────────────────────────────
+function setLoading(btn, yes) {
+  if (yes) {
+    btn.disabled = true;
+    btn.dataset.orig = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner"></span>Ładowanie…';
+  } else {
+    btn.disabled = false;
+    btn.innerHTML = btn.dataset.orig || btn.innerHTML;
+  }
+}
+
+// ─── TABS ───────────────────────────────────────────────────
+function switchTab(t) {
+  document.getElementById('tabLogin').classList.toggle('active', t === 'login');
+  document.getElementById('tabRegister').classList.toggle('active', t === 'register');
+  document.getElementById('formLogin').style.display    = t === 'login'    ? '' : 'none';
+  document.getElementById('formRegister').style.display = t === 'register' ? '' : 'none';
+  clearMsgs();
+}
+
+// ─── MESSAGES ───────────────────────────────────────────────
+function showErr(m) { const e = document.getElementById('errMsg'); e.textContent = m; e.classList.add('show'); document.getElementById('sucMsg').classList.remove('show'); }
+function showSuc(m) { const e = document.getElementById('sucMsg'); e.textContent = m; e.classList.add('show'); document.getElementById('errMsg').classList.remove('show'); }
+function clearMsgs() { document.getElementById('errMsg').classList.remove('show'); document.getElementById('sucMsg').classList.remove('show'); }
+
+// ─── LOGIN ───────────────────────────────────────────────────
+async function doLogin() {
+  clearMsgs();
+  const user = document.getElementById('loginUser').value.trim().toLowerCase();
+  const pass = document.getElementById('loginPass').value;
+  const btn  = document.querySelector('#formLogin .btn-login');
+
+  if (!user) { showErr('Wpisz nazwę użytkownika.'); document.getElementById('loginUser').classList.add('err'); return; }
+  if (!pass) { showErr('Wpisz hasło.'); document.getElementById('loginPass').classList.add('err'); return; }
+  document.getElementById('loginUser').classList.remove('err');
+  document.getElementById('loginPass').classList.remove('err');
+
+  setLoading(btn, true);
+  try {
+    await DB.login(user, pass);
+    sessionStorage.setItem('fiszki_user', user);
+    showSuc('Witaj, ' + user + '! Przekierowuję… 🦉');
+    setTimeout(() => { window.location.href = 'app.html'; }, 900);
+  } catch (e) {
+    showErr(e.message || 'Błąd logowania.');
+    setLoading(btn, false);
+  }
+}
+
+// ─── REGISTER ────────────────────────────────────────────────
+async function doRegister() {
+  clearMsgs();
+  const user  = document.getElementById('regUser').value.trim().toLowerCase();
+  const pass  = document.getElementById('regPass').value;
+  const pass2 = document.getElementById('regPass2').value;
+  const btn   = document.querySelector('#formRegister .btn-login');
+
+  if (!user || user.length < 3)            { showErr('Nazwa musi mieć co najmniej 3 znaki.'); return; }
+  if (!/^[a-z0-9_]+$/.test(user))         { showErr('Tylko litery, cyfry i _ (bez spacji).'); return; }
+  if (!pass || pass.length < 6)            { showErr('Hasło musi mieć co najmniej 6 znaków.'); return; }
+  if (pass !== pass2)                      { showErr('Hasła nie są identyczne.'); return; }
+
+  setLoading(btn, true);
+  try {
+    await DB.register(user, pass);
+    showSuc('Konto utworzone! Możesz się teraz zalogować. 🌱');
+    setTimeout(() => switchTab('login'), 1600);
+    document.getElementById('regUser').value  = '';
+    document.getElementById('regPass').value  = '';
+    document.getElementById('regPass2').value = '';
+  } catch (e) {
+    showErr(e.message || 'Błąd rejestracji.');
+  } finally {
+    setLoading(btn, false);
+  }
+}
+
+// ─── GUEST MODE ──────────────────────────────────────────────
+function enterGuest() {
+  sessionStorage.setItem('fiszki_user', '__guest__');
+  window.location.href = 'app.html';
+}
+
+// ─── DEMO FILL ───────────────────────────────────────────────
+function fillDemo(user, pass) {
+  switchTab('login');
+  document.getElementById('loginUser').value = user;
+  document.getElementById('loginPass').value = pass;
+}
+
+// ─── ADMIN REQUEST ───────────────────────────────────────────
+function toggleAdminReq() {
+  const w    = document.getElementById('adminReqWrap');
+  const show = w.style.display === 'none';
+  w.style.display = show ? 'block' : 'none';
+  if (show) {
+    const lu = document.getElementById('loginUser').value.trim();
+    if (lu) document.getElementById('reqUser').value = lu;
+    document.getElementById('reqErr').style.display = 'none';
+    document.getElementById('reqSuc').style.display = 'none';
+  }
+}
+
+async function sendAdminRequest() {
+  const username = document.getElementById('reqUser').value.trim().toLowerCase();
+  const err = document.getElementById('reqErr');
+  const suc = document.getElementById('reqSuc');
+  const btn = document.querySelector('#adminReqWrap .btn-login');
+  err.style.display = 'none';
+  suc.style.display = 'none';
+
+  if (!username) { err.textContent = 'Wpisz nazwę użytkownika.'; err.style.display = 'block'; return; }
+
+  setLoading(btn, true);
+  try {
+    const sent = await DB.addAdminRequest(username);
+    if (sent === false) {
+      err.textContent = 'Prośba już została wysłana — czeka na akceptację.';
+      err.style.display = 'block';
+    } else {
+      suc.textContent = '✅ Prośba wysłana! Administrator zobaczy ją po zalogowaniu.';
+      suc.style.display = 'block';
+      document.getElementById('reqUser').value = '';
+    }
+  } catch (e) {
+    err.textContent = e.message || 'Błąd wysyłania prośby.';
+    err.style.display = 'block';
+  } finally {
+    setLoading(btn, false);
+  }
+}
+
+// ─── ENTER KEY ───────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  if (document.getElementById('formLogin').style.display !== 'none') doLogin();
+  else doRegister();
+});
+
+// ─── SPRAWDŹ AKTYWNĄ SESJĘ (auto-redirect) ───────────────────
+(async function checkSession() {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (session) {
+    // Pobierz username z profiles
+    const { data } = await supabase
+      .from('profiles').select('username').eq('id', session.user.id).single();
+    if (data && data.username) {
+      sessionStorage.setItem('fiszki_user', data.username);
+      window.location.href = 'app.html';
+    }
+  }
+})();
+
+// ─── GWIAZDY ─────────────────────────────────────────────────
+(function () {
+  const c = document.getElementById('stars');
+  for (let i = 0; i < 55; i++) {
+    const s = document.createElement('div'); s.className = 'star';
+    const sz = Math.random() * 2.4 + .5;
+    s.style.cssText = `width:${sz}px;height:${sz}px;left:${Math.random()*100}%;top:${Math.random()*100}%;animation-duration:${Math.random()*4+2}s;animation-delay:${Math.random()*5}s`;
+    c.appendChild(s);
+  }
+})();
+
+// ─── SERVICE WORKER ──────────────────────────────────────────
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+</script>
+</body>
+</html>
