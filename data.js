@@ -4653,6 +4653,54 @@ const BOOKS = {
     }
   }
 
+  // ─── FRANÇAIS ─────────────────────────────────────────────
+  francais: {
+    id: 'francais',
+    name: 'Francuski',
+    shortName: 'Franc.',
+    icon: '🇫🇷',
+    color: '#0055A4',
+    description: 'Język Francuski · Części ciała',
+    lang: 'fr-FR',
+    units: {
+      unit1: {
+        name: 'Części ciała', icon: '🫀', color: '#e17055',
+        words: [
+          ['głowa', 'la tête'],
+          ['twarz', 'le visage'],
+          ['czoło', 'le front'],
+          ['oko', "l'œil"],
+          ['nos', 'le nez'],
+          ['ucho', "l'oreille"],
+          ['usta', 'la bouche'],
+          ['ząb', 'la dent'],
+          ['szyja', 'le cou'],
+          ['ramię', "l'épaule"],
+          ['ręka', 'la main'],
+          ['palec', 'le doigt'],
+          ['paznokieć', "l'ongle"],
+          ['łokieć', 'le coude'],
+          ['nadgarstek', 'le poignet'],
+          ['noga', 'la jambe'],
+          ['stopa', 'le pied'],
+          ['palec u nogi', "l'orteil"],
+          ['kolano', 'le genou'],
+          ['udo', 'la cuisse'],
+          ['plecy', 'le dos'],
+          ['brzuch', 'le ventre'],
+          ['klatka piersiowa', 'la poitrine'],
+          ['serce', 'le cœur'],
+          ['płuca', 'les poumons'],
+          ['żołądek', "l'estomac"],
+          ['wątroba', 'le foie'],
+          ['mózg', 'le cerveau'],
+          ['kość', "l'os"],
+          ['skóra', 'la peau'],
+        ]
+      },
+    }
+  },
+
 };
 // ─── HELPERS ────────────────────────────────────────────────
 
