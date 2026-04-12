@@ -704,7 +704,8 @@ body.guest-mode .progress-wrap{opacity:.4;}
   <div class="wl-header">
     <h2 id="wlTitle">Lista słówek</h2>
     <div class="wl-header-actions">
-      <button class="btn-sm" onclick="printWordList()" title="Drukuj">🖨️</button>
+      <button class="btn-sm" onclick="printWordList()" title="Drukuj listę">🖨️</button>
+      <button class="btn-sm" onclick="printFlashcards()" title="Fiszki do wydruku i wycięcia">🃏</button>
       <button class="btn-sm" onclick="toggleCustomSection()" id="btnCustomToggle">➕</button>
       <button class="btn-sm" onclick="showScreen('sUnits')">← Wróć</button>
     </div>
@@ -1782,6 +1783,78 @@ function printWordList() {
     </tbody></table></body></html>`);
   win.document.close();
   win.print();
+}
+
+function printFlashcards() {
+  const units = getUnitsWithCustom(currentBookId);
+  const u = units[currentUnitKey];
+  const book = BOOKS[currentBookId];
+  const words = u.words;
+  const cols = 3, rows = 6, perPage = cols * rows;
+  const pages = Math.ceil(words.length / perPage);
+
+  let html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>${esc(book.name)} — ${esc(u.name)} — Fiszki</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+@page{size:A4;margin:0}
+body{font-family:Arial,Helvetica,sans-serif;background:#fff}
+.page{width:210mm;height:297mm;padding:8mm;display:grid;grid-template-columns:repeat(${cols},1fr);grid-template-rows:repeat(${rows},1fr);gap:0;page-break-after:always;overflow:hidden}
+.card{border:1px dashed #bbb;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:3mm;position:relative;overflow:hidden}
+.card .word{font-size:13pt;font-weight:700;color:#111;line-height:1.2}
+.card .sub{font-size:9pt;color:#666;margin-top:2px}
+.card .num{position:absolute;top:1.5mm;left:2mm;font-size:7pt;color:#aaa;font-weight:700}
+.page-label{text-align:center;font-size:10pt;font-weight:700;color:#888;padding:6px 0;page-break-after:avoid}
+h1{text-align:center;font-size:14pt;padding:12px 0 4px;color:#333}
+h2{text-align:center;font-size:9pt;color:#888;margin-bottom:4px;font-weight:400}
+.cut-info{text-align:center;font-size:8pt;color:#aaa;margin-bottom:2px}
+@media print{.page-label,h1,h2,.cut-info{display:none}.page{page-break-after:always}}
+</style></head><body>
+<h1>${esc(book.icon)} ${esc(book.name)} — ${esc(u.name)}</h1>
+<h2>Fiszki do wydruku dwustronnego i wycięcia · ${words.length} słówek · ${pages} ${pages===1?'strona':pages<5?'strony':'stron'}</h2>
+<div class="cut-info">✂️ Wytnij wzdłuż przerywanych linii · Drukuj dwustronnie (odwracanie po długiej krawędzi)</div>`;
+
+  for (let p = 0; p < pages; p++) {
+    const slice = words.slice(p * perPage, (p + 1) * perPage);
+    // PRZÓD (polski)
+    html += '<div class="page-label">Strona ' + (p+1) + ' — PRZÓD (polski)</div><div class="page">';
+    for (let i = 0; i < perPage; i++) {
+      const w = slice[i];
+      if (w) {
+        html += '<div class="card"><div class="num">' + (p*perPage+i+1) + '</div><div class="word">' + esc(w[0]) + '</div></div>';
+      } else {
+        html += '<div class="card"></div>';
+      }
+    }
+    html += '</div>';
+    // TYŁ (angielski/obcy) — lustrzane odbicie wierszy
+    html += '<div class="page-label">Strona ' + (p+1) + ' — TYŁ (język obcy)</div><div class="page">';
+    const padded = [];
+    for (let i = 0; i < perPage; i++) padded.push(slice[i] || null);
+    // Odwróć każdy wiersz horyzontalnie
+    const mirrored = [];
+    for (let r = 0; r < rows; r++) {
+      const row = padded.slice(r * cols, r * cols + cols);
+      row.reverse();
+      mirrored.push(...row);
+    }
+    for (let i = 0; i < perPage; i++) {
+      const w = mirrored[i];
+      if (w) {
+        const origIdx = (function(){ const r=Math.floor(i/cols); const c=i%cols; return r*cols+(cols-1-c); })();
+        html += '<div class="card"><div class="num">' + (p*perPage+origIdx+1) + '</div><div class="word">' + esc(w[1]) + '</div></div>';
+      } else {
+        html += '<div class="card"></div>';
+      }
+    }
+    html += '</div>';
+  }
+
+  html += '</body></html>';
+  const win = window.open('', '_blank');
+  win.document.write(html);
+  win.document.close();
+  setTimeout(() => win.print(), 400);
 }
 
 // ══════════════════════════════════════════════
