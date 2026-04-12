@@ -19,6 +19,10 @@ const DB = (() => {
   let _userId         = null;   // auth.users.id (UUID)
   let _adminRequests  = [];     // cache próśb o admina (tylko dla admina)
   let _saveTimer      = null;   // debounce zapisu profilu
+  let _sentences      = {};     // cache zdań: 'bookId__wordPl' → {sentence_pl, sentence_target}
+  let _adminWords     = [];     // globalne słówka/edycje admina
+  let _adminBooks     = [];     // podręczniki dodane przez admina
+  let _adminUnits     = [];     // rozdziały dodane przez admina
 
   // ─── Domyślny profil ─────────────────────────────────────────
   function emptyProfile(username) {
@@ -378,6 +382,216 @@ const DB = (() => {
   }
 
   // ═══════════════════════════════════════════════════════════════
+  //  ADMIN — ZARZĄDZANIE TREŚCIĄ (słówka, podręczniki, rozdziały)
+  // ═══════════════════════════════════════════════════════════════
+
+  /**
+   * Ładuje dane admina z Supabase i aplikuje do globalnego BOOKS.
+   * Wywoływać raz przy starcie (dla wszystkich użytkowników — SELECT jest publiczny).
+   */
+  async function loadAdminData() {
+    const [bRes, uRes, wRes] = await Promise.all([
+      supabase.from('admin_books').select('*').order('updated_at'),
+      supabase.from('admin_units').select('*').order('updated_at'),
+      supabase.from('admin_words').select('*').order('updated_at')
+    ]);
+    _adminBooks = bRes.data || [];
+    _adminUnits = uRes.data || [];
+    _adminWords = wRes.data || [];
+    _applyAdminData();
+  }
+
+  function _applyAdminData() {
+    // 1. Nowe podręczniki → dodaj do BOOKS
+    _adminBooks.forEach(row => {
+      if (!BOOKS[row.book_id]) {
+        BOOKS[row.book_id] = {
+          id: row.book_id, name: row.name, shortName: row.short_name || row.name,
+          icon: row.icon || '📖', color: row.color || '#a29bfe',
+          description: row.description || '', lang: row.lang || 'en-GB',
+          units: {}, _isAdminBook: true
+        };
+      }
+    });
+
+    // 2. Nowe rozdziały → dodaj do BOOKS[bookId].units
+    _adminUnits.forEach(row => {
+      if (!BOOKS[row.book_id]) return;
+      if (!BOOKS[row.book_id].units[row.unit_key]) {
+        BOOKS[row.book_id].units[row.unit_key] = {
+          name: row.name, icon: row.icon || '📖',
+          color: row.color || '#a29bfe', words: [], _isAdminUnit: true
+        };
+      }
+    });
+
+    // 3. Zmiany słówek (nowe / edycje / usunięcia)
+    _adminWords.forEach(row => {
+      if (!BOOKS[row.book_id]) return;
+      const unit = BOOKS[row.book_id].units[row.unit_key];
+      if (!unit) return;
+      const words = unit.words;
+
+      if (row.original_pl) {
+        // Edycja lub usunięcie słówka z data.js
+        const idx = words.findIndex(w => w[0] === row.original_pl);
+        if (idx !== -1) {
+          if (row.is_deleted) words.splice(idx, 1);
+          else words[idx] = [row.word_pl, row.word_target];
+        }
+      } else if (!row.is_deleted) {
+        // Nowe słówko — dodaj jeśli nie duplikat
+        if (!words.find(w => w[0] === row.word_pl)) {
+          words.push([row.word_pl, row.word_target]);
+        }
+      }
+    });
+  }
+
+  // ── Słówka ──────────────────────────────────────────────────
+
+  async function adminAddWord(bookId, unitKey, wordPl, wordTarget) {
+    const { data, error } = await supabase.from('admin_words').insert({
+      book_id: bookId, unit_key: unitKey, word_pl: wordPl, word_target: wordTarget,
+      original_pl: null, is_deleted: false, created_by: _userId, updated_at: new Date().toISOString()
+    }).select().single();
+    if (error) throw new Error(error.message);
+    _adminWords.push(data);
+    const words = BOOKS[bookId]?.units[unitKey]?.words;
+    if (words && !words.find(w => w[0] === wordPl)) words.push([wordPl, wordTarget]);
+  }
+
+  async function adminEditWord(bookId, unitKey, originalPl, newPl, newTarget) {
+    const existing = _adminWords.find(w =>
+      w.book_id === bookId && w.unit_key === unitKey &&
+      (w.word_pl === originalPl || w.original_pl === originalPl) && !w.is_deleted
+    );
+    if (existing) {
+      const { error } = await supabase.from('admin_words').update({
+        word_pl: newPl, word_target: newTarget, is_deleted: false, updated_at: new Date().toISOString()
+      }).eq('id', existing.id);
+      if (error) throw new Error(error.message);
+      existing.word_pl = newPl; existing.word_target = newTarget;
+    } else {
+      const { data, error } = await supabase.from('admin_words').insert({
+        book_id: bookId, unit_key: unitKey, word_pl: newPl, word_target: newTarget,
+        original_pl: originalPl, is_deleted: false, created_by: _userId, updated_at: new Date().toISOString()
+      }).select().single();
+      if (error) throw new Error(error.message);
+      _adminWords.push(data);
+    }
+    const words = BOOKS[bookId]?.units[unitKey]?.words;
+    if (words) { const i = words.findIndex(w => w[0] === originalPl); if (i !== -1) words[i] = [newPl, newTarget]; }
+  }
+
+  async function adminDeleteWord(bookId, unitKey, wordPl) {
+    // Sprawdź czy to słówko dodane przez admina (bez original_pl)
+    const adminAdded = _adminWords.find(w =>
+      w.book_id === bookId && w.unit_key === unitKey && w.word_pl === wordPl && !w.original_pl && !w.is_deleted
+    );
+    if (adminAdded) {
+      const { error } = await supabase.from('admin_words').delete().eq('id', adminAdded.id);
+      if (error) throw new Error(error.message);
+      _adminWords = _adminWords.filter(w => w.id !== adminAdded.id);
+    } else {
+      // Słówko z data.js — oznacz jako usunięte
+      const existing = _adminWords.find(w =>
+        w.book_id === bookId && w.unit_key === unitKey && w.original_pl === wordPl
+      );
+      if (existing) {
+        const { error } = await supabase.from('admin_words').update({
+          is_deleted: true, updated_at: new Date().toISOString()
+        }).eq('id', existing.id);
+        if (error) throw new Error(error.message);
+        existing.is_deleted = true;
+      } else {
+        const { data, error } = await supabase.from('admin_words').insert({
+          book_id: bookId, unit_key: unitKey, word_pl: '', word_target: '',
+          original_pl: wordPl, is_deleted: true, created_by: _userId, updated_at: new Date().toISOString()
+        }).select().single();
+        if (error) throw new Error(error.message);
+        _adminWords.push(data);
+      }
+    }
+    const words = BOOKS[bookId]?.units[unitKey]?.words;
+    if (words) { const i = words.findIndex(w => w[0] === wordPl); if (i !== -1) words.splice(i, 1); }
+  }
+
+  // ── Podręczniki ──────────────────────────────────────────────
+
+  async function adminAddBook(bookId, name, shortName, icon, color, description, lang) {
+    const { data, error } = await supabase.from('admin_books').insert({
+      book_id: bookId, name, short_name: shortName || name,
+      icon: icon || '📖', color: color || '#a29bfe', description: description || '', lang: lang || 'en-GB',
+      created_by: _userId, updated_at: new Date().toISOString()
+    }).select().single();
+    if (error) throw new Error(error.message);
+    _adminBooks.push(data);
+    BOOKS[bookId] = {
+      id: bookId, name, shortName: shortName || name,
+      icon: icon || '📖', color: color || '#a29bfe', description: description || '', lang: lang || 'en-GB',
+      units: {}, _isAdminBook: true
+    };
+  }
+
+  // ── Rozdziały ────────────────────────────────────────────────
+
+  async function adminAddUnit(bookId, unitKey, name, icon, color) {
+    const { data, error } = await supabase.from('admin_units').insert({
+      book_id: bookId, unit_key: unitKey, name,
+      icon: icon || '📖', color: color || '#a29bfe',
+      created_by: _userId, updated_at: new Date().toISOString()
+    }).select().single();
+    if (error) throw new Error(error.message);
+    _adminUnits.push(data);
+    if (BOOKS[bookId]) {
+      BOOKS[bookId].units[unitKey] = { name, icon: icon || '📖', color: color || '#a29bfe', words: [], _isAdminUnit: true };
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  ZDANIA PRZYKŁADOWE
+  // ═══════════════════════════════════════════════════════════════
+
+  /**
+   * Wczytuje zdania dla danego podręcznika do lokalnego cache.
+   * Wywołuj fire-and-forget przy wyborze podręcznika.
+   */
+  async function loadSentences(bookId) {
+    const { data, error } = await supabase
+      .from('word_sentences')
+      .select('word_pl, sentence_pl, sentence_target')
+      .eq('book_id', bookId);
+    if (error) { console.warn('[DB] loadSentences:', error.message); return; }
+    (data || []).forEach(row => {
+      _sentences[bookId + '__' + row.word_pl] = {
+        sentence_pl:     row.sentence_pl,
+        sentence_target: row.sentence_target
+      };
+    });
+  }
+
+  /** Zwraca zdanie z cache (synchronicznie). */
+  function getSentence(bookId, wordPl) {
+    return _sentences[bookId + '__' + wordPl] || null;
+  }
+
+  /** Admin: zapisuje / aktualizuje zdanie (UPSERT). */
+  async function saveSentence(bookId, wordPl, sentencePl, sentenceTarget) {
+    const { error } = await supabase.from('word_sentences').upsert({
+      book_id:         bookId,
+      word_pl:         wordPl,
+      sentence_pl:     sentencePl,
+      sentence_target: sentenceTarget,
+      updated_by:      _userId,
+      updated_at:      new Date().toISOString()
+    }, { onConflict: 'book_id,word_pl' });
+    if (error) throw new Error(error.message);
+    // Zaktualizuj lokalny cache
+    _sentences[bookId + '__' + wordPl] = { sentence_pl: sentencePl, sentence_target: sentenceTarget };
+  }
+
+  // ═══════════════════════════════════════════════════════════════
   //  FLUSH — wymuś zapis przed wylogowaniem (await!)
   // ═══════════════════════════════════════════════════════════════
   async function flush() {
@@ -424,7 +638,18 @@ const DB = (() => {
     getAdminRequests,
     approveAdminRequest,
     rejectAdminRequest,
-    getPendingRequestsCount
+    getPendingRequestsCount,
+    // zdania przykładowe
+    loadSentences,
+    getSentence,
+    saveSentence,
+    // admin — treść
+    loadAdminData,
+    adminAddWord,
+    adminEditWord,
+    adminDeleteWord,
+    adminAddBook,
+    adminAddUnit
   };
 
 })();
