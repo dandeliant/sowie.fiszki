@@ -52,7 +52,7 @@ BEGIN
     new_user_id,
     '00000000-0000-0000-0000-000000000000',
     v_email,
-    crypt(p_password, gen_salt('bf')),
+    extensions.crypt(p_password, extensions.gen_salt('bf')),
     now(),
     jsonb_build_object('username', p_username),
     '{"provider":"email","providers":["email"]}'::jsonb,
