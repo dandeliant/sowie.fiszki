@@ -753,10 +753,11 @@ szkoła	school"></textarea>
       <button class="btn-sm" onclick="showScreen('sUnits')">← Zmień</button>
     </div>
   </div>
-  <!-- Kierunek nauki -->
-  <div class="dir-toggle">
+  <!-- Kierunek nauki + głos -->
+  <div class="dir-toggle" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
     <button class="dir-btn active" id="dirPL" onclick="setDir('pl_en')">🇵🇱 PL → EN 🇬🇧</button>
     <button class="dir-btn" id="dirEN" onclick="setDir('en_pl')">🇬🇧 EN → PL 🇵🇱</button>
+    <button class="dir-btn" id="btnVoiceToggle" onclick="toggleAutoVoice()" style="margin-left:auto" title="Automatyczne wymawianie">🔊 Głos</button>
   </div>
   <div class="owl-wrap">
     <div class="owl" id="owl">🦉</div>
@@ -2073,6 +2074,7 @@ function flipCard() {
   document.getElementById('cardScene').classList.add('flipped');
   playFlip(); showDiff();
   showCardSentence();
+  spkForeign(getA(curIdx));
 }
 
 // ══════════════════════════════════════════════
@@ -2191,6 +2193,7 @@ function onQuiz(btn, ok, correct) {
     trackMissed(); sessErrorCount++;
   }
   document.getElementById('qSpeak').style.display = 'block';
+  spkForeign(correct);
   setTimeout(() => rate(ok ? 'easy' : 'hard'), 1500);
 }
 
@@ -2217,6 +2220,7 @@ function checkType() {
     trackMissed(); sessErrorCount++;
   }
   document.getElementById('tSpeak').style.display = 'block';
+  spkForeign(cor);
   setTimeout(() => rate(ok ? 'easy' : 'hard'), 1500);
 }
 
@@ -2242,6 +2246,7 @@ function checkMissing() {
     DB.recordAnswer(currentUser, false);
     trackMissed(); sessErrorCount++;
   }
+  spkForeign(cor);
   setTimeout(() => rate(ok ? 'easy' : 'hard'), 1500);
 }
 
@@ -2298,6 +2303,7 @@ function checkTF(userSaysTrue) {
     DB.recordAnswer(currentUser, false);
     trackMissed(); sessErrorCount++;
   }
+  spkForeign(getA(curIdx));
   setTimeout(() => rate(ok ? 'easy' : 'hard'), 1500);
 }
 
@@ -2440,6 +2446,22 @@ if (typeof speechSynthesis !== 'undefined') {
   voices = speechSynthesis.getVoices();
 }
 /** Język docelowy aktywnego podręcznika (np. 'en-GB', 'fr-FR'). */
+// ─── Auto-voice (wymowa obcego słowa) ────────
+let autoVoice = true;
+
+function toggleAutoVoice() {
+  autoVoice = !autoVoice;
+  const btn = document.getElementById('btnVoiceToggle');
+  btn.textContent = autoVoice ? '🔊 Głos' : '🔇 Głos';
+  btn.classList.toggle('active', autoVoice);
+  toast(autoVoice ? '🔊 Głos włączony' : '🔇 Głos wyłączony', 1500);
+}
+
+function spkForeign(txt) {
+  if (!autoVoice) return;
+  spk(txt, getBookLang(), 0.85);
+}
+
 function getBookLang() {
   return (BOOKS[currentBookId] && BOOKS[currentBookId].lang) || 'en-GB';
 }
@@ -2899,6 +2921,7 @@ function onSpeedStudyAnswer(btn, ok, correct) {
     studySpeedSessionScore++;
     document.getElementById('studySpScore').textContent = studySpeedSessionScore;
     playOk(); particles(true); owlR('easy'); streak++;
+    spkForeign(correct);
     DB.recordAnswer(currentUser, true);
     if (studySpeedSessionScore >= 5)  checkAndUnlock('speed_5');
     if (studySpeedSessionScore >= 10) checkAndUnlock('speed_10');
@@ -3673,6 +3696,7 @@ function matchClick(d) {
       inlineMatchDone++;
       playOk();
       particles(true);
+      spkForeign(inlineMatchAct.fr.textContent);
       setOwl('happy');
       owlSay(OE[~~(Math.random() * OE.length)]);
       setTimeout(() => setOwl(''), 1200);
