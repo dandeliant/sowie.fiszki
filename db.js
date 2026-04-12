@@ -602,6 +602,76 @@ const DB = (() => {
     if (error) console.warn('[DB] Flush error:', error.message);
   }
 
+  // ── Admin: Zarządzanie klasami ──────────────────────────────────
+
+  async function loadAllProfiles() {
+    if (!_profile?.isAdmin) return [];
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, username, xp, level, streak, total_sessions, total_answers, correct_answers, last_study_date, is_admin')
+      .order('username');
+    if (error) throw new Error(error.message);
+    return data || [];
+  }
+
+  async function loadUserProgress(userId) {
+    if (!_profile?.isAdmin) return [];
+    const { data, error } = await supabase
+      .from('unit_progress')
+      .select('book_key, unit_key, known_count, total, last_studied')
+      .eq('user_id', userId);
+    if (error) throw new Error(error.message);
+    return data || [];
+  }
+
+  async function loadClasses() {
+    if (!_userId) return [];
+    const { data, error } = await supabase
+      .from('classes')
+      .select('id, name, created_at, class_members(user_id)')
+      .eq('admin_id', _userId)
+      .order('name');
+    if (error) throw new Error(error.message);
+    return data || [];
+  }
+
+  async function saveClass(name, classId = null) {
+    if (!_profile?.isAdmin) throw new Error('Brak uprawnień');
+    if (classId) {
+      const { data, error } = await supabase.from('classes')
+        .update({ name }).eq('id', classId).select().single();
+      if (error) throw new Error(error.message);
+      return data;
+    } else {
+      const { data, error } = await supabase.from('classes')
+        .insert({ name, admin_id: _userId }).select().single();
+      if (error) throw new Error(error.message);
+      return data;
+    }
+  }
+
+  async function deleteClass(classId) {
+    if (!_profile?.isAdmin) throw new Error('Brak uprawnień');
+    const { error } = await supabase.from('classes').delete().eq('id', classId);
+    if (error) throw new Error(error.message);
+  }
+
+  async function addClassMember(classId, userId) {
+    if (!_profile?.isAdmin) throw new Error('Brak uprawnień');
+    const { error } = await supabase.from('class_members')
+      .upsert({ class_id: classId, user_id: userId });
+    if (error) throw new Error(error.message);
+  }
+
+  async function removeClassMember(classId, userId) {
+    if (!_profile?.isAdmin) throw new Error('Brak uprawnień');
+    const { error } = await supabase.from('class_members')
+      .delete().eq('class_id', classId).eq('user_id', userId);
+    if (error) throw new Error(error.message);
+  }
+
+  function getUserId() { return _userId; }
+
   // ─── PUBLICZNE API ───────────────────────────────────────────
   return {
     // init / auth
@@ -649,7 +719,16 @@ const DB = (() => {
     adminEditWord,
     adminDeleteWord,
     adminAddBook,
-    adminAddUnit
+    adminAddUnit,
+    // admin — klasy
+    loadAllProfiles,
+    loadUserProgress,
+    loadClasses,
+    saveClass,
+    deleteClass,
+    addClassMember,
+    removeClassMember,
+    getUserId
   };
 
 })();

@@ -2,7 +2,7 @@
 // ═══════════════════════════════════════════════════════
 //  SOWIE FISZKI — Service Worker (PWA, offline support)
 // ═══════════════════════════════════════════════════════
-const CACHE_NAME = 'sowie-fiszki-v4';
+const CACHE_NAME = 'sowie-fiszki-v7';
 const ASSETS = [
   './',
   './index.html',
