@@ -410,14 +410,21 @@ canvas#pc{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none
   body.cw-print .cw-col h3{color:#555 !important;border-color:#ccc !important;}
   body.cw-print .cw-len{color:#555 !important;}
   body.cw-print .cw-sel-panel{display:none !important;}
+  body.ws-print .wrap{display:block!important;}
   body.ws-print .screen:not(#sWordsearch){display:none!important;}
   body.ws-print #sWordsearch{display:block!important;}
   body.ws-print .ws-header .btn-sm,body.ws-print #wsStatus,body.ws-print .cw-sel-panel,body.ws-print #wsSelPanel{display:none!important;}
-  body.ws-print .ws-table td{border:1px solid #bbb!important;background:#fff!important;color:#000!important;width:22px;height:22px;font-size:.65rem!important;}
+  body.ws-print .ws-header{flex-wrap:nowrap!important;}
+  body.ws-print #wsTitle{color:#000!important;font-size:1.2rem!important;}
+  body.ws-print #wsSubtitle{color:#555!important;}
+  body.ws-print .ws-table td{border:1px solid #bbb!important;background:#fff!important;color:#000!important;width:24px!important;height:24px!important;font-size:.7rem!important;padding:0!important;}
   body.ws-print .ws-cell.ws-found{background:#fff!important;color:#000!important;}
   body.ws-print .ws-word-en{color:#000!important;text-decoration:none!important;}
   body.ws-print .ws-word-pl{color:#555!important;text-decoration:none!important;}
   body.ws-print .ws-word-item{border-color:#bbb!important;background:#fff!important;}
+  body.ws-print #wsWordListTitle{color:#000!important;border-color:#ccc!important;}
+  body.ws-print .ws-dir-toggles,.ws-print .ws-dir-btn{display:none!important;}
+  @page{margin:10mm;}
 }
 
 /* ── GUEST MODE ── */
@@ -1024,6 +1031,8 @@ szkoła	school"></textarea>
         <button class="btn-sm" onclick="cwGenerate()">🔄 Nowa</button>
         <button class="btn-sm accent" onclick="cwShowAnswers()">👁️ Odkryj</button>
         <button class="btn-sm" onclick="cwPrint()">🖨️ Drukuj</button>
+        <button class="btn-sm" onclick="cwDownloadPDF()" id="cwBtn-pdf">📄 PDF</button>
+        <button class="btn-sm" onclick="cwDownloadJPEG()" id="cwBtn-jpg">🖼️ JPEG</button>
         <button class="btn-sm" onclick="showScreen('sUnits')">← Wróć</button>
       </div>
     </div>
@@ -1058,6 +1067,8 @@ szkoła	school"></textarea>
         <button class="btn-sm" onclick="wsGenerate()">🔄 Nowa</button>
         <button class="btn-sm accent" onclick="wsShowAnswers()">👁️ Odkryj</button>
         <button class="btn-sm" onclick="wsPrint()">🖨️ Drukuj</button>
+        <button class="btn-sm" onclick="wsDownloadPDF()" id="wsBtn-pdf">📄 PDF</button>
+        <button class="btn-sm" onclick="wsDownloadJPEG()" id="wsBtn-jpg">🖼️ JPEG</button>
         <button class="btn-sm" onclick="showScreen('sUnits')">← Wróć</button>
       </div>
     </div>
@@ -1234,6 +1245,8 @@ szkoła	school"></textarea>
 
 </div><!-- /wrap -->
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="supabase-config.js"></script>
 <script src="data.js"></script>
@@ -3489,6 +3502,72 @@ function cwPrint() {
   }, 80);
 }
 
+// ─── Crossword Download PDF ──────────────────
+async function cwDownloadPDF() {
+  if (!cwCurUnit) { toast('Najpierw wygeneruj krzyżówkę!'); return; }
+  const btn = document.getElementById('cwBtn-pdf');
+  btn.disabled = true; btn.textContent = '⏳…';
+  try {
+    // Clear inputs for clean export
+    document.querySelectorAll('.cw-inp').forEach(inp => { inp.dataset.prevVal = inp.value; inp.value = ''; inp.classList.remove('cw-ok','cw-err'); });
+
+    const target = document.getElementById('sCrossword');
+    const btns = target.querySelectorAll('.btn-sm');
+    btns.forEach(b => b.style.display = 'none');
+    const selPanel = document.getElementById('cwSelPanel');
+    if (selPanel) selPanel.style.display = 'none';
+
+    const canvas = await html2canvas(target, { scale: 2, backgroundColor: '#1a1040', useCORS: true, logging: false });
+
+    btns.forEach(b => b.style.display = '');
+    if (selPanel) selPanel.style.display = '';
+    document.querySelectorAll('.cw-inp').forEach(inp => { inp.value = inp.dataset.prevVal || ''; if (inp.value) inp.classList.add(inp.value === inp.dataset.ans ? 'cw-ok' : 'cw-err'); });
+
+    const {jsPDF} = window.jspdf;
+    const a4w = 210, a4h = 297, margin = 10;
+    const usableW = a4w - 2*margin, usableH = a4h - 2*margin;
+    const ratio = canvas.width / canvas.height;
+    let imgW, imgH;
+    if (ratio > usableW/usableH) { imgW = usableW; imgH = usableW/ratio; }
+    else { imgH = usableH; imgW = usableH*ratio; }
+    const pdf = new jsPDF({orientation:'portrait', unit:'mm', format:'a4'});
+    pdf.addImage(canvas.toDataURL('image/jpeg',0.95), 'JPEG', (a4w-imgW)/2, margin, imgW, imgH);
+    const units = getUnitsWithCustom(currentBookId);
+    const title = (units[cwCurUnit]?.name || 'krzyzowka').replace(/\s+/g,'_');
+    pdf.save(title + '_krzyzowka.pdf');
+  } catch(e) { toast('Błąd PDF: ' + e.message); }
+  finally { btn.disabled = false; btn.textContent = '📄 PDF'; }
+}
+
+// ─── Crossword Download JPEG ─────────────────
+async function cwDownloadJPEG() {
+  if (!cwCurUnit) { toast('Najpierw wygeneruj krzyżówkę!'); return; }
+  const btn = document.getElementById('cwBtn-jpg');
+  btn.disabled = true; btn.textContent = '⏳…';
+  try {
+    document.querySelectorAll('.cw-inp').forEach(inp => { inp.dataset.prevVal = inp.value; inp.value = ''; inp.classList.remove('cw-ok','cw-err'); });
+
+    const target = document.getElementById('sCrossword');
+    const btns = target.querySelectorAll('.btn-sm');
+    btns.forEach(b => b.style.display = 'none');
+    const selPanel = document.getElementById('cwSelPanel');
+    if (selPanel) selPanel.style.display = 'none';
+
+    const canvas = await html2canvas(target, { scale: 2, backgroundColor: '#1a1040', useCORS: true, logging: false });
+
+    btns.forEach(b => b.style.display = '');
+    if (selPanel) selPanel.style.display = '';
+    document.querySelectorAll('.cw-inp').forEach(inp => { inp.value = inp.dataset.prevVal || ''; if (inp.value) inp.classList.add(inp.value === inp.dataset.ans ? 'cw-ok' : 'cw-err'); });
+
+    const link = document.createElement('a');
+    const units = getUnitsWithCustom(currentBookId);
+    link.download = (units[cwCurUnit]?.name || 'krzyzowka').replace(/\s+/g,'_') + '_krzyzowka.jpg';
+    link.href = canvas.toDataURL('image/jpeg', 0.95);
+    link.click();
+  } catch(e) { toast('Błąd JPEG: ' + e.message); }
+  finally { btn.disabled = false; btn.textContent = '🖼️ JPEG'; }
+}
+
 // ══════════════════════════════════════════════
 //  WORDSEARCH ENGINE
 // ══════════════════════════════════════════════
@@ -3837,6 +3916,78 @@ function wsPrint() {
       document.body.classList.remove('ws-print');
     }, 500);
   }, 80);
+}
+
+// ─── Download PDF ─────────────────────────────
+async function wsDownloadPDF() {
+  if (!wsCurUnit || wsPlacements.length === 0) { toast('Najpierw wygeneruj wordsearch!'); return; }
+  const btn = document.getElementById('wsBtn-pdf');
+  btn.disabled = true; btn.textContent = '⏳…';
+  try {
+    // Temporarily strip found highlights for clean export
+    document.querySelectorAll('.ws-cell.ws-found').forEach(el => { el.dataset.wasF='1'; el.classList.remove('ws-found'); });
+    document.querySelectorAll('.ws-word-item.ws-found-item').forEach(el => { el.dataset.wasF='1'; el.classList.remove('ws-found-item'); });
+
+    const target = document.getElementById('sWordsearch');
+    // Hide buttons for capture
+    const btns = target.querySelectorAll('.btn-sm');
+    btns.forEach(b => b.style.display = 'none');
+    const selPanel = document.getElementById('wsSelPanel');
+    if (selPanel) selPanel.style.display = 'none';
+
+    const canvas = await html2canvas(target, { scale: 2, backgroundColor: '#1a1040', useCORS: true, logging: false });
+
+    // Restore UI
+    btns.forEach(b => b.style.display = '');
+    if (selPanel) selPanel.style.display = '';
+    document.querySelectorAll('.ws-cell[data-was-f="1"]').forEach(el => { el.classList.add('ws-found'); delete el.dataset.wasF; });
+    document.querySelectorAll('.ws-word-item[data-was-f="1"]').forEach(el => { el.classList.add('ws-found-item'); delete el.dataset.wasF; });
+
+    const {jsPDF} = window.jspdf;
+    const a4w = 210, a4h = 297, margin = 10;
+    const usableW = a4w - 2*margin, usableH = a4h - 2*margin;
+    const ratio = canvas.width / canvas.height;
+    let imgW, imgH;
+    if (ratio > usableW/usableH) { imgW = usableW; imgH = usableW/ratio; }
+    else { imgH = usableH; imgW = usableH*ratio; }
+    const pdf = new jsPDF({orientation:'portrait', unit:'mm', format:'a4'});
+    pdf.addImage(canvas.toDataURL('image/jpeg',0.95), 'JPEG', (a4w-imgW)/2, margin, imgW, imgH);
+    const units = getUnitsWithCustom(currentBookId);
+    const title = (units[wsCurUnit]?.name || 'wordsearch').replace(/\s+/g,'_');
+    pdf.save(title + '_wordsearch.pdf');
+  } catch(e) { toast('Błąd PDF: ' + e.message); }
+  finally { btn.disabled = false; btn.textContent = '📄 PDF'; }
+}
+
+// ─── Download JPEG ────────────────────────────
+async function wsDownloadJPEG() {
+  if (!wsCurUnit || wsPlacements.length === 0) { toast('Najpierw wygeneruj wordsearch!'); return; }
+  const btn = document.getElementById('wsBtn-jpg');
+  btn.disabled = true; btn.textContent = '⏳…';
+  try {
+    document.querySelectorAll('.ws-cell.ws-found').forEach(el => { el.dataset.wasF='1'; el.classList.remove('ws-found'); });
+    document.querySelectorAll('.ws-word-item.ws-found-item').forEach(el => { el.dataset.wasF='1'; el.classList.remove('ws-found-item'); });
+
+    const target = document.getElementById('sWordsearch');
+    const btns = target.querySelectorAll('.btn-sm');
+    btns.forEach(b => b.style.display = 'none');
+    const selPanel = document.getElementById('wsSelPanel');
+    if (selPanel) selPanel.style.display = 'none';
+
+    const canvas = await html2canvas(target, { scale: 2, backgroundColor: '#1a1040', useCORS: true, logging: false });
+
+    btns.forEach(b => b.style.display = '');
+    if (selPanel) selPanel.style.display = '';
+    document.querySelectorAll('.ws-cell[data-was-f="1"]').forEach(el => { el.classList.add('ws-found'); delete el.dataset.wasF; });
+    document.querySelectorAll('.ws-word-item[data-was-f="1"]').forEach(el => { el.classList.add('ws-found-item'); delete el.dataset.wasF; });
+
+    const link = document.createElement('a');
+    const units = getUnitsWithCustom(currentBookId);
+    link.download = (units[wsCurUnit]?.name || 'wordsearch').replace(/\s+/g,'_') + '_wordsearch.jpg';
+    link.href = canvas.toDataURL('image/jpeg', 0.95);
+    link.click();
+  } catch(e) { toast('Błąd JPEG: ' + e.message); }
+  finally { btn.disabled = false; btn.textContent = '🖼️ JPEG'; }
 }
 
 // ══════════════════════════════════════════════
