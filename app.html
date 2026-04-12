@@ -425,6 +425,21 @@ body.guest-mode .xp-panel,body.guest-mode .daily-goal{display:none !important;}
 body.guest-mode #adminBadge{display:none !important;}
 body.guest-mode .progress-wrap{opacity:.4;}
 
+/* ── WORD SELECTION ── */
+.wl-sel-bar{display:none;align-items:center;gap:10px;flex-wrap:wrap;background:linear-gradient(135deg,rgba(162,155,254,.13),rgba(106,92,231,.08));border:1.5px solid rgba(162,155,254,.35);border-radius:12px;padding:10px 14px;margin-bottom:11px;}
+.wl-sel-bar.visible{display:flex;}
+.wl-sel-count{font-size:.8rem;font-weight:800;color:var(--purple);flex:1;white-space:nowrap;}
+.btn-study-sel{font-family:'Nunito',sans-serif;font-size:.82rem;font-weight:800;padding:9px 20px;background:linear-gradient(135deg,var(--purple),#6c5ce7);color:#fff;border:none;border-radius:100px;cursor:pointer;box-shadow:0 3px 14px rgba(162,155,254,.35);transition:all .2s;white-space:nowrap;}
+.btn-study-sel:hover{transform:translateY(-1px);box-shadow:0 5px 18px rgba(162,155,254,.5);}
+.btn-sel-clear{font-family:'Nunito',sans-serif;font-size:.75rem;font-weight:700;color:var(--muted);background:none;border:none;cursor:pointer;padding:4px 6px;border-radius:6px;transition:color .15s;white-space:nowrap;}
+.btn-sel-clear:hover{color:var(--danger);}
+.btn-sel-all{font-family:'Nunito',sans-serif;font-size:.75rem;font-weight:700;color:var(--purple);background:none;border:none;cursor:pointer;padding:4px 6px;border-radius:6px;transition:color .15s;white-space:nowrap;}
+.btn-sel-all:hover{color:var(--text);}
+.td-cb{width:30px;padding:6px 4px 6px 8px !important;}
+.wl-cb{width:15px;height:15px;cursor:pointer;accent-color:var(--purple);vertical-align:middle;}
+.th-cb{width:30px;padding:8px 4px 8px 8px !important;}
+.wl-table tr.row-selected td{background:rgba(162,155,254,.07);}
+
 /* ── ADMIN WORD TABLE ACTIONS ── */
 .td-admin{width:64px;text-align:right;}
 .btn-row-edit,.btn-row-del{background:none;border:none;cursor:pointer;padding:3px 5px;border-radius:6px;font-size:.88rem;font-family:'Nunito',sans-serif;transition:background .15s;}
@@ -597,10 +612,16 @@ body.guest-mode .progress-wrap{opacity:.4;}
       <button class="btn-sm" onclick="showScreen('sUnits')">← Wróć</button>
     </div>
   </div>
+  <div class="wl-sel-bar" id="wlSelBar">
+    <span class="wl-sel-count" id="wlSelCount">Wybrano: 0</span>
+    <button class="btn-sel-all" onclick="wlSelectAll()">Zaznacz wszystkie</button>
+    <button class="btn-sel-clear" onclick="wlClearSel()">✕ Odznacz</button>
+    <button class="btn-study-sel" onclick="startStudySelected()">🎯 Ćwicz wybrane →</button>
+  </div>
   <button class="btn-start" onclick="startStudyFromList()" style="margin-bottom:12px">🎲 Zacznij naukę!</button>
   <div class="wl-legend">🟢 opanowane &nbsp;🟡 w trakcie &nbsp;🔴 trudne &nbsp;⬜ nie ćwiczone</div>
-  <table class="wl-table">
-    <thead><tr><th>#</th><th>Polski</th><th>🔊</th><th>Angielski</th><th>🔊</th><th>★</th></tr></thead>
+  <table class="wl-table" id="wlTable">
+    <thead><tr id="wlHead"><th class="th-cb"><input type="checkbox" class="wl-cb" id="cbAll" title="Zaznacz/odznacz wszystkie" onchange="wlToggleAll(this.checked)"></th><th>#</th><th>Polski</th><th>🔊</th><th>Angielski</th><th>🔊</th><th>★</th></tr></thead>
     <tbody id="wlBody"></tbody>
   </table>
   <div id="customSection" class="custom-section" style="display:none;margin-top:14px;">
@@ -1255,17 +1276,20 @@ function getDiffDot(bId, uKey, wordIdx) {
   return '⬜';
 }
 
+let wlSelectedIndices = new Set(); // globalny zestaw zaznaczonych indeksów
+
 function openWordList(key) {
   currentUnitKey = key;
+  wlSelectedIndices.clear();
   const units = getUnitsWithCustom(currentBookId);
   const u = units[key];
   document.getElementById('wlTitle').textContent = u.icon + ' ' + u.name;
   const isAdmin = isCurrentUserAdmin();
+
   // Nagłówek tabeli — z kolumną akcji dla admina
-  const thead = document.querySelector('#sWordList .wl-table thead tr');
-  thead.innerHTML = isAdmin
-    ? '<th>#</th><th>Polski</th><th>🔊</th><th>Angielski</th><th>🔊</th><th>★</th><th></th>'
-    : '<th>#</th><th>Polski</th><th>🔊</th><th>Angielski</th><th>🔊</th><th>★</th>';
+  const thead = document.getElementById('wlHead');
+  const adminTh = isAdmin ? '<th></th>' : '';
+  thead.innerHTML = `<th class="th-cb"><input type="checkbox" class="wl-cb" id="cbAll" title="Zaznacz/odznacz wszystkie" onchange="wlToggleAll(this.checked)"></th><th>#</th><th>Polski</th><th>🔊</th><th>Angielski</th><th>🔊</th><th>★</th>${adminTh}`;
 
   const body = document.getElementById('wlBody');
   body.innerHTML = '';
@@ -1278,12 +1302,26 @@ function openWordList(key) {
            <button class="btn-row-del" title="Usuń">🗑️</button>
          </td>`
       : (isAdmin ? '<td></td>' : '');
-    tr.innerHTML = `<td class="td-nr">${i + 1}</td>
+    tr.innerHTML = `<td class="td-cb"><input type="checkbox" class="wl-cb row-cb" data-idx="${i}"></td>
+      <td class="td-nr">${i + 1}</td>
       <td class="td-pl">${esc(pl)}</td>
       <td class="td-sp"><button class="btn-speak-sm">🔊</button></td>
       <td class="td-en">${esc(en)}</td>
       <td class="td-sp"><button class="btn-speak-sm">🔊</button></td>
       <td class="td-diff">${dot}</td>${adminCells}`;
+    // Kliknięcie wiersza też zaznacza (poza przyciskami)
+    tr.addEventListener('click', e => {
+      if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return;
+      const cb = tr.querySelector('.row-cb');
+      cb.checked = !cb.checked;
+      cb.dispatchEvent(new Event('change'));
+    });
+    const cb = tr.querySelector('.row-cb');
+    cb.addEventListener('change', () => {
+      if (cb.checked) { wlSelectedIndices.add(i); tr.classList.add('row-selected'); }
+      else { wlSelectedIndices.delete(i); tr.classList.remove('row-selected'); }
+      wlUpdateSelBar(u.words.length);
+    });
     tr.querySelectorAll('.btn-speak-sm')[0].addEventListener('click', () => spkPl(pl));
     tr.querySelectorAll('.btn-speak-sm')[1].addEventListener('click', () => speakTxt(en));
     if (isAdmin && key !== 'all') {
@@ -1309,7 +1347,51 @@ function openWordList(key) {
   showScreen('sWordList');
 }
 
-function startStudyFromList() { startStudy(currentUnitKey); }
+function startStudyFromList() {
+  wlSelectedIndices.clear();
+  startStudy(currentUnitKey);
+}
+
+// ── Helpers zaznaczania ──────────────────────────────────────
+
+function wlUpdateSelBar(total) {
+  const n = wlSelectedIndices.size;
+  const bar  = document.getElementById('wlSelBar');
+  const count = document.getElementById('wlSelCount');
+  const cbAll = document.getElementById('cbAll');
+  bar.classList.toggle('visible', n > 0);
+  count.textContent = 'Wybrano: ' + n + ' / ' + total + ' słówek';
+  if (cbAll) {
+    cbAll.indeterminate = n > 0 && n < total;
+    cbAll.checked = n === total;
+  }
+}
+
+function wlToggleAll(checked) {
+  const units = getUnitsWithCustom(currentBookId);
+  const total = units[currentUnitKey]?.words.length || 0;
+  wlSelectedIndices.clear();
+  document.querySelectorAll('.row-cb').forEach((cb, i) => {
+    cb.checked = checked;
+    cb.closest('tr').classList.toggle('row-selected', checked);
+    if (checked) wlSelectedIndices.add(i);
+  });
+  wlUpdateSelBar(total);
+}
+
+function wlSelectAll() { wlToggleAll(true); }
+
+function wlClearSel() { wlToggleAll(false); }
+
+// ── Start nauki z wybranych słówek ──────────────────────────
+
+function startStudySelected() {
+  if (wlSelectedIndices.size === 0) { toast('Zaznacz co najmniej jedno słówko! ☑️'); return; }
+  const selectedArr = [...wlSelectedIndices].sort((a,b) => a - b);
+  startStudy(currentUnitKey, selectedArr);
+  const n = selectedArr.length;
+  setTimeout(() => owlSay('Ćwiczysz ' + n + ' wybrane' + (n === 1 ? ' słówko' : n < 5 ? ' słówka' : ' słówek') + '! 🎯'), 300);
+}
 
 // Custom words UI
 function toggleCustomSection() {
@@ -1382,13 +1464,13 @@ function printWordList() {
 // ══════════════════════════════════════════════
 //  STUDY INIT
 // ══════════════════════════════════════════════
-function startStudy(key) {
+// forcedPool — opcjonalna lista indeksów (kartkówka z wybranych słówek)
+function startStudy(key, forcedPool = null) {
   currentUnitKey = key;
   const units = getUnitsWithCustom(currentBookId);
   const u = units[key];
   activeWords = u.words;
-  pool = activeWords.map((_,i) => i);
-  // Init SM-2 states
+  // Init SM-2 states dla wszystkich słówek (indeksy oryginalne)
   ws = {};
   activeWords.forEach((_,i) => {
     ws[i] = {ef:2.5, reps:0, interval:1, nextReview:0, known:false, errCount:0, lastError:false, dueIn:0};
@@ -1400,9 +1482,14 @@ function startStudy(key) {
     Object.entries(saved.wordStates).forEach(([idx, state]) => {
       if (ws[idx]) ws[idx] = {...ws[idx], ...state};
     });
-    pool = pool.filter(i => !ws[i].known);
+  }
+
+  if (forcedPool !== null) {
+    // Tryb kartkówki — tylko wybrane słówka, ignoruj flagę known
+    pool = [...forcedPool];
+  } else {
+    pool = activeWords.map((_,i) => i).filter(i => !ws[i].known);
     // Priorytet: błędy z poprzedniej sesji i słowa dawno niepowtarzane
-    const now = Date.now();
     pool.sort((a, b) => {
       if (ws[a].lastError && !ws[b].lastError) return -1;
       if (!ws[a].lastError && ws[b].lastError) return 1;
@@ -2617,9 +2704,17 @@ function isCurrentUserAdmin() {
 }
 
 function initAdminUI() {
-  if (!isCurrentUserAdmin()) return;
-  document.getElementById('adminBadge').style.display = 'inline-flex';
+  const badge = document.getElementById('adminBadge');
+  if (!isCurrentUserAdmin()) {
+    // Pokaż status konta (pomocne przy debugowaniu)
+    const profile = DB.getUser(currentUser);
+    console.info('[Admin] is_admin:', profile.isAdmin, '| username:', profile.username);
+    badge.style.display = 'none';
+    return;
+  }
+  badge.style.display = 'inline-flex';
   renderAdminPanel();
+  toast('🛡️ Zalogowano jako admin — możesz zarządzać treścią.', 3500);
 }
 
 // ══════════════════════════════════════════════
