@@ -706,6 +706,15 @@ const DB = (() => {
     }
   }
 
+  async function adminCreateUser(username, password) {
+    if (!_profile?.isAdmin) throw new Error('Brak uprawnień');
+    const { data, error } = await supabase.rpc('admin_create_user', {
+      p_username: username, p_password: password
+    });
+    if (error) throw new Error(error.message);
+    return data; // returns new user UUID
+  }
+
   async function adminDeleteUser(userId) {
     if (!_profile?.isAdmin) throw new Error('Brak uprawnień');
     const { error } = await supabase.rpc('admin_delete_user', { target_user_id: userId });
@@ -766,6 +775,7 @@ const DB = (() => {
     getUserBooks,
     adminLoadUserBooks,
     adminSetUserBooks,
+    adminCreateUser,
     adminDeleteUser,
     // admin — klasy
     loadAllProfiles,
