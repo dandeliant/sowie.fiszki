@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Generator Krzyzowek</title>
+<link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=DM+Serif+Display:ital@0;1&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+:root {
+  --paper:      #fafaf7;
+  --paper2:     #f2f0e8;
+  --ink:        #0d0d0b;
+  --ink2:       #3a3830;
+  --ink3:       #7a776a;
+  --red:        #b5200d;
+  --green:      #1a5c38;
+  --cell:       44px;
+  --border:     #c0bdb0;
+  --shadow:     rgba(20,18,10,0.14);
+  --black-cell: #d5d2c8;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+
+body{
+  background:#dbd8cc;
+  font-family:'Libre Baskerville',serif;
+  min-height:100vh;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  padding:32px 20px 72px;
+  background-image:
+    radial-gradient(ellipse at 20% 10%, rgba(180,160,100,0.18) 0%, transparent 55%),
+    radial-gradient(ellipse at 80% 90%, rgba(120,110,80,0.14) 0%, transparent 50%);
+}
+
+/* -- HEADER -- */
+.page-head{text-align:center;margin-bottom:28px}
+.page-head h1{
+  font-family:'DM Serif Display',serif;
+  font-size:3.2rem;
+  color:var(--ink);
+  letter-spacing:-0.03em;
+  line-height:1;
+  display:inline-block;
+}
+.page-head h1 em{font-style:italic;color:var(--red)}
+.page-head p{
+  font-family:'Courier Prime',monospace;
+  font-size:0.68rem;
+  letter-spacing:0.22em;
+  text-transform:uppercase;
+  color:var(--ink3);
+  margin-top:6px;
+}
+
+/* -- PANEL -- */
+.panel{
+  background:var(--paper);
+  border:1.5px solid var(--border);
+  padding:28px 30px;
+  width:100%;
+  max-width:860px;
+  box-shadow:5px 5px 0 var(--shadow);
+  margin-bottom:20px;
+}
+.panel-title{
+  font-family:'DM Serif Display',serif;
+  font-size:1.1rem;
+  color:var(--ink);
+  margin-bottom:14px;
+  padding-bottom:8px;
+  border-bottom:2px solid var(--ink);
+  display:flex;
+  align-items:center;
+  gap:10px;
+}
+.panel-title span{
+  font-family:'Courier Prime',monospace;
+  font-size:0.65rem;
+  letter-spacing:0.15em;
+  text-transform:uppercase;
+  color:var(--ink3);
+  font-weight:400;
+  margin-left:auto;
+}
+
+/* -- INPUTS -- */
+.input-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:8px 16px;
+  margin-bottom:14px;
+}
+
+.field-label{
+  font-family:'Courier Prime',monospace;
+  font-size:0.67rem;
+  letter-spacing:0.13em;
+  text-transform:uppercase;
+  color:var(--ink3);
+  display:block;
+  margin-bottom:4px;
+}
+
+input[type=text],input[type=number]{
+  width:100%;
+  border:1.5px solid var(--border);
+  background:var(--paper2);
+  font-family:'Courier Prime',monospace;
+  font-size:0.85rem;
+  color:var(--ink);
+  padding:8px 10px;
+  outline:none;
+  transition:border-color .18s;
+}
+input:focus{border-color:var(--ink)}
+
+textarea#words-input{
+  width:100%;
+  min-height:160px;
+  border:1.5px solid var(--border);
+  background:var(--paper2);
+  font-family:'Courier Prime',monospace;
+  font-size:0.85rem;
+  color:var(--ink);
+  padding:12px 14px;
+  resize:vertical;
+  line-height:1.8;
+  outline:none;
+  transition:border-color .18s;
+}
+textarea:focus{border-color:var(--ink)}
+
+.hint{
+  font-family:'Courier Prime',monospace;
+  font-size:0.72rem;
+  color:var(--ink3);
+  background:var(--paper2);
+  border-left:3px solid var(--border);
+  padding:8px 12px;
+  margin-bottom:14px;
+  line-height:1.6;
+}
+.hint strong{color:var(--ink)}
+
+/* -- BUTTONS -- */
+.btn{
+  font-family:'Courier Prime',monospace;
+  font-size:0.8rem;
+  font-weight:700;
+  letter-spacing:0.1em;
+  text-transform:uppercase;
+  border:none;
+  cursor:pointer;
+  padding:11px 22px;
+  transition:transform .1s,box-shadow .1s,background .15s;
+}
+.btn:active{transform:translate(2px,2px);box-shadow:none!important}
+.btn:disabled{opacity:0.5;cursor:wait}
+
+.btn-gen{
+  background:var(--ink);
+  color:#fff;
+  box-shadow:4px 4px 0 rgba(0,0,0,.35);
+  width:100%;
+  font-size:0.85rem;
+  padding:13px;
+  margin-top:14px;
+}
+.btn-gen:hover:not(:disabled){background:var(--red)}
+
+.export-bar{
+  display:none;
+  gap:12px;
+  justify-content:center;
+  flex-wrap:wrap;
+  margin-bottom:22px;
+}
+.btn-print{background:var(--ink);color:#fff;box-shadow:3px 3px 0 rgba(0,0,0,.3)}
+.btn-print:hover{background:#222}
+.btn-pdf{background:var(--red);color:#fff;box-shadow:3px 3px 0 #6b1008}
+.btn-pdf:hover:not(:disabled){background:#961209}
+.btn-jpg{background:var(--green);color:#fff;box-shadow:3px 3px 0 #0d3320}
+.btn-jpg:hover:not(:disabled){background:#154d2e}
+.btn-answers{background:#7b5c1a;color:#fff;box-shadow:3px 3px 0 #3e2e0a}
+.btn-answers:hover{background:#634a14}
+
+.msg{
+  font-family:'Courier Prime',monospace;
+  font-size:0.76rem;
+  color:var(--red);
+  margin-top:10px;
+  min-height:18px;
+}
+
+/* == WORKSHEET == */
+#worksheet{
+  display:none;
+  background:var(--paper);
+  border:1.5px solid var(--border);
+  padding:38px 42px 44px;
+  width:100%;
+  max-width:860px;
+  box-shadow:5px 5px 0 var(--shadow);
+}
+
+.ws-topbar{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-end;
+  border-bottom:3px double var(--ink);
+  padding-bottom:12px;
+  margin-bottom:6px;
+}
+.ws-bigtitle{
+  font-family:'DM Serif Display',serif;
+  font-size:2rem;
+  color:var(--ink);
+  line-height:1.1;
+}
+.ws-bigtitle em{font-style:italic;color:var(--red)}
+.ws-meta{
+  font-family:'Courier Prime',monospace;
+  font-size:0.67rem;
+  color:var(--ink3);
+  text-align:right;
+  line-height:2.2;
+  letter-spacing:0.04em;
+}
+.ws-meta span{display:block;border-bottom:1px solid var(--border);min-width:160px}
+.ws-instr{
+  font-family:'Libre Baskerville',serif;
+  font-style:italic;
+  font-size:0.82rem;
+  color:var(--ink3);
+  margin:8px 0 22px;
+}
+
+/* -- CROSSWORD GRID -- */
+.grid-scroll{overflow-x:auto;margin-bottom:28px}
+#cw-table{
+  border-collapse:collapse;
+  margin:0 auto;
+}
+#cw-table td{
+  width:var(--cell);
+  height:var(--cell);
+  position:relative;
+  padding:0;
+}
+#cw-table td.black{
+  background:var(--black-cell);
+  border:1.5px solid #c5c2b8;
+}
+#cw-table td.white{
+  background:#fff;
+  border:1.5px solid var(--ink);
+}
+.cell-num{
+  position:absolute;
+  top:2px; left:3px;
+  font-family:'Courier Prime',monospace;
+  font-size:0.56rem;
+  font-weight:700;
+  color:var(--ink);
+  line-height:1;
+  pointer-events:none;
+}
+.cell-letter{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  width:100%;
+  height:100%;
+  font-family:'Courier Prime',monospace;
+  font-size:1rem;
+  font-weight:700;
+  color:transparent;
+  user-select:none;
+}
+.cell-letter.show{color:var(--ink2)}
+
+/* -- CLUES -- */
+.clues-section{
+  border-top:3px double var(--ink);
+  padding-top:16px;
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:0 36px;
+}
+.clue-col-title{
+  font-family:'DM Serif Display',serif;
+  font-size:1rem;
+  color:var(--ink);
+  margin-bottom:10px;
+  padding-bottom:4px;
+  border-bottom:1.5px solid var(--ink);
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.clue-col-title .arrow{font-size:0.9rem;color:var(--red)}
+.clue-list{list-style:none}
+.clue-list li{
+  font-family:'Libre Baskerville',serif;
+  font-size:0.8rem;
+  color:var(--ink2);
+  line-height:1.45;
+  padding:3px 0;
+  border-bottom:1px dotted var(--border);
+  display:flex;
+  gap:6px;
+}
+.clue-list li:last-child{border-bottom:none}
+.clue-num{
+  font-family:'Courier Prime',monospace;
+  font-size:0.75rem;
+  font-weight:700;
+  color:var(--ink);
+  min-width:22px;
+  flex-shrink:0;
+}
+
+/* == PRINT == */
+@media print{
+  html, body{
+    background:white !important;
+    background-image:none !important;
+    display:block !important;
+    padding:0 !important;
+    margin:0 !important;
+    width:100% !important;
+    min-height:auto !important;
+  }
+
+  .panel, .export-bar, .page-head { display:none !important; }
+
+  #worksheet{
+    display:block !important;
+    border:none !important;
+    box-shadow:none !important;
+    max-width:100% !important;
+    width:100% !important;
+    padding:15px 20px !important;
+    margin:0 !important;
+    background:white !important;
+  }
+
+  #cw-table td.white{
+    background:white !important;
+    border:1.5px solid #000 !important;
+    -webkit-print-color-adjust:exact;
+    print-color-adjust:exact;
+  }
+
+  #cw-table td.black{
+    background:#e0ddd5 !important;
+    border:1.5px solid #ccc !important;
+    -webkit-print-color-adjust:exact;
+    print-color-adjust:exact;
+  }
+
+  /* Default print: hide letters, show numbers */
+  .cell-letter{ color:transparent !important; }
+  .cell-num{ color:#000 !important; }
+
+  /* Answer key mode */
+  body.print-answers .cell-letter{
+    color:var(--ink2) !important;
+    -webkit-print-color-adjust:exact;
+    print-color-adjust:exact;
+  }
+
+  .ws-topbar{ border-bottom-color:#000 !important; }
+  .clues-section{ border-top-color:#000 !important; }
+
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+}
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <h1>Krzyzowka -- <em>Worksheet</em></h1>
+  <p>Generator kart pracy -- Pobierz jako PDF lub JPEG</p>
+</div>
+
+<!-- -- EDITOR -- -->
+<div class="panel">
+  <div class="panel-title">Wprowadz slowka i wskazowki <span>1 slowo na linie</span></div>
+
+  <div class="hint">
+    Format: <strong>SLOWO | wskazowka</strong> -- jeden wpis na linie, np.:<br>
+    <strong>APPLE | A red fruit from a tree</strong><br>
+    <strong>BANANA | Yellow, grows in the tropics</strong><br>
+    Separator: pionowa kreska <strong>|</strong> (lub tabulator / dwukropek)
+  </div>
+
+  <textarea id="words-input" placeholder="APPLE | A red fruit from a tree
+BANANA | Yellow, grows in the tropics
+PEAR | A pear-shaped fruit
+RASPBERRY | A small red berry
+GRAPE | Grows in clusters
+MANGO | Tropical, orange flesh
+PLUM | Purple stone fruit"></textarea>
+
+  <div class="input-grid" style="margin-top:14px">
+    <div>
+      <label class="field-label">Tytul krzyzowki</label>
+      <input type="text" id="ws-title" value="Krzyzowka">
+    </div>
+    <div>
+      <label class="field-label">Instrukcja dla ucznia</label>
+      <input type="text" id="ws-instr" value="Rozwiaz krzyzowke korzystajac z podanych wskazowek.">
+    </div>
+  </div>
+
+  <button class="btn btn-gen" onclick="generate()">&#9654; Generuj krzyzowke</button>
+  <div class="msg" id="msg"></div>
+</div>
+
+<!-- -- EXPORT BAR -- -->
+<div class="export-bar" id="export-bar">
+  <button class="btn btn-print" onclick="doPrint()">&#128424; Drukuj (puste kratki)</button>
+  <button class="btn btn-answers" onclick="printAnswers()">&#128065; Drukuj z odpowiedziami</button>
+  <button class="btn btn-pdf" id="btn-pdf" onclick="downloadPDF()">&#11015; Pobierz PDF</button>
+  <button class="btn btn-jpg" id="btn-jpg" onclick="downloadJPEG()">&#128444; Pobierz JPEG</button>
+</div>
+
+<!-- -- WORKSHEET -- -->
+<div id="worksheet">
+  <div class="ws-topbar">
+    <div class="ws-bigtitle" id="ws-title-display">Krzyzowka</div>
+    <div class="ws-meta">
+      <span>Imie i nazwisko: ________________________</span>
+      <span>Klasa: _______________ Data: ____________</span>
+      <span>Wynik: _________ / _________ punktow</span>
+    </div>
+  </div>
+  <p class="ws-instr" id="ws-instr-display"></p>
+
+  <div class="grid-scroll">
+    <table id="cw-table"></table>
+  </div>
+
+  <div class="clues-section">
+    <div>
+      <div class="clue-col-title"><span class="arrow">&#8594;</span> Poziomo (Across)</div>
+      <ul class="clue-list" id="clues-across"></ul>
+    </div>
+    <div>
+      <div class="clue-col-title"><span class="arrow">&#8595;</span> Pionowo (Down)</div>
+      <ul class="clue-list" id="clues-down"></ul>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================
+//  CROSSWORD ENGINE
+// ============================
+
+const GRID_SIZE = 28;
+
+function makeGrid(size){
+  return Array.from({length:size},()=>Array(size).fill(null));
+}
+
+function parseEntries(raw){
+  return raw.split('\n')
+    .map(l => l.trim())
+    .filter(l => l.length > 0)
+    .map(l => {
+      let sep = l.includes('|') ? '|' : l.includes('\t') ? '\t' : ':';
+      let [word, ...rest] = l.split(sep);
+      word = word.trim().toUpperCase().replace(/[^A-Z\u0104\u0106\u0118\u0141\u0143\u00D3\u015A\u0179\u017B]/g,'');
+      let clue = rest.join(sep).trim() || '\u2014';
+      return {word, clue};
+    })
+    .filter(e => e.word.length >= 2);
+}
+
+function canPlace(grid, word, r, c, dir){
+  const dr = dir===1?1:0, dc = dir===0?1:0;
+  const size = grid.length;
+
+  const pr = r - dr, pc = c - dc;
+  if(pr>=0 && pc>=0 && grid[pr][pc] !== null) return -1;
+
+  const er = r + word.length*dr, ec = c + word.length*dc;
+  if(er < size && ec < size && grid[er][ec] !== null) return -1;
+
+  let score = 0;
+  for(let i=0;i<word.length;i++){
+    const nr=r+i*dr, nc=c+i*dc;
+    if(nr<0||nr>=size||nc<0||nc>=size) return -1;
+
+    const existing = grid[nr][nc];
+    if(existing !== null){
+      if(existing !== word[i]) return -1;
+      score++;
+    } else {
+      const side1r = nr + dc, side1c = nc + dr;
+      const side2r = nr - dc, side2c = nc - dr;
+      if(side1r>=0&&side1r<size&&side1c>=0&&side1c<size&&grid[side1r][side1c]!==null) return -1;
+      if(side2r>=0&&side2r<size&&side2c>=0&&side2c<size&&grid[side2r][side2c]!==null) return -1;
+    }
+  }
+  return score;
+}
+
+function doPlace(grid, word, r, c, dir){
+  const dr=dir===1?1:0, dc=dir===0?1:0;
+  for(let i=0;i<word.length;i++) grid[r+i*dr][c+i*dc] = word[i];
+}
+
+function buildCrossword(entries){
+  if(entries.length===0) return null;
+
+  const sorted = [...entries].sort((a,b)=>b.word.length-a.word.length);
+  const size = GRID_SIZE;
+
+  let bestResult = null;
+
+  for(let attempt=0; attempt<8; attempt++){
+    const grid = makeGrid(size);
+    const placed = [];
+
+    const order = attempt === 0 ? [...sorted] : [...sorted].sort(()=>Math.random()-0.5);
+    const center = Math.floor(size/2);
+
+    const fw = order[0].word;
+    const fc = center - Math.floor(fw.length/2);
+    doPlace(grid, fw, center, fc, 0);
+    placed.push({...order[0], r:center, c:fc, dir:0});
+
+    for(let wi=1;wi<order.length;wi++){
+      const {word, clue} = order[wi];
+      let best = null, bestScore = -1;
+
+      for(const p of placed){
+        const otherDir = p.dir===0 ? 1 : 0;
+        const dr = otherDir===1?1:0, dc = otherDir===0?1:0;
+
+        for(let pi=0;pi<p.word.length;pi++){
+          const letter = p.word[pi];
+          for(let wi2=0;wi2<word.length;wi2++){
+            if(word[wi2]!==letter) continue;
+            const pr_val = p.dir===1 ? p.r+pi : p.r;
+            const pc_val = p.dir===0 ? p.c+pi : p.c;
+            const nr = pr_val - wi2*dr;
+            const nc = pc_val - wi2*dc;
+            const sc = canPlace(grid, word, nr, nc, otherDir);
+            if(sc > bestScore){
+              bestScore = sc;
+              best = {word,clue,r:nr,c:nc,dir:otherDir};
+            }
+          }
+        }
+      }
+
+      if(best && bestScore >= 0){
+        doPlace(grid, best.word, best.r, best.c, best.dir);
+        placed.push(best);
+      }
+    }
+
+    if(!bestResult || placed.length > bestResult.placed.length){
+      bestResult = {grid, placed, order};
+    }
+    if(bestResult.placed.length >= entries.length) break;
+  }
+
+  const {grid, placed, order} = bestResult;
+
+  // Crop
+  let minR=size,maxR=0,minC=size,maxC=0;
+  for(let r=0;r<size;r++) for(let c=0;c<size;c++){
+    if(grid[r][c]!==null){
+      minR=Math.min(minR,r); maxR=Math.max(maxR,r);
+      minC=Math.min(minC,c); maxC=Math.max(maxC,c);
+    }
+  }
+  minR=Math.max(0,minR-1); minC=Math.max(0,minC-1);
+  maxR=Math.min(size-1,maxR+1); maxC=Math.min(size-1,maxC+1);
+
+  const rows = maxR-minR+1, cols = maxC-minC+1;
+  const cropped = Array.from({length:rows},(_,r)=>
+    Array.from({length:cols},(_,c)=>grid[minR+r][minC+c])
+  );
+
+  const adjustedPlaced = placed.map(p=>({...p,r:p.r-minR,c:p.c-minC}));
+
+  const numbers = {};
+  let num = 1;
+  const acrossEntries = [];
+  const downEntries   = [];
+
+  for(let r=0;r<rows;r++){
+    for(let c=0;c<cols;c++){
+      if(cropped[r][c]===null) continue;
+      const startsAcross = (c===0||cropped[r][c-1]===null) && c+1<cols && cropped[r][c+1]!==null;
+      const startsDown   = (r===0||cropped[r-1][c]===null) && r+1<rows && cropped[r+1][c]!==null;
+
+      if(startsAcross||startsDown){
+        numbers[r+','+c] = num;
+
+        if(startsAcross){
+          const match = adjustedPlaced.find(p=>p.dir===0&&p.r===r&&p.c===c);
+          if(match) acrossEntries.push({num, clue:match.clue, word:match.word});
+        }
+        if(startsDown){
+          const match = adjustedPlaced.find(p=>p.dir===1&&p.r===r&&p.c===c);
+          if(match) downEntries.push({num, clue:match.clue, word:match.word});
+        }
+        num++;
+      }
+    }
+  }
+
+  const placedWords = adjustedPlaced.map(p=>p.word);
+  const omitted = order.filter(e=>!placedWords.includes(e.word)).map(e=>e.word);
+
+  return {cropped, rows, cols, numbers, acrossEntries, downEntries, adjustedPlaced, omitted};
+}
+
+// ============================
+//  RENDER
+// ============================
+let CW = null;
+
+function adjustCellSize(cols){
+  const maxW = Math.min(760, window.innerWidth-80);
+  const cs = Math.max(24, Math.min(44, Math.floor(maxW/cols)));
+  document.documentElement.style.setProperty('--cell', cs+'px');
+}
+
+function renderGrid(cw){
+  const table = document.getElementById('cw-table');
+  table.innerHTML='';
+  adjustCellSize(cw.cols);
+
+  for(let r=0;r<cw.rows;r++){
+    const tr=document.createElement('tr');
+    for(let c=0;c<cw.cols;c++){
+      const td=document.createElement('td');
+      const letter=cw.cropped[r][c];
+      if(letter===null){
+        td.className='black';
+      } else {
+        td.className='white';
+        const key=r+','+c;
+        if(cw.numbers[key]){
+          const n=document.createElement('div');
+          n.className='cell-num';
+          n.textContent=cw.numbers[key];
+          td.appendChild(n);
+        }
+        const l=document.createElement('div');
+        l.className='cell-letter';
+        l.textContent=letter;
+        td.appendChild(l);
+      }
+      tr.appendChild(td);
+    }
+    table.appendChild(tr);
+  }
+}
+
+function renderClues(cw){
+  const mkLi=(entry)=>{
+    const li=document.createElement('li');
+    const ns=document.createElement('span');
+    ns.className='clue-num';
+    ns.textContent=entry.num+'.';
+    li.appendChild(ns);
+    li.appendChild(document.createTextNode(entry.clue));
+    return li;
+  };
+
+  const ua=document.getElementById('clues-across');
+  ua.innerHTML='';
+  cw.acrossEntries.forEach(e=>ua.appendChild(mkLi(e)));
+
+  const ud=document.getElementById('clues-down');
+  ud.innerHTML='';
+  cw.downEntries.forEach(e=>ud.appendChild(mkLi(e)));
+}
+
+function generate(){
+  const raw = document.getElementById('words-input').value;
+  const entries = parseEntries(raw);
+  const msg = document.getElementById('msg');
+
+  if(entries.length===0){msg.textContent='\u26A0 Wpisz co najmniej jedno slowo z wskazowka!';return;}
+  if(entries.length<3){msg.textContent='\u26A0 Zalecane minimum 3 slowa dla sensownej krzyzowki.';return;}
+
+  const cw = buildCrossword(entries);
+  if(!cw){msg.textContent='\u26A0 Nie udalo sie wygenerowac krzyzowki.';return;}
+  CW = cw;
+
+  renderGrid(cw);
+  renderClues(cw);
+
+  document.getElementById('ws-title-display').textContent = document.getElementById('ws-title').value||'Krzyzowka';
+  document.getElementById('ws-instr-display').textContent = document.getElementById('ws-instr').value;
+
+  document.getElementById('worksheet').style.display='block';
+  document.getElementById('export-bar').style.display='flex';
+
+  if(cw.omitted.length>0)
+    msg.textContent='\u2713 Wygenerowano. Nie udalo sie umiescic: '+cw.omitted.join(', ')+' \u2014 sprobuj krotszych slow lub mniejszej listy.';
+  else
+    msg.textContent='\u2713 Wygenerowano krzyzowke z '+entries.length+' slowami.';
+}
+
+window.addEventListener('resize',()=>{ if(CW) renderGrid(CW); });
+
+// ============================
+//  PRINT
+// ============================
+function doPrint(){
+  const ws = document.getElementById('worksheet');
+  if(!ws || ws.style.display==='none'){
+    alert('Najpierw wygeneruj krzyzowke!');
+    return;
+  }
+  document.body.classList.remove('print-answers');
+  window.print();
+}
+
+function printAnswers(){
+  const ws = document.getElementById('worksheet');
+  if(!ws || ws.style.display==='none'){
+    alert('Najpierw wygeneruj krzyzowke!');
+    return;
+  }
+  document.body.classList.add('print-answers');
+  window.print();
+  setTimeout(()=> document.body.classList.remove('print-answers'), 500);
+}
+
+// ============================
+//  EXPORT PDF / JPEG
+// ============================
+async function captureWorksheet(){
+  const ws = document.getElementById('worksheet');
+  // Temporarily show answers for capture
+  document.querySelectorAll('.cell-letter').forEach(el => el.classList.add('show'));
+
+  const canvas = await html2canvas(ws, {
+    scale: 2,
+    backgroundColor: '#fafaf7',
+    useCORS: true,
+    logging: false,
+    windowWidth: ws.scrollWidth + 80,
+    windowHeight: ws.scrollHeight + 80
+  });
+
+  // Hide answers again
+  document.querySelectorAll('.cell-letter').forEach(el => el.classList.remove('show'));
+
+  return canvas;
+}
+
+async function captureWorksheetEmpty(){
+  const ws = document.getElementById('worksheet');
+  // Make sure answers are hidden
+  document.querySelectorAll('.cell-letter').forEach(el => el.classList.remove('show'));
+
+  const canvas = await html2canvas(ws, {
+    scale: 2,
+    backgroundColor: '#fafaf7',
+    useCORS: true,
+    logging: false,
+    windowWidth: ws.scrollWidth + 80,
+    windowHeight: ws.scrollHeight + 80
+  });
+
+  return canvas;
+}
+
+async function downloadPDF(){
+  const ws = document.getElementById('worksheet');
+  if(!ws || ws.style.display==='none') return;
+
+  const btn = document.getElementById('btn-pdf');
+  btn.disabled = true;
+  btn.textContent = '\u23F3 Generuje PDF...';
+
+  try {
+    const canvas = await captureWorksheetEmpty();
+    const imgData = canvas.toDataURL('image/jpeg', 0.95);
+    const {jsPDF} = window.jspdf;
+
+    const a4w = 210, a4h = 297;
+    const margin = 10;
+    const usableW = a4w - 2*margin;
+    const usableH = a4h - 2*margin;
+    const ratio = canvas.width / canvas.height;
+    let imgW, imgH;
+    if(ratio > usableW / usableH){
+      imgW = usableW;
+      imgH = usableW / ratio;
+    } else {
+      imgH = usableH;
+      imgW = usableH * ratio;
+    }
+
+    const pdf = new jsPDF({orientation:'portrait', unit:'mm', format:'a4'});
+    const x = (a4w - imgW) / 2;
+    const y = margin;
+    pdf.addImage(imgData, 'JPEG', x, y, imgW, imgH);
+    const title = (document.getElementById('ws-title').value||'krzyzowka').replace(/\s+/g,'_');
+    pdf.save(title+'.pdf');
+  } catch(e) {
+    alert('Blad przy generowaniu PDF: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '\u2B07 Pobierz PDF';
+  }
+}
+
+async function downloadJPEG(){
+  const ws = document.getElementById('worksheet');
+  if(!ws || ws.style.display==='none') return;
+
+  const btn = document.getElementById('btn-jpg');
+  btn.disabled = true;
+  btn.textContent = '\u23F3 Generuje JPEG...';
+
+  try {
+    const canvas = await captureWorksheetEmpty();
+    const link = document.createElement('a');
+    link.download = (document.getElementById('ws-title').value||'krzyzowka').replace(/\s+/g,'_')+'.jpg';
+    link.href = canvas.toDataURL('image/jpeg', 0.95);
+    link.click();
+  } catch(e) {
+    alert('Blad przy generowaniu JPEG: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '\uD83D\uDDBC Pobierz JPEG';
+  }
+}
+</script>
+</body>
+</html>
