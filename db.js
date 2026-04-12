@@ -706,6 +706,12 @@ const DB = (() => {
     }
   }
 
+  async function adminDeleteUser(userId) {
+    if (!_profile?.isAdmin) throw new Error('Brak uprawnień');
+    const { error } = await supabase.rpc('admin_delete_user', { target_user_id: userId });
+    if (error) throw new Error(error.message);
+  }
+
   function getUserId() { return _userId; }
 
   // ─── PUBLICZNE API ───────────────────────────────────────────
@@ -760,6 +766,7 @@ const DB = (() => {
     getUserBooks,
     adminLoadUserBooks,
     adminSetUserBooks,
+    adminDeleteUser,
     // admin — klasy
     loadAllProfiles,
     loadUserProgress,

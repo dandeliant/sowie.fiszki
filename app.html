@@ -4205,7 +4205,12 @@ function renderAccessUserList() {
         <div style="font-size:.88rem;font-weight:700;color:var(--text)">${esc(u.username)}</div>
         <div style="font-size:.65rem;color:var(--muted)">Poz. ${u.level || 1} · ${u.total_sessions || 0} sesji</div>
       </div>
-      <div style="font-size:.72rem;font-weight:700;color:var(--accent2)">📋 Zarządzaj →</div>`;
+      <div style="display:flex;gap:8px;align-items:center">
+        <div style="font-size:.72rem;font-weight:700;color:var(--accent2)" class="access-manage-btn">📋 Zarządzaj</div>
+        <div style="font-size:.72rem;font-weight:700;color:var(--danger);padding:4px 8px;border-radius:8px;border:1px solid rgba(255,118,117,.3)" class="access-delete-btn">🗑️</div>
+      </div>`;
+    card.querySelector('.access-manage-btn').addEventListener('click', (e) => { e.stopPropagation(); openAccessDetail(u.id, u.username); });
+    card.querySelector('.access-delete-btn').addEventListener('click', (e) => { e.stopPropagation(); confirmDeleteUser(u.id, u.username); });
     card.addEventListener('click', () => openAccessDetail(u.id, u.username));
     card.addEventListener('mouseenter', () => card.style.borderColor = 'var(--accent)');
     card.addEventListener('mouseleave', () => card.style.borderColor = 'var(--border)');
@@ -4259,6 +4264,19 @@ async function saveUserAccess() {
     toast('❌ Błąd: ' + e.message, 3000);
   } finally {
     btn.disabled = false; btn.textContent = '💾 Zapisz';
+  }
+}
+
+async function confirmDeleteUser(userId, username) {
+  if (!confirm('⚠️ Czy na pewno chcesz TRWALE usunąć użytkownika „' + username + '"?\n\nTo usunie:\n• Konto i profil\n• Wszystkie postępy nauki\n• Przypisania do klas i podręczników\n\nTej operacji NIE MOŻNA cofnąć!')) return;
+  if (!confirm('🔴 OSTATNIE OSTRZEŻENIE\n\nUsuwasz użytkownika: ' + username + '\n\nKliknij OK aby potwierdzić usunięcie.')) return;
+  try {
+    await DB.adminDeleteUser(userId);
+    _allProfiles = _allProfiles.filter(p => p.id !== userId);
+    toast('✅ Użytkownik „' + username + '" został usunięty.');
+    renderAccessUserList();
+  } catch(e) {
+    toast('❌ Błąd: ' + e.message, 3000);
   }
 }
 
