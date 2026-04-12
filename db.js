@@ -23,6 +23,7 @@ const DB = (() => {
   let _adminWords     = [];     // globalne słówka/edycje admina
   let _adminBooks     = [];     // podręczniki dodane przez admina
   let _adminUnits     = [];     // rozdziały dodane przez admina
+  let _myBooks        = null;   // null=brak ograniczeń, [bookId,...]=dozwolone podręczniki
 
   // ─── Domyślny profil ─────────────────────────────────────────
   function emptyProfile(username) {
@@ -122,6 +123,15 @@ const DB = (() => {
     if (profRes.error) throw profRes.error;
 
     _profile = _rowToProfile(profRes.data, unitRes.data || []);
+
+    // Załaduj przypisane podręczniki (user_books)
+    if (!_profile.isAdmin) {
+      const { data: ubData } = await supabase
+        .from('user_books').select('book_id').eq('user_id', _userId);
+      _myBooks = (ubData && ubData.length > 0) ? ubData.map(r => r.book_id) : null;
+    } else {
+      _myBooks = null; // admin widzi wszystko
+    }
 
     // Jeśli admin — załaduj też prośby
     if (_profile.isAdmin) {
@@ -670,6 +680,32 @@ const DB = (() => {
     if (error) throw new Error(error.message);
   }
 
+  // ── Admin: Zarządzanie dostępem do podręczników ──────────────
+
+  function getUserBooks() { return _myBooks; }
+
+  async function adminLoadUserBooks(userId) {
+    if (!_profile?.isAdmin) return [];
+    const { data, error } = await supabase
+      .from('user_books').select('book_id').eq('user_id', userId);
+    if (error) throw new Error(error.message);
+    return (data || []).map(r => r.book_id);
+  }
+
+  async function adminSetUserBooks(userId, bookIds) {
+    if (!_profile?.isAdmin) throw new Error('Brak uprawnień');
+    // Usuń stare wpisy
+    const { error: delErr } = await supabase
+      .from('user_books').delete().eq('user_id', userId);
+    if (delErr) throw new Error(delErr.message);
+    // Dodaj nowe
+    if (bookIds.length > 0) {
+      const rows = bookIds.map(bid => ({ user_id: userId, book_id: bid }));
+      const { error: insErr } = await supabase.from('user_books').insert(rows);
+      if (insErr) throw new Error(insErr.message);
+    }
+  }
+
   function getUserId() { return _userId; }
 
   // ─── PUBLICZNE API ───────────────────────────────────────────
@@ -720,6 +756,10 @@ const DB = (() => {
     adminDeleteWord,
     adminAddBook,
     adminAddUnit,
+    // admin — dostęp do podręczników
+    getUserBooks,
+    adminLoadUserBooks,
+    adminSetUserBooks,
     // admin — klasy
     loadAllProfiles,
     loadUserProgress,
