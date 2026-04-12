@@ -242,6 +242,16 @@ header{width:100%;display:flex;align-items:flex-start;justify-content:space-betw
 
 /* ── SPEED MODE (w nauce) ── */
 .speed-area{width:100%;margin-bottom:14px;display:none;}
+/* Match / Paruj */
+.match-area{width:100%;margin-bottom:14px;display:none;}
+.match-cols{display:flex;gap:14px;justify-content:center;margin-top:12px;}
+.match-col{display:flex;flex-direction:column;gap:8px;flex:1;max-width:180px;}
+.match-item{background:var(--surface2);border:2px solid var(--border);border-radius:12px;padding:11px 10px;text-align:center;font-size:.82rem;font-weight:700;color:var(--text);cursor:pointer;transition:all .2s;user-select:none;}
+.match-item:hover{border-color:var(--accent);background:rgba(255,209,102,.08);}
+.match-item.sel{border-color:var(--accent);background:rgba(255,209,102,.15);box-shadow:0 0 8px rgba(255,209,102,.25);}
+.match-item.matched{border-color:var(--accent2);background:rgba(6,214,160,.15);color:var(--accent2);opacity:.65;pointer-events:none;}
+.match-item.wrong-flash{animation:matchWrong .5s ease;border-color:var(--danger)!important;background:rgba(255,118,117,.15)!important;}
+@keyframes matchWrong{0%{transform:translateX(0)}20%{transform:translateX(-6px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(4px)}100%{transform:translateX(0)}}
 .speed-study-timer{margin-bottom:10px;}
 .speed-study-score{text-align:center;font-size:.78rem;color:var(--muted);font-weight:700;margin-bottom:5px;}
 .speed-study-score strong{color:#ffb347;}
@@ -760,6 +770,7 @@ szkoła	school"></textarea>
     <button class="mode-btn" onclick="setMode('missing')" id="mMissing">🔤 Litery</button>
     <button class="mode-btn" onclick="setMode('dictate')" id="mDictate">🎧 Dyktando</button>
     <button class="mode-btn" onclick="setMode('tf')" id="mTF">✅ Pr./Fał.</button>
+    <button class="mode-btn" onclick="setMode('match')" id="mMatch">🧩 Paruj</button>
     <button class="mode-btn speed-mode" onclick="setMode('speed')" id="mSpeed">⚡ Speed</button>
   </div>
   <div class="stats">
@@ -889,6 +900,16 @@ szkoła	school"></textarea>
       <button class="btn-tf btn-tf-false" onclick="checkTF(false)">❌ Fałsz</button>
     </div>
     <div class="type-result" id="tfRes" style="margin-top:10px"></div>
+  </div>
+
+  <!-- Match / Paruj mode -->
+  <div class="match-area" id="matchArea">
+    <div class="q-label" id="matchLabel">🧩 Dopasuj pary</div>
+    <div class="match-cols">
+      <div class="match-col" id="matchPl"></div>
+      <div class="match-col" id="matchFr"></div>
+    </div>
+    <div id="matchDone" style="display:none;text-align:center;padding:12px;font-weight:700;color:var(--accent2);font-size:.9rem">✅ Wszystkie pary dopasowane!</div>
   </div>
 
   <!-- Speed Challenge mode (7. tryb) -->
@@ -1932,6 +1953,10 @@ function renderCard() {
     document.getElementById('dictSpeak').style.display = 'none';
     setTimeout(() => { playDictation(); inp.focus(); }, 300);
 
+  } else if (mode === 'match') {
+    const ma = document.getElementById('matchArea'); ma.style.display = 'block'; reAnim(ma);
+    buildMatchMode();
+
   } else if (mode === 'speed') {
     renderSpeedCard();
 
@@ -1976,7 +2001,7 @@ function buildMasked(word) {
 
 function reAnim(el) { el.style.animation = 'none'; el.offsetHeight; el.style.animation = ''; }
 function hideAreas() {
-  ['cardScene','quizArea','typeArea','missingArea','dictateArea','tfArea','speedArea','sentencePanel']
+  ['cardScene','quizArea','typeArea','missingArea','dictateArea','tfArea','matchArea','speedArea','sentencePanel']
     .forEach(id => { const e = document.getElementById(id); if(e) e.style.display = 'none'; });
 }
 
@@ -2295,7 +2320,7 @@ function setMode(m) {
   clearInterval(studySpeedTimer); // zatrzymaj timer speed jeśli był aktywny
   mode = m;
   document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
-  const modeMap = {card:'mCard',quiz:'mQuiz',type:'mType',missing:'mMissing',dictate:'mDictate',tf:'mTF',speed:'mSpeed'};
+  const modeMap = {card:'mCard',quiz:'mQuiz',type:'mType',missing:'mMissing',dictate:'mDictate',tf:'mTF',match:'mMatch',speed:'mSpeed'};
   document.getElementById(modeMap[m]).classList.add('active');
   document.getElementById('livesBar').classList.toggle('visible', m === 'quiz');
   hideAreas(); revealed = false; hideDiff();
@@ -2307,6 +2332,7 @@ function setMode(m) {
     else if (m === 'missing') document.getElementById('missingArea').style.display = 'block';
     else if (m === 'dictate') document.getElementById('dictateArea').style.display = 'block';
     else if (m === 'tf') document.getElementById('tfArea').style.display = 'block';
+    else if (m === 'match') document.getElementById('matchArea').style.display = 'block';
     else if (m === 'speed') document.getElementById('speedArea').style.display = 'block';
   }
 }
@@ -3503,6 +3529,115 @@ function cwPrint() {
       document.body.classList.remove('cw-print');
     }, 500);
   }, 80);
+}
+
+// ══════════════════════════════════════════════
+//  MATCH / PARUJ MODE
+// ══════════════════════════════════════════════
+let inlineMatchPairs = [];
+let inlineMatchAct = {pl: null, fr: null};
+let inlineMatchDone = 0;
+
+function buildMatchMode() {
+  if (curIdx === null) return;
+  const q = getQ(curIdx), a = getA(curIdx);
+  document.getElementById('matchLabel').textContent = '🧩 Dopasuj pary — ' + getQLabel() + ' ↔ ' + getALabel();
+  document.getElementById('matchDone').style.display = 'none';
+
+  // Current word + up to 3 random others
+  const others = shuffle(activeWords.filter((_, i) => i !== curIdx)).slice(0, Math.min(3, activeWords.length - 1));
+  const pairData = [{idx: curIdx, pl: q, fr: a}];
+  others.forEach((w, i) => {
+    const oi = activeWords.indexOf(w);
+    pairData.push({idx: oi >= 0 ? oi : -(i+1), pl: getQ(activeWords.indexOf(w) >= 0 ? activeWords.indexOf(w) : curIdx), fr: getA(activeWords.indexOf(w) >= 0 ? activeWords.indexOf(w) : curIdx)});
+  });
+  // Rebuild with correct indices
+  const pairs = [{idx: 0, pl: q, fr: a}];
+  others.forEach((w, i) => {
+    const idx = activeWords.indexOf(w);
+    if (idx >= 0) pairs.push({idx: idx, pl: getQ(idx), fr: getA(idx)});
+  });
+
+  inlineMatchPairs = pairs.map(p => ({id: p.idx, pl: p.pl, fr: p.fr, done: false}));
+  inlineMatchAct = {pl: null, fr: null};
+  inlineMatchDone = 0;
+
+  const plC = document.getElementById('matchPl');
+  const frC = document.getElementById('matchFr');
+  plC.innerHTML = '';
+  frC.innerHTML = '';
+
+  const shuffledPl = shuffle([...inlineMatchPairs]);
+  const shuffledFr = shuffle([...inlineMatchPairs]);
+
+  shuffledPl.forEach(p => {
+    const d = document.createElement('div');
+    d.className = 'match-item';
+    d.textContent = p.pl;
+    d.dataset.id = p.id;
+    d.dataset.s = 'pl';
+    d.addEventListener('click', () => matchClick(d));
+    plC.appendChild(d);
+  });
+
+  shuffledFr.forEach(p => {
+    const d = document.createElement('div');
+    d.className = 'match-item';
+    d.textContent = p.fr;
+    d.dataset.id = p.id;
+    d.dataset.s = 'fr';
+    d.addEventListener('click', () => matchClick(d));
+    frC.appendChild(d);
+  });
+}
+
+function matchClick(d) {
+  if (d.classList.contains('matched')) return;
+
+  if (d.dataset.s === 'pl') {
+    if (inlineMatchAct.pl) inlineMatchAct.pl.classList.remove('sel');
+    inlineMatchAct.pl = d;
+    d.classList.add('sel');
+  } else {
+    if (inlineMatchAct.fr) inlineMatchAct.fr.classList.remove('sel');
+    inlineMatchAct.fr = d;
+    d.classList.add('sel');
+  }
+
+  if (inlineMatchAct.pl && inlineMatchAct.fr) {
+    if (inlineMatchAct.pl.dataset.id === inlineMatchAct.fr.dataset.id) {
+      // Correct match
+      [inlineMatchAct.pl, inlineMatchAct.fr].forEach(x => {
+        x.classList.remove('sel');
+        x.classList.add('matched');
+      });
+      inlineMatchDone++;
+      playOk();
+      particles(true);
+      setOwl('happy');
+      owlSay(OE[~~(Math.random() * OE.length)]);
+      setTimeout(() => setOwl(''), 1200);
+
+      if (inlineMatchDone >= inlineMatchPairs.length) {
+        document.getElementById('matchDone').style.display = 'block';
+        revealed = true;
+        showDiff();
+      }
+    } else {
+      // Wrong match
+      [inlineMatchAct.pl, inlineMatchAct.fr].forEach(x => x.classList.add('wrong-flash'));
+      playBad();
+      setOwl('sad');
+      owlSay(OH[~~(Math.random() * OH.length)]);
+      setTimeout(() => {
+        [inlineMatchAct.pl, inlineMatchAct.fr].forEach(x => {
+          x.classList.remove('sel', 'wrong-flash');
+        });
+        setOwl('');
+      }, 620);
+    }
+    inlineMatchAct = {pl: null, fr: null};
+  }
 }
 
 // ─── Crossword Download PDF ──────────────────
