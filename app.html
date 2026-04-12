@@ -252,6 +252,20 @@ header{width:100%;display:flex;align-items:flex-start;justify-content:space-betw
 .match-item.matched{border-color:var(--accent2);background:rgba(6,214,160,.15);color:var(--accent2);opacity:.65;pointer-events:none;}
 .match-item.wrong-flash{animation:matchWrong .5s ease;border-color:var(--danger)!important;background:rgba(255,118,117,.15)!important;}
 @keyframes matchWrong{0%{transform:translateX(0)}20%{transform:translateX(-6px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(4px)}100%{transform:translateX(0)}}
+/* Gap fill / Uzupełnij lukę */
+/* Memory game */
+.mem-grid{display:grid;gap:6px;justify-content:center;margin:12px 0;}
+.mem-card{aspect-ratio:1;border-radius:10px;background:var(--surface2);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;text-align:center;font-size:.72rem;font-weight:700;color:var(--text);cursor:pointer;transition:all .25s;padding:4px;word-break:break-word;line-height:1.15;user-select:none;}
+.mem-card.hidden{background:var(--surface);color:transparent;border-color:var(--border);}
+.mem-card.hidden::after{content:'❓';font-size:1.3rem;color:var(--muted);}
+.mem-card.revealed{border-color:var(--accent);background:rgba(255,209,102,.1);}
+.mem-card.matched{border-color:var(--accent2);background:rgba(6,214,160,.12);opacity:.6;pointer-events:none;color:var(--accent2);}
+.mem-card.wrong{border-color:var(--danger);background:rgba(255,118,117,.12);}
+.gap-area{width:100%;margin-bottom:14px;display:none;}
+.gap-sentence{font-size:1rem;font-weight:600;color:var(--text);line-height:1.5;padding:14px 16px;background:var(--surface);border:1px solid var(--border);border-radius:12px;margin-bottom:10px;text-align:center;}
+.gap-sentence .gap-blank{display:inline-block;min-width:60px;border-bottom:2.5px solid var(--accent);margin:0 4px;color:var(--accent);font-weight:800;}
+.gap-hint{font-size:.78rem;color:var(--muted);font-weight:600;text-align:center;margin-bottom:10px;font-style:italic;}
+.gap-no-sentence{font-size:.82rem;color:var(--muted);font-weight:600;text-align:center;padding:20px;background:var(--surface);border-radius:12px;border:1px dashed var(--border);}
 .speed-study-timer{margin-bottom:10px;}
 .speed-study-score{text-align:center;font-size:.78rem;color:var(--muted);font-weight:700;margin-bottom:5px;}
 .speed-study-score strong{color:#ffb347;}
@@ -693,9 +707,69 @@ body.guest-mode .progress-wrap{opacity:.4;}
     <span class="cw-row-label" style="color:var(--accent2)">🔍 Wordsearch:</span>
     <div class="cw-row-btns" id="wsRowBtns"></div>
   </div>
+  <div class="cw-row" id="memRow" style="border-color:rgba(255,107,157,.18);">
+    <span class="cw-row-label" style="color:var(--pink)">🧠 Memory:</span>
+    <div class="cw-row-btns" id="memRowBtns"></div>
+  </div>
   <div class="unit-btns">
+    <button class="btn-sm" onclick="showMyProgress()">📊 Moje postępy</button>
     <button class="btn-sm" onclick="showScreen('sBooks')">← Zmień podręcznik</button>
     <button class="btn-sm accent" onclick="startSpeed()">⚡ Speed Challenge</button>
+    <button class="btn-sm accent" onclick="startDailyQuiz()" style="background:var(--accent2);border-color:rgba(6,214,160,.35)">📊 Codzienny test</button>
+  </div>
+</div>
+
+<!-- ══ SCREEN: MEMORY ══ -->
+<div class="screen" id="sMemory">
+  <div style="width:100%">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;gap:8px;flex-wrap:wrap">
+      <div>
+        <div style="font-family:'Playfair Display',serif;font-size:1.4rem;color:var(--pink)" id="memTitle">🧠 Memory</div>
+        <div style="font-size:.72rem;color:var(--muted);font-weight:600" id="memStatus"></div>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <span style="font-size:.78rem;font-weight:800;color:var(--accent)" id="memMoves">Ruchy: 0</span>
+        <button class="btn-sm" onclick="memNewGame()">🔄 Nowa</button>
+        <button class="btn-sm" onclick="showScreen('sUnits')">← Wróć</button>
+      </div>
+    </div>
+    <div class="mem-grid" id="memGrid"></div>
+    <div id="memDone" style="display:none;text-align:center;padding:18px;font-weight:700;color:var(--accent2);font-size:1rem">🎉 Znalazłeś wszystkie pary!</div>
+  </div>
+</div>
+
+<!-- ══ SCREEN: DAILY QUIZ ══ -->
+<div class="screen" id="sDailyQuiz">
+  <div style="width:100%">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+      <div>
+        <div style="font-family:'Playfair Display',serif;font-size:1.3rem;color:var(--accent2)">📊 Codzienny test</div>
+        <div style="font-size:.72rem;color:var(--muted);font-weight:600" id="dqProgress">Pytanie 1 / 15</div>
+      </div>
+      <button class="btn-sm" onclick="showScreen('sUnits')">✕ Zakończ</button>
+    </div>
+    <div class="quiz-question">
+      <div class="q-label" id="dqLabel">Przetłumacz na angielski</div>
+      <div class="q-word" id="dqWord">—</div>
+    </div>
+    <div class="quiz-options" id="dqOpts"></div>
+    <div class="type-result" id="dqRes" style="margin-top:8px"></div>
+  </div>
+</div>
+
+<!-- ══ SCREEN: DAILY QUIZ RESULT ══ -->
+<div class="screen" id="sDailyResult">
+  <div style="width:100%;text-align:center">
+    <div style="font-size:3rem;margin-bottom:8px" id="drEmoji">🏆</div>
+    <div style="font-family:'Playfair Display',serif;font-size:1.6rem;color:var(--accent);margin-bottom:6px">Wynik testu</div>
+    <div style="font-size:2.2rem;font-weight:900;color:var(--text);margin-bottom:4px" id="drScore">12 / 15</div>
+    <div style="font-size:1rem;font-weight:700;margin-bottom:16px" id="drPct" style="color:var(--accent2)">80%</div>
+    <div style="font-size:.78rem;color:var(--muted);font-weight:600;margin-bottom:16px" id="drPrev"></div>
+    <div id="drMissed" style="text-align:left;margin-bottom:16px"></div>
+    <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+      <button class="btn-g" onclick="startDailyQuiz()">🔄 Spróbuj ponownie</button>
+      <button class="btn-n" onclick="showScreen('sUnits')">← Wróć</button>
+    </div>
   </div>
 </div>
 
@@ -773,6 +847,7 @@ szkoła	school"></textarea>
     <button class="mode-btn" onclick="setMode('missing')" id="mMissing">🔤 Litery</button>
     <button class="mode-btn" onclick="setMode('dictate')" id="mDictate">🎧 Dyktando</button>
     <button class="mode-btn" onclick="setMode('tf')" id="mTF">✅ Pr./Fał.</button>
+    <button class="mode-btn" onclick="setMode('gap')" id="mGap">📝 Luka</button>
     <button class="mode-btn" onclick="setMode('match')" id="mMatch">🧩 Paruj</button>
     <button class="mode-btn speed-mode" onclick="setMode('speed')" id="mSpeed">⚡ Speed</button>
   </div>
@@ -903,6 +978,17 @@ szkoła	school"></textarea>
       <button class="btn-tf btn-tf-false" onclick="checkTF(false)">❌ Fałsz</button>
     </div>
     <div class="type-result" id="tfRes" style="margin-top:10px"></div>
+  </div>
+
+  <!-- Gap fill / Uzupełnij lukę -->
+  <div class="gap-area" id="gapArea">
+    <div class="gap-hint" id="gapHint"></div>
+    <div class="gap-sentence" id="gapSentence"></div>
+    <div class="type-row" style="margin-top:10px">
+      <input type="text" class="type-input" id="gapInp" placeholder="Wpisz brakujące słowo…" autocomplete="off" autocorrect="off" spellcheck="false">
+      <button class="btn-sm accent" id="btnGapChk" onclick="checkGap()">Sprawdź</button>
+    </div>
+    <div class="type-result" id="gapRes" style="margin-top:8px"></div>
   </div>
 
   <!-- Match / Paruj mode -->
@@ -1230,7 +1316,10 @@ szkoła	school"></textarea>
         <div style="font-family:'Playfair Display',serif;font-size:1.4rem;color:var(--accent)" id="studProgTitle">Postęp ucznia</div>
         <div style="font-size:.72rem;color:var(--muted);font-weight:600;margin-top:2px" id="studProgSub"></div>
       </div>
-      <button class="btn-sm" onclick="showScreen('sClassDetail')">← Klasa</button>
+      <div style="display:flex;gap:6px">
+        <button class="btn-sm accent" onclick="printStudentReport()">🖨️ Raport</button>
+        <button class="btn-sm" onclick="showScreen('sClassDetail')">← Klasa</button>
+      </div>
     </div>
     <div id="studProgStats" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;width:100%"></div>
     <div id="studProgUnits" style="width:100%"></div>
@@ -1398,6 +1487,15 @@ const ACHIEVES = [
   {id:'tiger3_done',   icon:'🐯', name:'Mistrz Tiger 3', desc:'Opanowano cały Tiger 3'},
   {id:'custom_word',   icon:'✏️', name:'Własne słówko',  desc:'Dodano własne słówko'},
   {id:'unit_done',     icon:'📚', name:'Unit zaliczony', desc:'Opanowano cały unit'},
+  {id:'streak_30',     icon:'🔥', name:'Miesiąc ognia!', desc:'30 dni nauki z rzędu!'},
+  {id:'words_100',     icon:'📖', name:'100 słów',       desc:'Opanowano 100 słówek'},
+  {id:'words_250',     icon:'📖', name:'250 słów',       desc:'Opanowano 250 słówek'},
+  {id:'words_500',     icon:'📖', name:'500 słów!',      desc:'Opanowano 500 słówek — pół tysiąca!'},
+  {id:'perfect_quiz',  icon:'💯', name:'Perfekcyjny quiz',desc:'Codzienny test na 100%'},
+  {id:'answers_1000',  icon:'💫', name:'1000 odpowiedzi',desc:'Tysiąc odpowiedzi!'},
+  {id:'xp_2500',       icon:'👑', name:'2500 XP',        desc:'Zdobyto 2500 XP — korona zasłużona!'},
+  {id:'xp_5000',       icon:'🏆', name:'5000 XP',        desc:'5000 XP — legenda!'},
+  {id:'memory_win',    icon:'🧠', name:'Mistrz Memory',  desc:'Ukończono grę Memory'},
 ];
 
 // ══════════════════════════════════════════════
@@ -1535,6 +1633,20 @@ function refreshGrid() {
   const prog = DB.getBookProgress(currentUser, book);
   const g = document.getElementById('unitGrid');
   g.innerHTML = '';
+  // Kafelek "Powtórka błędów" — zbiera trudne słowa ze wszystkich unitów
+  const hardWords = collectHardWords(currentBookId);
+  if (hardWords.length > 0) {
+    const hd = document.createElement('div');
+    hd.className = 'unit-card all-units';
+    hd.style.borderColor = 'rgba(255,118,117,.4)';
+    hd.innerHTML = `<div class="unit-icon">💪</div>
+      <div class="unit-name">Powtórka błędów</div>
+      <div class="unit-count" style="color:var(--danger)">${hardWords.length} trudnych słówek</div>
+      <div class="unit-progress-bar"><div class="unit-progress-fill" style="width:100%;background:var(--danger)"></div></div>`;
+    hd.addEventListener('click', () => startHardWordsSession(hardWords));
+    g.appendChild(hd);
+  }
+
   const keys = [...Object.keys(book.units), 'all'];
   keys.forEach(k => {
     const u = units[k];
@@ -1583,6 +1695,19 @@ function refreshGrid() {
     btn.addEventListener('click', () => openWordsearch(k));
     wsBtns.appendChild(btn);
   });
+
+  // Memory buttons row — one per unit (not "all")
+  const memBtns = document.getElementById('memRowBtns');
+  memBtns.innerHTML = '';
+  Object.keys(book.units).forEach(k => {
+    const u = units[k];
+    const btn = document.createElement('button');
+    btn.className = 'btn-cw';
+    btn.style.cssText = 'border-color:rgba(255,107,157,.3);color:var(--pink);';
+    btn.textContent = u.icon + ' ' + u.name;
+    btn.addEventListener('click', () => openMemory(k));
+    memBtns.appendChild(btn);
+  });
 }
 
 // ══════════════════════════════════════════════
@@ -1601,6 +1726,29 @@ function getDiffDot(bId, uKey, wordIdx) {
 }
 
 let wlSelectedIndices = new Set(); // globalny zestaw zaznaczonych indeksów
+
+// ─── Emoji przy słówkach ──────────────────────
+function getEmojiStore() {
+  try { return JSON.parse(localStorage.getItem('fiszki_emoji_' + currentBookId) || '{}'); } catch { return {}; }
+}
+function saveEmojiStore(store) {
+  localStorage.setItem('fiszki_emoji_' + currentBookId, JSON.stringify(store));
+}
+function getWordEmoji(pl) {
+  const store = getEmojiStore();
+  const em = store[pl];
+  return em ? '<span style="margin-right:4px">' + em + '</span>' : '';
+}
+function setWordEmoji(pl) {
+  const current = getEmojiStore()[pl] || '';
+  const emoji = prompt('Wpisz emoji dla "' + pl + '" (puste = usuń):', current);
+  if (emoji === null) return; // anulowano
+  const store = getEmojiStore();
+  if (emoji.trim()) store[pl] = emoji.trim();
+  else delete store[pl];
+  saveEmojiStore(store);
+  openWordList(currentUnitKey); // odśwież
+}
 
 function openWordList(key) {
   currentUnitKey = key;
@@ -1622,13 +1770,14 @@ function openWordList(key) {
     const tr = document.createElement('tr');
     const adminCells = isAdmin && key !== 'all'
       ? `<td class="td-admin">
+           <button class="btn-row-emoji" title="Emoji">😀</button>
            <button class="btn-row-edit" title="Edytuj">✏️</button>
            <button class="btn-row-del" title="Usuń">🗑️</button>
          </td>`
       : (isAdmin ? '<td></td>' : '');
     tr.innerHTML = `<td class="td-cb"><input type="checkbox" class="wl-cb row-cb" data-idx="${i}"></td>
       <td class="td-nr">${i + 1}</td>
-      <td class="td-pl">${esc(pl)}</td>
+      <td class="td-pl">${getWordEmoji(pl)}${esc(pl)}</td>
       <td class="td-sp"><button class="btn-speak-sm">🔊</button></td>
       <td class="td-en">${esc(en)}</td>
       <td class="td-sp"><button class="btn-speak-sm">🔊</button></td>
@@ -1649,6 +1798,7 @@ function openWordList(key) {
     tr.querySelectorAll('.btn-speak-sm')[0].addEventListener('click', () => spkPl(pl));
     tr.querySelectorAll('.btn-speak-sm')[1].addEventListener('click', () => speakTxt(en));
     if (isAdmin && key !== 'all') {
+      tr.querySelector('.btn-row-emoji').addEventListener('click', () => setWordEmoji(pl));
       tr.querySelector('.btn-row-edit').addEventListener('click', () => openAdminEditWord(pl, en));
       tr.querySelector('.btn-row-del').addEventListener('click', () => adminDeleteWordConfirm(pl, en));
     }
@@ -1921,6 +2071,64 @@ function startStudy(key, forcedPool = null) {
 
 function restartUnit() { startStudy(currentUnitKey); }
 
+// ─── Powtórka błędów ─────────────────────────
+function collectHardWords(bookId) {
+  const book = BOOKS[bookId];
+  if (!book) return [];
+  const hard = [];
+  Object.keys(book.units).forEach(uk => {
+    const saved = DB.getUnitProgress(currentUser, bookId, uk);
+    if (!saved || !saved.wordStates) return;
+    const words = book.units[uk].words;
+    Object.entries(saved.wordStates).forEach(([idx, st]) => {
+      const i = parseInt(idx);
+      if (i >= words.length) return;
+      // Trudne: errCount > 0, lastError=true, lub niska ef (<2.0)
+      if (st.errCount > 0 || st.lastError || (st.ef && st.ef < 2.0)) {
+        hard.push(words[i]);
+      }
+    });
+  });
+  // Deduplikacja po [pl, en]
+  const seen = new Set();
+  return hard.filter(w => {
+    const key = w[0] + '|' + w[1];
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function startHardWordsSession(hardWords) {
+  if (!hardWords.length) { toast('Brak trudnych słówek! 🎉'); return; }
+  currentUnitKey = '__hard__';
+  activeWords = shuffle([...hardWords]);
+  activeAllWords = getBookAllWordsCustom(currentBookId);
+  pool = activeWords.map((_, i) => i);
+  ws = {};
+  activeWords.forEach((_, i) => {
+    ws[i] = {ef: 2.5, reps: 0, interval: 1, nextReview: 0, known: false, errCount: 0, lastError: false, dueIn: 0};
+  });
+  clearInterval(studySpeedTimer);
+  curIdx = null; revealed = false; flipped = false; active = false;
+  lives = 3; tokens = []; streak = 0; sessXP = 0;
+  missedInSession = []; sessErrorCount = 0; studySpeedSessionScore = 0;
+  document.getElementById('unitBadge').textContent = '💪 Powtórka błędów';
+  document.getElementById('rShelf').innerHTML = '';
+  document.getElementById('rCount').style.display = 'none';
+  document.getElementById('livesBar').classList.remove('visible');
+  document.getElementById('gameoverBar').style.display = 'none';
+  document.getElementById('btnGen').disabled = false;
+  hideDiff();
+  mode = 'card';
+  document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('mCard').classList.add('active');
+  showScreen('sStudy');
+  hideAreas(); document.getElementById('cardScene').style.display = '';
+  updateDirUI();
+  setTimeout(() => { setOwl('think'); owlSay('Powtórzmy trudne słówka! 💪'); }, 250);
+}
+
 function startReviewSession() {
   if (!missedInSession.length) return;
   // Kopia słówek błędnych
@@ -2032,14 +2240,16 @@ function renderCard() {
       document.getElementById('btnSpeakPl').style.display = 'none';
       sc.classList.remove('flipped');
       setTimeout(() => {
-        document.getElementById('wPl').textContent = q;
+        const em = getEmojiStore()[activeWords[curIdx][0]] || '';
+        document.getElementById('wPl').textContent = (em ? em + ' ' : '') + q;
         document.getElementById('wEn').textContent = a;
         document.getElementById('btnSpeakPl').style.display = '';
         reAnim(sc);
       }, 680);
     } else {
       sc.classList.remove('flipped'); reAnim(sc);
-      document.getElementById('wPl').textContent = q;
+      const em = getEmojiStore()[activeWords[curIdx][0]] || '';
+      document.getElementById('wPl').textContent = (em ? em + ' ' : '') + q;
       document.getElementById('wEn').textContent = a;
       document.getElementById('btnSpeakPl').style.display = '';
     }
@@ -2085,6 +2295,10 @@ function renderCard() {
     document.getElementById('dictRes').innerHTML = '';
     document.getElementById('dictSpeak').style.display = 'none';
     setTimeout(() => { playDictation(); inp.focus(); }, 300);
+
+  } else if (mode === 'gap') {
+    const ga = document.getElementById('gapArea'); ga.style.display = 'block'; reAnim(ga);
+    buildGapMode();
 
   } else if (mode === 'match') {
     const ma = document.getElementById('matchArea'); ma.style.display = 'block'; reAnim(ma);
@@ -2134,7 +2348,7 @@ function buildMasked(word) {
 
 function reAnim(el) { el.style.animation = 'none'; el.offsetHeight; el.style.animation = ''; }
 function hideAreas() {
-  ['cardScene','quizArea','typeArea','missingArea','dictateArea','tfArea','matchArea','speedArea','sentencePanel']
+  ['cardScene','quizArea','typeArea','missingArea','dictateArea','tfArea','gapArea','matchArea','speedArea','sentencePanel']
     .forEach(id => { const e = document.getElementById(id); if(e) e.style.display = 'none'; });
 }
 
@@ -2458,7 +2672,7 @@ function setMode(m) {
   clearInterval(studySpeedTimer); // zatrzymaj timer speed jeśli był aktywny
   mode = m;
   document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
-  const modeMap = {card:'mCard',quiz:'mQuiz',type:'mType',missing:'mMissing',dictate:'mDictate',tf:'mTF',match:'mMatch',speed:'mSpeed'};
+  const modeMap = {card:'mCard',quiz:'mQuiz',type:'mType',missing:'mMissing',dictate:'mDictate',tf:'mTF',gap:'mGap',match:'mMatch',speed:'mSpeed'};
   document.getElementById(modeMap[m]).classList.add('active');
   document.getElementById('livesBar').classList.toggle('visible', m === 'quiz');
   hideAreas(); revealed = false; hideDiff();
@@ -2470,6 +2684,7 @@ function setMode(m) {
     else if (m === 'missing') document.getElementById('missingArea').style.display = 'block';
     else if (m === 'dictate') document.getElementById('dictateArea').style.display = 'block';
     else if (m === 'tf') document.getElementById('tfArea').style.display = 'block';
+    else if (m === 'gap') document.getElementById('gapArea').style.display = 'block';
     else if (m === 'match') document.getElementById('matchArea').style.display = 'block';
     else if (m === 'speed') document.getElementById('speedArea').style.display = 'block';
   }
@@ -2794,10 +3009,12 @@ function checkAchievements() {
   if ((p.streak||0) >= 3) checkAndUnlock('streak_3');
   if ((p.streak||0) >= 7) checkAndUnlock('streak_7');
   if ((p.streak||0) >= 14) checkAndUnlock('streak_14');
+  if ((p.streak||0) >= 30) checkAndUnlock('streak_30');
   // Odpowiedzi
   if ((p.totalAnswers||0) >= 50) checkAndUnlock('answers_50');
   if ((p.totalAnswers||0) >= 100) checkAndUnlock('answers_100');
   if ((p.totalAnswers||0) >= 500) checkAndUnlock('answers_500');
+  if ((p.totalAnswers||0) >= 1000) checkAndUnlock('answers_1000');
   // Poprawne
   if ((p.correctAnswers||0) >= 50) checkAndUnlock('correct_50');
   if ((p.correctAnswers||0) >= 100) checkAndUnlock('correct_100');
@@ -2805,6 +3022,17 @@ function checkAchievements() {
   if (totalXP >= 100) checkAndUnlock('xp_100');
   if (totalXP >= 500) checkAndUnlock('xp_500');
   if (totalXP >= 1000) checkAndUnlock('xp_1000');
+  if (totalXP >= 2500) checkAndUnlock('xp_2500');
+  if (totalXP >= 5000) checkAndUnlock('xp_5000');
+  // Opanowane słówka (zlicz ze wszystkich podręczników)
+  let totalKnown = 0;
+  Object.values(BOOKS).forEach(b => {
+    const bp = DB.getBookProgress(currentUser, b);
+    Object.values(bp).forEach(u => totalKnown += (u.known || 0));
+  });
+  if (totalKnown >= 100) checkAndUnlock('words_100');
+  if (totalKnown >= 250) checkAndUnlock('words_250');
+  if (totalKnown >= 500) checkAndUnlock('words_500');
   // Sesja
   if ((p.totalSessions||0) >= 1) checkAndUnlock('first_session');
   // Opanowane unity / podręczniki
@@ -3687,6 +3915,324 @@ function cwPrint() {
 }
 
 // ══════════════════════════════════════════════
+//  MEMORY GAME
+// ══════════════════════════════════════════════
+let memCards = [], memRevealed = [], memMatched = 0, memTotalPairs = 0, memMoves = 0, memBusy = false, memUnitKey = null;
+
+function openMemory(unitKey) {
+  memUnitKey = unitKey;
+  const units = getUnitsWithCustom(currentBookId);
+  const u = units[unitKey];
+  const book = BOOKS[currentBookId] || {};
+  document.getElementById('memTitle').textContent = '🧠 ' + u.name + ' — Memory';
+  showScreen('sMemory');
+  memNewGame();
+}
+
+function memNewGame() {
+  if (!memUnitKey) return;
+  const units = getUnitsWithCustom(currentBookId);
+  const u = units[memUnitKey];
+  // Wybierz 8 losowych par (= 16 kart) lub mniej jeśli unit ma mało słów
+  const maxPairs = Math.min(8, u.words.length);
+  const selected = shuffle([...u.words]).slice(0, maxPairs);
+
+  memTotalPairs = selected.length;
+  memMatched = 0; memMoves = 0; memBusy = false;
+  document.getElementById('memMoves').textContent = 'Ruchy: 0';
+  document.getElementById('memDone').style.display = 'none';
+  document.getElementById('memStatus').textContent = memTotalPairs + ' par do znalezienia';
+
+  // Utwórz karty: każda para → 1 karta PL + 1 karta EN
+  memCards = [];
+  selected.forEach((w, i) => {
+    memCards.push({id: i, text: w[0], lang: 'pl', word: w});
+    memCards.push({id: i, text: w[1], lang: 'en', word: w});
+  });
+  memCards = shuffle(memCards);
+  memRevealed = [];
+
+  // Render grid
+  const grid = document.getElementById('memGrid');
+  const cols = memCards.length <= 12 ? 4 : memCards.length <= 16 ? 4 : 5;
+  grid.style.gridTemplateColumns = 'repeat(' + cols + ', 1fr)';
+  grid.style.maxWidth = (cols * 72) + 'px';
+  grid.innerHTML = '';
+
+  memCards.forEach((card, idx) => {
+    const el = document.createElement('div');
+    el.className = 'mem-card hidden';
+    el.dataset.idx = idx;
+    el.addEventListener('click', () => memFlip(idx));
+    grid.appendChild(el);
+  });
+}
+
+function memFlip(idx) {
+  if (memBusy) return;
+  const el = document.querySelectorAll('.mem-card')[idx];
+  if (!el || el.classList.contains('matched') || el.classList.contains('revealed')) return;
+
+  // Odkryj kartę
+  const card = memCards[idx];
+  el.classList.remove('hidden');
+  el.classList.add('revealed');
+  el.textContent = card.text;
+  if (card.lang === 'en') el.style.color = 'var(--accent)';
+  else el.style.color = 'var(--text)';
+
+  memRevealed.push(idx);
+
+  if (memRevealed.length === 2) {
+    memMoves++;
+    document.getElementById('memMoves').textContent = 'Ruchy: ' + memMoves;
+    memBusy = true;
+
+    const [i1, i2] = memRevealed;
+    const c1 = memCards[i1], c2 = memCards[i2];
+    const el1 = document.querySelectorAll('.mem-card')[i1];
+    const el2 = document.querySelectorAll('.mem-card')[i2];
+
+    if (c1.id === c2.id && c1.lang !== c2.lang) {
+      // Para znaleziona!
+      setTimeout(() => {
+        el1.classList.remove('revealed');
+        el1.classList.add('matched');
+        el2.classList.remove('revealed');
+        el2.classList.add('matched');
+        memMatched++;
+        playOk();
+        spkForeign(c1.lang === 'en' ? c1.text : c2.text);
+
+        if (memMatched >= memTotalPairs) {
+          document.getElementById('memDone').style.display = 'block';
+          document.getElementById('memStatus').textContent = 'Ukończono w ' + memMoves + ' ruchach!';
+          particles(true); confetti();
+          owlSay('🎉 Brawo! Wszystkie pary znalezione!');
+          checkAndUnlock('memory_win');
+        }
+        memRevealed = [];
+        memBusy = false;
+      }, 500);
+    } else {
+      // Nie pasują
+      el1.classList.add('wrong');
+      el2.classList.add('wrong');
+      playBad();
+      setTimeout(() => {
+        el1.classList.remove('revealed', 'wrong');
+        el1.classList.add('hidden');
+        el1.textContent = '';
+        el1.style.color = '';
+        el2.classList.remove('revealed', 'wrong');
+        el2.classList.add('hidden');
+        el2.textContent = '';
+        el2.style.color = '';
+        memRevealed = [];
+        memBusy = false;
+      }, 800);
+    }
+  }
+}
+
+// ══════════════════════════════════════════════
+//  CODZIENNY QUIZ / TEST
+// ══════════════════════════════════════════════
+let dqWords = [], dqIdx = 0, dqCorrect = 0, dqTotal = 0, dqMissed = [];
+
+function startDailyQuiz() {
+  if (!currentBookId) return;
+  const book = BOOKS[currentBookId];
+  // Zbierz wszystkie słowa z unitów, które user ćwiczył (mają progress) + losowe
+  const allWords = [];
+  Object.keys(book.units).forEach(uk => {
+    book.units[uk].words.forEach(w => allWords.push(w));
+  });
+  if (allWords.length < 4) { toast('Za mało słówek do testu (min. 4)'); return; }
+
+  dqWords = shuffle([...allWords]).slice(0, Math.min(15, allWords.length));
+  dqIdx = 0; dqCorrect = 0; dqTotal = dqWords.length; dqMissed = [];
+  showScreen('sDailyQuiz');
+  renderDailyQ();
+}
+
+function renderDailyQ() {
+  if (dqIdx >= dqTotal) { showDailyResult(); return; }
+  document.getElementById('dqProgress').textContent = 'Pytanie ' + (dqIdx + 1) + ' / ' + dqTotal;
+  const [pl, en] = dqWords[dqIdx];
+  document.getElementById('dqLabel').textContent = 'Przetłumacz na ' + (getBookLang().startsWith('fr') ? 'francuski' : 'angielski');
+  document.getElementById('dqWord').textContent = pl;
+  document.getElementById('dqRes').className = 'type-result';
+  document.getElementById('dqRes').innerHTML = '';
+
+  // 4 opcje: poprawna + 3 losowe
+  const book = BOOKS[currentBookId];
+  const allEn = [];
+  Object.values(book.units).forEach(u => u.words.forEach(w => { if (w[1] !== en) allEn.push(w[1]); }));
+  const wrong = shuffle(allEn).slice(0, 3);
+  const opts = shuffle([en, ...wrong]);
+
+  const container = document.getElementById('dqOpts');
+  container.innerHTML = '';
+  opts.forEach(o => {
+    const btn = document.createElement('button');
+    btn.className = 'quiz-option';
+    btn.textContent = o;
+    btn.addEventListener('click', () => onDailyAnswer(btn, o === en, en));
+    container.appendChild(btn);
+  });
+}
+
+function onDailyAnswer(btn, ok, correct) {
+  document.querySelectorAll('#dqOpts .quiz-option').forEach(b => {
+    b.disabled = true;
+    if (b.textContent === correct) b.classList.add('correct');
+  });
+  const r = document.getElementById('dqRes');
+  if (ok) {
+    btn.classList.add('correct');
+    r.className = 'type-result ok';
+    r.innerHTML = '✓ Poprawnie!';
+    dqCorrect++;
+    playOk(); particles(true);
+  } else {
+    btn.classList.add('wrong');
+    r.className = 'type-result err';
+    r.innerHTML = '✗ Poprawna: <span class="ar">' + esc(correct) + '</span>';
+    dqMissed.push(dqWords[dqIdx]);
+    playBad();
+  }
+  spkForeign(correct);
+  dqIdx++;
+  setTimeout(renderDailyQ, 1200);
+}
+
+function showDailyResult() {
+  const pct = Math.round((dqCorrect / dqTotal) * 100);
+  const emoji = pct >= 90 ? '🏆' : pct >= 70 ? '⭐' : pct >= 50 ? '👍' : '💪';
+  document.getElementById('drEmoji').textContent = emoji;
+  document.getElementById('drScore').textContent = dqCorrect + ' / ' + dqTotal;
+  document.getElementById('drPct').textContent = pct + '%';
+  document.getElementById('drPct').style.color = pct >= 70 ? 'var(--accent2)' : 'var(--danger)';
+
+  // Porównanie z poprzednim wynikiem
+  const key = 'fiszki_daily_' + currentBookId;
+  const prev = localStorage.getItem(key);
+  if (prev) {
+    const p = parseInt(prev);
+    const diff = pct - p;
+    document.getElementById('drPrev').textContent = 'Poprzedni wynik: ' + p + '% ' +
+      (diff > 0 ? '(+' + diff + '% 📈)' : diff < 0 ? '(' + diff + '% 📉)' : '(bez zmian)');
+  } else {
+    document.getElementById('drPrev').textContent = 'To Twój pierwszy test z tego podręcznika!';
+  }
+  localStorage.setItem(key, pct);
+
+  // Lista błędnych
+  const ml = document.getElementById('drMissed');
+  if (dqMissed.length > 0) {
+    ml.innerHTML = '<div style="font-size:.75rem;font-weight:700;color:var(--danger);margin-bottom:6px">❌ Trudne słówka:</div>' +
+      dqMissed.map(w => '<div style="font-size:.8rem;color:var(--text);padding:4px 0;border-bottom:1px solid var(--border)">' + esc(w[0]) + ' → <strong>' + esc(w[1]) + '</strong></div>').join('');
+  } else {
+    ml.innerHTML = '<div style="font-size:.85rem;font-weight:700;color:var(--accent2)">🎉 Bezbłędnie! Brawo!</div>';
+  }
+
+  // Odznaki
+  if (pct >= 100) checkAndUnlock('perfect_quiz');
+  DB.recordAnswer(currentUser, true);
+
+  showScreen('sDailyResult');
+  if (pct >= 90) { confetti(); playOk(); setTimeout(playOk, 300); }
+  else playOk();
+}
+
+// ══════════════════════════════════════════════
+//  GAP FILL / UZUPEŁNIJ LUKĘ
+// ══════════════════════════════════════════════
+let gapAnswer = '';
+
+function buildGapMode() {
+  if (curIdx === null) return;
+  const wordPl = activeWords[curIdx][0];
+  const wordTarget = activeWords[curIdx][1];
+  const s = DB.getSentence(currentBookId, wordPl);
+
+  const sentenceEl = document.getElementById('gapSentence');
+  const hintEl = document.getElementById('gapHint');
+  const inp = document.getElementById('gapInp');
+  const res = document.getElementById('gapRes');
+  inp.value = ''; inp.className = 'type-input'; inp.disabled = false;
+  document.getElementById('btnGapChk').disabled = false;
+  res.className = 'type-result'; res.innerHTML = '';
+
+  if (!s || !s.sentence_target) {
+    sentenceEl.innerHTML = '<div class="gap-no-sentence">Brak zdania dla tego słowa.<br>Admin może dodać zdanie z poziomu fiszki (tryb 🃏 Fiszki → ✏️ Edytuj zdanie).</div>';
+    hintEl.textContent = wordPl + ' → ' + wordTarget;
+    gapAnswer = wordTarget;
+    inp.placeholder = 'Wpisz tłumaczenie: ' + wordPl;
+    setTimeout(() => inp.focus(), 120);
+    return;
+  }
+
+  // Znajdź słowo obce w zdaniu i zastąp luką
+  const target = s.sentence_target;
+  gapAnswer = wordTarget;
+
+  // Szukaj słowa w zdaniu (case-insensitive, whole word)
+  const regex = new RegExp('\\b' + wordTarget.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i');
+  let gapped;
+  if (regex.test(target)) {
+    gapped = target.replace(regex, '<span class="gap-blank">______</span>');
+  } else {
+    // Słowo nie występuje dosłownie — pokaż zdanie + lukę na końcu
+    gapped = target + ' → <span class="gap-blank">______</span>';
+    // Spróbuj dopasować odmienioną formę (szukaj fragmentu)
+    const stem = wordTarget.length > 3 ? wordTarget.slice(0, Math.ceil(wordTarget.length * 0.7)) : wordTarget;
+    const stemRegex = new RegExp('\\b\\w*' + stem.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\w*\\b', 'i');
+    const stemMatch = target.match(stemRegex);
+    if (stemMatch) {
+      gapAnswer = stemMatch[0]; // Akceptuj odmienioną formę
+      gapped = target.replace(stemRegex, '<span class="gap-blank">______</span>');
+    }
+  }
+
+  hintEl.textContent = '🇵🇱 ' + (s.sentence_pl || wordPl);
+  sentenceEl.innerHTML = gapped;
+  inp.placeholder = 'Wpisz brakujące słowo…';
+  setTimeout(() => inp.focus(), 120);
+}
+
+function checkGap() {
+  if (revealed) return;
+  const inp = document.getElementById('gapInp'), u = inp.value.trim();
+  if (!u) return;
+  revealed = true; inp.disabled = true; document.getElementById('btnGapChk').disabled = true;
+  const cor = gapAnswer;
+  const ok = fuzzy(u, cor);
+  const r = document.getElementById('gapRes');
+  if (ok) {
+    inp.classList.add('correct-inp'); r.className = 'type-result ok';
+    r.innerHTML = '✓ Poprawnie! <span class="ar">' + esc(cor) + '</span>';
+    playOk(); bounce('gapArea'); particles(true); owlR('easy');
+    DB.recordAnswer(currentUser, true);
+  } else {
+    inp.classList.add('wrong-inp'); r.className = 'type-result err';
+    r.innerHTML = '✗ Odpowiedź: <span class="ar">' + esc(cor) + '</span>';
+    playBad(); shake('gapArea'); owlR('hard');
+    DB.recordAnswer(currentUser, false);
+    trackMissed(); sessErrorCount++;
+  }
+  spkForeign(cor);
+  setTimeout(() => rate(ok ? 'easy' : 'hard'), 1500);
+}
+
+// Obsługa Enter w polu gap
+document.addEventListener('DOMContentLoaded', () => {
+  const gapInp = document.getElementById('gapInp');
+  if (gapInp) gapInp.addEventListener('keydown', e => { if (e.key === 'Enter') checkGap(); });
+});
+
+// ══════════════════════════════════════════════
 //  MATCH / PARUJ MODE
 // ══════════════════════════════════════════════
 let inlineMatchPairs = [];
@@ -4554,8 +5100,14 @@ function renderClassStudents(memberIds, allProfiles) {
     el.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:.82rem;padding:32px;font-weight:600">Klasa jest pusta.<br>Kliknij ➕ Dodaj ucznia, aby przypisać uczniów.</div>';
     return;
   }
-  el.innerHTML = '';
-  members.forEach(profile => {
+
+  // Sortuj wg XP (ranking)
+  members.sort((a, b) => (b.xp || 0) - (a.xp || 0));
+
+  // Nagłówek rankingu
+  el.innerHTML = '<div style="font-size:.75rem;font-weight:800;color:var(--accent);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;padding:6px 0;border-bottom:1px solid var(--border)">🏆 Ranking klasy wg XP</div>';
+  let rank = 0;
+  members.forEach((profile, idx) => {
     const lastSeen = profile.last_study_date
       ? new Date(profile.last_study_date).toLocaleDateString('pl-PL')
       : 'Brak aktywności';
@@ -4565,7 +5117,7 @@ function renderClassStudents(memberIds, allProfiles) {
     const card = document.createElement('div');
     card.className = 'student-card';
     card.innerHTML = `
-      <div class="student-card-avatar">👤</div>
+      <div class="student-card-avatar">${idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : '👤'}</div>
       <div class="student-card-body" style="flex:1">
         <div style="display:flex;align-items:center;justify-content:space-between">
           <div class="student-card-name">${esc(profile.username)}</div>
@@ -4575,6 +5127,8 @@ function renderClassStudents(memberIds, allProfiles) {
           </div>
         </div>
         <div class="student-card-stats">
+          <span class="student-stat">🏅 #<strong>${idx + 1}</strong></span>
+          <span class="student-stat">💎 XP <strong>${profile.xp || 0}</strong></span>
           <span class="student-stat">⭐ Poz. <strong>${profile.level || 1}</strong></span>
           <span class="student-stat">🔥 Seria <strong>${profile.streak || 0}</strong> dni</span>
           <span class="student-stat">📝 Sesje <strong>${profile.total_sessions || 0}</strong></span>
@@ -4728,6 +5282,123 @@ async function openStudentProgress(userId, username) {
   } catch(e) {
     document.getElementById('studProgStats').innerHTML = `<div style="color:var(--danger);font-size:.8rem;padding:16px;font-weight:600">❌ Błąd: ${esc(e.message)}</div>`;
   }
+}
+
+// ══════════════════════════════════════════════
+//  RAPORT POSTĘPÓW — druk/PDF
+// ══════════════════════════════════════════════
+function printStudentReport() {
+  const title = document.getElementById('studProgTitle').textContent;
+  const statsEl = document.getElementById('studProgStats');
+  const unitsEl = document.getElementById('studProgUnits');
+  const win = window.open('', '_blank');
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>Raport — ${esc(title)}</title>
+<style>
+body{font-family:Arial,sans-serif;padding:24px;color:#111;max-width:700px;margin:0 auto}
+h1{font-size:1.3rem;margin-bottom:2px}
+h2{font-size:.85rem;color:#666;margin-bottom:16px;font-weight:400}
+.stats{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+.stat{background:#f5f5f5;border:1px solid #ddd;border-radius:8px;padding:10px 14px;text-align:center;min-width:80px}
+.stat-val{font-size:1.4rem;font-weight:900;color:#333}
+.stat-lbl{font-size:.7rem;color:#888;font-weight:600;text-transform:uppercase}
+.book-title{font-size:.85rem;font-weight:800;color:#555;margin:14px 0 6px;text-transform:uppercase}
+.unit-row{padding:8px 0;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center}
+.unit-name{font-size:.82rem;font-weight:700}
+.unit-pct{font-size:.78rem;color:#666}
+.bar-bg{width:120px;height:8px;background:#eee;border-radius:4px;overflow:hidden}
+.bar-fill{height:100%;border-radius:4px}
+.footer{margin-top:24px;padding-top:12px;border-top:1px solid #ddd;font-size:.7rem;color:#aaa;text-align:center}
+@media print{body{padding:12px}}
+</style></head><body>
+<h1>${esc(title)}</h1>
+<h2>Sowie Fiszki — Raport postępów · ${new Date().toLocaleDateString('pl-PL')}</h2>
+<div class="stats">`);
+
+  // Zbierz statystyki z DOM
+  statsEl.querySelectorAll('.ac-stat-box').forEach(box => {
+    const val = box.querySelector('.ac-stat-val')?.textContent || '';
+    const lbl = box.querySelector('.ac-stat-lbl')?.textContent || '';
+    win.document.write('<div class="stat"><div class="stat-val">' + esc(val) + '</div><div class="stat-lbl">' + esc(lbl) + '</div></div>');
+  });
+  win.document.write('</div>');
+
+  // Zbierz unity z DOM
+  unitsEl.querySelectorAll('div').forEach(el => {
+    if (el.style.cssText?.includes('text-transform:uppercase')) {
+      win.document.write('<div class="book-title">' + esc(el.textContent) + '</div>');
+    }
+  });
+  unitsEl.querySelectorAll('.ac-unit-row').forEach(row => {
+    const name = row.querySelector('.ac-unit-name')?.textContent || '';
+    const pct = row.querySelector('.ac-unit-pct')?.textContent || '';
+    const fill = row.querySelector('.ac-unit-fill');
+    const width = fill?.style.width || '0%';
+    const color = fill?.style.background || '#a29bfe';
+    win.document.write(`<div class="unit-row"><div><div class="unit-name">${esc(name)}</div><div class="unit-pct">${esc(pct)}</div></div><div class="bar-bg"><div class="bar-fill" style="width:${width};background:${color}"></div></div></div>`);
+  });
+
+  win.document.write('<div class="footer">Wygenerowano z aplikacji Sowie Fiszki · ' + new Date().toLocaleDateString('pl-PL') + '</div></body></html>');
+  win.document.close();
+  setTimeout(() => win.print(), 400);
+}
+
+// ─── Podgląd postępów dla ucznia ─────────────
+function showMyProgress() {
+  if (!currentBookId) return;
+  const book = BOOKS[currentBookId];
+  const p = DB.getUser(currentUser);
+  const prog = DB.getBookProgress(currentUser, book);
+
+  const win = window.open('', '_blank');
+  const accuracy = p.totalAnswers > 0 ? Math.round(p.correctAnswers / p.totalAnswers * 100) : 0;
+  let totalKnown = 0, totalAll = 0;
+  Object.values(prog).forEach(u => { totalKnown += u.known; totalAll += u.total; });
+
+  // Zbierz trudne słowa
+  const hardWords = collectHardWords(currentBookId);
+
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>Moje postępy — ${esc(book.name)}</title>
+<style>
+body{font-family:Arial,sans-serif;padding:24px;color:#111;max-width:600px;margin:0 auto}
+h1{font-size:1.3rem;margin-bottom:2px}
+h2{font-size:.85rem;color:#666;margin-bottom:16px;font-weight:400}
+.stats{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+.stat{background:#f5f5f5;border:1px solid #ddd;border-radius:8px;padding:10px 14px;text-align:center;min-width:80px}
+.stat-val{font-size:1.4rem;font-weight:900;color:#333}
+.stat-lbl{font-size:.7rem;color:#888;font-weight:600}
+.unit{padding:8px 0;border-bottom:1px solid #eee;display:flex;justify-content:space-between}
+.hard{margin-top:16px;padding:12px;background:#fff5f5;border:1px solid #fdd;border-radius:8px}
+.hard-title{font-size:.85rem;font-weight:800;color:#c0392b;margin-bottom:8px}
+.hard-word{font-size:.8rem;padding:2px 0}
+</style></head><body>
+<h1>${esc(book.icon)} ${esc(book.name)} — Moje postępy</h1>
+<h2>${esc(p.username)} · ${new Date().toLocaleDateString('pl-PL')}</h2>
+<div class="stats">
+<div class="stat"><div class="stat-val">${p.level}</div><div class="stat-lbl">Poziom</div></div>
+<div class="stat"><div class="stat-val">${totalXP}</div><div class="stat-lbl">XP</div></div>
+<div class="stat"><div class="stat-val">${p.streak}</div><div class="stat-lbl">🔥 Seria</div></div>
+<div class="stat"><div class="stat-val">${totalKnown}/${totalAll}</div><div class="stat-lbl">Słówka</div></div>
+<div class="stat"><div class="stat-val">${accuracy}%</div><div class="stat-lbl">Celność</div></div>
+</div>`);
+
+  Object.entries(book.units).forEach(([k, u]) => {
+    const up = prog[k] || {known:0, total:u.words.length, pct:0};
+    win.document.write(`<div class="unit"><div><strong>${esc(u.icon)} ${esc(u.name)}</strong></div><div>${up.known}/${up.total} (${up.pct}%)</div></div>`);
+  });
+
+  if (hardWords.length > 0) {
+    win.document.write('<div class="hard"><div class="hard-title">❌ Trudne słówka (' + hardWords.length + ')</div>');
+    hardWords.slice(0, 30).forEach(w => {
+      win.document.write('<div class="hard-word">' + esc(w[0]) + ' → <strong>' + esc(w[1]) + '</strong></div>');
+    });
+    win.document.write('</div>');
+  }
+
+  win.document.write('</body></html>');
+  win.document.close();
+  setTimeout(() => win.print(), 400);
 }
 
 // ══════════════════════════════════════════════
