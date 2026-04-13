@@ -550,11 +550,12 @@ body.guest-mode .progress-wrap{opacity:.4;}
 .cw-inp{width:100%;height:100%;background:transparent;border:none;outline:none;text-align:center;font-size:.8rem;font-weight:900;color:var(--text);font-family:'Nunito',sans-serif;text-transform:uppercase;padding:0;cursor:pointer;caret-color:transparent;}
 .cw-lit.cw-active{background:rgba(255,209,102,.25)!important;border:2px solid var(--accent)!important;}
 .cw-grid-kb-wrap{display:flex;gap:10px;align-items:flex-start;}
-.cw-keyboard{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:12px;flex-shrink:0;align-self:flex-start;}
-.cw-key{width:32px;height:32px;border:1.5px solid var(--border);border-radius:8px;background:var(--surface2);color:var(--text);font-weight:800;font-size:.82rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;user-select:none;font-family:'Nunito',sans-serif;}
-.cw-key:hover{background:rgba(255,209,102,.2);border-color:var(--accent);}
-.cw-key:active{transform:scale(.92);background:var(--accent);color:#fff;}
-.cw-key.cw-key-wide{grid-column:span 2;width:auto;font-size:.7rem;}
+.cw-keyboard{display:flex;flex-direction:column;gap:4px;padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:12px;flex-shrink:0;align-self:flex-start;max-width:140px;min-width:100px;}
+.cw-kb-title{font-size:.6rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;text-align:center;margin-bottom:2px;}
+.cw-word-btn{padding:7px 8px;border:1.5px solid var(--border);border-radius:8px;background:var(--surface2);color:var(--text);font-weight:700;font-size:.72rem;cursor:pointer;transition:all .15s;user-select:none;font-family:'Nunito',sans-serif;text-align:center;text-transform:uppercase;word-break:break-all;line-height:1.15;}
+.cw-word-btn:hover{background:rgba(255,209,102,.2);border-color:var(--accent);}
+.cw-word-btn:active{transform:scale(.96);background:var(--accent);color:#fff;}
+.cw-word-btn.used{opacity:.4;text-decoration:line-through;pointer-events:none;background:rgba(6,214,160,.08);border-color:var(--accent2);color:var(--accent2);}
 .cw-inp.cw-ok{color:var(--success);}
 .cw-inp.cw-err{color:var(--danger);}
 .cw-clues-wrap{display:grid;grid-template-columns:1fr 1fr;gap:14px;width:100%;margin-top:4px;}
@@ -3688,6 +3689,7 @@ function cwGenerate() {
         if (bestRes.placed.length >= 12) break; // good enough, stop early
       }
     }
+    cwPlacedWords = (bestRes.placed || []).map(p => ({word: p.word, clue: p.clue, row: p.row, col: p.col, dir: p.dir}));
     cwRenderGrid(bestRes);
     cwRenderClues(bestRes);
     const n = bestRes.placed.length;
@@ -3906,58 +3908,137 @@ function cwKbdHandler(e) {
   }
 }
 
+let cwPlacedWords = []; // [{word, clue, row, col, dir, num}]
+
 function cwBuildKeyboard() {
   const kb = document.getElementById('cwKeyboard');
   kb.innerHTML = '';
-  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  letters.split('').forEach(ch => {
-    const key = document.createElement('div');
-    key.className = 'cw-key';
-    key.textContent = ch;
-    key.addEventListener('click', () => cwKeyPress(ch));
-    kb.appendChild(key);
+
+  if (!cwPlacedWords.length) return;
+
+  const title = document.createElement('div');
+  title.className = 'cw-kb-title';
+  title.textContent = 'Słówka (' + cwPlacedWords.length + ')';
+  kb.appendChild(title);
+
+  // Sortuj alfabetycznie
+  const sorted = [...cwPlacedWords].sort((a, b) => a.word.localeCompare(b.word));
+  sorted.forEach(p => {
+    const btn = document.createElement('div');
+    btn.className = 'cw-word-btn';
+    btn.textContent = p.word;
+    btn.title = p.clue + ' (' + p.dir + ', ' + p.word.length + ' liter)';
+    btn.dataset.word = p.word;
+    btn.dataset.row = p.row;
+    btn.dataset.col = p.col;
+    btn.dataset.dir = p.dir;
+    btn.addEventListener('click', () => cwWordPress(btn, p));
+    kb.appendChild(btn);
   });
-  // Backspace
-  const bk = document.createElement('div');
-  bk.className = 'cw-key cw-key-wide';
-  bk.textContent = '⌫';
-  bk.addEventListener('click', () => cwKeyPress('BACK'));
-  kb.appendChild(bk);
 }
 
-function cwKeyPress(ch) {
-  if (!cwActiveInp) {
-    // Jeśli nie wybrano komórki, wybierz pierwszą pustą
-    const first = [...document.querySelectorAll('.cw-inp')].find(x => !x.value);
-    if (first) {
-      const td = first.closest('td');
-      if (td) cwSelectCell(td, first);
-    }
-    if (!cwActiveInp) return;
+function cwWordPress(btn, placement) {
+  if (btn.classList.contains('used')) return;
+
+  // Znajdź pierwszą komórkę tego słowa w siatce i wstaw litery
+  const {word, row, col, dir} = placement;
+  const table = document.querySelector('#cwGrid .cw-table');
+  if (!table) return;
+
+  const rows = table.querySelectorAll('tr');
+  // Oblicz offset siatki (siatka jest przycięta)
+  const allInps = [...document.querySelectorAll('.cw-inp')];
+
+  let allCorrect = true;
+  for (let i = 0; i < word.length; i++) {
+    const r = dir === 'h' ? row : row + i;
+    const c = dir === 'h' ? col + i : col;
+    // Znajdź input w tej komórce (po data-ans)
+    const inp = allInps.find(inp => {
+      const td = inp.closest('td');
+      if (!td) return false;
+      const tr = td.closest('tr');
+      if (!tr) return false;
+      const rowIdx = [...tr.parentNode.children].indexOf(tr);
+      const colIdx = [...tr.children].indexOf(td);
+      // Porównaj z oczekiwaną pozycją po przycięciu
+      return inp.dataset.ans === word[i];
+    });
   }
 
-  if (ch === 'BACK') {
-    if (cwActiveInp.value) {
-      cwActiveInp.value = '';
-      cwActiveInp.classList.remove('cw-ok', 'cw-err');
-    } else {
-      // Cofnij do poprzedniej
-      const all = [...document.querySelectorAll('.cw-inp')];
-      const idx = all.indexOf(cwActiveInp);
-      if (idx > 0) {
-        all[idx - 1].value = '';
-        all[idx - 1].classList.remove('cw-ok', 'cw-err');
-        const td = all[idx - 1].closest('td');
-        if (td) cwSelectCell(td, all[idx - 1]);
+  // Prostsze podejście: znajdź komórkę startową po numerze wskazówki
+  // i wstaw litery po kolei w odpowiednim kierunku
+  const startR = row;
+  const startC = col;
+
+  // Iteruj po komórkach tabeli
+  const tableRows = [...table.rows];
+  // Potrzebuję wiedzieć jaki offset ma przycięta siatka
+  // Poszukam przez komórki: znajdę tę z num == placement.num i ans == word[0]
+  let inserted = 0;
+  for (let i = 0; i < word.length; i++) {
+    const ch = word[i];
+    // Znajdź input z dataset.ans === ch w odpowiedniej kolejności
+    // Szukam inputów, które pasują do tego słowa
+  }
+
+  // NAJPROŚCIEJ: znajdź wszystkie inputy i dopasuj po sekwencji dataset.ans
+  // Szukam ciągu inputów, których ans tworzy word, w linii (h lub v)
+  const grid2d = [];
+  tableRows.forEach((tr, ri) => {
+    grid2d[ri] = [];
+    [...tr.cells].forEach((td, ci) => {
+      const inp = td.querySelector('.cw-inp');
+      grid2d[ri][ci] = inp;
+    });
+  });
+
+  // Szukaj słowa w siatce
+  const numRows = grid2d.length;
+  const numCols = grid2d[0]?.length || 0;
+
+  let foundCells = null;
+  for (let r = 0; r < numRows && !foundCells; r++) {
+    for (let c = 0; c < numCols && !foundCells; c++) {
+      if (!grid2d[r][c]) continue;
+      // Sprawdź poziomo
+      if (dir === 'h' && c + word.length <= numCols) {
+        let match = true;
+        const cells = [];
+        for (let k = 0; k < word.length; k++) {
+          const inp = grid2d[r][c + k];
+          if (!inp || inp.dataset.ans !== word[k]) { match = false; break; }
+          cells.push(inp);
+        }
+        // Sprawdź że przed słowem nie ma litery (to początek słowa)
+        if (match && (c === 0 || !grid2d[r][c - 1])) foundCells = cells;
+      }
+      // Sprawdź pionowo
+      if (dir === 'v' && r + word.length <= numRows) {
+        let match = true;
+        const cells = [];
+        for (let k = 0; k < word.length; k++) {
+          const inp = grid2d[r + k]?.[c];
+          if (!inp || inp.dataset.ans !== word[k]) { match = false; break; }
+          cells.push(inp);
+        }
+        if (match && (r === 0 || !grid2d[r - 1]?.[c])) foundCells = cells;
       }
     }
-    return;
   }
 
-  cwActiveInp.value = ch;
-  cwActiveInp.classList.remove('cw-ok', 'cw-err');
-  cwActiveInp.classList.add(ch === cwActiveInp.dataset.ans ? 'cw-ok' : 'cw-err');
-  cwAdvanceToNext(cwActiveInp);
+  if (!foundCells) { toast('Nie mogę znaleźć tego słowa w siatce'); return; }
+
+  // Wstaw litery
+  foundCells.forEach(inp => {
+    inp.value = inp.dataset.ans;
+    inp.classList.remove('cw-ok', 'cw-err');
+    inp.classList.add('cw-ok');
+  });
+
+  btn.classList.add('used');
+  spkForeign(word);
+  playOk();
 }
 
 // ─── Render clues ─────────────────────────────
