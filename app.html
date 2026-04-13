@@ -434,6 +434,8 @@ canvas#pc{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none
   body.cw-print .cw-col h3{color:#000 !important;border-color:#000 !important;}
   body.cw-print .cw-len{color:#555 !important;}
   body.cw-print .cw-sel-panel{display:none !important;}
+  body.cw-print .cw-keyboard{display:none !important;}
+  body.cw-print .cw-active{background:transparent !important;border-color:transparent !important;}
   body.cw-print .cw-clue{border-color:#ccc !important;}
   body.cw-print #cwTitle{color:#000 !important;font-size:1.2rem !important;}
   body.cw-print #cwSubtitle{color:#333 !important;}
@@ -544,7 +546,13 @@ body.guest-mode .progress-wrap{opacity:.4;}
 .cw-blk{background:#0e0b20;border-color:#0e0b20 !important;}
 .cw-lit{background:var(--surface2);}
 .cw-num{font-size:7.5px;color:var(--accent);position:absolute;top:1px;left:2px;line-height:1;pointer-events:none;z-index:1;font-weight:800;}
-.cw-inp{width:100%;height:100%;background:transparent;border:none;outline:none;text-align:center;font-size:.8rem;font-weight:900;color:var(--text);font-family:'Nunito',sans-serif;text-transform:uppercase;padding:0;cursor:text;}
+.cw-inp{width:100%;height:100%;background:transparent;border:none;outline:none;text-align:center;font-size:.8rem;font-weight:900;color:var(--text);font-family:'Nunito',sans-serif;text-transform:uppercase;padding:0;cursor:pointer;caret-color:transparent;}
+.cw-lit.cw-active{background:rgba(255,209,102,.25)!important;border:2px solid var(--accent)!important;}
+.cw-keyboard{display:flex;flex-wrap:wrap;gap:4px;justify-content:center;margin-top:12px;padding:10px;background:var(--surface);border:1px solid var(--border);border-radius:12px;}
+.cw-key{width:32px;height:36px;border:1.5px solid var(--border);border-radius:8px;background:var(--surface2);color:var(--text);font-weight:800;font-size:.82rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;user-select:none;font-family:'Nunito',sans-serif;}
+.cw-key:hover{background:rgba(255,209,102,.2);border-color:var(--accent);}
+.cw-key:active{transform:scale(.92);background:var(--accent);color:#fff;}
+.cw-key.cw-key-wide{width:52px;font-size:.7rem;}
 .cw-inp.cw-ok{color:var(--success);}
 .cw-inp.cw-err{color:var(--danger);}
 .cw-clues-wrap{display:grid;grid-template-columns:1fr 1fr;gap:14px;width:100%;margin-top:4px;}
@@ -1163,6 +1171,7 @@ szkoła	school"></textarea>
       </div>
     </div>
     <div class="cw-grid-wrap" id="cwGrid"></div>
+    <div class="cw-keyboard" id="cwKeyboard"></div>
     <div class="cw-clues-wrap" id="cwClues"></div>
   </div>
 </div>
@@ -3833,6 +3842,8 @@ function cwRenderGrid({grid, nums, G}) {
         inp.setAttribute('spellcheck', 'false');
         inp.addEventListener('input', cwInpHandler);
         inp.addEventListener('keydown', cwKbdHandler);
+        inp.addEventListener('focus', () => cwSelectCell(td, inp));
+        td.addEventListener('click', () => cwSelectCell(td, inp));
         td.appendChild(inp);
       }
       tr.appendChild(td);
@@ -3841,6 +3852,18 @@ function cwRenderGrid({grid, nums, G}) {
   }
   document.getElementById('cwGrid').innerHTML = '';
   document.getElementById('cwGrid').appendChild(table);
+  cwBuildKeyboard();
+  cwActiveInp = null;
+}
+
+let cwActiveInp = null;
+
+function cwSelectCell(td, inp) {
+  // Odznacz poprzednią
+  document.querySelectorAll('.cw-lit.cw-active').forEach(el => el.classList.remove('cw-active'));
+  td.classList.add('cw-active');
+  cwActiveInp = inp;
+  inp.focus();
 }
 
 function cwInpHandler(e) {
@@ -3849,10 +3872,18 @@ function cwInpHandler(e) {
   inp.classList.remove('cw-ok', 'cw-err');
   if (inp.value) {
     inp.classList.add(inp.value === inp.dataset.ans ? 'cw-ok' : 'cw-err');
-    const all = [...document.querySelectorAll('.cw-inp')];
-    const idx = all.indexOf(inp);
-    const next = all.slice(idx + 1).find(x => !x.value);
-    if (next) next.focus();
+    cwAdvanceToNext(inp);
+  }
+}
+
+function cwAdvanceToNext(inp) {
+  const all = [...document.querySelectorAll('.cw-inp')];
+  const idx = all.indexOf(inp);
+  const next = all.slice(idx + 1).find(x => !x.value);
+  if (next) {
+    const td = next.closest('td');
+    if (td) cwSelectCell(td, next);
+    else next.focus();
   }
 }
 
@@ -3861,8 +3892,68 @@ function cwKbdHandler(e) {
     e.preventDefault();
     const all = [...document.querySelectorAll('.cw-inp')];
     const idx = all.indexOf(e.target);
-    if (idx > 0) { all[idx - 1].value = ''; all[idx - 1].classList.remove('cw-ok', 'cw-err'); all[idx - 1].focus(); }
+    if (idx > 0) {
+      all[idx - 1].value = '';
+      all[idx - 1].classList.remove('cw-ok', 'cw-err');
+      const td = all[idx - 1].closest('td');
+      if (td) cwSelectCell(td, all[idx - 1]);
+      else all[idx - 1].focus();
+    }
   }
+}
+
+function cwBuildKeyboard() {
+  const kb = document.getElementById('cwKeyboard');
+  kb.innerHTML = '';
+  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  letters.split('').forEach(ch => {
+    const key = document.createElement('div');
+    key.className = 'cw-key';
+    key.textContent = ch;
+    key.addEventListener('click', () => cwKeyPress(ch));
+    kb.appendChild(key);
+  });
+  // Backspace
+  const bk = document.createElement('div');
+  bk.className = 'cw-key cw-key-wide';
+  bk.textContent = '⌫';
+  bk.addEventListener('click', () => cwKeyPress('BACK'));
+  kb.appendChild(bk);
+}
+
+function cwKeyPress(ch) {
+  if (!cwActiveInp) {
+    // Jeśli nie wybrano komórki, wybierz pierwszą pustą
+    const first = [...document.querySelectorAll('.cw-inp')].find(x => !x.value);
+    if (first) {
+      const td = first.closest('td');
+      if (td) cwSelectCell(td, first);
+    }
+    if (!cwActiveInp) return;
+  }
+
+  if (ch === 'BACK') {
+    if (cwActiveInp.value) {
+      cwActiveInp.value = '';
+      cwActiveInp.classList.remove('cw-ok', 'cw-err');
+    } else {
+      // Cofnij do poprzedniej
+      const all = [...document.querySelectorAll('.cw-inp')];
+      const idx = all.indexOf(cwActiveInp);
+      if (idx > 0) {
+        all[idx - 1].value = '';
+        all[idx - 1].classList.remove('cw-ok', 'cw-err');
+        const td = all[idx - 1].closest('td');
+        if (td) cwSelectCell(td, all[idx - 1]);
+      }
+    }
+    return;
+  }
+
+  cwActiveInp.value = ch;
+  cwActiveInp.classList.remove('cw-ok', 'cw-err');
+  cwActiveInp.classList.add(ch === cwActiveInp.dataset.ans ? 'cw-ok' : 'cw-err');
+  cwAdvanceToNext(cwActiveInp);
 }
 
 // ─── Render clues ─────────────────────────────
