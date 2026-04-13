@@ -435,6 +435,7 @@ canvas#pc{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none
   body.cw-print .cw-len{color:#555 !important;}
   body.cw-print .cw-sel-panel{display:none !important;}
   body.cw-print .cw-keyboard{display:none !important;}
+  body.cw-print .cw-wordbank{display:none !important;}
   body.cw-print .cw-grid-kb-wrap{display:block !important;}
   body.cw-print .cw-active{background:transparent !important;border-color:transparent !important;}
   body.cw-print .cw-clue{border-color:#ccc !important;}
@@ -549,10 +550,15 @@ body.guest-mode .progress-wrap{opacity:.4;}
 .cw-num{font-size:7.5px;color:var(--accent);position:absolute;top:1px;left:2px;line-height:1;pointer-events:none;z-index:1;font-weight:800;}
 .cw-inp{width:100%;height:100%;background:transparent;border:none;outline:none;text-align:center;font-size:.8rem;font-weight:900;color:var(--text);font-family:'Nunito',sans-serif;text-transform:uppercase;padding:0;cursor:pointer;caret-color:transparent;}
 .cw-lit.cw-active{background:rgba(255,209,102,.25)!important;border:2px solid var(--accent)!important;}
-.cw-grid-kb-wrap{display:flex;gap:10px;align-items:flex-start;}
-.cw-keyboard{display:flex;flex-direction:column;gap:4px;padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:12px;flex-shrink:0;align-self:flex-start;max-width:140px;min-width:100px;}
-.cw-kb-title{font-size:.6rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;text-align:center;margin-bottom:2px;}
-.cw-word-btn{padding:7px 8px;border:1.5px solid var(--border);border-radius:8px;background:var(--surface2);color:var(--text);font-weight:700;font-size:.72rem;cursor:pointer;transition:all .15s;user-select:none;font-family:'Nunito',sans-serif;text-align:center;text-transform:uppercase;word-break:break-all;line-height:1.15;}
+.cw-grid-kb-wrap{display:flex;gap:8px;align-items:flex-start;}
+.cw-keyboard{display:grid;grid-template-columns:1fr 1fr;gap:3px;padding:6px;background:var(--surface);border:1px solid var(--border);border-radius:12px;flex-shrink:0;align-self:flex-start;}
+.cw-key{width:28px;height:30px;border:1.5px solid var(--border);border-radius:7px;background:var(--surface2);color:var(--text);font-weight:800;font-size:.78rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;user-select:none;font-family:'Nunito',sans-serif;}
+.cw-key:hover{background:rgba(255,209,102,.2);border-color:var(--accent);}
+.cw-key:active{transform:scale(.92);background:var(--accent);color:#fff;}
+.cw-key.cw-key-wide{grid-column:span 2;width:auto;font-size:.65rem;}
+.cw-wordbank{display:flex;flex-direction:column;gap:4px;padding:6px;background:var(--surface);border:1px solid var(--border);border-radius:12px;flex-shrink:0;align-self:flex-start;max-width:130px;min-width:90px;}
+.cw-wb-title{font-size:.58rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;text-align:center;margin-bottom:2px;}
+.cw-word-btn{padding:6px 7px;border:1.5px solid var(--border);border-radius:8px;background:var(--surface2);color:var(--text);font-weight:700;font-size:.68rem;cursor:pointer;transition:all .15s;user-select:none;font-family:'Nunito',sans-serif;text-align:center;text-transform:uppercase;word-break:break-all;line-height:1.15;}
 .cw-word-btn:hover{background:rgba(255,209,102,.2);border-color:var(--accent);}
 .cw-word-btn:active{transform:scale(.96);background:var(--accent);color:#fff;}
 .cw-word-btn.used{opacity:.4;text-decoration:line-through;pointer-events:none;background:rgba(6,214,160,.08);border-color:var(--accent2);color:var(--accent2);}
@@ -1176,6 +1182,7 @@ szkoła	school"></textarea>
     <div class="cw-grid-kb-wrap">
       <div class="cw-keyboard" id="cwKeyboard"></div>
       <div class="cw-grid-wrap" id="cwGrid" style="flex:1;overflow-x:auto"></div>
+      <div class="cw-wordbank" id="cwWordbank"></div>
     </div>
     <div class="cw-clues-wrap" id="cwClues"></div>
   </div>
@@ -3859,6 +3866,7 @@ function cwRenderGrid({grid, nums, G}) {
   document.getElementById('cwGrid').innerHTML = '';
   document.getElementById('cwGrid').appendChild(table);
   cwBuildKeyboard();
+  cwBuildWordbank();
   cwActiveInp = null;
 }
 
@@ -3908,32 +3916,65 @@ function cwKbdHandler(e) {
   }
 }
 
-let cwPlacedWords = []; // [{word, clue, row, col, dir, num}]
+let cwPlacedWords = [];
 
 function cwBuildKeyboard() {
   const kb = document.getElementById('cwKeyboard');
   kb.innerHTML = '';
+  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  letters.split('').forEach(ch => {
+    const key = document.createElement('div');
+    key.className = 'cw-key';
+    key.textContent = ch;
+    key.addEventListener('click', () => cwKeyPress(ch));
+    kb.appendChild(key);
+  });
+  const bk = document.createElement('div');
+  bk.className = 'cw-key cw-key-wide';
+  bk.textContent = '⌫';
+  bk.addEventListener('click', () => cwKeyPress('BACK'));
+  kb.appendChild(bk);
+}
 
+function cwKeyPress(ch) {
+  if (!cwActiveInp) {
+    const first = [...document.querySelectorAll('.cw-inp')].find(x => !x.value);
+    if (first) { const td = first.closest('td'); if (td) cwSelectCell(td, first); }
+    if (!cwActiveInp) return;
+  }
+  if (ch === 'BACK') {
+    if (cwActiveInp.value) { cwActiveInp.value = ''; cwActiveInp.classList.remove('cw-ok', 'cw-err'); }
+    else {
+      const all = [...document.querySelectorAll('.cw-inp')];
+      const idx = all.indexOf(cwActiveInp);
+      if (idx > 0) { all[idx-1].value = ''; all[idx-1].classList.remove('cw-ok','cw-err'); const td = all[idx-1].closest('td'); if (td) cwSelectCell(td, all[idx-1]); }
+    }
+    return;
+  }
+  cwActiveInp.value = ch;
+  cwActiveInp.classList.remove('cw-ok', 'cw-err');
+  cwActiveInp.classList.add(ch === cwActiveInp.dataset.ans ? 'cw-ok' : 'cw-err');
+  cwAdvanceToNext(cwActiveInp);
+}
+
+function cwBuildWordbank() {
+  const wb = document.getElementById('cwWordbank');
+  wb.innerHTML = '';
   if (!cwPlacedWords.length) return;
 
   const title = document.createElement('div');
-  title.className = 'cw-kb-title';
+  title.className = 'cw-wb-title';
   title.textContent = 'Słówka (' + cwPlacedWords.length + ')';
-  kb.appendChild(title);
+  wb.appendChild(title);
 
-  // Sortuj alfabetycznie
   const sorted = [...cwPlacedWords].sort((a, b) => a.word.localeCompare(b.word));
   sorted.forEach(p => {
     const btn = document.createElement('div');
     btn.className = 'cw-word-btn';
     btn.textContent = p.word;
     btn.title = p.clue + ' (' + p.dir + ', ' + p.word.length + ' liter)';
-    btn.dataset.word = p.word;
-    btn.dataset.row = p.row;
-    btn.dataset.col = p.col;
-    btn.dataset.dir = p.dir;
     btn.addEventListener('click', () => cwWordPress(btn, p));
-    kb.appendChild(btn);
+    wb.appendChild(btn);
   });
 }
 
