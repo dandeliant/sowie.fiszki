@@ -5590,82 +5590,33 @@ function boardRender() {
 
 function boardPrint() {
   if (!boardCells.length) { toast('Najpierw wygeneruj planszę!'); return; }
+  const boardHtml = document.getElementById('boardWrap').innerHTML;
   const units = getUnitsWithCustom(currentBookId);
   const u = units[boardUnitKey];
   const book = BOOKS[currentBookId];
-  const rows = Math.ceil(boardCells.length / BOARD_COLS);
   const cols = BOARD_COLS;
-
-  const grid = [];
-  for (let r = 0; r < rows; r++) {
-    const row = [];
-    for (let c = 0; c < cols; c++) {
-      const idx = r * cols + c;
-      const cellIdx = r % 2 === 0 ? idx : r * cols + (cols - 1 - c);
-      row.push(cellIdx < boardCells.length ? boardCells[cellIdx] : null);
-    }
-    grid.push(row);
-  }
-
   const win = window.open('', '_blank');
   win.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Gra planszowa — ' + esc(u.name) + '</title><style>' +
-    '@page{size:A4 landscape;margin:8mm}' +
-    'body{font-family:Arial,sans-serif;padding:8px;margin:0;color:#222}' +
+    '@page{size:A4 landscape;margin:6mm}' +
+    '*{box-sizing:border-box}' +
+    'body{font-family:Arial,sans-serif;padding:6px;margin:0;color:#222}' +
     'h1{font-size:1rem;text-align:center;margin:4px 0 2px}' +
-    'h2{font-size:.68rem;text-align:center;color:#888;font-weight:400;margin:0 0 8px}' +
-    '.grid{display:grid;grid-template-columns:repeat(' + cols + ',1fr);gap:0;max-width:100%;border:2px solid #333;border-radius:4px}' +
-    '.cell{border:1px solid #bbb;padding:4px;text-align:center;aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;background:#fff;overflow:hidden}' +
-    '.cell-start{background:#d5f5e3}' +
-    '.cell-finish{background:#fdebd0}' +
-    '.cell-special{background:#ebdef0}' +
-    '.cell .emoji{font-size:1rem;margin-bottom:1px}' +
-    '.cell .word{font-size:.55rem;font-weight:700;text-transform:uppercase;line-height:1.1;color:#222}' +
-    '.cell .sp-text{font-size:.48rem;font-weight:800;color:#7d3c98;text-transform:uppercase;line-height:1.1}' +
-    '.cell .arrow{position:absolute;font-size:.5rem;color:#aaa}' +
-    '.cell .img{width:26px;height:26px;object-fit:contain;border-radius:3px;margin-bottom:1px}' +
-    '.cell.empty{opacity:.15}' +
-    '.rules{margin-top:10px;font-size:.65rem;color:#666;text-align:center;line-height:1.5}' +
+    'h2{font-size:.68rem;text-align:center;color:#888;font-weight:400;margin:0 0 6px}' +
+    '.board-grid{display:grid;gap:0;border:2px solid #333;border-radius:4px}' +
+    '.board-cell{border:1.5px solid #999;padding:4px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;aspect-ratio:1;position:relative;background:#fff;overflow:hidden;-webkit-print-color-adjust:exact;print-color-adjust:exact}' +
+    '.board-cell.cell-start{background:#d5f5e3}' +
+    '.board-cell.cell-finish{background:#fdebd0}' +
+    '.board-cell.cell-special{background:#f0e6f6}' +
+    '.cell-emoji{font-size:1rem;margin-bottom:1px}' +
+    '.cell-word{font-size:.55rem;font-weight:700;text-transform:uppercase;line-height:1.1;color:#222}' +
+    '.cell-special-text{font-size:.48rem;font-weight:800;color:#555;text-transform:uppercase;line-height:1.1}' +
+    '.cell-arrow{position:absolute;font-size:.5rem;color:#999}' +
+    '.cell-img{width:26px;height:26px;object-fit:contain;border-radius:3px;margin-bottom:1px}' +
+    '.rules{margin-top:8px;font-size:.6rem;color:#666;text-align:center;line-height:1.5}' +
     '</style></head><body>');
   win.document.write('<h1>🎲 ' + esc(book.name) + ' — ' + esc(u.name) + '</h1>');
   win.document.write('<h2>Sowie Fiszki · Board Game · ' + new Date().toLocaleDateString('pl-PL') + '</h2>');
-  win.document.write('<div class="grid">');
-
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      const cell = grid[r][c];
-      if (!cell) { win.document.write('<div class="cell empty"></div>'); continue; }
-
-      let cls = 'cell';
-      let content = '';
-      let arrowHtml = '';
-
-      if (cell.type !== 'start' && cell.type !== 'finish') {
-        if (r % 2 === 0 && c < cols - 1) arrowHtml = '<span class="arrow" style="right:1px;top:50%;transform:translateY(-50%)">→</span>';
-        else if (r % 2 === 1 && c > 0) arrowHtml = '<span class="arrow" style="left:1px;top:50%;transform:translateY(-50%)">←</span>';
-        if (r % 2 === 0 && c === cols - 1 && r < rows - 1) arrowHtml = '<span class="arrow" style="bottom:1px;left:50%;transform:translateX(-50%)">↓</span>';
-        if (r % 2 === 1 && c === 0 && r < rows - 1) arrowHtml = '<span class="arrow" style="bottom:1px;left:50%;transform:translateX(-50%)">↓</span>';
-      }
-
-      if (cell.type === 'start') {
-        cls += ' cell-start';
-        content = '<div class="emoji">🏁</div><div class="word" style="color:#1a8f5e">START</div>';
-      } else if (cell.type === 'finish') {
-        cls += ' cell-finish';
-        content = '<div class="emoji">🏆</div><div class="word" style="color:#b7950b">FINISH</div>';
-      } else if (cell.type === 'special') {
-        cls += ' cell-special';
-        content = '<div class="emoji">' + cell.special.emoji + '</div><div class="sp-text">' + esc(cell.special.text) + '</div>';
-      } else {
-        if (cell.imgUrl) content = '<img class="img" src="' + esc(cell.imgUrl) + '">';
-        else if (cell.emoji) content = '<div class="emoji">' + cell.emoji + '</div>';
-        content += '<div class="word">' + esc(cell.en) + '</div>';
-      }
-
-      win.document.write('<div class="' + cls + '">' + content + arrowHtml + '</div>');
-    }
-  }
-
-  win.document.write('</div>');
+  win.document.write(boardHtml);
   win.document.write('<div class="rules">📋 <strong>Zasady:</strong> Rzuć kostką i przesuń pionek. Przeczytaj słowo na polu (i przetłumacz!). Pola specjalne: ⏸️ tracisz kolejkę · 🎲 rzuć jeszcze raz · ⬅️↩️ cofnij się · ⏩🚀 przesuń do przodu. Wygrywa ten, kto pierwszy dotrze na FINISH! 🏆</div>');
   win.document.write('</body></html>');
   win.document.close();
