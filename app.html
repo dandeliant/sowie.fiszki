@@ -4309,11 +4309,11 @@ function snakeNewGame() {
     : 'Znajdź słowa w wężu i wpisz tłumaczenie w języku obcym:';
   wsWrap.innerHTML += '<div class="snake-ws-title">' + wsTitle + '</div>';
 
-  let globalNum = 0;
-  groups.forEach((group, gi) => {
-    // Buduj łańcuch liter
+  // Zbuduj wszystkie łańcuchy najpierw, żeby znać maxChainLen
+  const chains = [];
+  const randLetters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  groups.forEach(group => {
     const snakeLetters = isEnSnake ? group.map(p => p.enUp) : group.map(p => p.plUp);
-    const randLetters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
     let chain = '';
     snakeLetters.forEach((word, i) => {
       if (i > 0) {
@@ -4322,9 +4322,14 @@ function snakeNewGame() {
       }
       chain += word;
     });
+    chains.push(chain);
+  });
+  const maxChainLen = Math.max(...chains.map(c => c.length));
 
+  let globalNum = 0;
+  groups.forEach((group, gi) => {
     // Render SVG sinusoida
-    svgWrap.innerHTML += snakeBuildSVG(chain, gi);
+    svgWrap.innerHTML += snakeBuildSVG(chains[gi], gi, maxChainLen);
 
     // Render karta pracy dla tej grupy
     const sorted = [...group].sort((a, b) => {
@@ -4349,25 +4354,31 @@ function snakeNewGame() {
   document.getElementById('snakeStatus').textContent = groups.length + ' ' + (groups.length === 1 ? 'wąż' : groups.length < 5 ? 'węże' : 'węży') + ' · uzupełnij kartę pracy!';
 }
 
-function snakeBuildSVG(chain, idx) {
-  const svgW = Math.min(650, Math.max(350, chain.length * 12));
-  const amplitude = 35;
-  const periods = Math.max(2, Math.ceil(chain.length / 12));
+function snakeBuildSVG(chain, idx, maxChainLen) {
+  // Stała szerokość dla wszystkich węży — bazowana na najdłuższym łańcuchu
+  const svgW = 620;
+  const amplitude = 28;
+  const periods = Math.max(2, Math.ceil(maxChainLen / 12));
   const actualWavelength = svgW / periods;
-  const svgH = amplitude * 2 + 36;
+  const svgH = amplitude * 2 + 30;
   const pathId = 'snakePath' + idx;
 
+  // Ścieżka sinusoidy — zawsze pełna szerokość
   let pathD = '';
-  for (let i = 0; i <= chain.length * 2; i++) {
-    const x = (i / (chain.length * 2)) * svgW;
+  const steps = 200;
+  for (let i = 0; i <= steps; i++) {
+    const x = (i / steps) * svgW;
     const y = svgH / 2 + Math.sin((x / actualWavelength) * Math.PI * 2) * amplitude;
     pathD += (i === 0 ? 'M ' : ' L ') + x.toFixed(1) + ' ' + y.toFixed(1);
   }
 
-  let svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + svgW + ' ' + svgH + '" style="display:block;margin:8px auto;max-width:100%">';
+  // Rozstaw liter dopasowany do ilości — więcej liter = mniejszy spacing
+  const spacing = Math.max(0.5, Math.min(3, 90 / chain.length));
+
+  let svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + svgW + ' ' + svgH + '" style="display:block;margin:4px auto;max-width:100%;height:' + svgH + 'px">';
   svg += '<defs><path id="' + pathId + '" d="' + pathD + '" fill="none"/></defs>';
-  svg += '<use href="#' + pathId + '" stroke="rgba(150,140,120,.18)" stroke-width="22" fill="none" stroke-linecap="round"/>';
-  svg += '<text font-size="14" font-weight="800" letter-spacing="1.5" fill="currentColor">';
+  svg += '<use href="#' + pathId + '" stroke="rgba(150,140,120,.18)" stroke-width="20" fill="none" stroke-linecap="round"/>';
+  svg += '<text font-size="13" font-weight="800" letter-spacing="' + spacing.toFixed(1) + '" fill="currentColor">';
   svg += '<textPath href="#' + pathId + '" startOffset="1%">';
   for (let i = 0; i < chain.length; i++) {
     svg += esc(chain[i]);
