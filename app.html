@@ -253,6 +253,18 @@ header{width:100%;display:flex;align-items:flex-start;justify-content:space-betw
 .match-item.wrong-flash{animation:matchWrong .5s ease;border-color:var(--danger)!important;background:rgba(255,118,117,.15)!important;}
 @keyframes matchWrong{0%{transform:translateX(0)}20%{transform:translateX(-6px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(4px)}100%{transform:translateX(0)}}
 /* Gap fill / Uzupełnij lukę */
+/* Image Card (karta obrazkowa) */
+.ic-card{background:var(--surface);border:2px solid var(--border);border-radius:12px;padding:8px;text-align:center;cursor:pointer;transition:all .2s;}
+.ic-card:hover{border-color:var(--blue);}
+.ic-card.ic-active{border-color:var(--accent);box-shadow:0 0 10px rgba(255,209,102,.25);}
+.ic-card.ic-done{border-color:var(--accent2);opacity:.7;pointer-events:none;}
+.ic-card.ic-wrong{border-color:var(--danger);animation:matchWrong .5s ease;}
+.ic-img{width:100%;aspect-ratio:1;object-fit:contain;border-radius:8px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:2.5rem;overflow:hidden;margin-bottom:6px;}
+.ic-img img{width:100%;height:100%;object-fit:contain;}
+.ic-answer{min-height:28px;border-top:1.5px solid var(--border);padding-top:5px;font-size:.75rem;font-weight:700;color:var(--accent2);}
+.ic-wb-word{padding:6px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--surface2);font-size:.78rem;font-weight:700;color:var(--text);cursor:pointer;transition:all .15s;text-transform:uppercase;}
+.ic-wb-word:hover{border-color:var(--accent);background:rgba(255,209,102,.12);}
+.ic-wb-word.ic-used{opacity:.35;text-decoration:line-through;pointer-events:none;color:var(--accent2);}
 /* Snake (wąż wyrazowy) */
 .snake-svg-wrap{width:100%;overflow-x:auto;margin:12px 0;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:8px;}
 .snake-svg-wrap svg{display:block;margin:0 auto;}
@@ -757,11 +769,38 @@ body.guest-mode .progress-wrap{opacity:.4;}
     <span class="cw-row-label" style="color:var(--accent)">🐍 Wąż wyrazowy:</span>
     <div class="cw-row-btns" id="snakeRowBtns"></div>
   </div>
+  <div class="cw-row" id="imgCardRow" style="border-color:rgba(116,185,255,.25);">
+    <span class="cw-row-label" style="color:var(--blue)">🖼️ Karta obrazkowa:</span>
+    <div class="cw-row-btns" id="imgCardRowBtns"></div>
+  </div>
   <div class="unit-btns">
     <button class="btn-sm" onclick="showMyProgress()">📊 Moje postępy</button>
     <button class="btn-sm" onclick="showScreen('sBooks')">← Zmień podręcznik</button>
     <button class="btn-sm accent" onclick="startSpeed()">⚡ Speed Challenge</button>
     <button class="btn-sm accent" onclick="startDailyQuiz()" style="background:var(--accent2);border-color:rgba(6,214,160,.35)">📊 Codzienny test</button>
+  </div>
+</div>
+
+<!-- ══ SCREEN: IMAGE CARD (karta obrazkowa) ══ -->
+<div class="screen" id="sImageCard">
+  <div style="width:100%">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;gap:8px;flex-wrap:wrap">
+      <div>
+        <div style="font-family:'Playfair Display',serif;font-size:1.4rem;color:var(--blue)" id="icTitle">🖼️ Karta obrazkowa</div>
+        <div style="font-size:.72rem;color:var(--muted);font-weight:600" id="icStatus">Dopasuj słowa do obrazków!</div>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <span style="font-size:.78rem;font-weight:800;color:var(--accent2)" id="icFound">0 / 0</span>
+        <button class="btn-sm" onclick="icNewGame()">🔄 Nowa</button>
+        <button class="btn-sm" onclick="icPrint()">🖨️ Drukuj</button>
+        <button class="btn-sm" onclick="showScreen('sUnits')">← Wróć</button>
+      </div>
+    </div>
+    <!-- Bank słów -->
+    <div id="icWordBank" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;padding:10px;background:var(--surface);border:1px solid var(--border);border-radius:12px"></div>
+    <!-- Siatka obrazków -->
+    <div id="icGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px"></div>
+    <div id="icDone" style="display:none;text-align:center;padding:18px;font-weight:700;color:var(--accent2);font-size:1rem">🎉 Wszystkie dopasowane!</div>
   </div>
 </div>
 
@@ -955,6 +994,7 @@ szkoła	school"></textarea>
       <div class="card-face card-front">
         <div class="card-label" id="cardFrontLabel">Polski</div>
         <div class="card-word" id="wPl">Kliknij „Generuj" 🎲</div>
+        <div id="cardImg" style="margin:4px 0;display:none"><img id="cardImgEl" style="max-width:80px;max-height:60px;border-radius:8px;object-fit:cover"></div>
         <div class="card-back-actions"><button class="btn-speak" id="btnSpeakPl" onclick="speakQCurr(event)" style="display:none">🔊 Posłuchaj</button></div>
         <div class="card-hint">Kliknij kartę lub naciśnij Spację</div>
       </div>
@@ -990,6 +1030,9 @@ szkoła	school"></textarea>
       <textarea class="modal-textarea" id="sentenceEditPl" placeholder="Np. Moja głowa boli."></textarea>
       <div class="modal-label">Zdanie w języku docelowym</div>
       <textarea class="modal-textarea" id="sentenceEditTarget" placeholder="Np. My head hurts."></textarea>
+      <div class="modal-label">URL obrazka (opcjonalnie)</div>
+      <input type="text" class="modal-textarea" id="sentenceEditImg" placeholder="https://example.com/image.jpg" style="height:auto;padding:8px 10px;font-size:.8rem">
+      <div id="sentenceImgPreview" style="margin-top:4px;text-align:center"></div>
       <div class="modal-btns">
         <button class="btn-modal-cancel" onclick="closeSentenceEditor()">Anuluj</button>
         <button class="btn-modal-save" id="btnSentenceSave" onclick="saveSentenceEdit()">💾 Zapisz</button>
@@ -1812,6 +1855,19 @@ function refreshGrid() {
     btn.addEventListener('click', () => openSnake(k));
     snakeBtns.appendChild(btn);
   });
+
+  // Image card buttons row
+  const imgBtns = document.getElementById('imgCardRowBtns');
+  imgBtns.innerHTML = '';
+  Object.keys(book.units).forEach(k => {
+    const u = units[k];
+    const btn = document.createElement('button');
+    btn.className = 'btn-cw';
+    btn.style.cssText = 'border-color:rgba(116,185,255,.35);color:var(--blue);';
+    btn.textContent = u.icon + ' ' + u.name;
+    btn.addEventListener('click', () => openImageCard(k));
+    imgBtns.appendChild(btn);
+  });
 }
 
 // ══════════════════════════════════════════════
@@ -1842,6 +1898,26 @@ function getWordEmoji(pl) {
   const store = getEmojiStore();
   const em = store[pl];
   return em ? '<span style="margin-right:4px">' + em + '</span>' : '';
+}
+function showCardImage() {
+  const wrap = document.getElementById('cardImg');
+  const img = document.getElementById('cardImgEl');
+  if (!wrap || !img) return;
+  if (curIdx === null) { wrap.style.display = 'none'; return; }
+  const s = DB.getSentence(currentBookId, activeWords[curIdx][0]);
+  if (s && s.image_url) {
+    img.src = s.image_url;
+    img.onerror = () => { wrap.style.display = 'none'; };
+    wrap.style.display = '';
+  } else {
+    wrap.style.display = 'none';
+  }
+}
+function getWordImg(pl) {
+  if (!currentBookId) return '';
+  const s = DB.getSentence(currentBookId, pl);
+  if (!s || !s.image_url) return '';
+  return '<img src="' + esc(s.image_url) + '" style="width:22px;height:22px;object-fit:cover;border-radius:4px;margin-right:5px;vertical-align:middle" onerror="this.style.display=\'none\'">';
 }
 function setWordEmoji(pl) {
   const current = getEmojiStore()[pl] || '';
@@ -1881,7 +1957,7 @@ function openWordList(key) {
       : (isAdmin ? '<td></td>' : '');
     tr.innerHTML = `<td class="td-cb"><input type="checkbox" class="wl-cb row-cb" data-idx="${i}"></td>
       <td class="td-nr">${i + 1}</td>
-      <td class="td-pl">${getWordEmoji(pl)}${esc(pl)}</td>
+      <td class="td-pl">${getWordImg(pl)}${getWordEmoji(pl)}${esc(pl)}</td>
       <td class="td-sp"><button class="btn-speak-sm">🔊</button></td>
       <td class="td-en">${esc(en)}</td>
       <td class="td-sp"><button class="btn-speak-sm">🔊</button></td>
@@ -2348,6 +2424,7 @@ function renderCard() {
         document.getElementById('wPl').textContent = (em ? em + ' ' : '') + q;
         document.getElementById('wEn').textContent = a;
         document.getElementById('btnSpeakPl').style.display = '';
+        showCardImage();
         reAnim(sc);
       }, 680);
     } else {
@@ -2355,6 +2432,7 @@ function renderCard() {
       const em = getEmojiStore()[activeWords[curIdx][0]] || '';
       document.getElementById('wPl').textContent = (em ? em + ' ' : '') + q;
       document.getElementById('wEn').textContent = a;
+      showCardImage();
       document.getElementById('btnSpeakPl').style.display = '';
     }
 
@@ -2527,6 +2605,17 @@ function openSentenceEditor() {
   document.getElementById('modalWordInfo').textContent = wordPl + ' → ' + wordTarget;
   document.getElementById('sentenceEditPl').value     = s.sentence_pl     || '';
   document.getElementById('sentenceEditTarget').value = s.sentence_target || '';
+  document.getElementById('sentenceEditImg').value    = s.image_url       || '';
+  document.getElementById('sentenceImgPreview').innerHTML = s.image_url
+    ? '<img src="' + esc(s.image_url) + '" style="max-width:120px;max-height:80px;border-radius:8px;border:1px solid var(--border)">'
+    : '';
+  // Podgląd na żywo przy wpisywaniu URL
+  document.getElementById('sentenceEditImg').oninput = function() {
+    const url = this.value.trim();
+    document.getElementById('sentenceImgPreview').innerHTML = url
+      ? '<img src="' + esc(url) + '" style="max-width:120px;max-height:80px;border-radius:8px;border:1px solid var(--border)" onerror="this.style.display=\'none\'">'
+      : '';
+  };
   document.getElementById('sentenceModal').style.display = 'flex';
 }
 
@@ -2542,7 +2631,8 @@ async function saveSentenceEdit() {
   const btn = document.getElementById('btnSentenceSave');
   btn.disabled = true; btn.textContent = 'Zapisuję…';
   try {
-    await DB.saveSentence(currentBookId, wordPl, sentencePl, sentenceTarget);
+    const imageUrl = document.getElementById('sentenceEditImg').value.trim();
+    await DB.saveSentence(currentBookId, wordPl, sentencePl, sentenceTarget, imageUrl);
     closeSentenceEditor();
     showCardSentence(); // odśwież widok
   } catch(e) {
@@ -4211,6 +4301,192 @@ function cwPrint() {
       document.body.classList.remove('cw-print');
     }, 500);
   }, 80);
+}
+
+// ══════════════════════════════════════════════
+//  IMAGE CARD (KARTA OBRAZKOWA)
+// ══════════════════════════════════════════════
+let icUnitKey = null;
+let icPairs = []; // [{pl, en, imgUrl, emoji, matched}]
+let icActiveCard = null; // index of clicked card
+
+function openImageCard(unitKey) {
+  icUnitKey = unitKey;
+  const units = getUnitsWithCustom(currentBookId);
+  const u = units[unitKey];
+  document.getElementById('icTitle').textContent = '🖼️ ' + u.name + ' — Karta obrazkowa';
+  showScreen('sImageCard');
+  icNewGame();
+}
+
+function icNewGame() {
+  if (!icUnitKey) return;
+  const units = getUnitsWithCustom(currentBookId);
+  const u = units[icUnitKey];
+
+  // Zbierz słowa z obrazkami lub emoji
+  const all = u.words.map(([pl, en]) => {
+    const s = DB.getSentence(currentBookId, pl);
+    const imgUrl = s?.image_url || '';
+    const emoji = getEmojiStore()[pl] || '';
+    return {pl, en, imgUrl, emoji, matched: false};
+  }).filter(p => p.imgUrl || p.emoji); // tylko te z obrazkiem lub emoji
+
+  if (all.length < 2) {
+    document.getElementById('icGrid').innerHTML = '<div style="text-align:center;color:var(--muted);font-size:.82rem;padding:24px;font-weight:600">Brak słów z obrazkami lub emoji.<br>Dodaj obrazki: otwórz fiszkę → ✏️ Edytuj zdanie → URL obrazka<br>lub dodaj emoji z listy słów (przycisk 😀).</div>';
+    document.getElementById('icWordBank').innerHTML = '';
+    document.getElementById('icDone').style.display = 'none';
+    document.getElementById('icFound').textContent = '0 / 0';
+    return;
+  }
+
+  icPairs = shuffle([...all]).slice(0, Math.min(12, all.length));
+  icActiveCard = null;
+  document.getElementById('icDone').style.display = 'none';
+
+  // Siatka — dopasuj kolumny do ilości
+  const cols = icPairs.length <= 4 ? 2 : icPairs.length <= 9 ? 3 : 4;
+  const grid = document.getElementById('icGrid');
+  grid.style.gridTemplateColumns = 'repeat(' + cols + ', 1fr)';
+  grid.innerHTML = '';
+
+  icPairs.forEach((p, i) => {
+    const card = document.createElement('div');
+    card.className = 'ic-card';
+    card.dataset.idx = i;
+
+    const imgDiv = document.createElement('div');
+    imgDiv.className = 'ic-img';
+    if (p.imgUrl) {
+      imgDiv.innerHTML = '<img src="' + esc(p.imgUrl) + '" onerror="this.parentNode.textContent=\'❓\'">';
+    } else {
+      imgDiv.textContent = p.emoji || '❓';
+    }
+    card.appendChild(imgDiv);
+
+    const ansDiv = document.createElement('div');
+    ansDiv.className = 'ic-answer';
+    ansDiv.id = 'icAns-' + i;
+    ansDiv.textContent = '';
+    card.appendChild(ansDiv);
+
+    card.addEventListener('click', () => icCardClick(i));
+    grid.appendChild(card);
+  });
+
+  // Bank słów — pomieszane
+  const bank = document.getElementById('icWordBank');
+  bank.innerHTML = '<div style="font-size:.6rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;width:100%;margin-bottom:4px">Dopasuj słowa do obrazków:</div>';
+  const shuffledWords = shuffle(icPairs.map((p, i) => ({word: p.en, idx: i})));
+  shuffledWords.forEach(w => {
+    const btn = document.createElement('div');
+    btn.className = 'ic-wb-word';
+    btn.textContent = w.word;
+    btn.dataset.idx = w.idx;
+    btn.addEventListener('click', () => icWordClick(w.idx, btn));
+    bank.appendChild(btn);
+  });
+
+  document.getElementById('icFound').textContent = '0 / ' + icPairs.length;
+  document.getElementById('icStatus').textContent = 'Kliknij obrazek, potem słowo!';
+}
+
+function icCardClick(idx) {
+  if (icPairs[idx].matched) return;
+  // Odznacz poprzedni
+  document.querySelectorAll('.ic-card.ic-active').forEach(c => c.classList.remove('ic-active'));
+  icActiveCard = idx;
+  document.querySelectorAll('.ic-card')[idx].classList.add('ic-active');
+}
+
+function icWordClick(wordIdx, btn) {
+  if (btn.classList.contains('ic-used')) return;
+  if (icActiveCard === null) { toast('Najpierw kliknij obrazek!'); return; }
+
+  const cardIdx = icActiveCard;
+  const cardEl = document.querySelectorAll('.ic-card')[cardIdx];
+
+  if (wordIdx === cardIdx) {
+    // Trafienie!
+    icPairs[cardIdx].matched = true;
+    cardEl.classList.remove('ic-active');
+    cardEl.classList.add('ic-done');
+    document.getElementById('icAns-' + cardIdx).textContent = icPairs[cardIdx].en;
+    btn.classList.add('ic-used');
+    icActiveCard = null;
+    playOk();
+    spkForeign(icPairs[cardIdx].en);
+
+    const found = icPairs.filter(p => p.matched).length;
+    document.getElementById('icFound').textContent = found + ' / ' + icPairs.length;
+
+    if (found >= icPairs.length) {
+      document.getElementById('icDone').style.display = 'block';
+      particles(true); confetti();
+      owlSay('🎉 Brawo! Wszystko dopasowane!');
+    }
+  } else {
+    // Pudło
+    cardEl.classList.add('ic-wrong');
+    setTimeout(() => cardEl.classList.remove('ic-wrong'), 600);
+    playBad();
+  }
+}
+
+function icPrint() {
+  if (!icUnitKey) return;
+  const units = getUnitsWithCustom(currentBookId);
+  const u = units[icUnitKey];
+  const book = BOOKS[currentBookId];
+
+  // Zbierz słowa z obrazkami/emoji
+  const pairs = u.words.map(([pl, en]) => {
+    const s = DB.getSentence(currentBookId, pl);
+    const imgUrl = s?.image_url || '';
+    const emoji = getEmojiStore()[pl] || '';
+    return {pl, en, imgUrl, emoji};
+  }).filter(p => p.imgUrl || p.emoji);
+
+  if (!pairs.length) { toast('Brak słów z obrazkami!'); return; }
+
+  const win = window.open('', '_blank');
+  win.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Karta obrazkowa — ' + esc(u.name) + '</title><style>' +
+    'body{font-family:Arial,sans-serif;padding:20px;color:#222;max-width:700px;margin:0 auto}' +
+    'h1{font-size:1.1rem;margin-bottom:2px}h2{font-size:.78rem;color:#888;font-weight:400;margin-bottom:6px}' +
+    '.name-line{font-size:.78rem;color:#999;margin-bottom:14px}' +
+    '.bank{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;padding:10px;border:1.5px solid #ccc;border-radius:8px}' +
+    '.bank-word{padding:4px 10px;border:1px solid #bbb;border-radius:6px;font-size:.8rem;font-weight:700}' +
+    '.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}' +
+    '.card{border:1.5px solid #bbb;border-radius:8px;padding:8px;text-align:center}' +
+    '.card-img{width:100%;aspect-ratio:1;display:flex;align-items:center;justify-content:center;font-size:2.5rem;border-radius:6px;background:#f9f9f9;overflow:hidden;margin-bottom:6px}' +
+    '.card-img img{width:100%;height:100%;object-fit:contain}' +
+    '.card-line{border-top:1.5px solid #bbb;padding-top:6px;min-height:22px;font-size:.8rem}' +
+    '.instr{font-size:.8rem;font-weight:700;color:#555;margin-bottom:10px}' +
+    '@media print{body{padding:10px}.grid{gap:8px}}' +
+    '</style></head><body>');
+  win.document.write('<h1>🖼️ ' + esc(book.name) + ' — ' + esc(u.name) + ' — Karta obrazkowa</h1>');
+  win.document.write('<h2>Sowie Fiszki · ' + new Date().toLocaleDateString('pl-PL') + '</h2>');
+  win.document.write('<div class="name-line">Imię i nazwisko: _________________________ Klasa: _________ Data: __________</div>');
+  win.document.write('<div class="instr">Dopasuj słowa do obrazków. Wpisz właściwe słowo pod każdym obrazkiem.</div>');
+
+  // Bank słów (pomieszane)
+  const shuffled = shuffle([...pairs]);
+  win.document.write('<div class="bank">');
+  shuffled.forEach(p => { win.document.write('<span class="bank-word">' + esc(p.en) + '</span>'); });
+  win.document.write('</div>');
+
+  // Siatka obrazków
+  const cols = pairs.length <= 4 ? 2 : pairs.length <= 9 ? 3 : 4;
+  win.document.write('<div class="grid" style="grid-template-columns:repeat(' + cols + ',1fr)">');
+  pairs.forEach(p => {
+    win.document.write('<div class="card"><div class="card-img">');
+    if (p.imgUrl) win.document.write('<img src="' + esc(p.imgUrl) + '">');
+    else win.document.write(p.emoji);
+    win.document.write('</div><div class="card-line"></div></div>');
+  });
+  win.document.write('</div></body></html>');
+  win.document.close();
+  setTimeout(() => win.print(), 500);
 }
 
 // ══════════════════════════════════════════════

@@ -570,13 +570,14 @@ const DB = (() => {
   async function loadSentences(bookId) {
     const { data, error } = await supabase
       .from('word_sentences')
-      .select('word_pl, sentence_pl, sentence_target')
+      .select('word_pl, sentence_pl, sentence_target, image_url')
       .eq('book_id', bookId);
     if (error) { console.warn('[DB] loadSentences:', error.message); return; }
     (data || []).forEach(row => {
       _sentences[bookId + '__' + row.word_pl] = {
         sentence_pl:     row.sentence_pl,
-        sentence_target: row.sentence_target
+        sentence_target: row.sentence_target,
+        image_url:       row.image_url || ''
       };
     });
   }
@@ -587,18 +588,19 @@ const DB = (() => {
   }
 
   /** Admin: zapisuje / aktualizuje zdanie (UPSERT). */
-  async function saveSentence(bookId, wordPl, sentencePl, sentenceTarget) {
-    const { error } = await supabase.from('word_sentences').upsert({
+  async function saveSentence(bookId, wordPl, sentencePl, sentenceTarget, imageUrl) {
+    const payload = {
       book_id:         bookId,
       word_pl:         wordPl,
       sentence_pl:     sentencePl,
       sentence_target: sentenceTarget,
       updated_by:      _userId,
       updated_at:      new Date().toISOString()
-    }, { onConflict: 'book_id,word_pl' });
+    };
+    if (imageUrl !== undefined) payload.image_url = imageUrl || '';
+    const { error } = await supabase.from('word_sentences').upsert(payload, { onConflict: 'book_id,word_pl' });
     if (error) throw new Error(error.message);
-    // Zaktualizuj lokalny cache
-    _sentences[bookId + '__' + wordPl] = { sentence_pl: sentencePl, sentence_target: sentenceTarget };
+    _sentences[bookId + '__' + wordPl] = { sentence_pl: sentencePl, sentence_target: sentenceTarget, image_url: imageUrl || '' };
   }
 
   // ═══════════════════════════════════════════════════════════════
