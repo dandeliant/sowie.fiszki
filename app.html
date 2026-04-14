@@ -4268,10 +4268,11 @@ function snakeUpdateSelCount() {
 function snakeSelAll() { document.querySelectorAll('#snakeWordChips .cw-word-chip.eligible').forEach(c => c.classList.add('selected')); snakeUpdateSelCount(); }
 function snakeSelNone() { document.querySelectorAll('#snakeWordChips .cw-word-chip.eligible').forEach(c => c.classList.remove('selected')); snakeUpdateSelCount(); }
 
+const SNAKE_MAX = 7; // max słów na węża
+
 function snakeNewGame() {
   if (!snakeUnitKey) return;
 
-  // Zbierz zaznaczone słowa
   const selectedChips = [...document.querySelectorAll('#snakeWordChips .cw-word-chip.eligible.selected')];
   let pairs = selectedChips.map(c => ({
     pl: c.dataset.plRaw, en: c.dataset.enRaw,
@@ -4288,143 +4289,129 @@ function snakeNewGame() {
   }
   if (pairs.length < 2) { toast('Za mało słów!'); return; }
 
-  snakePairs = shuffle([...pairs]).slice(0, Math.min(8, pairs.length));
+  snakePairs = shuffle([...pairs]);
 
-  // Zbuduj łańcuch liter (wąż)
-  const snakeLetters = snakeDir === 'en'
-    ? snakePairs.map(p => p.enUp)
-    : snakePairs.map(p => p.plUp);
+  // Podziel na grupy po max 7
+  const groups = [];
+  for (let i = 0; i < snakePairs.length; i += SNAKE_MAX) {
+    groups.push(snakePairs.slice(i, i + SNAKE_MAX));
+  }
 
-  const randLetters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  let chain = '';
-  snakeLetters.forEach((word, i) => {
-    if (i > 0) {
-      const n = 1 + Math.floor(Math.random() * 2);
-      for (let j = 0; j < n; j++) chain += randLetters[Math.floor(Math.random() * 26)];
+  // Render wszystko do wrapperów
+  const svgWrap = document.getElementById('snakeSvgWrap');
+  const wsWrap = document.getElementById('snakeWorksheet');
+  svgWrap.innerHTML = '';
+  wsWrap.innerHTML = '';
+
+  const isEnSnake = snakeDir === 'en';
+  const wsTitle = isEnSnake
+    ? 'Znajdź słowa w wężu i wpisz tłumaczenie:'
+    : 'Znajdź słowa w wężu i wpisz tłumaczenie w języku obcym:';
+  wsWrap.innerHTML += '<div class="snake-ws-title">' + wsTitle + '</div>';
+
+  let globalNum = 0;
+  groups.forEach((group, gi) => {
+    // Buduj łańcuch liter
+    const snakeLetters = isEnSnake ? group.map(p => p.enUp) : group.map(p => p.plUp);
+    const randLetters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    let chain = '';
+    snakeLetters.forEach((word, i) => {
+      if (i > 0) {
+        const n = 1 + Math.floor(Math.random() * 2);
+        for (let j = 0; j < n; j++) chain += randLetters[Math.floor(Math.random() * 26)];
+      }
+      chain += word;
+    });
+
+    // Render SVG sinusoida
+    svgWrap.innerHTML += snakeBuildSVG(chain, gi);
+
+    // Render karta pracy dla tej grupy
+    const sorted = [...group].sort((a, b) => {
+      const wa = isEnSnake ? a.pl : a.en;
+      const wb = isEnSnake ? b.pl : b.en;
+      return wa.localeCompare(wb, 'pl');
+    });
+    sorted.forEach(p => {
+      globalNum++;
+      // Pokaż polskie słowo, linia na angielskie (lub odwrotnie)
+      const shown = isEnSnake ? p.pl : p.en;
+      wsWrap.innerHTML += '<div class="snake-ws-row"><span class="snake-ws-num">' + globalNum + '.</span><span class="snake-ws-word">' + esc(shown) + '</span> — <span class="snake-ws-line"></span></div>';
+    });
+
+    // Separator między grupami
+    if (gi < groups.length - 1) {
+      wsWrap.innerHTML += '<div style="border-top:1px dashed var(--border);margin:8px 0"></div>';
     }
-    chain += word;
   });
 
-  // Render SVG sinusoida
-  snakeRenderSVG(chain);
-  // Render karta pracy
-  snakeRenderWorksheet();
-
   document.getElementById('snakeFound').textContent = snakePairs.length + ' słów';
-  document.getElementById('snakeStatus').textContent = 'Znajdź słowa w wężu i uzupełnij kartę pracy!';
+  document.getElementById('snakeStatus').textContent = groups.length + ' ' + (groups.length === 1 ? 'wąż' : groups.length < 5 ? 'węże' : 'węży') + ' · uzupełnij kartę pracy!';
 }
 
-function snakeRenderSVG(chain) {
-  const wrap = document.getElementById('snakeSvgWrap');
-  const letterSpacing = 18;
-  const totalLen = chain.length * letterSpacing;
-  const amplitude = 40;
-  const wavelength = 220;
-  const svgW = Math.min(700, Math.max(400, totalLen * 0.7));
-  const periods = Math.max(2, Math.ceil(totalLen / wavelength));
+function snakeBuildSVG(chain, idx) {
+  const svgW = Math.min(650, Math.max(350, chain.length * 12));
+  const amplitude = 35;
+  const periods = Math.max(2, Math.ceil(chain.length / 12));
   const actualWavelength = svgW / periods;
-  const svgH = amplitude * 2 + 40;
+  const svgH = amplitude * 2 + 36;
+  const pathId = 'snakePath' + idx;
 
-  // Zbuduj path sinusoidy
   let pathD = '';
-  const points = [];
   for (let i = 0; i <= chain.length * 2; i++) {
     const x = (i / (chain.length * 2)) * svgW;
     const y = svgH / 2 + Math.sin((x / actualWavelength) * Math.PI * 2) * amplitude;
-    if (i === 0) pathD += 'M ' + x + ' ' + y;
-    else pathD += ' L ' + x + ' ' + y;
+    pathD += (i === 0 ? 'M ' : ' L ') + x.toFixed(1) + ' ' + y.toFixed(1);
   }
 
-  // Pozycje liter — równomiernie rozłożone wzdłuż ścieżki
-  let svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + svgW + ' ' + svgH + '" width="' + svgW + '" height="' + svgH + '">';
-  svg += '<defs><path id="snakePath" d="' + pathD + '" fill="none"/></defs>';
-
-  // Linia węża (szara)
-  svg += '<use href="#snakePath" stroke="rgba(150,140,120,.2)" stroke-width="22" fill="none" stroke-linecap="round" stroke-linejoin="round"/>';
-
-  // Litery wzdłuż ścieżki
-  svg += '<text font-size="15" font-weight="800" letter-spacing="2" fill="currentColor">';
-  svg += '<textPath href="#snakePath" startOffset="2%">';
+  let svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + svgW + ' ' + svgH + '" style="display:block;margin:8px auto;max-width:100%">';
+  svg += '<defs><path id="' + pathId + '" d="' + pathD + '" fill="none"/></defs>';
+  svg += '<use href="#' + pathId + '" stroke="rgba(150,140,120,.18)" stroke-width="22" fill="none" stroke-linecap="round"/>';
+  svg += '<text font-size="14" font-weight="800" letter-spacing="1.5" fill="currentColor">';
+  svg += '<textPath href="#' + pathId + '" startOffset="1%">';
   for (let i = 0; i < chain.length; i++) {
     svg += esc(chain[i]);
     if (i < chain.length - 1) svg += ' ';
   }
-  svg += '</textPath></text>';
-  svg += '</svg>';
-
-  wrap.innerHTML = svg;
-}
-
-function snakeRenderWorksheet() {
-  const ws = document.getElementById('snakeWorksheet');
-  const isEnSnake = snakeDir === 'en';
-  const title = isEnSnake
-    ? 'Znajdź słowa w wężu i napisz ich polskie tłumaczenie:'
-    : 'Znajdź słowa w wężu i napisz ich tłumaczenie w języku obcym:';
-
-  let html = '<div class="snake-ws-title">' + title + '</div>';
-  // Sortuj alfabetycznie wg widocznego słowa (to co jest w wężu)
-  const sorted = [...snakePairs].sort((a, b) => {
-    const wa = isEnSnake ? a.en : a.pl;
-    const wb = isEnSnake ? b.en : b.pl;
-    return wa.localeCompare(wb, 'pl');
-  });
-
-  sorted.forEach((p, i) => {
-    const shown = isEnSnake ? p.en : p.pl;
-    html += '<div class="snake-ws-row">';
-    html += '<span class="snake-ws-num">' + (i + 1) + '.</span>';
-    html += '<span class="snake-ws-word">' + esc(shown) + '</span>';
-    html += ' — <span class="snake-ws-line"></span>';
-    html += '</div>';
-  });
-
-  ws.innerHTML = html;
+  svg += '</textPath></text></svg>';
+  return svg;
 }
 
 function snakePrint() {
-  // Otwórz nowe okno z kartą pracy do druku
   const units = getUnitsWithCustom(currentBookId);
   const u = units[snakeUnitKey];
   const book = BOOKS[currentBookId];
   const isEnSnake = snakeDir === 'en';
-  const svgEl = document.querySelector('#snakeSvgWrap svg');
-  const svgHtml = svgEl ? svgEl.outerHTML : '';
 
-  const sorted = [...snakePairs].sort((a, b) => {
-    const wa = isEnSnake ? a.en : a.pl;
-    const wb = isEnSnake ? b.en : b.pl;
-    return wa.localeCompare(wb, 'pl');
-  });
+  // Zbierz wszystkie SVG
+  const svgs = [...document.querySelectorAll('#snakeSvgWrap svg')];
+  const svgHtml = svgs.map(s => s.outerHTML).join('');
 
-  const wsTitle = isEnSnake
-    ? 'Znajdź słowa w wężu i napisz ich polskie tłumaczenie:'
-    : 'Znajdź słowa w wężu i napisz ich tłumaczenie w języku obcym:';
+  // Zbierz kartę pracy z DOM
+  const wsEl = document.getElementById('snakeWorksheet');
 
   const win = window.open('', '_blank');
   win.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Wąż wyrazowy — ' + esc(u.name) + '</title><style>' +
     'body{font-family:Arial,sans-serif;padding:24px;color:#222;max-width:700px;margin:0 auto}' +
     'h1{font-size:1.2rem;margin-bottom:2px}' +
     'h2{font-size:.8rem;color:#888;font-weight:400;margin-bottom:18px}' +
-    '.svg-wrap{margin:16px 0;text-align:center}' +
-    '.svg-wrap svg{max-width:100%;height:auto}' +
-    '.svg-wrap svg text{fill:#333}' +
-    '.svg-wrap svg use{stroke:rgba(0,0,0,.1)}' +
-    '.ws-title{font-size:.78rem;font-weight:700;color:#555;text-transform:uppercase;margin-bottom:10px}' +
-    '.ws-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #ddd;font-size:.88rem}' +
+    '.svg-wrap{margin:10px 0;text-align:center}' +
+    '.svg-wrap svg{max-width:100%;height:auto;display:block;margin:6px auto}' +
+    'svg text{fill:#333!important}svg use{stroke:rgba(0,0,0,.12)!important}' +
+    '.ws-title{font-size:.78rem;font-weight:700;color:#555;text-transform:uppercase;margin:16px 0 10px}' +
+    '.ws-row{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid #ddd;font-size:.88rem}' +
     '.ws-num{font-weight:800;color:#999;min-width:22px}' +
     '.ws-word{font-weight:700;min-width:110px}' +
     '.ws-line{flex:1;border-bottom:1.5px solid #bbb;min-width:100px;height:1px}' +
+    '.sep{border-top:1px dashed #ccc;margin:6px 0}' +
+    '.name-line{font-size:.8rem;color:#999;margin-bottom:16px}' +
     '@media print{body{padding:12px}}' +
     '</style></head><body>');
   win.document.write('<h1>🐍 ' + esc(book.name) + ' — ' + esc(u.name) + ' — Wąż wyrazowy</h1>');
   win.document.write('<h2>Sowie Fiszki · ' + new Date().toLocaleDateString('pl-PL') + '</h2>');
+  win.document.write('<div class="name-line">Imię i nazwisko: _________________________ Klasa: _________ Data: __________</div>');
   win.document.write('<div class="svg-wrap">' + svgHtml + '</div>');
-  win.document.write('<div class="ws-title">' + wsTitle + '</div>');
-  sorted.forEach((p, i) => {
-    const shown = isEnSnake ? p.en : p.pl;
-    win.document.write('<div class="ws-row"><span class="ws-num">' + (i+1) + '.</span><span class="ws-word">' + esc(shown) + '</span> — <span class="ws-line"></span></div>');
-  });
+  win.document.write(wsEl.innerHTML);
   win.document.write('</body></html>');
   win.document.close();
   setTimeout(() => win.print(), 400);
