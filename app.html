@@ -469,6 +469,17 @@ canvas#pc{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none
   body.ws-print .ws-word-item{border-color:#bbb!important;background:#fff!important;}
   body.ws-print #wsWordListTitle{color:#000!important;border-color:#ccc!important;}
   body.ws-print .ws-dir-toggles,.ws-print .ws-dir-btn{display:none!important;}
+  /* Snake print */
+  body.snake-print .wrap{display:block!important;}
+  body.snake-print .screen:not(#sSnake){display:none!important;}
+  body.snake-print #sSnake{display:block!important;}
+  body.snake-print .btn-sm,body.snake-print #snakeSelPanel,body.snake-print #snakeDone,body.snake-print #snakeFound{display:none!important;}
+  body.snake-print #snakeTitle{color:#000!important;font-size:1.2rem!important;}
+  body.snake-print #snakeStatus{color:#333!important;}
+  body.snake-print .snake-cell{background:#fff!important;color:#000!important;border-color:#aaa!important;}
+  body.snake-print .snake-cell.found{background:#fff!important;color:#000!important;}
+  body.snake-print .snake-word-chip{background:#fff!important;color:#000!important;border-color:#aaa!important;text-decoration:none!important;opacity:1!important;}
+  body.snake-print .snake-word-chip.found{text-decoration:none!important;opacity:1!important;}
   @page{margin:10mm;}
 }
 
@@ -765,6 +776,9 @@ body.guest-mode .progress-wrap{opacity:.4;}
       <div style="display:flex;gap:6px;align-items:center">
         <span style="font-size:.78rem;font-weight:800;color:var(--accent2)" id="snakeFound">0 / 0</span>
         <button class="btn-sm" onclick="snakeNewGame()">🔄 Nowa</button>
+        <button class="btn-sm" onclick="snakePrint()">🖨️ Drukuj</button>
+        <button class="btn-sm" onclick="snakeDownloadPDF()" id="snakeBtn-pdf">📄 PDF</button>
+        <button class="btn-sm" onclick="snakeDownloadJPEG()" id="snakeBtn-jpg">🖼️ JPEG</button>
         <button class="btn-sm" onclick="showScreen('sUnits')">← Wróć</button>
       </div>
     </div>
@@ -4409,6 +4423,84 @@ function snakeCellClick(chainIdx, cellEl) {
       playBad();
     }
   }
+}
+
+function snakePrint() {
+  // Ukryj znalezione podświetlenia
+  document.querySelectorAll('.snake-cell.found').forEach(el => { el.dataset.wasF='1'; el.classList.remove('found'); });
+  document.querySelectorAll('.snake-word-chip.found').forEach(el => { el.dataset.wasF='1'; el.classList.remove('found'); });
+  document.body.classList.add('snake-print');
+  setTimeout(() => {
+    window.print();
+    setTimeout(() => {
+      document.querySelectorAll('.snake-cell[data-was-f="1"]').forEach(el => { el.classList.add('found'); delete el.dataset.wasF; });
+      document.querySelectorAll('.snake-word-chip[data-was-f="1"]').forEach(el => { el.classList.add('found'); delete el.dataset.wasF; });
+      document.body.classList.remove('snake-print');
+    }, 500);
+  }, 80);
+}
+
+async function snakeDownloadPDF() {
+  const btn = document.getElementById('snakeBtn-pdf');
+  btn.disabled = true; btn.textContent = '⏳…';
+  try {
+    document.querySelectorAll('.snake-cell.found').forEach(el => { el.dataset.wasF='1'; el.classList.remove('found'); });
+    document.querySelectorAll('.snake-word-chip.found').forEach(el => { el.dataset.wasF='1'; el.classList.remove('found'); });
+    const target = document.getElementById('sSnake');
+    const btns = target.querySelectorAll('.btn-sm');
+    btns.forEach(b => b.style.display = 'none');
+    const selPanel = document.getElementById('snakeSelPanel');
+    if (selPanel) selPanel.style.display = 'none';
+
+    const canvas = await html2canvas(target, { scale: 2, backgroundColor: '#1a1040', useCORS: true, logging: false });
+
+    btns.forEach(b => b.style.display = '');
+    if (selPanel) selPanel.style.display = '';
+    document.querySelectorAll('.snake-cell[data-was-f="1"]').forEach(el => { el.classList.add('found'); delete el.dataset.wasF; });
+    document.querySelectorAll('.snake-word-chip[data-was-f="1"]').forEach(el => { el.classList.add('found'); delete el.dataset.wasF; });
+
+    const {jsPDF} = window.jspdf;
+    const a4w = 210, a4h = 297, margin = 10;
+    const usableW = a4w - 2*margin, usableH = a4h - 2*margin;
+    const ratio = canvas.width / canvas.height;
+    let imgW, imgH;
+    if (ratio > usableW/usableH) { imgW = usableW; imgH = usableW/ratio; }
+    else { imgH = usableH; imgW = usableH*ratio; }
+    const pdf = new jsPDF({orientation:'portrait', unit:'mm', format:'a4'});
+    pdf.addImage(canvas.toDataURL('image/jpeg',0.95), 'JPEG', (a4w-imgW)/2, margin, imgW, imgH);
+    const units = getUnitsWithCustom(currentBookId);
+    const title = (units[snakeUnitKey]?.name || 'waz').replace(/\s+/g,'_');
+    pdf.save(title + '_waz.pdf');
+  } catch(e) { toast('Błąd PDF: ' + e.message); }
+  finally { btn.disabled = false; btn.textContent = '📄 PDF'; }
+}
+
+async function snakeDownloadJPEG() {
+  const btn = document.getElementById('snakeBtn-jpg');
+  btn.disabled = true; btn.textContent = '⏳…';
+  try {
+    document.querySelectorAll('.snake-cell.found').forEach(el => { el.dataset.wasF='1'; el.classList.remove('found'); });
+    document.querySelectorAll('.snake-word-chip.found').forEach(el => { el.dataset.wasF='1'; el.classList.remove('found'); });
+    const target = document.getElementById('sSnake');
+    const btns = target.querySelectorAll('.btn-sm');
+    btns.forEach(b => b.style.display = 'none');
+    const selPanel = document.getElementById('snakeSelPanel');
+    if (selPanel) selPanel.style.display = 'none';
+
+    const canvas = await html2canvas(target, { scale: 2, backgroundColor: '#1a1040', useCORS: true, logging: false });
+
+    btns.forEach(b => b.style.display = '');
+    if (selPanel) selPanel.style.display = '';
+    document.querySelectorAll('.snake-cell[data-was-f="1"]').forEach(el => { el.classList.add('found'); delete el.dataset.wasF; });
+    document.querySelectorAll('.snake-word-chip[data-was-f="1"]').forEach(el => { el.classList.add('found'); delete el.dataset.wasF; });
+
+    const link = document.createElement('a');
+    const units = getUnitsWithCustom(currentBookId);
+    link.download = (units[snakeUnitKey]?.name || 'waz').replace(/\s+/g,'_') + '_waz.jpg';
+    link.href = canvas.toDataURL('image/jpeg', 0.95);
+    link.click();
+  } catch(e) { toast('Błąd JPEG: ' + e.message); }
+  finally { btn.disabled = false; btn.textContent = '🖼️ JPEG'; }
 }
 
 // ══════════════════════════════════════════════
