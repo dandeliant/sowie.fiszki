@@ -253,6 +253,18 @@ header{width:100%;display:flex;align-items:flex-start;justify-content:space-betw
 .match-item.wrong-flash{animation:matchWrong .5s ease;border-color:var(--danger)!important;background:rgba(255,118,117,.15)!important;}
 @keyframes matchWrong{0%{transform:translateX(0)}20%{transform:translateX(-6px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(4px)}100%{transform:translateX(0)}}
 /* Gap fill / Uzupełnij lukę */
+/* Scramble tiles */
+.scr-tile{padding:8px 12px;border:2px solid var(--border);border-radius:10px;background:var(--surface2);color:var(--text);font-weight:800;font-size:.9rem;cursor:pointer;user-select:none;transition:all .15s;font-family:'Nunito',sans-serif;text-transform:uppercase;}
+.scr-tile:hover{border-color:var(--accent);background:rgba(255,209,102,.12);}
+.scr-tile:active{transform:scale(.92);}
+.scr-tile.placed{opacity:.3;pointer-events:none;}
+.scr-tile.in-answer{border-color:var(--accent);background:rgba(255,209,102,.15);}
+.scr-tile.in-answer:hover{border-color:var(--danger);background:rgba(255,118,117,.1);}
+.scr-word-tile{padding:8px 14px;border:2px solid var(--border);border-radius:10px;background:var(--surface2);color:var(--text);font-weight:700;font-size:.82rem;cursor:pointer;user-select:none;transition:all .15s;font-family:'Nunito',sans-serif;}
+.scr-word-tile:hover{border-color:var(--accent);background:rgba(255,209,102,.12);}
+.scr-word-tile.placed{opacity:.3;pointer-events:none;}
+.scr-word-tile.in-answer{border-color:var(--accent);background:rgba(255,209,102,.15);}
+.scr-word-tile.in-answer:hover{border-color:var(--danger);background:rgba(255,118,117,.1);}
 /* Hangman (Wisielec / Rakieta) */
 .hang-letter{width:32px;height:38px;border:2px solid var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:1.1rem;font-weight:900;color:var(--text);font-family:'Nunito',sans-serif;text-transform:uppercase;background:var(--surface);}
 .hang-letter.revealed{border-color:var(--accent2);color:var(--accent2);background:rgba(6,214,160,.08);}
@@ -953,6 +965,8 @@ body.guest-mode .progress-wrap{opacity:.4;}
     <div class="wl-header-actions">
       <button class="btn-sm" onclick="printWordList()" title="Drukuj listę">🖨️</button>
       <button class="btn-sm" onclick="printFlashcards()" title="Fiszki do wydruku i wycięcia">🃏</button>
+      <button class="btn-sm" onclick="printScrambleSheet()" title="Rozsypanka literowa do druku">🔀</button>
+      <button class="btn-sm" onclick="printSentScrSheet()" title="Rozsypanka zdaniowa do druku">📜</button>
       <button class="btn-sm" onclick="toggleCustomSection()" id="btnCustomToggle">➕</button>
       <button class="btn-sm" onclick="showScreen('sUnits')">← Wróć</button>
     </div>
@@ -1022,6 +1036,8 @@ szkoła	school"></textarea>
     <button class="mode-btn" onclick="setMode('tf')" id="mTF">✅ Pr./Fał.</button>
     <button class="mode-btn" onclick="setMode('gap')" id="mGap">📝 Luka</button>
     <button class="mode-btn" onclick="setMode('match')" id="mMatch">🧩 Paruj</button>
+    <button class="mode-btn" onclick="setMode('scramble')" id="mScramble">🔀 Rozsypanka</button>
+    <button class="mode-btn" onclick="setMode('sentscr')" id="mSentScr">📜 Zdania</button>
     <button class="mode-btn speed-mode" onclick="setMode('speed')" id="mSpeed">⚡ Speed</button>
   </div>
   <div class="stats">
@@ -1166,6 +1182,33 @@ szkoła	school"></textarea>
       <button class="btn-sm accent" id="btnGapChk" onclick="checkGap()">Sprawdź</button>
     </div>
     <div class="type-result" id="gapRes" style="margin-top:8px"></div>
+  </div>
+
+  <!-- Word Scramble -->
+  <div class="scramble-area" id="scrambleArea" style="width:100%;margin-bottom:14px;display:none">
+    <div class="q-label" id="scrambleLabel">🔀 Ułóż litery w prawidłowej kolejności</div>
+    <div style="font-size:1rem;font-weight:700;color:var(--accent);text-align:center;margin-bottom:8px" id="scrambleClue"></div>
+    <div id="scrambleTiles" style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-bottom:12px;min-height:44px"></div>
+    <div id="scrambleAnswer" style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-bottom:12px;min-height:44px;padding:10px;background:var(--surface);border:2px dashed var(--border);border-radius:12px"></div>
+    <div style="text-align:center;margin-bottom:8px">
+      <button class="btn-sm" onclick="scrambleClear()">↩ Cofnij</button>
+      <button class="btn-sm accent" id="btnScrambleChk" onclick="checkScramble()">Sprawdź</button>
+    </div>
+    <div class="type-result" id="scrambleRes" style="margin-top:6px"></div>
+  </div>
+
+  <!-- Sentence Scramble -->
+  <div class="scramble-area" id="sentScrArea" style="width:100%;margin-bottom:14px;display:none">
+    <div class="q-label" id="sentScrLabel">📜 Ułóż słowa w prawidłowej kolejności</div>
+    <div style="font-size:.85rem;font-weight:700;color:var(--accent);text-align:center;margin-bottom:4px" id="sentScrClue"></div>
+    <div style="font-size:.72rem;color:var(--muted);text-align:center;margin-bottom:10px;font-style:italic" id="sentScrHint"></div>
+    <div id="sentScrTiles" style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-bottom:12px;min-height:40px"></div>
+    <div id="sentScrAnswer" style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-bottom:12px;min-height:40px;padding:10px;background:var(--surface);border:2px dashed var(--border);border-radius:12px"></div>
+    <div style="text-align:center;margin-bottom:8px">
+      <button class="btn-sm" onclick="sentScrClear()">↩ Cofnij</button>
+      <button class="btn-sm accent" id="btnSentScrChk" onclick="checkSentScr()">Sprawdź</button>
+    </div>
+    <div class="type-result" id="sentScrRes" style="margin-top:6px"></div>
   </div>
 
   <!-- Match / Paruj mode -->
@@ -2542,6 +2585,14 @@ function renderCard() {
     const ga = document.getElementById('gapArea'); ga.style.display = 'block'; reAnim(ga);
     buildGapMode();
 
+  } else if (mode === 'scramble') {
+    const sa = document.getElementById('scrambleArea'); sa.style.display = 'block'; reAnim(sa);
+    buildScramble();
+
+  } else if (mode === 'sentscr') {
+    const ss = document.getElementById('sentScrArea'); ss.style.display = 'block'; reAnim(ss);
+    buildSentScramble();
+
   } else if (mode === 'match') {
     const ma = document.getElementById('matchArea'); ma.style.display = 'block'; reAnim(ma);
     buildMatchMode();
@@ -2590,7 +2641,7 @@ function buildMasked(word) {
 
 function reAnim(el) { el.style.animation = 'none'; el.offsetHeight; el.style.animation = ''; }
 function hideAreas() {
-  ['cardScene','quizArea','typeArea','missingArea','dictateArea','tfArea','gapArea','matchArea','speedArea','sentencePanel']
+  ['cardScene','quizArea','typeArea','missingArea','dictateArea','tfArea','gapArea','scrambleArea','sentScrArea','matchArea','speedArea','sentencePanel']
     .forEach(id => { const e = document.getElementById(id); if(e) e.style.display = 'none'; });
 }
 
@@ -2926,7 +2977,7 @@ function setMode(m) {
   clearInterval(studySpeedTimer); // zatrzymaj timer speed jeśli był aktywny
   mode = m;
   document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
-  const modeMap = {card:'mCard',quiz:'mQuiz',type:'mType',missing:'mMissing',dictate:'mDictate',tf:'mTF',gap:'mGap',match:'mMatch',speed:'mSpeed'};
+  const modeMap = {card:'mCard',quiz:'mQuiz',type:'mType',missing:'mMissing',dictate:'mDictate',tf:'mTF',gap:'mGap',scramble:'mScramble',sentscr:'mSentScr',match:'mMatch',speed:'mSpeed'};
   document.getElementById(modeMap[m]).classList.add('active');
   document.getElementById('livesBar').classList.toggle('visible', m === 'quiz');
   hideAreas(); revealed = false; hideDiff();
@@ -2939,6 +2990,8 @@ function setMode(m) {
     else if (m === 'dictate') document.getElementById('dictateArea').style.display = 'block';
     else if (m === 'tf') document.getElementById('tfArea').style.display = 'block';
     else if (m === 'gap') document.getElementById('gapArea').style.display = 'block';
+    else if (m === 'scramble') document.getElementById('scrambleArea').style.display = 'block';
+    else if (m === 'sentscr') document.getElementById('sentScrArea').style.display = 'block';
     else if (m === 'match') document.getElementById('matchArea').style.display = 'block';
     else if (m === 'speed') document.getElementById('speedArea').style.display = 'block';
   }
@@ -5437,6 +5490,285 @@ document.addEventListener('DOMContentLoaded', () => {
   const gapInp = document.getElementById('gapInp');
   if (gapInp) gapInp.addEventListener('keydown', e => { if (e.key === 'Enter') checkGap(); });
 });
+
+// ══════════════════════════════════════════════
+//  WORD SCRAMBLE (rozsypanka literowa)
+// ══════════════════════════════════════════════
+let scrAnswer = '';
+let scrUserTiles = [];
+
+function buildScramble() {
+  if (curIdx === null) return;
+  const q = getQ(curIdx), a = getA(curIdx);
+  scrAnswer = a.toUpperCase();
+  scrUserTiles = [];
+
+  document.getElementById('scrambleLabel').textContent = '🔀 Ułóż litery w prawidłowej kolejności';
+  document.getElementById('scrambleClue').textContent = '💡 ' + q;
+  document.getElementById('scrambleRes').className = 'type-result';
+  document.getElementById('scrambleRes').innerHTML = '';
+  document.getElementById('btnScrambleChk').disabled = false;
+
+  // Pomieszaj litery
+  const letters = scrAnswer.split('');
+  let shuffled = shuffle([...letters]);
+  // Upewnij się że pomieszane nie są identyczne z oryginałem
+  let tries = 0;
+  while (shuffled.join('') === letters.join('') && tries < 20) { shuffled = shuffle([...letters]); tries++; }
+
+  const tilesEl = document.getElementById('scrambleTiles');
+  tilesEl.innerHTML = '';
+  shuffled.forEach((ch, i) => {
+    const tile = document.createElement('div');
+    tile.className = 'scr-tile';
+    tile.textContent = ch;
+    tile.dataset.idx = i;
+    tile.dataset.ch = ch;
+    tile.addEventListener('click', () => scrAddTile(tile));
+    tilesEl.appendChild(tile);
+  });
+
+  document.getElementById('scrambleAnswer').innerHTML = '';
+}
+
+function scrAddTile(tile) {
+  if (tile.classList.contains('placed')) return;
+  tile.classList.add('placed');
+  scrUserTiles.push({ch: tile.dataset.ch, srcIdx: tile.dataset.idx});
+
+  const ansEl = document.getElementById('scrambleAnswer');
+  const ansTile = document.createElement('div');
+  ansTile.className = 'scr-tile in-answer';
+  ansTile.textContent = tile.dataset.ch;
+  ansTile.addEventListener('click', () => {
+    // Klik na kafelek w odpowiedzi — cofnij
+    scrUserTiles = scrUserTiles.filter(t => t.srcIdx !== tile.dataset.idx);
+    tile.classList.remove('placed');
+    ansTile.remove();
+  });
+  ansEl.appendChild(ansTile);
+}
+
+function scrambleClear() {
+  scrUserTiles = [];
+  document.querySelectorAll('#scrambleTiles .scr-tile').forEach(t => t.classList.remove('placed'));
+  document.getElementById('scrambleAnswer').innerHTML = '';
+}
+
+function checkScramble() {
+  if (revealed) return;
+  const userWord = scrUserTiles.map(t => t.ch).join('');
+  if (userWord.length < scrAnswer.length) { toast('Ułóż wszystkie litery!'); return; }
+
+  revealed = true;
+  document.getElementById('btnScrambleChk').disabled = true;
+  const ok = userWord === scrAnswer;
+  const r = document.getElementById('scrambleRes');
+
+  if (ok) {
+    r.className = 'type-result ok';
+    r.innerHTML = '✓ Poprawnie! <span class="ar">' + esc(scrAnswer) + '</span>';
+    playOk(); bounce('scrambleArea'); particles(true); owlR('easy');
+    DB.recordAnswer(currentUser, true);
+  } else {
+    r.className = 'type-result err';
+    r.innerHTML = '✗ Poprawna kolejność: <span class="ar">' + esc(scrAnswer) + '</span>';
+    playBad(); shake('scrambleArea'); owlR('hard');
+    DB.recordAnswer(currentUser, false);
+    trackMissed(); sessErrorCount++;
+  }
+  spkForeign(scrAnswer);
+  setTimeout(() => rate(ok ? 'easy' : 'hard'), 1500);
+}
+
+// ══════════════════════════════════════════════
+//  SENTENCE SCRAMBLE (rozsypanka zdaniowa)
+// ══════════════════════════════════════════════
+let sentScrAnswer = [];
+let sentScrUserWords = [];
+
+function buildSentScramble() {
+  if (curIdx === null) return;
+  const wordPl = activeWords[curIdx][0];
+  const wordEn = activeWords[curIdx][1];
+  const s = DB.getSentence(currentBookId, wordPl);
+
+  const sentScrEl = document.getElementById('sentScrArea');
+  document.getElementById('sentScrRes').className = 'type-result';
+  document.getElementById('sentScrRes').innerHTML = '';
+  document.getElementById('btnSentScrChk').disabled = false;
+
+  if (!s || !s.sentence_target) {
+    document.getElementById('sentScrLabel').textContent = '📜 Brak zdania dla tego słowa';
+    document.getElementById('sentScrClue').textContent = wordPl + ' → ' + wordEn;
+    document.getElementById('sentScrHint').textContent = 'Admin może dodać zdanie z fiszki (✏️ Edytuj zdanie)';
+    document.getElementById('sentScrTiles').innerHTML = '';
+    document.getElementById('sentScrAnswer').innerHTML = '';
+    sentScrAnswer = [];
+    sentScrUserWords = [];
+    return;
+  }
+
+  const sentence = s.sentence_target;
+  sentScrAnswer = sentence.split(/\s+/);
+  sentScrUserWords = [];
+
+  document.getElementById('sentScrLabel').textContent = '📜 Ułóż słowa w prawidłowej kolejności';
+  document.getElementById('sentScrClue').textContent = '🇵🇱 ' + (s.sentence_pl || wordPl);
+  document.getElementById('sentScrHint').textContent = sentScrAnswer.length + ' słów · ' + wordPl + ' → ' + wordEn;
+
+  // Pomieszaj słowa
+  let shuffled = shuffle([...sentScrAnswer]);
+  let tries = 0;
+  while (shuffled.join(' ') === sentScrAnswer.join(' ') && tries < 20) { shuffled = shuffle([...sentScrAnswer]); tries++; }
+
+  const tilesEl = document.getElementById('sentScrTiles');
+  tilesEl.innerHTML = '';
+  shuffled.forEach((word, i) => {
+    const tile = document.createElement('div');
+    tile.className = 'scr-word-tile';
+    tile.textContent = word;
+    tile.dataset.idx = i;
+    tile.dataset.word = word;
+    tile.addEventListener('click', () => sentScrAddWord(tile));
+    tilesEl.appendChild(tile);
+  });
+
+  document.getElementById('sentScrAnswer').innerHTML = '';
+}
+
+function sentScrAddWord(tile) {
+  if (tile.classList.contains('placed')) return;
+  tile.classList.add('placed');
+  sentScrUserWords.push({word: tile.dataset.word, srcIdx: tile.dataset.idx});
+
+  const ansEl = document.getElementById('sentScrAnswer');
+  const ansTile = document.createElement('div');
+  ansTile.className = 'scr-word-tile in-answer';
+  ansTile.textContent = tile.dataset.word;
+  ansTile.addEventListener('click', () => {
+    sentScrUserWords = sentScrUserWords.filter(t => t.srcIdx !== tile.dataset.idx);
+    tile.classList.remove('placed');
+    ansTile.remove();
+  });
+  ansEl.appendChild(ansTile);
+}
+
+function sentScrClear() {
+  sentScrUserWords = [];
+  document.querySelectorAll('#sentScrTiles .scr-word-tile').forEach(t => t.classList.remove('placed'));
+  document.getElementById('sentScrAnswer').innerHTML = '';
+}
+
+function checkSentScr() {
+  if (revealed) return;
+  if (!sentScrAnswer.length) { toast('Brak zdania!'); return; }
+  const userSentence = sentScrUserWords.map(t => t.word).join(' ');
+  if (sentScrUserWords.length < sentScrAnswer.length) { toast('Ułóż wszystkie słowa!'); return; }
+
+  revealed = true;
+  document.getElementById('btnSentScrChk').disabled = true;
+  const correctSentence = sentScrAnswer.join(' ');
+  const ok = userSentence === correctSentence;
+  const r = document.getElementById('sentScrRes');
+
+  if (ok) {
+    r.className = 'type-result ok';
+    r.innerHTML = '✓ Poprawnie!';
+    playOk(); bounce('sentScrArea'); particles(true); owlR('easy');
+    DB.recordAnswer(currentUser, true);
+  } else {
+    r.className = 'type-result err';
+    r.innerHTML = '✗ Poprawna kolejność: <span class="ar">' + esc(correctSentence) + '</span>';
+    playBad(); shake('sentScrArea'); owlR('hard');
+    DB.recordAnswer(currentUser, false);
+    trackMissed(); sessErrorCount++;
+  }
+  spkForeign(correctSentence);
+  setTimeout(() => rate(ok ? 'easy' : 'hard'), 1800);
+}
+
+// ─── Druk: Rozsypanka literowa ────────────────
+function printScrambleSheet() {
+  const units = getUnitsWithCustom(currentBookId);
+  const u = units[currentUnitKey];
+  const book = BOOKS[currentBookId];
+  const words = u.words.slice(0, 25);
+
+  const win = window.open('', '_blank');
+  win.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Rozsypanka literowa — ' + esc(u.name) + '</title><style>' +
+    'body{font-family:Arial,sans-serif;padding:24px;color:#222;max-width:700px;margin:0 auto}' +
+    'h1{font-size:1.1rem;margin-bottom:2px}h2{font-size:.78rem;color:#888;font-weight:400;margin-bottom:12px}' +
+    '.name-line{font-size:.78rem;color:#999;margin-bottom:16px}' +
+    '.instr{font-size:.82rem;font-weight:600;color:#555;margin-bottom:14px}' +
+    '.row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #ddd}' +
+    '.num{font-weight:800;color:#999;min-width:22px;font-size:.85rem}' +
+    '.clue{font-weight:700;min-width:110px;font-size:.85rem}' +
+    '.scrambled{font-weight:800;font-size:.9rem;letter-spacing:2px;color:#c0392b;font-family:monospace;min-width:120px}' +
+    '.line{flex:1;border-bottom:1.5px solid #bbb;min-width:80px;height:1px}' +
+    '@media print{body{padding:10px}}' +
+    '</style></head><body>');
+  win.document.write('<h1>🔀 ' + esc(book.name) + ' — ' + esc(u.name) + ' — Rozsypanka literowa</h1>');
+  win.document.write('<h2>Sowie Fiszki · ' + new Date().toLocaleDateString('pl-PL') + '</h2>');
+  win.document.write('<div class="name-line">Imię i nazwisko: _________________________ Klasa: _________ Data: __________</div>');
+  win.document.write('<div class="instr">Ułóż litery w prawidłowej kolejności. Napisz poprawne słowo obok.</div>');
+
+  words.forEach(([pl, en], i) => {
+    const scrambled = shuffle(en.toUpperCase().split('')).join('');
+    win.document.write('<div class="row"><span class="num">' + (i+1) + '.</span><span class="clue">' + esc(pl) + '</span><span class="scrambled">' + esc(scrambled) + '</span><span class="line"></span></div>');
+  });
+
+  win.document.write('</body></html>');
+  win.document.close();
+  setTimeout(() => win.print(), 400);
+}
+
+// ─── Druk: Rozsypanka zdaniowa ───────────────
+function printSentScrSheet() {
+  const units = getUnitsWithCustom(currentBookId);
+  const u = units[currentUnitKey];
+  const book = BOOKS[currentBookId];
+
+  // Zbierz słowa z zdaniami
+  const pairs = u.words.map(([pl, en]) => {
+    const s = DB.getSentence(currentBookId, pl);
+    return {pl, en, sentence_pl: s?.sentence_pl || '', sentence_target: s?.sentence_target || ''};
+  }).filter(p => p.sentence_target);
+
+  if (!pairs.length) { toast('Brak zdań do wydruku! Dodaj zdania z poziomu fiszek (✏️ Edytuj zdanie).'); return; }
+
+  const win = window.open('', '_blank');
+  win.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Rozsypanka zdaniowa — ' + esc(u.name) + '</title><style>' +
+    'body{font-family:Arial,sans-serif;padding:24px;color:#222;max-width:700px;margin:0 auto}' +
+    'h1{font-size:1.1rem;margin-bottom:2px}h2{font-size:.78rem;color:#888;font-weight:400;margin-bottom:12px}' +
+    '.name-line{font-size:.78rem;color:#999;margin-bottom:16px}' +
+    '.instr{font-size:.82rem;font-weight:600;color:#555;margin-bottom:14px}' +
+    '.row{padding:10px 0;border-bottom:1px solid #ddd}' +
+    '.num{font-weight:800;color:#999;font-size:.85rem}' +
+    '.pl-hint{font-size:.78rem;color:#888;font-style:italic;margin-bottom:4px}' +
+    '.scrambled-words{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}' +
+    '.word-box{padding:4px 10px;border:1.5px solid #bbb;border-radius:6px;font-size:.82rem;font-weight:700}' +
+    '.answer-line{border-bottom:1.5px solid #bbb;min-height:22px;margin-top:4px}' +
+    '@media print{body{padding:10px}}' +
+    '</style></head><body>');
+  win.document.write('<h1>📜 ' + esc(book.name) + ' — ' + esc(u.name) + ' — Rozsypanka zdaniowa</h1>');
+  win.document.write('<h2>Sowie Fiszki · ' + new Date().toLocaleDateString('pl-PL') + '</h2>');
+  win.document.write('<div class="name-line">Imię i nazwisko: _________________________ Klasa: _________ Data: __________</div>');
+  win.document.write('<div class="instr">Ułóż słowa w prawidłowej kolejności. Napisz poprawne zdanie w linii poniżej.</div>');
+
+  pairs.slice(0, 20).forEach((p, i) => {
+    const words = p.sentence_target.split(/\s+/);
+    const scrambled = shuffle([...words]);
+    win.document.write('<div class="row"><div><span class="num">' + (i+1) + '.</span> <span class="pl-hint">🇵🇱 ' + esc(p.sentence_pl) + '</span></div>');
+    win.document.write('<div class="scrambled-words">');
+    scrambled.forEach(w => { win.document.write('<span class="word-box">' + esc(w) + '</span>'); });
+    win.document.write('</div><div class="answer-line"></div></div>');
+  });
+
+  win.document.write('</body></html>');
+  win.document.close();
+  setTimeout(() => win.print(), 400);
+}
 
 // ══════════════════════════════════════════════
 //  MATCH / PARUJ MODE
