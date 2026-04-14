@@ -253,6 +253,10 @@ header{width:100%;display:flex;align-items:flex-start;justify-content:space-betw
 .match-item.wrong-flash{animation:matchWrong .5s ease;border-color:var(--danger)!important;background:rgba(255,118,117,.15)!important;}
 @keyframes matchWrong{0%{transform:translateX(0)}20%{transform:translateX(-6px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(4px)}100%{transform:translateX(0)}}
 /* Gap fill / Uzupełnij lukę */
+/* Dobble cards */
+.dobble-card{width:160px;height:160px;border-radius:50%;border:2.5px solid var(--border);background:var(--surface);display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;flex-shrink:0;}
+.dobble-symbol{position:absolute;font-weight:700;color:var(--text);text-align:center;line-height:1.1;font-family:'Nunito',sans-serif;text-transform:uppercase;}
+.dobble-symbol img{width:100%;height:100%;object-fit:contain;border-radius:4px;}
 /* Scramble tiles */
 .scr-tile{padding:8px 12px;border:2px solid var(--border);border-radius:10px;background:var(--surface2);color:var(--text);font-weight:800;font-size:.9rem;cursor:pointer;user-select:none;transition:all .15s;font-family:'Nunito',sans-serif;text-transform:uppercase;}
 .scr-tile:hover{border-color:var(--accent);background:rgba(255,209,102,.12);}
@@ -798,11 +802,52 @@ body.guest-mode .progress-wrap{opacity:.4;}
     <span class="cw-row-label" style="color:var(--danger)">🚀 Wisielec:</span>
     <div class="cw-row-btns" id="hangRowBtns"></div>
   </div>
+  <div class="cw-row" id="dobbleRow" style="border-color:rgba(162,155,254,.25);">
+    <span class="cw-row-label" style="color:var(--purple)">🎯 Dobble:</span>
+    <div class="cw-row-btns" id="dobbleRowBtns"></div>
+  </div>
   <div class="unit-btns">
     <button class="btn-sm" onclick="showMyProgress()">📊 Moje postępy</button>
     <button class="btn-sm" onclick="showScreen('sBooks')">← Zmień podręcznik</button>
     <button class="btn-sm accent" onclick="startSpeed()">⚡ Speed Challenge</button>
     <button class="btn-sm accent" onclick="startDailyQuiz()" style="background:var(--accent2);border-color:rgba(6,214,160,.35)">📊 Codzienny test</button>
+  </div>
+</div>
+
+<!-- ══ SCREEN: DOBBLE ══ -->
+<div class="screen" id="sDobble">
+  <div style="width:100%">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;gap:8px;flex-wrap:wrap">
+      <div>
+        <div style="font-family:'Playfair Display',serif;font-size:1.4rem;color:var(--purple)" id="dobbleTitle">🎯 Dobble</div>
+        <div style="font-size:.72rem;color:var(--muted);font-weight:600" id="dobbleStatus"></div>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button class="btn-sm" onclick="dobbleGenerate()">🔄 Nowa</button>
+        <button class="btn-sm" onclick="dobblePrint()">🖨️ Drukuj</button>
+        <button class="btn-sm" onclick="showScreen('sUnits')">← Wróć</button>
+      </div>
+    </div>
+    <!-- Tryb: wyrazowy / obrazkowy -->
+    <div style="display:flex;gap:6px;margin-bottom:10px">
+      <div class="snake-dir-btn active" id="dobbleModeWord" onclick="dobbleSetMode('word')">🔤 Wyrazowy</div>
+      <div class="snake-dir-btn" id="dobbleModeImg" onclick="dobbleSetMode('img')">🖼️ Obrazkowy</div>
+    </div>
+    <!-- Panel wyboru słów -->
+    <div class="cw-sel-panel" id="dobbleSelPanel">
+      <div class="cw-sel-title">
+        <span>☑️ Wybierz słówka <span id="dobbleSelCount" style="color:var(--accent2);margin-left:4px"></span></span>
+        <span style="font-size:.6rem;color:var(--muted);font-style:italic">Min. 7 słów</span>
+      </div>
+      <div class="cw-word-chips" id="dobbleWordChips"></div>
+      <div class="cw-sel-btns">
+        <button class="btn-sm" onclick="dobbleSelAll()" style="font-size:.7rem;padding:5px 11px">☑️ Wszystkie</button>
+        <button class="btn-sm" onclick="dobbleSelNone()" style="font-size:.7rem;padding:5px 11px">☐ Żadne</button>
+        <button class="btn-sm accent" onclick="dobbleGenerate()" style="font-size:.7rem;padding:5px 11px">🎯 Generuj karty</button>
+      </div>
+    </div>
+    <!-- Podgląd kart -->
+    <div id="dobbleCards" style="display:flex;flex-wrap:wrap;gap:14px;justify-content:center;margin-top:14px"></div>
   </div>
 </div>
 
@@ -1970,6 +2015,19 @@ function refreshGrid() {
     btn.textContent = u.icon + ' ' + u.name;
     btn.addEventListener('click', () => openHangman(k));
     hangBtns.appendChild(btn);
+  });
+
+  // Dobble buttons row
+  const dobbleBtns = document.getElementById('dobbleRowBtns');
+  dobbleBtns.innerHTML = '';
+  Object.keys(book.units).forEach(k => {
+    const u = units[k];
+    const btn = document.createElement('button');
+    btn.className = 'btn-cw';
+    btn.style.cssText = 'border-color:rgba(162,155,254,.35);color:var(--purple);';
+    btn.textContent = u.icon + ' ' + u.name;
+    btn.addEventListener('click', () => openDobble(k));
+    dobbleBtns.appendChild(btn);
   });
 }
 
@@ -4414,6 +4472,248 @@ function cwPrint() {
       document.body.classList.remove('cw-print');
     }, 500);
   }, 80);
+}
+
+// ══════════════════════════════════════════════
+//  DOBBLE — generator kart
+// ══════════════════════════════════════════════
+let dobbleUnitKey = null;
+let dobbleMode = 'word'; // 'word' | 'img'
+let dobbleCards = []; // [[symbolIdx, ...], ...]
+let dobbleSymbols = []; // [{pl, en, emoji, imgUrl}]
+
+function openDobble(unitKey) {
+  dobbleUnitKey = unitKey;
+  const units = getUnitsWithCustom(currentBookId);
+  const u = units[unitKey];
+  document.getElementById('dobbleTitle').textContent = '🎯 ' + u.name + ' — Dobble';
+  dobbleBuildWordPanel(u);
+  showScreen('sDobble');
+  dobbleGenerate();
+}
+
+function dobbleSetMode(m) {
+  dobbleMode = m;
+  document.getElementById('dobbleModeWord').classList.toggle('active', m === 'word');
+  document.getElementById('dobbleModeImg').classList.toggle('active', m === 'img');
+  dobbleRenderCards();
+}
+
+function dobbleBuildWordPanel(unit) {
+  const container = document.getElementById('dobbleWordChips');
+  if (!container) return;
+  container.innerHTML = '';
+  unit.words.forEach(([pl, en]) => {
+    const chip = document.createElement('div');
+    chip.className = 'cw-word-chip eligible selected';
+    chip.dataset.pl = pl;
+    chip.dataset.en = en;
+    chip.innerHTML = '<span>' + esc(en) + '</span>';
+    chip.addEventListener('click', () => { chip.classList.toggle('selected'); dobbleUpdateSelCount(); });
+    container.appendChild(chip);
+  });
+  dobbleUpdateSelCount();
+}
+
+function dobbleUpdateSelCount() {
+  const sel = document.querySelectorAll('#dobbleWordChips .cw-word-chip.selected').length;
+  const el = document.getElementById('dobbleSelCount');
+  if (el) el.textContent = '(' + sel + ' zaznaczonych)';
+}
+function dobbleSelAll() { document.querySelectorAll('#dobbleWordChips .cw-word-chip').forEach(c => c.classList.add('selected')); dobbleUpdateSelCount(); }
+function dobbleSelNone() { document.querySelectorAll('#dobbleWordChips .cw-word-chip').forEach(c => c.classList.remove('selected')); dobbleUpdateSelCount(); }
+
+// Algorytm płaszczyzny rzutowej — generuje karty Dobble
+function generateDobbleSet(p) {
+  const cards = [];
+  // Karta 0: symbole 0..p
+  cards.push([...Array(p + 1).keys()]);
+  // Kolejne p kart
+  for (let i = 0; i < p; i++) {
+    const card = [0];
+    for (let j = 0; j < p; j++) card.push(p + 1 + i * p + j);
+    cards.push(card);
+  }
+  // Pozostałe p*p kart
+  for (let i = 0; i < p; i++) {
+    for (let j = 0; j < p; j++) {
+      const card = [i + 1];
+      for (let k = 0; k < p; k++) card.push(p + 1 + k * p + ((i * k + j) % p));
+      cards.push(card);
+    }
+  }
+  return cards;
+}
+
+function dobbleGenerate() {
+  if (!dobbleUnitKey) return;
+
+  // Zbierz zaznaczone słowa
+  const chips = [...document.querySelectorAll('#dobbleWordChips .cw-word-chip.selected')];
+  let words = chips.map(c => ({ pl: c.dataset.pl, en: c.dataset.en }));
+  if (words.length < 7) {
+    const units = getUnitsWithCustom(currentBookId);
+    words = units[dobbleUnitKey].words.map(([pl, en]) => ({pl, en}));
+  }
+  if (words.length < 7) { toast('Potrzeba minimum 7 słów!'); return; }
+
+  // Dobierz p
+  let p;
+  if (words.length >= 31) p = 5;
+  else if (words.length >= 13) p = 3;
+  else p = 2;
+
+  const totalSymbols = p * p + p + 1;
+  // Wybierz tyle słów ile potrzeba
+  const selected = shuffle([...words]).slice(0, totalSymbols);
+  // Jeśli za mało — uzupełnij duplikatami (rzadki edge case)
+  while (selected.length < totalSymbols) selected.push(selected[selected.length % words.length]);
+
+  dobbleSymbols = selected.map(w => {
+    const s = DB.getSentence(currentBookId, w.pl);
+    const emoji = getEmojiStore()[w.pl] || '';
+    return { pl: w.pl, en: w.en, emoji, imgUrl: s?.image_url || '' };
+  });
+
+  dobbleCards = generateDobbleSet(p);
+  const totalCards = dobbleCards.length;
+
+  document.getElementById('dobbleStatus').textContent = totalCards + ' kart · ' + (p + 1) + ' symboli na karcie · ' + totalSymbols + ' symboli łącznie';
+  dobbleRenderCards();
+}
+
+function dobbleRenderCards() {
+  const container = document.getElementById('dobbleCards');
+  container.innerHTML = '';
+  if (!dobbleCards.length) return;
+
+  const symbolsPerCard = dobbleCards[0].length;
+  // Pozycje symboli na okręgu — rozłożone losowo w kole
+  const positions = generateSymbolPositions(symbolsPerCard);
+
+  // Rozmiary czcionki w zależności od ilości symboli
+  const fontSize = symbolsPerCard <= 3 ? 11 : symbolsPerCard <= 4 ? 10 : symbolsPerCard <= 6 ? 8 : 7;
+  const imgSize = symbolsPerCard <= 3 ? 40 : symbolsPerCard <= 4 ? 34 : 28;
+
+  dobbleCards.forEach((card, ci) => {
+    const cardEl = document.createElement('div');
+    cardEl.className = 'dobble-card';
+
+    card.forEach((symIdx, si) => {
+      const sym = dobbleSymbols[symIdx];
+      if (!sym) return;
+      const pos = positions[si];
+      const el = document.createElement('div');
+      el.className = 'dobble-symbol';
+      el.style.cssText = 'left:' + pos.x + '%;top:' + pos.y + '%;transform:translate(-50%,-50%) rotate(' + pos.rot + 'deg);font-size:' + (fontSize * pos.scale) + 'px;';
+
+      if (dobbleMode === 'img' && (sym.imgUrl || sym.emoji)) {
+        if (sym.imgUrl) {
+          el.innerHTML = '<img src="' + esc(sym.imgUrl) + '" style="width:' + imgSize + 'px;height:' + imgSize + 'px" onerror="this.parentNode.textContent=\'' + esc(sym.en) + '\'">';
+        } else {
+          el.style.fontSize = (imgSize * 0.7) + 'px';
+          el.textContent = sym.emoji;
+        }
+      } else {
+        el.textContent = sym.en;
+      }
+      cardEl.appendChild(el);
+    });
+    container.appendChild(cardEl);
+  });
+}
+
+function generateSymbolPositions(n) {
+  // Rozmieść symbole w kole — centrum + ring
+  const positions = [];
+  if (n <= 3) {
+    // 3: trójkąt
+    positions.push({x:50,y:30,rot:-8,scale:1.1});
+    positions.push({x:30,y:68,rot:12,scale:0.9});
+    positions.push({x:70,y:65,rot:-5,scale:1.0});
+  } else if (n <= 4) {
+    positions.push({x:50,y:28,rot:-10,scale:1.0});
+    positions.push({x:28,y:55,rot:15,scale:0.9});
+    positions.push({x:72,y:50,rot:-8,scale:0.95});
+    positions.push({x:50,y:74,rot:5,scale:0.85});
+  } else if (n <= 6) {
+    positions.push({x:50,y:25,rot:-12,scale:1.0});
+    positions.push({x:26,y:42,rot:18,scale:0.85});
+    positions.push({x:74,y:38,rot:-6,scale:0.9});
+    positions.push({x:30,y:68,rot:8,scale:0.8});
+    positions.push({x:70,y:65,rot:-15,scale:0.85});
+    positions.push({x:50,y:52,rot:3,scale:0.75});
+  } else {
+    // 8: centrum + 7 po okręgu
+    positions.push({x:50,y:50,rot:0,scale:0.8});
+    for (let i = 0; i < n - 1; i++) {
+      const angle = (i / (n - 1)) * Math.PI * 2 - Math.PI / 2;
+      positions.push({
+        x: 50 + Math.cos(angle) * 28,
+        y: 50 + Math.sin(angle) * 28,
+        rot: Math.round((Math.random() - 0.5) * 30),
+        scale: 0.7 + Math.random() * 0.2
+      });
+    }
+  }
+  return positions;
+}
+
+function dobblePrint() {
+  if (!dobbleCards.length) { toast('Najpierw wygeneruj karty!'); return; }
+  const units = getUnitsWithCustom(currentBookId);
+  const u = units[dobbleUnitKey];
+  const book = BOOKS[currentBookId];
+  const symbolsPerCard = dobbleCards[0].length;
+  const positions = generateSymbolPositions(symbolsPerCard);
+  const fontSize = symbolsPerCard <= 3 ? 11 : symbolsPerCard <= 4 ? 10 : symbolsPerCard <= 6 ? 8 : 7;
+  const imgSize = symbolsPerCard <= 3 ? 38 : symbolsPerCard <= 4 ? 32 : 26;
+
+  const win = window.open('', '_blank');
+  win.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Dobble — ' + esc(u.name) + '</title><style>' +
+    '@page{size:A4;margin:8mm}' +
+    'body{font-family:Arial,sans-serif;padding:0;margin:0;color:#222}' +
+    'h1{font-size:1rem;text-align:center;margin:8px 0 2px;page-break-after:avoid}' +
+    'h2{font-size:.7rem;text-align:center;color:#888;font-weight:400;margin:0 0 8px}' +
+    '.page{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr 1fr;gap:6px;padding:4mm;width:210mm;height:297mm;box-sizing:border-box;page-break-after:always;justify-items:center;align-items:center}' +
+    '.card{width:88mm;height:88mm;border-radius:50%;border:1.5px solid #999;position:relative;overflow:hidden;background:#fff;box-sizing:border-box}' +
+    '.card::after{content:"";position:absolute;top:0;left:0;right:0;bottom:0;border-radius:50%;border:0.5px dashed #ccc;margin:2mm}' +
+    '.sym{position:absolute;font-weight:700;text-align:center;line-height:1.1;font-family:Arial,sans-serif;text-transform:uppercase;color:#222}' +
+    '.sym img{width:100%;height:100%;object-fit:contain}' +
+    '</style></head><body>');
+  win.document.write('<h1>🎯 ' + esc(book.name) + ' — ' + esc(u.name) + ' — Dobble</h1>');
+  win.document.write('<h2>' + dobbleCards.length + ' kart · ' + (symbolsPerCard) + ' symboli na karcie · Sowie Fiszki · ' + new Date().toLocaleDateString('pl-PL') + '</h2>');
+
+  // 6 kart per strona
+  for (let p = 0; p < dobbleCards.length; p += 6) {
+    win.document.write('<div class="page">');
+    for (let c = p; c < Math.min(p + 6, dobbleCards.length); c++) {
+      const card = dobbleCards[c];
+      win.document.write('<div class="card">');
+      card.forEach((symIdx, si) => {
+        const sym = dobbleSymbols[symIdx];
+        if (!sym) return;
+        const pos = positions[si];
+        const fs = fontSize * pos.scale;
+        let content;
+        if (dobbleMode === 'img' && (sym.imgUrl || sym.emoji)) {
+          if (sym.imgUrl) content = '<img src="' + esc(sym.imgUrl) + '" style="width:' + imgSize + 'px;height:' + imgSize + 'px">';
+          else content = '<span style="font-size:' + (imgSize * 0.7) + 'px">' + sym.emoji + '</span>';
+        } else {
+          content = esc(sym.en);
+        }
+        win.document.write('<div class="sym" style="left:' + pos.x + '%;top:' + pos.y + '%;transform:translate(-50%,-50%) rotate(' + pos.rot + 'deg);font-size:' + fs + 'px">' + content + '</div>');
+      });
+      win.document.write('</div>');
+    }
+    // Dopełnij puste sloty
+    for (let c = dobbleCards.length; c < p + 6; c++) win.document.write('<div></div>');
+    win.document.write('</div>');
+  }
+
+  win.document.write('</body></html>');
+  win.document.close();
+  setTimeout(() => win.print(), 500);
 }
 
 // ══════════════════════════════════════════════
