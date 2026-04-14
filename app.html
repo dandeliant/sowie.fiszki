@@ -253,6 +253,17 @@ header{width:100%;display:flex;align-items:flex-start;justify-content:space-betw
 .match-item.wrong-flash{animation:matchWrong .5s ease;border-color:var(--danger)!important;background:rgba(255,118,117,.15)!important;}
 @keyframes matchWrong{0%{transform:translateX(0)}20%{transform:translateX(-6px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(4px)}100%{transform:translateX(0)}}
 /* Gap fill / Uzupełnij lukę */
+/* Board game (gra planszowa) */
+.board-grid{display:grid;gap:0;margin:0 auto;}
+.board-cell{border:1.5px solid rgba(255,255,255,.12);padding:4px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;min-height:54px;position:relative;background:var(--surface);transition:background .2s;}
+.board-cell.cell-start{background:rgba(6,214,160,.2);border-color:var(--accent2);}
+.board-cell.cell-finish{background:rgba(255,209,102,.2);border-color:var(--accent);}
+.board-cell.cell-special{background:rgba(162,155,254,.12);border-color:rgba(162,155,254,.3);}
+.board-cell .cell-emoji{font-size:1.1rem;margin-bottom:1px;}
+.board-cell .cell-word{font-size:.55rem;font-weight:700;color:var(--text);line-height:1.15;word-break:break-word;text-transform:uppercase;}
+.board-cell .cell-special-text{font-size:.5rem;font-weight:800;color:var(--purple);line-height:1.1;text-transform:uppercase;}
+.board-cell .cell-arrow{position:absolute;font-size:.55rem;color:rgba(255,255,255,.25);pointer-events:none;}
+.board-cell .cell-img{width:28px;height:28px;object-fit:contain;border-radius:4px;margin-bottom:1px;}
 /* Dobble cards */
 .dobble-card{width:160px;height:160px;border-radius:50%;border:2.5px solid var(--border);background:var(--surface);display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;flex-shrink:0;}
 .dobble-symbol{position:absolute;font-weight:700;color:var(--text);text-align:center;line-height:1.1;font-family:'Nunito',sans-serif;text-transform:uppercase;}
@@ -806,11 +817,34 @@ body.guest-mode .progress-wrap{opacity:.4;}
     <span class="cw-row-label" style="color:var(--purple)">🎯 Dobble:</span>
     <div class="cw-row-btns" id="dobbleRowBtns"></div>
   </div>
+  <div class="cw-row" id="boardRow" style="border-color:rgba(85,239,196,.25);">
+    <span class="cw-row-label" style="color:var(--success)">🎲 Gra planszowa:</span>
+    <div class="cw-row-btns" id="boardRowBtns"></div>
+  </div>
   <div class="unit-btns">
     <button class="btn-sm" onclick="showMyProgress()">📊 Moje postępy</button>
     <button class="btn-sm" onclick="showScreen('sBooks')">← Zmień podręcznik</button>
     <button class="btn-sm accent" onclick="startSpeed()">⚡ Speed Challenge</button>
     <button class="btn-sm accent" onclick="startDailyQuiz()" style="background:var(--accent2);border-color:rgba(6,214,160,.35)">📊 Codzienny test</button>
+  </div>
+</div>
+
+<!-- ══ SCREEN: BOARD GAME (gra planszowa) ══ -->
+<div class="screen" id="sBoardGame">
+  <div style="width:100%">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;gap:8px;flex-wrap:wrap">
+      <div>
+        <div style="font-family:'Playfair Display',serif;font-size:1.4rem;color:var(--success)" id="boardTitle">🎲 Gra planszowa</div>
+        <div style="font-size:.72rem;color:var(--muted);font-weight:600" id="boardStatus"></div>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button class="btn-sm" onclick="boardGenerate()">🔄 Nowa</button>
+        <button class="btn-sm" onclick="boardPrint()">🖨️ Drukuj</button>
+        <button class="btn-sm" onclick="boardDownloadJPEG()" id="boardBtnJpg">🖼️ JPEG</button>
+        <button class="btn-sm" onclick="showScreen('sUnits')">← Wróć</button>
+      </div>
+    </div>
+    <div id="boardWrap" style="overflow-x:auto;width:100%"></div>
   </div>
 </div>
 
@@ -2015,6 +2049,19 @@ function refreshGrid() {
     btn.textContent = u.icon + ' ' + u.name;
     btn.addEventListener('click', () => openHangman(k));
     hangBtns.appendChild(btn);
+  });
+
+  // Board game buttons row
+  const boardBtns = document.getElementById('boardRowBtns');
+  boardBtns.innerHTML = '';
+  Object.keys(book.units).forEach(k => {
+    const u = units[k];
+    const btn = document.createElement('button');
+    btn.className = 'btn-cw';
+    btn.style.cssText = 'border-color:rgba(85,239,196,.35);color:var(--success);';
+    btn.textContent = u.icon + ' ' + u.name;
+    btn.addEventListener('click', () => openBoardGame(k));
+    boardBtns.appendChild(btn);
   });
 
   // Dobble buttons row
@@ -4472,6 +4519,247 @@ function cwPrint() {
       document.body.classList.remove('cw-print');
     }, 500);
   }, 80);
+}
+
+// ══════════════════════════════════════════════
+//  BOARD GAME (GRA PLANSZOWA)
+// ══════════════════════════════════════════════
+let boardUnitKey = null;
+let boardCells = []; // [{type, word, emoji, imgUrl, special}]
+const BOARD_COLS = 6;
+const BOARD_SPECIALS = [
+  {text: 'LOSE A TURN', emoji: '⏸️'},
+  {text: 'ROLL AGAIN', emoji: '🎲'},
+  {text: 'GO BACK 2 SPACES', emoji: '⬅️'},
+  {text: 'MOVE AHEAD 2 SPACES', emoji: '⏩'},
+  {text: 'GO BACK 3 SPACES', emoji: '↩️'},
+  {text: 'MOVE AHEAD 3 SPACES', emoji: '🚀'},
+];
+
+function openBoardGame(unitKey) {
+  boardUnitKey = unitKey;
+  const units = getUnitsWithCustom(currentBookId);
+  const u = units[unitKey];
+  const book = BOOKS[currentBookId] || {};
+  document.getElementById('boardTitle').textContent = '🎲 ' + u.name + ' — Gra planszowa';
+  showScreen('sBoardGame');
+  boardGenerate();
+}
+
+function boardGenerate() {
+  if (!boardUnitKey) return;
+  const units = getUnitsWithCustom(currentBookId);
+  const u = units[boardUnitKey];
+  const words = shuffle([...u.words]);
+
+  // Buduj komórki: START + słowa z wplecionymi polami specjalnymi + FINISH
+  boardCells = [];
+  boardCells.push({type: 'start'});
+
+  let wordIdx = 0;
+  const totalCells = Math.min(words.length + Math.ceil(words.length / 4), 35); // max ~35 pól
+
+  for (let i = 1; i < totalCells - 1; i++) {
+    // Co 4-6 pól wstaw pole specjalne
+    if (i > 0 && i % (4 + Math.floor(Math.random() * 3)) === 0 && i < totalCells - 2) {
+      const sp = BOARD_SPECIALS[Math.floor(Math.random() * BOARD_SPECIALS.length)];
+      boardCells.push({type: 'special', special: sp});
+    } else if (wordIdx < words.length) {
+      const [pl, en] = words[wordIdx];
+      const s = DB.getSentence(currentBookId, pl);
+      const emoji = getEmojiStore()[pl] || '';
+      const imgUrl = s?.image_url || '';
+      boardCells.push({type: 'word', pl, en, emoji, imgUrl});
+      wordIdx++;
+    } else {
+      const sp = BOARD_SPECIALS[Math.floor(Math.random() * BOARD_SPECIALS.length)];
+      boardCells.push({type: 'special', special: sp});
+    }
+  }
+
+  boardCells.push({type: 'finish'});
+
+  document.getElementById('boardStatus').textContent = boardCells.length + ' pól · ' + wordIdx + ' słów · rzuć kostką i graj!';
+  boardRender();
+}
+
+function boardRender() {
+  const wrap = document.getElementById('boardWrap');
+  const rows = Math.ceil(boardCells.length / BOARD_COLS);
+  const cols = BOARD_COLS;
+
+  // Buduj siatkę serpentynową (parzyste L→R, nieparzyste R→L)
+  const grid = [];
+  for (let r = 0; r < rows; r++) {
+    const row = [];
+    for (let c = 0; c < cols; c++) {
+      const idx = r * cols + c;
+      const cellIdx = r % 2 === 0 ? idx : r * cols + (cols - 1 - c);
+      row.push(cellIdx < boardCells.length ? boardCells[cellIdx] : null);
+    }
+    grid.push(row);
+  }
+
+  // Strzałki kierunku
+  const arrows = [];
+  for (let r = 0; r < rows; r++) {
+    if (r % 2 === 0) arrows.push('→');
+    else arrows.push('←');
+  }
+
+  let html = '<div class="board-grid" style="grid-template-columns:repeat(' + cols + ',1fr);max-width:' + (cols * 80) + 'px">';
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const cell = grid[r][c];
+      if (!cell) {
+        html += '<div class="board-cell" style="opacity:.2"></div>';
+        continue;
+      }
+
+      let cls = 'board-cell';
+      let content = '';
+
+      // Strzałka kierunku
+      const arrowDir = arrows[r];
+      let arrowHtml = '';
+      if (cell.type !== 'start' && cell.type !== 'finish') {
+        if (r % 2 === 0 && c < cols - 1) arrowHtml = '<span class="cell-arrow" style="right:1px;top:50%;transform:translateY(-50%)">→</span>';
+        else if (r % 2 === 1 && c > 0) arrowHtml = '<span class="cell-arrow" style="left:1px;top:50%;transform:translateY(-50%)">←</span>';
+        // Strzałka w dół na końcu wiersza
+        if (r % 2 === 0 && c === cols - 1 && r < rows - 1) arrowHtml = '<span class="cell-arrow" style="bottom:1px;left:50%;transform:translateX(-50%)">↓</span>';
+        if (r % 2 === 1 && c === 0 && r < rows - 1) arrowHtml = '<span class="cell-arrow" style="bottom:1px;left:50%;transform:translateX(-50%)">↓</span>';
+      }
+
+      if (cell.type === 'start') {
+        cls += ' cell-start';
+        content = '<div class="cell-emoji">🏁</div><div class="cell-word" style="color:var(--accent2)">START</div>';
+      } else if (cell.type === 'finish') {
+        cls += ' cell-finish';
+        content = '<div class="cell-emoji">🏆</div><div class="cell-word" style="color:var(--accent)">FINISH</div>';
+      } else if (cell.type === 'special') {
+        cls += ' cell-special';
+        content = '<div class="cell-emoji">' + cell.special.emoji + '</div><div class="cell-special-text">' + esc(cell.special.text) + '</div>';
+      } else {
+        // Słowo
+        if (cell.imgUrl) {
+          content = '<img class="cell-img" src="' + esc(cell.imgUrl) + '" onerror="this.style.display=\'none\'">';
+        } else if (cell.emoji) {
+          content = '<div class="cell-emoji">' + cell.emoji + '</div>';
+        }
+        content += '<div class="cell-word">' + esc(cell.en) + '</div>';
+      }
+
+      html += '<div class="' + cls + '">' + content + arrowHtml + '</div>';
+    }
+  }
+  html += '</div>';
+  wrap.innerHTML = html;
+}
+
+function boardPrint() {
+  if (!boardCells.length) { toast('Najpierw wygeneruj planszę!'); return; }
+  const units = getUnitsWithCustom(currentBookId);
+  const u = units[boardUnitKey];
+  const book = BOOKS[currentBookId];
+  const rows = Math.ceil(boardCells.length / BOARD_COLS);
+  const cols = BOARD_COLS;
+
+  const grid = [];
+  for (let r = 0; r < rows; r++) {
+    const row = [];
+    for (let c = 0; c < cols; c++) {
+      const idx = r * cols + c;
+      const cellIdx = r % 2 === 0 ? idx : r * cols + (cols - 1 - c);
+      row.push(cellIdx < boardCells.length ? boardCells[cellIdx] : null);
+    }
+    grid.push(row);
+  }
+
+  const win = window.open('', '_blank');
+  win.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Gra planszowa — ' + esc(u.name) + '</title><style>' +
+    '@page{size:A4 landscape;margin:8mm}' +
+    'body{font-family:Arial,sans-serif;padding:8px;margin:0;color:#222}' +
+    'h1{font-size:1rem;text-align:center;margin:4px 0 2px}' +
+    'h2{font-size:.68rem;text-align:center;color:#888;font-weight:400;margin:0 0 8px}' +
+    '.grid{display:grid;grid-template-columns:repeat(' + cols + ',1fr);gap:0;max-width:100%;border:2px solid #333;border-radius:4px}' +
+    '.cell{border:1px solid #bbb;padding:4px;text-align:center;min-height:52px;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;background:#fff}' +
+    '.cell-start{background:#d5f5e3}' +
+    '.cell-finish{background:#fdebd0}' +
+    '.cell-special{background:#ebdef0}' +
+    '.cell .emoji{font-size:1rem;margin-bottom:1px}' +
+    '.cell .word{font-size:.55rem;font-weight:700;text-transform:uppercase;line-height:1.1;color:#222}' +
+    '.cell .sp-text{font-size:.48rem;font-weight:800;color:#7d3c98;text-transform:uppercase;line-height:1.1}' +
+    '.cell .arrow{position:absolute;font-size:.5rem;color:#aaa}' +
+    '.cell .img{width:26px;height:26px;object-fit:contain;border-radius:3px;margin-bottom:1px}' +
+    '.cell.empty{opacity:.15}' +
+    '.rules{margin-top:10px;font-size:.65rem;color:#666;text-align:center;line-height:1.5}' +
+    '</style></head><body>');
+  win.document.write('<h1>🎲 ' + esc(book.name) + ' — ' + esc(u.name) + '</h1>');
+  win.document.write('<h2>Sowie Fiszki · Board Game · ' + new Date().toLocaleDateString('pl-PL') + '</h2>');
+  win.document.write('<div class="grid">');
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const cell = grid[r][c];
+      if (!cell) { win.document.write('<div class="cell empty"></div>'); continue; }
+
+      let cls = 'cell';
+      let content = '';
+      let arrowHtml = '';
+
+      if (cell.type !== 'start' && cell.type !== 'finish') {
+        if (r % 2 === 0 && c < cols - 1) arrowHtml = '<span class="arrow" style="right:1px;top:50%;transform:translateY(-50%)">→</span>';
+        else if (r % 2 === 1 && c > 0) arrowHtml = '<span class="arrow" style="left:1px;top:50%;transform:translateY(-50%)">←</span>';
+        if (r % 2 === 0 && c === cols - 1 && r < rows - 1) arrowHtml = '<span class="arrow" style="bottom:1px;left:50%;transform:translateX(-50%)">↓</span>';
+        if (r % 2 === 1 && c === 0 && r < rows - 1) arrowHtml = '<span class="arrow" style="bottom:1px;left:50%;transform:translateX(-50%)">↓</span>';
+      }
+
+      if (cell.type === 'start') {
+        cls += ' cell-start';
+        content = '<div class="emoji">🏁</div><div class="word" style="color:#1a8f5e">START</div>';
+      } else if (cell.type === 'finish') {
+        cls += ' cell-finish';
+        content = '<div class="emoji">🏆</div><div class="word" style="color:#b7950b">FINISH</div>';
+      } else if (cell.type === 'special') {
+        cls += ' cell-special';
+        content = '<div class="emoji">' + cell.special.emoji + '</div><div class="sp-text">' + esc(cell.special.text) + '</div>';
+      } else {
+        if (cell.imgUrl) content = '<img class="img" src="' + esc(cell.imgUrl) + '">';
+        else if (cell.emoji) content = '<div class="emoji">' + cell.emoji + '</div>';
+        content += '<div class="word">' + esc(cell.en) + '</div>';
+      }
+
+      win.document.write('<div class="' + cls + '">' + content + arrowHtml + '</div>');
+    }
+  }
+
+  win.document.write('</div>');
+  win.document.write('<div class="rules">📋 <strong>Zasady:</strong> Rzuć kostką i przesuń pionek. Przeczytaj słowo na polu (i przetłumacz!). Pola specjalne: ⏸️ tracisz kolejkę · 🎲 rzuć jeszcze raz · ⬅️↩️ cofnij się · ⏩🚀 przesuń do przodu. Wygrywa ten, kto pierwszy dotrze na FINISH! 🏆</div>');
+  win.document.write('</body></html>');
+  win.document.close();
+  setTimeout(() => win.print(), 500);
+}
+
+async function boardDownloadJPEG() {
+  const btn = document.getElementById('boardBtnJpg');
+  btn.disabled = true; btn.textContent = '⏳…';
+  try {
+    const target = document.getElementById('sBoardGame');
+    const btns = target.querySelectorAll('.btn-sm');
+    btns.forEach(b => b.style.display = 'none');
+
+    const canvas = await html2canvas(target, { scale: 2, backgroundColor: '#1a1040', useCORS: true, logging: false });
+
+    btns.forEach(b => b.style.display = '');
+
+    const link = document.createElement('a');
+    const units = getUnitsWithCustom(currentBookId);
+    link.download = (units[boardUnitKey]?.name || 'board').replace(/\s+/g,'_') + '_boardgame.jpg';
+    link.href = canvas.toDataURL('image/jpeg', 0.95);
+    link.click();
+  } catch(e) { toast('Błąd JPEG: ' + e.message); }
+  finally { btn.disabled = false; btn.textContent = '🖼️ JPEG'; }
 }
 
 // ══════════════════════════════════════════════
