@@ -1269,15 +1269,14 @@ szkoła	school"></textarea>
 
   <!-- Word Scramble -->
   <div class="scramble-area" id="scrambleArea" style="width:100%;margin-bottom:14px;display:none">
-    <div class="q-label" id="scrambleLabel">🔀 Ułóż litery w prawidłowej kolejności</div>
-    <div style="font-size:1rem;font-weight:700;color:var(--accent);text-align:center;margin-bottom:8px" id="scrambleClue"></div>
-    <div id="scrambleTiles" style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-bottom:12px;min-height:44px"></div>
-    <div id="scrambleAnswer" style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-bottom:12px;min-height:44px;padding:10px;background:var(--surface);border:2px dashed var(--border);border-radius:12px"></div>
-    <div style="text-align:center;margin-bottom:8px">
-      <button class="btn-sm" onclick="scrambleClear()">↩ Cofnij</button>
+    <div class="q-label" id="scrambleLabel">🔀 Popraw kolejność liter w każdym słowie</div>
+    <div style="font-size:.85rem;font-weight:700;color:var(--accent);text-align:center;margin-bottom:4px" id="scrambleClue"></div>
+    <div id="scrambleScrambled" style="font-size:1.2rem;font-weight:900;color:var(--text);text-align:center;margin-bottom:12px;letter-spacing:2px;font-family:'Nunito',sans-serif;padding:12px;background:var(--surface);border:1px solid var(--border);border-radius:12px"></div>
+    <div class="type-row" style="margin-top:8px">
+      <input type="text" class="type-input" id="scrambleInp" placeholder="Wpisz poprawne wyrażenie…" autocomplete="off" autocorrect="off" spellcheck="false">
       <button class="btn-sm accent" id="btnScrambleChk" onclick="checkScramble()">Sprawdź</button>
     </div>
-    <div class="type-result" id="scrambleRes" style="margin-top:6px"></div>
+    <div class="type-result" id="scrambleRes" style="margin-top:8px"></div>
   </div>
 
   <!-- Sentence Scramble -->
@@ -3726,9 +3725,9 @@ document.addEventListener('keydown', e => {
   const studyActive = document.getElementById('sStudy').classList.contains('active');
   if (!studyActive) return;
 
-  const typeIDs = ['tInp','missingInp','dictInp','gapInp'];
+  const typeIDs = ['tInp','missingInp','dictInp','gapInp','scrambleInp'];
   const onInput = typeIDs.includes(document.activeElement?.id);
-  if (onInput) { if (e.key === 'Enter') { e.preventDefault(); if (document.activeElement.id==='tInp') checkType(); else if (document.activeElement.id==='missingInp') checkMissing(); else if (document.activeElement.id==='gapInp') checkGap(); else checkDictation(); } return; }
+  if (onInput) { if (e.key === 'Enter') { e.preventDefault(); if (document.activeElement.id==='tInp') checkType(); else if (document.activeElement.id==='missingInp') checkMissing(); else if (document.activeElement.id==='gapInp') checkGap(); else if (document.activeElement.id==='scrambleInp') checkScramble(); else checkDictation(); } return; }
   if (!active) return;
   if (e.code === 'Space') { e.preventDefault(); if (mode==='card'&&!revealed) flipCard(); }
   if (revealed) {
@@ -6089,72 +6088,51 @@ document.addEventListener('DOMContentLoaded', () => {
 let scrAnswer = '';
 let scrUserTiles = [];
 
+// Mieszaj słowo: pierwsza i ostatnia litera zostaje, środkowe mieszane
+function scrambleWord(word) {
+  const w = word.toUpperCase();
+  if (w.length <= 3) return w;
+  const first = w[0], last = w[w.length - 1];
+  const middle = w.slice(1, -1).split('');
+  let shuffled = shuffle([...middle]);
+  let tries = 0;
+  while (shuffled.join('') === middle.join('') && tries < 20) { shuffled = shuffle([...middle]); tries++; }
+  return first + shuffled.join('') + last;
+}
+
+// Mieszaj wyrażenie: każde słowo osobno
+function scramblePhrase(phrase) {
+  return phrase.split(/(\s+)/).map(part => /\s/.test(part) ? part : scrambleWord(part)).join('');
+}
+
 function buildScramble() {
   if (curIdx === null) return;
   const q = getQ(curIdx), a = getA(curIdx);
-  scrAnswer = a.toUpperCase();
-  scrUserTiles = [];
+  scrAnswer = a;
 
-  document.getElementById('scrambleLabel').textContent = '🔀 Ułóż litery w prawidłowej kolejności';
+  document.getElementById('scrambleLabel').textContent = '🔀 Popraw kolejność liter w każdym słowie';
   document.getElementById('scrambleClue').textContent = '💡 ' + q;
   document.getElementById('scrambleRes').className = 'type-result';
   document.getElementById('scrambleRes').innerHTML = '';
   document.getElementById('btnScrambleChk').disabled = false;
 
-  // Pomieszaj litery
-  const letters = scrAnswer.split('');
-  let shuffled = shuffle([...letters]);
-  // Upewnij się że pomieszane nie są identyczne z oryginałem
-  let tries = 0;
-  while (shuffled.join('') === letters.join('') && tries < 20) { shuffled = shuffle([...letters]); tries++; }
-
-  const tilesEl = document.getElementById('scrambleTiles');
-  tilesEl.innerHTML = '';
-  shuffled.forEach((ch, i) => {
-    const tile = document.createElement('div');
-    tile.className = 'scr-tile';
-    tile.textContent = ch;
-    tile.dataset.idx = i;
-    tile.dataset.ch = ch;
-    tile.addEventListener('click', () => scrAddTile(tile));
-    tilesEl.appendChild(tile);
-  });
-
-  document.getElementById('scrambleAnswer').innerHTML = '';
-}
-
-function scrAddTile(tile) {
-  if (tile.classList.contains('placed')) return;
-  tile.classList.add('placed');
-  scrUserTiles.push({ch: tile.dataset.ch, srcIdx: tile.dataset.idx});
-
-  const ansEl = document.getElementById('scrambleAnswer');
-  const ansTile = document.createElement('div');
-  ansTile.className = 'scr-tile in-answer';
-  ansTile.textContent = tile.dataset.ch;
-  ansTile.addEventListener('click', () => {
-    // Klik na kafelek w odpowiedzi — cofnij
-    scrUserTiles = scrUserTiles.filter(t => t.srcIdx !== tile.dataset.idx);
-    tile.classList.remove('placed');
-    ansTile.remove();
-  });
-  ansEl.appendChild(ansTile);
-}
-
-function scrambleClear() {
-  scrUserTiles = [];
-  document.querySelectorAll('#scrambleTiles .scr-tile').forEach(t => t.classList.remove('placed'));
-  document.getElementById('scrambleAnswer').innerHTML = '';
+  // Pomieszaj każde słowo osobno (1. i ostatnia litera zostaje)
+  document.getElementById('scrambleScrambled').textContent = scramblePhrase(a);
+  const inp = document.getElementById('scrambleInp');
+  inp.value = ''; inp.className = 'type-input'; inp.disabled = false;
+  setTimeout(() => inp.focus(), 120);
 }
 
 function checkScramble() {
   if (revealed) return;
-  const userWord = scrUserTiles.map(t => t.ch).join('');
-  if (userWord.length < scrAnswer.length) { toast('Ułóż wszystkie litery!'); return; }
+  const inp = document.getElementById('scrambleInp');
+  const userWord = inp.value.trim();
+  if (!userWord) return;
 
   revealed = true;
+  inp.disabled = true;
   document.getElementById('btnScrambleChk').disabled = true;
-  const ok = userWord === scrAnswer;
+  const ok = fuzzy(userWord, scrAnswer);
   const r = document.getElementById('scrambleRes');
 
   if (ok) {
@@ -6306,7 +6284,7 @@ function printScrambleSheet() {
   win.document.write('<div class="instr">Ułóż litery w prawidłowej kolejności. Napisz poprawne słowo obok.</div>');
 
   words.forEach(([pl, en], i) => {
-    const scrambled = shuffle(en.toUpperCase().split('')).join('');
+    const scrambled = scramblePhrase(en);
     win.document.write('<div class="row"><span class="num">' + (i+1) + '.</span><span class="clue">' + esc(pl) + '</span><span class="scrambled">' + esc(scrambled) + '</span><span class="line"></span></div>');
   });
 
