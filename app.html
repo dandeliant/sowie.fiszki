@@ -253,6 +253,15 @@ header{width:100%;display:flex;align-items:flex-start;justify-content:space-betw
 .match-item.wrong-flash{animation:matchWrong .5s ease;border-color:var(--danger)!important;background:rgba(255,118,117,.15)!important;}
 @keyframes matchWrong{0%{transform:translateX(0)}20%{transform:translateX(-6px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(4px)}100%{transform:translateX(0)}}
 /* Gap fill / Uzupełnij lukę */
+/* Hangman (Wisielec / Rakieta) */
+.hang-letter{width:32px;height:38px;border:2px solid var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:1.1rem;font-weight:900;color:var(--text);font-family:'Nunito',sans-serif;text-transform:uppercase;background:var(--surface);}
+.hang-letter.revealed{border-color:var(--accent2);color:var(--accent2);background:rgba(6,214,160,.08);}
+.hang-letter.space{border:none;background:none;width:14px;}
+.hang-key{width:30px;height:34px;border:1.5px solid var(--border);border-radius:8px;background:var(--surface2);color:var(--text);font-weight:800;font-size:.8rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;user-select:none;font-family:'Nunito',sans-serif;}
+.hang-key:hover{background:rgba(255,209,102,.2);border-color:var(--accent);}
+.hang-key:active{transform:scale(.9);}
+.hang-key.correct{background:rgba(6,214,160,.2);border-color:var(--accent2);color:var(--accent2);pointer-events:none;opacity:.5;}
+.hang-key.wrong{background:rgba(255,118,117,.15);border-color:var(--danger);color:var(--danger);pointer-events:none;opacity:.5;}
 /* Image Card (karta obrazkowa) */
 .ic-card{background:var(--surface);border:2px solid var(--border);border-radius:12px;padding:8px;text-align:center;cursor:pointer;transition:all .2s;}
 .ic-card:hover{border-color:var(--blue);}
@@ -773,11 +782,49 @@ body.guest-mode .progress-wrap{opacity:.4;}
     <span class="cw-row-label" style="color:var(--blue)">🖼️ Karta obrazkowa:</span>
     <div class="cw-row-btns" id="imgCardRowBtns"></div>
   </div>
+  <div class="cw-row" id="hangRow" style="border-color:rgba(255,118,117,.25);">
+    <span class="cw-row-label" style="color:var(--danger)">🚀 Wisielec:</span>
+    <div class="cw-row-btns" id="hangRowBtns"></div>
+  </div>
   <div class="unit-btns">
     <button class="btn-sm" onclick="showMyProgress()">📊 Moje postępy</button>
     <button class="btn-sm" onclick="showScreen('sBooks')">← Zmień podręcznik</button>
     <button class="btn-sm accent" onclick="startSpeed()">⚡ Speed Challenge</button>
     <button class="btn-sm accent" onclick="startDailyQuiz()" style="background:var(--accent2);border-color:rgba(6,214,160,.35)">📊 Codzienny test</button>
+  </div>
+</div>
+
+<!-- ══ SCREEN: HANGMAN (Wisielec / Rakieta) ══ -->
+<div class="screen" id="sHangman">
+  <div style="width:100%">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;gap:8px;flex-wrap:wrap">
+      <div>
+        <div style="font-family:'Playfair Display',serif;font-size:1.4rem;color:var(--danger)" id="hangTitle">🚀 Wisielec</div>
+        <div style="font-size:.72rem;color:var(--muted);font-weight:600" id="hangStatus">Zgadnij słowo litera po literze!</div>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <span style="font-size:.78rem;font-weight:800;color:var(--accent2)" id="hangScore">0 / 0</span>
+        <button class="btn-sm" onclick="hangNext()">⏭️ Następne</button>
+        <button class="btn-sm" onclick="hangPrint()">🖨️ Drukuj</button>
+        <button class="btn-sm" onclick="showScreen('sUnits')">← Wróć</button>
+      </div>
+    </div>
+    <!-- Wskazówka (polskie słowo) -->
+    <div id="hangClue" style="text-align:center;font-size:1rem;font-weight:700;color:var(--accent);margin-bottom:10px"></div>
+    <!-- Rakieta ASCII -->
+    <div style="display:flex;gap:16px;align-items:flex-start;justify-content:center;flex-wrap:wrap">
+      <pre id="hangRocket" style="font-family:'Courier New',monospace;font-size:.7rem;line-height:1.15;color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 16px;min-width:160px;text-align:center;white-space:pre"></pre>
+      <div style="flex:1;min-width:200px;max-width:400px">
+        <!-- Słowo (kratki) -->
+        <div id="hangWord" style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-bottom:16px"></div>
+        <!-- Błędne litery -->
+        <div id="hangWrong" style="font-size:.75rem;color:var(--danger);font-weight:700;text-align:center;min-height:20px;margin-bottom:12px"></div>
+        <!-- Klawiatura -->
+        <div id="hangKeys" style="display:flex;flex-wrap:wrap;gap:4px;justify-content:center"></div>
+        <!-- Wynik rundy -->
+        <div id="hangResult" style="display:none;text-align:center;padding:14px;margin-top:12px;border-radius:12px;font-weight:700;font-size:.9rem"></div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1867,6 +1914,19 @@ function refreshGrid() {
     btn.textContent = u.icon + ' ' + u.name;
     btn.addEventListener('click', () => openImageCard(k));
     imgBtns.appendChild(btn);
+  });
+
+  // Hangman buttons row
+  const hangBtns = document.getElementById('hangRowBtns');
+  hangBtns.innerHTML = '';
+  Object.keys(book.units).forEach(k => {
+    const u = units[k];
+    const btn = document.createElement('button');
+    btn.className = 'btn-cw';
+    btn.style.cssText = 'border-color:rgba(255,118,117,.35);color:var(--danger);';
+    btn.textContent = u.icon + ' ' + u.name;
+    btn.addEventListener('click', () => openHangman(k));
+    hangBtns.appendChild(btn);
   });
 }
 
@@ -4301,6 +4361,314 @@ function cwPrint() {
       document.body.classList.remove('cw-print');
     }, 500);
   }, 80);
+}
+
+// ══════════════════════════════════════════════
+//  HANGMAN (WISIELEC / RAKIETA)
+// ══════════════════════════════════════════════
+let hangUnitKey = null;
+let hangWords = []; // [{pl, en}]
+let hangIdx = 0;
+let hangCorrectCount = 0;
+let hangAnswer = '';
+let hangGuessed = new Set();
+let hangErrors = 0;
+const HANG_MAX_ERRORS = 8;
+
+// Rakieta ASCII — 8 etapów (od pustej platformy do pełnej rakiety)
+const ROCKET_STAGES = [
+`
+    .
+   .:.
+    |
+    |
+   /|\\
+  / | \\
+ /  |  \\
+/   |   \\
+=========
+ |||   |||
+`,
+`
+    .
+   .:.
+  .:+:.
+    |
+   /|\\
+  / | \\
+ /  |  \\
+/   |   \\
+=========
+ |||   |||
+`,
+`
+    .
+   .:.
+  .:+:.
+  .:+:.
+   /|\\
+  / | \\
+ /  |  \\
+/   |   \\
+=========
+ |||   |||
+`,
+`
+    .
+   .:.
+  .:+:.
+  .:+:.
+  |   |
+  / | \\
+ /  |  \\
+/   |   \\
+=========
+ |||   |||
+`,
+`
+    .
+   .:.
+  .:+:.
+  .:+:.
+  |   |
+  |   |
+ /  |  \\
+/   |   \\
+=========
+ |||   |||
+`,
+`
+    .
+   .:.
+  .:+:.
+  .:+:.
+  |   |
+  |   |
+  | * |
+/   |   \\
+=========
+ |||   |||
+`,
+`
+    .
+   .:.
+  .:+:.
+  .:+:.
+  |   |
+  | * |
+  | * |
+  | * |
+=========
+ |||   |||
+`,
+`
+   \\|/
+  --*--
+   /|\\
+  .:+:.
+  .:+:.
+  |   |
+  | * |
+  | * |
+  | * |
+=========
+ |||   |||
+`
+];
+
+// Pusta platforma (start)
+const ROCKET_EMPTY = `
+
+
+
+
+
+
+
+
+
+
+=========
+ |||   |||
+`;
+
+function openHangman(unitKey) {
+  hangUnitKey = unitKey;
+  const units = getUnitsWithCustom(currentBookId);
+  const u = units[unitKey];
+  const book = BOOKS[currentBookId] || {};
+  document.getElementById('hangTitle').textContent = '🚀 ' + u.name + ' — Wisielec';
+
+  // Zbierz słowa — użyj angielskich
+  hangWords = shuffle(u.words.map(([pl, en]) => ({pl, en: en.toUpperCase()}))).filter(w => w.en.length >= 2);
+  hangIdx = 0;
+  hangCorrectCount = 0;
+
+  showScreen('sHangman');
+  hangStartRound();
+}
+
+function hangStartRound() {
+  if (hangIdx >= hangWords.length) {
+    // Koniec — wszystkie słowa
+    document.getElementById('hangResult').style.display = 'block';
+    document.getElementById('hangResult').style.background = 'rgba(6,214,160,.12)';
+    document.getElementById('hangResult').style.color = 'var(--accent2)';
+    document.getElementById('hangResult').textContent = '🏆 Koniec! Wynik: ' + hangCorrectCount + ' / ' + hangWords.length + ' słów zgadniętych!';
+    document.getElementById('hangKeys').innerHTML = '';
+    document.getElementById('hangWord').innerHTML = '';
+    document.getElementById('hangClue').textContent = '';
+    if (hangCorrectCount === hangWords.length) { confetti(); playOk(); }
+    return;
+  }
+
+  const pair = hangWords[hangIdx];
+  hangAnswer = pair.en;
+  hangGuessed = new Set();
+  hangErrors = 0;
+
+  document.getElementById('hangClue').textContent = '💡 ' + pair.pl;
+  document.getElementById('hangWrong').textContent = '';
+  document.getElementById('hangResult').style.display = 'none';
+  document.getElementById('hangScore').textContent = hangCorrectCount + ' / ' + hangWords.length;
+  document.getElementById('hangStatus').textContent = 'Słowo ' + (hangIdx + 1) + ' z ' + hangWords.length + ' · Max ' + HANG_MAX_ERRORS + ' błędów';
+
+  hangRenderRocket();
+  hangRenderWord();
+  hangRenderKeys();
+}
+
+function hangRenderRocket() {
+  const pre = document.getElementById('hangRocket');
+  if (hangErrors === 0) pre.textContent = ROCKET_EMPTY;
+  else pre.textContent = ROCKET_STAGES[Math.min(hangErrors - 1, ROCKET_STAGES.length - 1)];
+}
+
+function hangRenderWord() {
+  const container = document.getElementById('hangWord');
+  container.innerHTML = '';
+  for (let i = 0; i < hangAnswer.length; i++) {
+    const ch = hangAnswer[i];
+    const div = document.createElement('div');
+    if (ch === ' ' || ch === '-' || ch === '\'') {
+      div.className = 'hang-letter space';
+      div.textContent = ch === ' ' ? '' : ch;
+    } else {
+      div.className = 'hang-letter' + (hangGuessed.has(ch) ? ' revealed' : '');
+      div.textContent = hangGuessed.has(ch) ? ch : '';
+    }
+    container.appendChild(div);
+  }
+}
+
+function hangRenderKeys() {
+  const container = document.getElementById('hangKeys');
+  container.innerHTML = '';
+  'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').forEach(ch => {
+    const key = document.createElement('div');
+    key.className = 'hang-key';
+    if (hangGuessed.has(ch)) {
+      key.className += hangAnswer.includes(ch) ? ' correct' : ' wrong';
+    }
+    key.textContent = ch;
+    key.addEventListener('click', () => hangGuess(ch));
+    container.appendChild(key);
+  });
+}
+
+function hangGuess(ch) {
+  if (hangGuessed.has(ch)) return;
+  hangGuessed.add(ch);
+
+  if (hangAnswer.includes(ch)) {
+    // Trafienie
+    playOk();
+    hangRenderWord();
+    hangRenderKeys();
+
+    // Sprawdź wygraną
+    const allRevealed = hangAnswer.split('').every(c => c === ' ' || c === '-' || c === '\'' || hangGuessed.has(c));
+    if (allRevealed) {
+      hangCorrectCount++;
+      document.getElementById('hangScore').textContent = hangCorrectCount + ' / ' + hangWords.length;
+      document.getElementById('hangResult').style.display = 'block';
+      document.getElementById('hangResult').style.background = 'rgba(6,214,160,.12)';
+      document.getElementById('hangResult').style.color = 'var(--accent2)';
+      document.getElementById('hangResult').textContent = '✅ Brawo! ' + hangAnswer + ' — ' + hangWords[hangIdx].pl;
+      spkForeign(hangAnswer);
+      particles(true);
+      // Auto next po 2s
+      setTimeout(() => { hangIdx++; hangStartRound(); }, 2200);
+    }
+  } else {
+    // Błąd
+    hangErrors++;
+    playBad();
+    hangRenderRocket();
+    hangRenderKeys();
+    document.getElementById('hangWrong').textContent = 'Błędne: ' + [...hangGuessed].filter(c => !hangAnswer.includes(c)).join(' ');
+
+    if (hangErrors >= HANG_MAX_ERRORS) {
+      // Przegrana — pokaż odpowiedź
+      document.getElementById('hangResult').style.display = 'block';
+      document.getElementById('hangResult').style.background = 'rgba(255,118,117,.12)';
+      document.getElementById('hangResult').style.color = 'var(--danger)';
+      document.getElementById('hangResult').textContent = '💥 Rakieta odleciała! Odpowiedź: ' + hangAnswer + ' — ' + hangWords[hangIdx].pl;
+      // Odkryj wszystkie litery
+      hangAnswer.split('').forEach(c => hangGuessed.add(c));
+      hangRenderWord();
+      hangRenderKeys();
+      spkForeign(hangAnswer);
+      setTimeout(() => { hangIdx++; hangStartRound(); }, 2500);
+    }
+  }
+}
+
+function hangNext() {
+  hangIdx++;
+  hangStartRound();
+}
+
+function hangPrint() {
+  if (!hangUnitKey) return;
+  const units = getUnitsWithCustom(currentBookId);
+  const u = units[hangUnitKey];
+  const book = BOOKS[currentBookId];
+
+  const words = u.words.slice(0, 20);
+  const win = window.open('', '_blank');
+  win.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Wisielec — ' + esc(u.name) + '</title><style>' +
+    'body{font-family:Arial,sans-serif;padding:24px;color:#222;max-width:700px;margin:0 auto}' +
+    'h1{font-size:1.1rem;margin-bottom:2px}h2{font-size:.78rem;color:#888;font-weight:400;margin-bottom:12px}' +
+    '.name-line{font-size:.78rem;color:#999;margin-bottom:16px}' +
+    '.word-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #ddd}' +
+    '.word-num{font-weight:800;color:#999;min-width:24px;font-size:.85rem}' +
+    '.word-clue{font-weight:700;min-width:120px;font-size:.85rem}' +
+    '.word-blanks{display:flex;gap:4px}' +
+    '.blank{width:22px;height:26px;border-bottom:2px solid #333;display:inline-block}' +
+    '.blank.space-b{border:none;width:10px}' +
+    '.rocket-box{text-align:center;margin:0 auto 16px;padding:10px;border:1px solid #ddd;border-radius:8px;max-width:180px}' +
+    '.rocket-box pre{font-size:.6rem;line-height:1.1;color:#999;margin:0}' +
+    '.rocket-label{font-size:.7rem;color:#999;font-weight:700}' +
+    '.instr{font-size:.8rem;color:#555;font-weight:600;margin-bottom:14px}' +
+    '@media print{body{padding:10px}}' +
+    '</style></head><body>');
+  win.document.write('<h1>🚀 ' + esc(book.name) + ' — ' + esc(u.name) + ' — Wisielec</h1>');
+  win.document.write('<h2>Sowie Fiszki · ' + new Date().toLocaleDateString('pl-PL') + '</h2>');
+  win.document.write('<div class="name-line">Imię i nazwisko: _________________________ Klasa: _________ Data: __________</div>');
+  win.document.write('<div class="instr">Zgaduj litery! Każda błędna litera = jeden element rakiety. Po ' + HANG_MAX_ERRORS + ' błędach rakieta odlatuje! 🚀</div>');
+
+  // Pusta rakieta do rysowania
+  win.document.write('<div class="rocket-box"><pre>' + esc(ROCKET_STAGES[ROCKET_STAGES.length - 1]) + '</pre><div class="rocket-label">Narysuj element za każdy błąd (' + HANG_MAX_ERRORS + ' max)</div></div>');
+
+  words.forEach(([pl, en], i) => {
+    const blanks = en.split('').map(c => (c === ' ' || c === '-' || c === '\'') ? '<span class="blank space-b">' + (c === ' ' ? '' : c) + '</span>' : '<span class="blank"></span>').join('');
+    win.document.write('<div class="word-row"><span class="word-num">' + (i+1) + '.</span><span class="word-clue">' + esc(pl) + '</span><div class="word-blanks">' + blanks + '</div></div>');
+  });
+
+  win.document.write('</body></html>');
+  win.document.close();
+  setTimeout(() => win.print(), 400);
 }
 
 // ══════════════════════════════════════════════
