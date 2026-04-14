@@ -967,7 +967,7 @@ body.guest-mode .progress-wrap{opacity:.4;}
     <div id="hangClue" style="text-align:center;font-size:1rem;font-weight:700;color:var(--accent);margin-bottom:10px"></div>
     <!-- Rakieta ASCII -->
     <div style="display:flex;gap:16px;align-items:flex-start;justify-content:center;flex-wrap:wrap">
-      <pre id="hangRocket" style="font-family:'Courier New',monospace;font-size:.7rem;line-height:1.15;color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 16px;min-width:160px;text-align:center;white-space:pre"></pre>
+      <div id="hangRocket" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 16px;min-width:185px;text-align:center"></div>
       <div style="flex:1;min-width:200px;max-width:400px">
         <!-- Słowo (kratki) -->
         <div id="hangWord" style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-bottom:16px"></div>
@@ -5429,124 +5429,42 @@ let hangCorrectCount = 0;
 let hangAnswer = '';
 let hangGuessed = new Set();
 let hangErrors = 0;
-const HANG_MAX_ERRORS = 8;
+const HANG_MAX_ERRORS = 10;
+const HANG_PUNCT = /[.,;:!?()'"\/\-–—]/; // znaki interpunkcyjne — widoczne od razu
 
-// Rakieta ASCII — 8 etapów (od pustej platformy do pełnej rakiety)
-const ROCKET_STAGES = [
-`
-    .
-   .:.
-    |
-    |
-   /|\\
-  / | \\
- /  |  \\
-/   |   \\
-=========
- |||   |||
-`,
-`
-    .
-   .:.
-  .:+:.
-    |
-   /|\\
-  / | \\
- /  |  \\
-/   |   \\
-=========
- |||   |||
-`,
-`
-    .
-   .:.
-  .:+:.
-  .:+:.
-   /|\\
-  / | \\
- /  |  \\
-/   |   \\
-=========
- |||   |||
-`,
-`
-    .
-   .:.
-  .:+:.
-  .:+:.
-  |   |
-  / | \\
- /  |  \\
-/   |   \\
-=========
- |||   |||
-`,
-`
-    .
-   .:.
-  .:+:.
-  .:+:.
-  |   |
-  |   |
- /  |  \\
-/   |   \\
-=========
- |||   |||
-`,
-`
-    .
-   .:.
-  .:+:.
-  .:+:.
-  |   |
-  |   |
-  | * |
-/   |   \\
-=========
- |||   |||
-`,
-`
-    .
-   .:.
-  .:+:.
-  .:+:.
-  |   |
-  | * |
-  | * |
-  | * |
-=========
- |||   |||
-`,
-`
-   \\|/
-  --*--
-   /|\\
-  .:+:.
-  .:+:.
-  |   |
-  | * |
-  | * |
-  | * |
-=========
- |||   |||
-`
-];
+// SVG krokodyl — 10 części (od pustego do pełnego)
+function hangSVG(errors) {
+  const parts = [
+    // 1: ogon
+    '<path d="M20,90 Q5,80 10,70 Q15,75 20,80" fill="#2ecc71" stroke="#27ae60" stroke-width="1.5"/>',
+    // 2: tył ciała
+    '<ellipse cx="45" cy="82" rx="22" ry="12" fill="#2ecc71" stroke="#27ae60" stroke-width="1.5"/>',
+    // 3: środek ciała
+    '<ellipse cx="75" cy="78" rx="25" ry="14" fill="#27ae60" stroke="#1e8449" stroke-width="1.5"/>',
+    // 4: przód ciała
+    '<ellipse cx="108" cy="75" rx="22" ry="13" fill="#2ecc71" stroke="#27ae60" stroke-width="1.5"/>',
+    // 5: tylne łapy
+    '<path d="M35,93 L30,108 L38,108 L40,93" fill="#27ae60" stroke="#1e8449" stroke-width="1"/><path d="M55,93 L50,108 L58,108 L60,93" fill="#27ae60" stroke="#1e8449" stroke-width="1"/>',
+    // 6: przednie łapy
+    '<path d="M95,87 L90,105 L98,105 L100,87" fill="#27ae60" stroke="#1e8449" stroke-width="1"/><path d="M115,85 L110,103 L118,103 L120,85" fill="#27ae60" stroke="#1e8449" stroke-width="1"/>',
+    // 7: głowa
+    '<ellipse cx="140" cy="68" rx="18" ry="15" fill="#2ecc71" stroke="#27ae60" stroke-width="1.5"/>',
+    // 8: pysk (szczęki)
+    '<path d="M152,62 L175,58 L175,62 L155,66 Z" fill="#27ae60" stroke="#1e8449" stroke-width="1"/><path d="M152,74 L175,78 L175,74 L155,70 Z" fill="#2ecc71" stroke="#27ae60" stroke-width="1"/>',
+    // 9: oczy
+    '<circle cx="143" cy="60" r="4" fill="#fff" stroke="#1e8449" stroke-width="1"/><circle cx="143" cy="60" r="2" fill="#1e8449"/><circle cx="135" cy="58" r="3.5" fill="#fff" stroke="#1e8449" stroke-width="1"/><circle cx="135" cy="58" r="1.8" fill="#1e8449"/>',
+    // 10: zęby + kolce na grzbiecie
+    '<path d="M158,62 L162,65 L166,62 L170,65 L174,62" fill="none" stroke="#fff" stroke-width="1.5"/><path d="M158,74 L162,71 L166,74 L170,71 L174,74" fill="none" stroke="#fff" stroke-width="1.5"/>' +
+    '<path d="M40,70 L44,62 L48,70 M55,67 L59,59 L63,67 M70,65 L74,57 L78,65 M85,64 L89,56 L93,64 M100,63 L104,55 L108,63" fill="#1e8449" stroke="#145a32" stroke-width="0.8"/>'
+  ];
 
-// Pusta platforma (start)
-const ROCKET_EMPTY = `
-
-
-
-
-
-
-
-
-
-
-=========
- |||   |||
-`;
+  let svg = '<svg viewBox="0 0 185 115" width="185" height="115" xmlns="http://www.w3.org/2000/svg" style="display:block;margin:0 auto">';
+  // Linia podłoża
+  svg += '<line x1="0" y1="110" x2="185" y2="110" stroke="rgba(150,140,120,.3)" stroke-width="1" stroke-dasharray="3,3"/>';
+  for (let i = 0; i < Math.min(errors, parts.length); i++) svg += parts[i];
+  svg += '</svg>';
+  return svg;
+}
 
 function openHangman(unitKey) {
   hangUnitKey = unitKey;
@@ -5587,7 +5505,7 @@ function hangStartRound() {
   document.getElementById('hangWrong').textContent = '';
   document.getElementById('hangResult').style.display = 'none';
   document.getElementById('hangScore').textContent = hangCorrectCount + ' / ' + hangWords.length;
-  document.getElementById('hangStatus').textContent = 'Słowo ' + (hangIdx + 1) + ' z ' + hangWords.length + ' · Max ' + HANG_MAX_ERRORS + ' błędów';
+  document.getElementById('hangStatus').textContent = 'Słowo ' + (hangIdx + 1) + ' z ' + hangWords.length + ' · Max ' + HANG_MAX_ERRORS + ' błędów · 🐊';
 
   hangRenderRocket();
   hangRenderWord();
@@ -5595,9 +5513,7 @@ function hangStartRound() {
 }
 
 function hangRenderRocket() {
-  const pre = document.getElementById('hangRocket');
-  if (hangErrors === 0) pre.textContent = ROCKET_EMPTY;
-  else pre.textContent = ROCKET_STAGES[Math.min(hangErrors - 1, ROCKET_STAGES.length - 1)];
+  document.getElementById('hangRocket').innerHTML = hangSVG(hangErrors);
 }
 
 function hangRenderWord() {
@@ -5606,9 +5522,14 @@ function hangRenderWord() {
   for (let i = 0; i < hangAnswer.length; i++) {
     const ch = hangAnswer[i];
     const div = document.createElement('div');
-    if (ch === ' ' || ch === '-' || ch === '\'') {
+    if (ch === ' ') {
       div.className = 'hang-letter space';
-      div.textContent = ch === ' ' ? '' : ch;
+      div.textContent = '';
+    } else if (HANG_PUNCT.test(ch)) {
+      // Interpunkcja — widoczna od razu
+      div.className = 'hang-letter revealed';
+      div.textContent = ch;
+      div.style.opacity = '.5';
     } else {
       div.className = 'hang-letter' + (hangGuessed.has(ch) ? ' revealed' : '');
       div.textContent = hangGuessed.has(ch) ? ch : '';
@@ -5643,7 +5564,7 @@ function hangGuess(ch) {
     hangRenderKeys();
 
     // Sprawdź wygraną
-    const allRevealed = hangAnswer.split('').every(c => c === ' ' || c === '-' || c === '\'' || hangGuessed.has(c));
+    const allRevealed = hangAnswer.split('').every(c => c === ' ' || HANG_PUNCT.test(c) || hangGuessed.has(c));
     if (allRevealed) {
       hangCorrectCount++;
       document.getElementById('hangScore').textContent = hangCorrectCount + ' / ' + hangWords.length;
@@ -5669,7 +5590,7 @@ function hangGuess(ch) {
       document.getElementById('hangResult').style.display = 'block';
       document.getElementById('hangResult').style.background = 'rgba(255,118,117,.12)';
       document.getElementById('hangResult').style.color = 'var(--danger)';
-      document.getElementById('hangResult').textContent = '💥 Rakieta odleciała! Odpowiedź: ' + hangAnswer + ' — ' + hangWords[hangIdx].pl;
+      document.getElementById('hangResult').textContent = '🐊 Krokodyl jest kompletny! Odpowiedź: ' + hangAnswer + ' — ' + hangWords[hangIdx].pl;
       // Odkryj wszystkie litery
       hangAnswer.split('').forEach(c => hangGuessed.add(c));
       hangRenderWord();
@@ -5712,13 +5633,13 @@ function hangPrint() {
   win.document.write('<h1>🚀 ' + esc(book.name) + ' — ' + esc(u.name) + ' — Wisielec</h1>');
   win.document.write('<h2>Sowie Fiszki · ' + new Date().toLocaleDateString('pl-PL') + '</h2>');
   win.document.write('<div class="name-line">Imię i nazwisko: _________________________ Klasa: _________ Data: __________</div>');
-  win.document.write('<div class="instr">Zgaduj litery! Każda błędna litera = jeden element rakiety. Po ' + HANG_MAX_ERRORS + ' błędach rakieta odlatuje! 🚀</div>');
+  win.document.write('<div class="instr">Zgaduj litery! Każda błędna litera = jedna część krokodyla. Po ' + HANG_MAX_ERRORS + ' błędach krokodyl jest kompletny! 🐊 Interpunkcja jest widoczna od razu.</div>');
 
-  // Pusta rakieta do rysowania
-  win.document.write('<div class="rocket-box"><pre>' + esc(ROCKET_STAGES[ROCKET_STAGES.length - 1]) + '</pre><div class="rocket-label">Narysuj element za każdy błąd (' + HANG_MAX_ERRORS + ' max)</div></div>');
+  // Krokodyl do rysowania
+  win.document.write('<div class="rocket-box">' + hangSVG(HANG_MAX_ERRORS) + '<div class="rocket-label">Narysuj element za każdy błąd (' + HANG_MAX_ERRORS + ' max)</div></div>');
 
   words.forEach(([pl, en], i) => {
-    const blanks = en.split('').map(c => (c === ' ' || c === '-' || c === '\'') ? '<span class="blank space-b">' + (c === ' ' ? '' : c) + '</span>' : '<span class="blank"></span>').join('');
+    const blanks = en.split('').map(c => c === ' ' ? '<span class="blank space-b"></span>' : /[.,;:!?()\-'"\\/–—]/.test(c) ? '<span class="blank" style="border:none;color:#999;font-weight:700">' + esc(c) + '</span>' : '<span class="blank"></span>').join('');
     win.document.write('<div class="word-row"><span class="word-num">' + (i+1) + '.</span><span class="word-clue">' + esc(pl) + '</span><div class="word-blanks">' + blanks + '</div></div>');
   });
 
