@@ -253,6 +253,17 @@ header{width:100%;display:flex;align-items:flex-start;justify-content:space-betw
 .match-item.wrong-flash{animation:matchWrong .5s ease;border-color:var(--danger)!important;background:rgba(255,118,117,.15)!important;}
 @keyframes matchWrong{0%{transform:translateX(0)}20%{transform:translateX(-6px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(4px)}100%{transform:translateX(0)}}
 /* Gap fill / Uzupełnij lukę */
+/* Duel (rywalizacja) */
+.duel-opt{padding:12px 10px;border:2px solid var(--border);border-radius:12px;background:var(--surface2);color:var(--text);font-weight:700;font-size:.82rem;text-align:center;cursor:pointer;transition:all .15s;user-select:none;}
+.duel-opt:hover{border-color:var(--accent);background:rgba(255,209,102,.08);}
+.duel-opt:active{transform:scale(.96);}
+.duel-opt.duel-correct{border-color:var(--accent2)!important;background:rgba(6,214,160,.2)!important;color:var(--accent2)!important;}
+.duel-opt.duel-wrong{border-color:var(--danger)!important;background:rgba(255,118,117,.12)!important;color:var(--danger)!important;opacity:.5;}
+.duel-opt.duel-disabled{pointer-events:none;opacity:.5;}
+.duel-emoji-fall{position:absolute;font-size:1.6rem;pointer-events:none;animation:duelEmojiDrop 1.5s ease-out forwards;z-index:9990;}
+@keyframes duelEmojiDrop{0%{opacity:1;transform:translateY(0) scale(1) rotate(0deg)}100%{opacity:0;transform:translateY(60vh) scale(.5) rotate(360deg)}}
+.duel-float-score{position:fixed;pointer-events:none;z-index:9991;font-weight:900;opacity:0;animation:duelFloat 1.2s ease-out forwards;}
+@keyframes duelFloat{0%{opacity:1;transform:translate(-50%,-50%) scale(1)}50%{opacity:1;transform:translate(-50%,-120%) scale(1.3)}100%{opacity:0;transform:translate(-50%,-200%) scale(.8)}}
 /* Board game (gra planszowa) */
 .board-grid{display:grid;gap:0;margin:0 auto;}
 .board-cell{border:1.5px solid rgba(255,255,255,.12);padding:4px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;min-height:54px;position:relative;background:var(--surface);transition:background .2s;}
@@ -798,6 +809,10 @@ body.guest-mode .progress-wrap{opacity:.4;}
     <span class="cw-row-label">🔤 Krzyżówka:</span>
     <div class="cw-row-btns" id="cwRowBtns"></div>
   </div>
+  <div class="cw-row" id="duelRow" style="border-color:rgba(255,107,157,.25);">
+    <span class="cw-row-label" style="color:var(--pink)">⚔️ Rywalizacja:</span>
+    <div class="cw-row-btns" id="duelRowBtns"></div>
+  </div>
   <div class="cw-row ws-row" id="wsRow" style="border-color:rgba(6,214,160,.18);">
     <span class="cw-row-label" style="color:var(--accent2)">🔍 Wordsearch:</span>
     <div class="cw-row-btns" id="wsRowBtns"></div>
@@ -838,6 +853,43 @@ body.guest-mode .progress-wrap{opacity:.4;}
     <button class="btn-sm" onclick="showMyProgress()">📊 Moje postępy</button>
     <button class="btn-sm accent" onclick="startSpeed()">⚡ Speed Challenge</button>
     <button class="btn-sm accent" onclick="startDailyQuiz()" style="background:var(--accent2);border-color:rgba(6,214,160,.35)">📊 Codzienny test</button>
+  </div>
+</div>
+
+<!-- ══ SCREEN: DUEL (rywalizacja 1v1) ══ -->
+<div class="screen" id="sDuel">
+  <div style="width:100%;position:relative">
+    <!-- Pasek nawigacji -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div style="font-size:.72rem;font-weight:700;color:var(--muted)" id="duelInfo">Słowo 1 / 10</div>
+      <button class="btn-sm" onclick="showScreen('sUnits')" style="font-size:.65rem">✕ Zakończ</button>
+    </div>
+    <!-- Wyniki -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div id="duelScore1" style="font-size:1.6rem;font-weight:900;color:var(--accent);text-align:center;flex:1">0</div>
+      <div style="font-size:.7rem;font-weight:800;color:var(--muted);text-transform:uppercase">VS</div>
+      <div id="duelScore2" style="font-size:1.6rem;font-weight:900;color:var(--accent2);text-align:center;flex:1">0</div>
+    </div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+      <div style="font-size:.72rem;font-weight:800;color:var(--accent);text-align:center;flex:1">🔴 Gracz 1</div>
+      <div style="font-size:.72rem;font-weight:800;color:var(--accent2);text-align:center;flex:1">🔵 Gracz 2</div>
+    </div>
+    <!-- Polskie słowo na środku -->
+    <div id="duelQuestion" style="text-align:center;font-size:1.4rem;font-weight:900;color:var(--text);padding:14px;margin-bottom:12px;background:var(--surface);border:2px solid var(--border);border-radius:14px"></div>
+    <!-- Dwie kolumny odpowiedzi -->
+    <div style="display:flex;gap:8px">
+      <div id="duelCol1" style="flex:1;display:flex;flex-direction:column;gap:6px"></div>
+      <div style="width:2px;background:var(--border);border-radius:2px;flex-shrink:0"></div>
+      <div id="duelCol2" style="flex:1;display:flex;flex-direction:column;gap:6px"></div>
+    </div>
+    <!-- Rezultat rundy -->
+    <div id="duelRoundResult" style="display:none;text-align:center;padding:14px;margin-top:12px;border-radius:14px;font-size:1rem;font-weight:800"></div>
+    <!-- Końcowy wynik -->
+    <div id="duelFinal" style="display:none;text-align:center;padding:20px;margin-top:14px"></div>
+    <!-- Kontener na animacje emoji -->
+    <div id="duelEmojis" style="position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:9990;overflow:hidden"></div>
+    <!-- Kontener na animację +10 -->
+    <div id="duelFloatScore" style="position:fixed;pointer-events:none;z-index:9991;font-size:1.8rem;font-weight:900;opacity:0"></div>
   </div>
 </div>
 
@@ -2035,6 +2087,19 @@ function refreshGrid() {
     d.addEventListener('click', openAdminUnitModal);
     g.appendChild(d);
   }
+
+  // Duel buttons row
+  const duelBtns = document.getElementById('duelRowBtns');
+  duelBtns.innerHTML = '';
+  Object.keys(book.units).forEach(k => {
+    const u = units[k];
+    const btn = document.createElement('button');
+    btn.className = 'btn-cw';
+    btn.style.cssText = 'border-color:rgba(255,107,157,.35);color:var(--pink);';
+    btn.textContent = u.icon + ' ' + u.name;
+    btn.addEventListener('click', () => openDuel(k));
+    duelBtns.appendChild(btn);
+  });
 
   // Crossword buttons row — one per unit (not "all")
   const cwBtns = document.getElementById('cwRowBtns');
@@ -4607,6 +4672,183 @@ function cwPrint() {
       document.body.classList.remove('cw-print');
     }, 500);
   }, 80);
+}
+
+// ══════════════════════════════════════════════
+//  DUEL (RYWALIZACJA 1v1)
+// ══════════════════════════════════════════════
+let duelUnitKey = null;
+let duelWords = [], duelIdx = 0;
+let duelScore = [0, 0]; // [gracz1, gracz2]
+let duelLocked = false;
+const DUEL_POINTS = 10;
+const DUEL_EMOJIS = ['⭐','🌟','✨','💫','🎉','🎊','🏆','💎'];
+
+function openDuel(unitKey) {
+  duelUnitKey = unitKey;
+  const units = getUnitsWithCustom(currentBookId);
+  const u = units[unitKey];
+  duelWords = shuffle([...u.words]).slice(0, Math.min(15, u.words.length));
+  duelIdx = 0;
+  duelScore = [0, 0];
+  duelLocked = false;
+  document.getElementById('duelFinal').style.display = 'none';
+  showScreen('sDuel');
+  duelRenderRound();
+}
+
+function duelRenderRound() {
+  if (duelIdx >= duelWords.length) { duelShowFinal(); return; }
+
+  duelLocked = false;
+  const [pl, en] = duelWords[duelIdx];
+  document.getElementById('duelQuestion').textContent = pl;
+  document.getElementById('duelScore1').textContent = duelScore[0];
+  document.getElementById('duelScore2').textContent = duelScore[1];
+  document.getElementById('duelInfo').textContent = 'Słowo ' + (duelIdx + 1) + ' / ' + duelWords.length;
+  document.getElementById('duelRoundResult').style.display = 'none';
+
+  // Zbierz 4 złe odpowiedzi
+  const book = BOOKS[currentBookId];
+  const allEn = [];
+  Object.values(book.units).forEach(u => u.words.forEach(w => { if (w[1] !== en) allEn.push(w[1]); }));
+  const wrong = shuffle(allEn).slice(0, 4);
+  const options = shuffle([en, ...wrong]);
+
+  // Render obu kolumn z tymi samymi opcjami (ale w losowej kolejności)
+  const opts1 = shuffle([...options]);
+  const opts2 = shuffle([...options]);
+
+  const col1 = document.getElementById('duelCol1');
+  const col2 = document.getElementById('duelCol2');
+  col1.innerHTML = '';
+  col2.innerHTML = '';
+
+  opts1.forEach(o => {
+    const btn = document.createElement('div');
+    btn.className = 'duel-opt';
+    btn.textContent = o;
+    btn.addEventListener('click', () => duelAnswer(1, o, en, btn));
+    col1.appendChild(btn);
+  });
+
+  opts2.forEach(o => {
+    const btn = document.createElement('div');
+    btn.className = 'duel-opt';
+    btn.textContent = o;
+    btn.addEventListener('click', () => duelAnswer(2, o, en, btn));
+    col2.appendChild(btn);
+  });
+}
+
+function duelAnswer(player, chosen, correct, btnEl) {
+  if (duelLocked) return;
+  duelLocked = true;
+
+  const ok = chosen === correct;
+  const col1 = document.getElementById('duelCol1');
+  const col2 = document.getElementById('duelCol2');
+
+  // Zablokuj wszystkie przyciski
+  [...col1.children, ...col2.children].forEach(b => {
+    b.classList.add('duel-disabled');
+    if (b.textContent === correct) b.classList.add('duel-correct');
+  });
+
+  if (ok) {
+    btnEl.classList.add('duel-correct');
+    duelScore[player - 1] += DUEL_POINTS;
+    document.getElementById('duelScore' + player).textContent = duelScore[player - 1];
+
+    // Wymów słowo
+    spkForeign(correct);
+    playOk();
+
+    // Animacja emoji opadających po stronie zwycięzcy
+    duelSpawnEmojis(player);
+
+    // Animacja +10 lecąca do tablicy wyników
+    duelFloatScore(player, btnEl);
+
+    const r = document.getElementById('duelRoundResult');
+    r.style.display = 'block';
+    r.style.background = player === 1 ? 'rgba(255,209,102,.15)' : 'rgba(6,214,160,.15)';
+    r.style.color = player === 1 ? 'var(--accent)' : 'var(--accent2)';
+    r.textContent = (player === 1 ? '🔴 Gracz 1' : '🔵 Gracz 2') + ' zdobywa ' + DUEL_POINTS + ' pkt! · ' + correct;
+  } else {
+    btnEl.classList.add('duel-wrong');
+    playBad();
+
+    const r = document.getElementById('duelRoundResult');
+    r.style.display = 'block';
+    r.style.background = 'rgba(255,118,117,.12)';
+    r.style.color = 'var(--danger)';
+    r.textContent = '✗ Błąd! Poprawna: ' + correct;
+    spkForeign(correct);
+  }
+
+  // Następna runda
+  setTimeout(() => { duelIdx++; duelRenderRound(); }, 2200);
+}
+
+function duelSpawnEmojis(player) {
+  const container = document.getElementById('duelEmojis');
+  const isLeft = player === 1;
+  for (let i = 0; i < 8; i++) {
+    const em = document.createElement('div');
+    em.className = 'duel-emoji-fall';
+    em.textContent = DUEL_EMOJIS[Math.floor(Math.random() * DUEL_EMOJIS.length)];
+    const x = isLeft ? (5 + Math.random() * 40) : (55 + Math.random() * 40);
+    em.style.left = x + '%';
+    em.style.top = '-20px';
+    em.style.animationDelay = (Math.random() * 0.4) + 's';
+    em.style.animationDuration = (1.2 + Math.random() * 0.8) + 's';
+    container.appendChild(em);
+    setTimeout(() => em.remove(), 2500);
+  }
+}
+
+function duelFloatScore(player, btnEl) {
+  const el = document.getElementById('duelFloatScore');
+  const rect = btnEl.getBoundingClientRect();
+  el.textContent = '+' + DUEL_POINTS;
+  el.style.color = player === 1 ? 'var(--accent)' : 'var(--accent2)';
+  el.style.left = rect.left + rect.width / 2 + 'px';
+  el.style.top = rect.top + 'px';
+  el.style.fontSize = '1.8rem';
+  el.style.opacity = '0';
+  el.className = '';
+  void el.offsetWidth;
+  el.className = 'duel-float-score';
+}
+
+function duelShowFinal() {
+  const f = document.getElementById('duelFinal');
+  f.style.display = 'block';
+  document.getElementById('duelRoundResult').style.display = 'none';
+  document.getElementById('duelCol1').innerHTML = '';
+  document.getElementById('duelCol2').innerHTML = '';
+  document.getElementById('duelQuestion').textContent = '';
+
+  const s1 = duelScore[0], s2 = duelScore[1];
+  let msg, emoji;
+  if (s1 > s2) { msg = '🔴 Gracz 1 wygrywa!'; emoji = '🏆'; }
+  else if (s2 > s1) { msg = '🔵 Gracz 2 wygrywa!'; emoji = '🏆'; }
+  else { msg = 'Remis!'; emoji = '🤝'; }
+
+  f.innerHTML = `
+    <div style="font-size:3rem;margin-bottom:8px">${emoji}</div>
+    <div style="font-size:1.5rem;font-weight:900;color:var(--text);margin-bottom:6px">${msg}</div>
+    <div style="font-size:1.1rem;font-weight:700;color:var(--muted);margin-bottom:16px">
+      <span style="color:var(--accent)">${s1}</span> — <span style="color:var(--accent2)">${s2}</span>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:center">
+      <button class="btn-sm accent" onclick="openDuel(duelUnitKey)">🔄 Graj ponownie</button>
+      <button class="btn-sm" onclick="showScreen('sUnits')">← Wróć</button>
+    </div>`;
+
+  if (s1 > s2 || s2 > s1) { confetti(); playOk(); setTimeout(playOk, 300); }
+  document.getElementById('duelInfo').textContent = 'Koniec gry!';
 }
 
 // ══════════════════════════════════════════════
