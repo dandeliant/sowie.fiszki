@@ -253,6 +253,20 @@ header{width:100%;display:flex;align-items:flex-start;justify-content:space-betw
 .match-item.wrong-flash{animation:matchWrong .5s ease;border-color:var(--danger)!important;background:rgba(255,118,117,.15)!important;}
 @keyframes matchWrong{0%{transform:translateX(0)}20%{transform:translateX(-6px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(4px)}100%{transform:translateX(0)}}
 /* Gap fill / Uzupełnij lukę */
+/* Snake (wąż wyrazowy) */
+.snake-row{display:flex;flex-wrap:wrap;justify-content:center;}
+.snake-cell{width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-family:'Nunito',sans-serif;font-size:.78rem;font-weight:800;color:var(--text);background:var(--surface2);border:1.5px solid var(--border);cursor:pointer;user-select:none;transition:all .2s;position:relative;}
+.snake-cell.snake-curve-down{border-radius:0 0 12px 12px;margin-bottom:2px;}
+.snake-cell.snake-curve-up{border-radius:12px 12px 0 0;margin-top:2px;}
+.snake-cell.snake-start{border-radius:14px 0 0 14px;}
+.snake-cell.snake-end{border-radius:0 14px 14px 0;}
+.snake-cell.snake-start-r{border-radius:0 14px 14px 0;}
+.snake-cell.snake-end-r{border-radius:14px 0 0 14px;}
+.snake-cell.sel{background:rgba(255,209,102,.25);border-color:var(--accent);}
+.snake-cell.found{background:rgba(6,214,160,.2);border-color:var(--accent2);color:var(--accent2);}
+.snake-cell.wrong-flash{background:rgba(255,118,117,.2);border-color:var(--danger);}
+.snake-word-chip{padding:5px 10px;border:1.5px solid var(--border);border-radius:8px;background:var(--surface);font-size:.75rem;font-weight:700;color:var(--text);text-transform:uppercase;}
+.snake-word-chip.found{border-color:var(--accent2);background:rgba(6,214,160,.1);color:var(--accent2);text-decoration:line-through;opacity:.6;}
 /* Memory game */
 .mem-grid{display:grid;gap:6px;justify-content:center;margin:12px 0;}
 .mem-card{aspect-ratio:1;border-radius:10px;background:var(--surface2);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;text-align:center;font-size:.72rem;font-weight:700;color:var(--text);cursor:pointer;transition:all .25s;padding:4px;word-break:break-word;line-height:1.15;user-select:none;}
@@ -728,11 +742,47 @@ body.guest-mode .progress-wrap{opacity:.4;}
     <span class="cw-row-label" style="color:var(--pink)">🧠 Memory:</span>
     <div class="cw-row-btns" id="memRowBtns"></div>
   </div>
+  <div class="cw-row" id="snakeRow" style="border-color:rgba(253,203,110,.25);">
+    <span class="cw-row-label" style="color:var(--accent)">🐍 Wąż wyrazowy:</span>
+    <div class="cw-row-btns" id="snakeRowBtns"></div>
+  </div>
   <div class="unit-btns">
     <button class="btn-sm" onclick="showMyProgress()">📊 Moje postępy</button>
     <button class="btn-sm" onclick="showScreen('sBooks')">← Zmień podręcznik</button>
     <button class="btn-sm accent" onclick="startSpeed()">⚡ Speed Challenge</button>
     <button class="btn-sm accent" onclick="startDailyQuiz()" style="background:var(--accent2);border-color:rgba(6,214,160,.35)">📊 Codzienny test</button>
+  </div>
+</div>
+
+<!-- ══ SCREEN: SNAKE (wąż wyrazowy) ══ -->
+<div class="screen" id="sSnake">
+  <div style="width:100%">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;gap:8px;flex-wrap:wrap">
+      <div>
+        <div style="font-family:'Playfair Display',serif;font-size:1.4rem;color:var(--accent)" id="snakeTitle">🐍 Wąż wyrazowy</div>
+        <div style="font-size:.72rem;color:var(--muted);font-weight:600" id="snakeStatus">Znajdź ukryte słowa w wężu!</div>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <span style="font-size:.78rem;font-weight:800;color:var(--accent2)" id="snakeFound">0 / 0</span>
+        <button class="btn-sm" onclick="snakeNewGame()">🔄 Nowa</button>
+        <button class="btn-sm" onclick="showScreen('sUnits')">← Wróć</button>
+      </div>
+    </div>
+    <!-- Word selection panel -->
+    <div class="cw-sel-panel" id="snakeSelPanel">
+      <div class="cw-sel-title">
+        <span>☑️ Wybierz słówka <span id="snakeSelCount" style="color:var(--accent2);margin-left:4px"></span></span>
+      </div>
+      <div class="cw-word-chips" id="snakeWordChips"></div>
+      <div class="cw-sel-btns">
+        <button class="btn-sm" onclick="snakeSelAll()" style="font-size:.7rem;padding:5px 11px">☑️ Wszystkie</button>
+        <button class="btn-sm" onclick="snakeSelNone()" style="font-size:.7rem;padding:5px 11px">☐ Żadne</button>
+        <button class="btn-sm accent" onclick="snakeNewGame()" style="font-size:.7rem;padding:5px 11px">🐍 Generuj</button>
+      </div>
+    </div>
+    <div id="snakeGrid" style="margin:16px 0"></div>
+    <div id="snakeWordList" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px"></div>
+    <div id="snakeDone" style="display:none;text-align:center;padding:18px;font-weight:700;color:var(--accent2);font-size:1rem">🎉 Znalazłeś wszystkie słowa!</div>
   </div>
 </div>
 
@@ -1728,6 +1778,19 @@ function refreshGrid() {
     btn.textContent = u.icon + ' ' + u.name;
     btn.addEventListener('click', () => openMemory(k));
     memBtns.appendChild(btn);
+  });
+
+  // Snake buttons row
+  const snakeBtns = document.getElementById('snakeRowBtns');
+  snakeBtns.innerHTML = '';
+  Object.keys(book.units).forEach(k => {
+    const u = units[k];
+    const btn = document.createElement('button');
+    btn.className = 'btn-cw';
+    btn.style.cssText = 'border-color:rgba(253,203,110,.35);color:var(--accent);';
+    btn.textContent = u.icon + ' ' + u.name;
+    btn.addEventListener('click', () => openSnake(k));
+    snakeBtns.appendChild(btn);
   });
 }
 
@@ -4128,6 +4191,224 @@ function cwPrint() {
       document.body.classList.remove('cw-print');
     }, 500);
   }, 80);
+}
+
+// ══════════════════════════════════════════════
+//  SNAKE (WĄŻ WYRAZOWY)
+// ══════════════════════════════════════════════
+let snakeUnitKey = null;
+let snakeChain = []; // [{letter, wordIdx}] — wordIdx: -1=random filler, >=0=word index
+let snakeWords = []; // [{word, found}]
+let snakeSelStart = null;
+let snakeSelCells = [];
+let snakeCols = 12; // letters per row
+
+function openSnake(unitKey) {
+  snakeUnitKey = unitKey;
+  const units = getUnitsWithCustom(currentBookId);
+  const u = units[unitKey];
+  document.getElementById('snakeTitle').textContent = '🐍 ' + u.name + ' — Wąż wyrazowy';
+  snakeBuildWordPanel(u);
+  showScreen('sSnake');
+  snakeNewGame();
+}
+
+function snakeBuildWordPanel(unit) {
+  const container = document.getElementById('snakeWordChips');
+  if (!container) return;
+  container.innerHTML = '';
+  unit.words.forEach(([pl, en]) => {
+    const stripped = en.replace(/[\s'\-–—]/g, '').toUpperCase();
+    const eligible = stripped.length >= 2 && stripped.length <= 12;
+    const chip = document.createElement('div');
+    chip.className = 'cw-word-chip ' + (eligible ? 'eligible selected' : 'ineligible');
+    chip.dataset.word = stripped;
+    chip.title = pl;
+    chip.innerHTML = '<span>' + esc(en) + '</span>';
+    if (eligible) chip.addEventListener('click', () => { chip.classList.toggle('selected'); snakeUpdateSelCount(); });
+    container.appendChild(chip);
+  });
+  snakeUpdateSelCount();
+}
+
+function snakeUpdateSelCount() {
+  const eligible = document.querySelectorAll('#snakeWordChips .cw-word-chip.eligible');
+  const selected = document.querySelectorAll('#snakeWordChips .cw-word-chip.eligible.selected');
+  const el = document.getElementById('snakeSelCount');
+  if (el) el.textContent = selected.length < eligible.length ? '(' + selected.length + ' z ' + eligible.length + ')' : '';
+}
+function snakeSelAll() { document.querySelectorAll('#snakeWordChips .cw-word-chip.eligible').forEach(c => c.classList.add('selected')); snakeUpdateSelCount(); }
+function snakeSelNone() { document.querySelectorAll('#snakeWordChips .cw-word-chip.eligible').forEach(c => c.classList.remove('selected')); snakeUpdateSelCount(); }
+
+function snakeNewGame() {
+  if (!snakeUnitKey) return;
+  const units = getUnitsWithCustom(currentBookId);
+  const u = units[snakeUnitKey];
+
+  // Zbierz zaznaczone słowa
+  const selectedChips = [...document.querySelectorAll('#snakeWordChips .cw-word-chip.eligible.selected')];
+  let pool = selectedChips.map(c => c.dataset.word);
+  if (pool.length < 2) {
+    pool = u.words.map(([, en]) => en.replace(/[\s'\-–—]/g, '').toUpperCase()).filter(w => w.length >= 2 && w.length <= 12);
+  }
+  if (pool.length < 2) { toast('Za mało słów!'); return; }
+
+  // Wybierz max 10 losowych
+  const chosen = shuffle([...pool]).slice(0, Math.min(10, pool.length));
+  snakeWords = chosen.map(w => ({word: w, found: false}));
+
+  // Zbuduj łańcuch: słowa + losowe litery między nimi
+  const randLetters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  snakeChain = [];
+  chosen.forEach((word, wi) => {
+    // Dodaj 1-3 losowe litery przed słowem (oprócz pierwszego)
+    if (wi > 0) {
+      const n = 1 + Math.floor(Math.random() * 3);
+      for (let i = 0; i < n; i++) {
+        snakeChain.push({letter: randLetters[Math.floor(Math.random() * 26)], wordIdx: -1});
+      }
+    }
+    // Dodaj litery słowa
+    for (let i = 0; i < word.length; i++) {
+      snakeChain.push({letter: word[i], wordIdx: wi});
+    }
+  });
+  // Dodaj kilka losowych na koniec
+  const tail = 1 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < tail; i++) {
+    snakeChain.push({letter: randLetters[Math.floor(Math.random() * 26)], wordIdx: -1});
+  }
+
+  // Oblicz kolumny wg długości (falujący wąż)
+  snakeCols = Math.min(14, Math.max(8, Math.ceil(Math.sqrt(snakeChain.length * 1.8))));
+
+  snakeSelStart = null;
+  snakeSelCells = [];
+  document.getElementById('snakeDone').style.display = 'none';
+  snakeRender();
+  snakeRenderWordList();
+  document.getElementById('snakeFound').textContent = '0 / ' + snakeWords.length;
+  document.getElementById('snakeStatus').textContent = 'Zaznacz początek i koniec słowa w wężu!';
+}
+
+function snakeRender() {
+  const grid = document.getElementById('snakeGrid');
+  grid.innerHTML = '';
+
+  const total = snakeChain.length;
+  const cols = snakeCols;
+  const rows = Math.ceil(total / cols);
+
+  // Buduj siatkę falującą — parzyste wiersze L→R, nieparzyste R→L
+  const table = document.createElement('div');
+
+  for (let r = 0; r < rows; r++) {
+    const rowDiv = document.createElement('div');
+    rowDiv.className = 'snake-row';
+    const startIdx = r * cols;
+    const endIdx = Math.min(startIdx + cols, total);
+    const cells = [];
+
+    for (let c = startIdx; c < endIdx; c++) {
+      const cell = document.createElement('div');
+      cell.className = 'snake-cell';
+      const chainIdx = r % 2 === 0 ? c : (startIdx + (endIdx - 1 - c));
+      if (chainIdx < total) {
+        cell.textContent = snakeChain[chainIdx].letter;
+        cell.dataset.idx = chainIdx;
+
+        // Zaokrąglenia na zakręcie
+        if (c === startIdx && r > 0) {
+          cell.classList.add(r % 2 === 0 ? 'snake-curve-up' : 'snake-curve-up');
+        }
+        if (c === endIdx - 1 && r < rows - 1) {
+          cell.classList.add('snake-curve-down');
+        }
+
+        cell.addEventListener('click', () => snakeCellClick(chainIdx, cell));
+      }
+      cells.push(cell);
+    }
+
+    // Nieparzyste wiersze — odwróć wizualnie
+    if (r % 2 === 1) cells.reverse();
+
+    cells.forEach(c => rowDiv.appendChild(c));
+    table.appendChild(rowDiv);
+  }
+
+  grid.appendChild(table);
+}
+
+function snakeRenderWordList() {
+  const container = document.getElementById('snakeWordList');
+  container.innerHTML = '';
+  snakeWords.forEach((w, i) => {
+    const chip = document.createElement('div');
+    chip.className = 'snake-word-chip' + (w.found ? ' found' : '');
+    chip.textContent = w.word;
+    chip.id = 'snakew-' + i;
+    container.appendChild(chip);
+  });
+}
+
+function snakeCellClick(chainIdx, cellEl) {
+  if (snakeSelStart === null) {
+    // Pierwszy klik — rozpocznij zaznaczanie
+    snakeSelStart = chainIdx;
+    snakeSelCells = [cellEl];
+    cellEl.classList.add('sel');
+  } else {
+    // Drugi klik — sprawdź zakres
+    const from = Math.min(snakeSelStart, chainIdx);
+    const to = Math.max(snakeSelStart, chainIdx);
+
+    // Wyodrębnij zaznaczony tekst
+    const selectedLetters = [];
+    for (let i = from; i <= to; i++) selectedLetters.push(snakeChain[i].letter);
+    const selectedWord = selectedLetters.join('');
+    const selectedWordRev = selectedLetters.reverse().join('');
+
+    // Sprawdź czy pasuje do jakiegoś nieznalezionego słowa
+    const matchIdx = snakeWords.findIndex(w => !w.found && (w.word === selectedWord || w.word === selectedWordRev));
+
+    // Wyczyść zaznaczenie
+    document.querySelectorAll('.snake-cell.sel').forEach(c => c.classList.remove('sel'));
+    snakeSelStart = null;
+    snakeSelCells = [];
+
+    if (matchIdx >= 0) {
+      // Trafienie!
+      snakeWords[matchIdx].found = true;
+      // Podświetl komórki
+      document.querySelectorAll('.snake-cell').forEach(c => {
+        const idx = parseInt(c.dataset.idx);
+        if (!isNaN(idx) && idx >= from && idx <= to) c.classList.add('found');
+      });
+      const chip = document.getElementById('snakew-' + matchIdx);
+      if (chip) chip.classList.add('found');
+
+      playOk();
+      const foundCount = snakeWords.filter(w => w.found).length;
+      document.getElementById('snakeFound').textContent = foundCount + ' / ' + snakeWords.length;
+
+      if (foundCount >= snakeWords.length) {
+        document.getElementById('snakeDone').style.display = 'block';
+        particles(true); confetti();
+        owlSay('🎉 Brawo! Wszystkie słowa znalezione!');
+      }
+    } else {
+      // Pudło — flash
+      document.querySelectorAll('.snake-cell').forEach(c => {
+        const idx = parseInt(c.dataset.idx);
+        if (!isNaN(idx) && idx >= from && idx <= to) {
+          c.classList.add('wrong-flash');
+          setTimeout(() => c.classList.remove('wrong-flash'), 500);
+        }
+      });
+      playBad();
+    }
+  }
 }
 
 // ══════════════════════════════════════════════
