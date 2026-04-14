@@ -266,7 +266,7 @@ header{width:100%;display:flex;align-items:flex-start;justify-content:space-betw
 @keyframes duelFloat{0%{opacity:1;transform:translate(-50%,-50%) scale(1)}50%{opacity:1;transform:translate(-50%,-120%) scale(1.3)}100%{opacity:0;transform:translate(-50%,-200%) scale(.8)}}
 /* Board game (gra planszowa) */
 .board-grid{display:grid;gap:0;margin:0 auto;}
-.board-cell{border:1.5px solid rgba(255,255,255,.12);padding:4px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;min-height:54px;position:relative;background:var(--surface);transition:background .2s;}
+.board-cell{border:1.5px solid rgba(255,255,255,.12);padding:4px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;aspect-ratio:1;position:relative;background:var(--surface);transition:background .2s;overflow:hidden;}
 .board-cell.cell-start{background:rgba(6,214,160,.2);border-color:var(--accent2);}
 .board-cell.cell-finish{background:rgba(255,209,102,.2);border-color:var(--accent);}
 .board-cell.cell-special{background:rgba(162,155,254,.12);border-color:rgba(162,155,254,.3);}
@@ -957,6 +957,18 @@ body.guest-mode .progress-wrap{opacity:.4;}
         <button class="btn-sm" onclick="boardPrint()">🖨️ Drukuj</button>
         <button class="btn-sm" onclick="boardDownloadJPEG()" id="boardBtnJpg">🖼️ JPEG</button>
         <button class="btn-sm" onclick="showScreen('sUnits')">← Wróć</button>
+      </div>
+    </div>
+    <!-- Panel wyboru słów -->
+    <div class="cw-sel-panel" id="boardSelPanel">
+      <div class="cw-sel-title">
+        <span>☑️ Wybierz słówka na planszę <span id="boardSelCount" style="color:var(--accent2);margin-left:4px"></span></span>
+      </div>
+      <div class="cw-word-chips" id="boardWordChips"></div>
+      <div class="cw-sel-btns">
+        <button class="btn-sm" onclick="boardSelAll()" style="font-size:.7rem;padding:5px 11px">☑️ Wszystkie</button>
+        <button class="btn-sm" onclick="boardSelNone()" style="font-size:.7rem;padding:5px 11px">☐ Żadne</button>
+        <button class="btn-sm accent" onclick="boardGenerate()" style="font-size:.7rem;padding:5px 11px">🎲 Generuj planszę</button>
       </div>
     </div>
     <div id="boardWrap" style="overflow-x:auto;width:100%"></div>
@@ -5197,31 +5209,60 @@ function openBoardGame(unitKey) {
   boardUnitKey = unitKey;
   const units = getUnitsWithCustom(currentBookId);
   const u = units[unitKey];
-  const book = BOOKS[currentBookId] || {};
   document.getElementById('boardTitle').textContent = '🎲 ' + u.name + ' — Gra planszowa';
+  boardBuildWordPanel(u);
   showScreen('sBoardGame');
   boardGenerate();
 }
 
+function boardBuildWordPanel(unit) {
+  const container = document.getElementById('boardWordChips');
+  if (!container) return;
+  container.innerHTML = '';
+  unit.words.forEach(([pl, en]) => {
+    const chip = document.createElement('div');
+    chip.className = 'cw-word-chip eligible selected';
+    chip.dataset.pl = pl;
+    chip.dataset.en = en;
+    chip.innerHTML = '<span>' + esc(en) + '</span>';
+    chip.addEventListener('click', () => { chip.classList.toggle('selected'); boardUpdateSelCount(); });
+    container.appendChild(chip);
+  });
+  boardUpdateSelCount();
+}
+
+function boardUpdateSelCount() {
+  const sel = document.querySelectorAll('#boardWordChips .cw-word-chip.selected').length;
+  const el = document.getElementById('boardSelCount');
+  if (el) el.textContent = '(' + sel + ' zaznaczonych)';
+}
+function boardSelAll() { document.querySelectorAll('#boardWordChips .cw-word-chip').forEach(c => c.classList.add('selected')); boardUpdateSelCount(); }
+function boardSelNone() { document.querySelectorAll('#boardWordChips .cw-word-chip').forEach(c => c.classList.remove('selected')); boardUpdateSelCount(); }
+
 function boardGenerate() {
   if (!boardUnitKey) return;
-  const units = getUnitsWithCustom(currentBookId);
-  const u = units[boardUnitKey];
-  const words = shuffle([...u.words]);
 
-  // Buduj komórki: START + słowa z wplecionymi polami specjalnymi + FINISH
+  // Zbierz zaznaczone słowa
+  const chips = [...document.querySelectorAll('#boardWordChips .cw-word-chip.selected')];
+  let words = chips.map(c => [c.dataset.pl, c.dataset.en]);
+  if (words.length < 4) {
+    const units = getUnitsWithCustom(currentBookId);
+    words = [...units[boardUnitKey].words];
+  }
+  words = shuffle(words);
+
   boardCells = [];
   boardCells.push({type: 'start'});
 
   let wordIdx = 0;
-  const totalCells = Math.min(words.length + Math.ceil(words.length / 4), 35); // max ~35 pól
+  const totalWords = Math.min(words.length, 28);
+  const totalCells = totalWords + Math.ceil(totalWords / 5) + 2;
 
   for (let i = 1; i < totalCells - 1; i++) {
-    // Co 4-6 pól wstaw pole specjalne
-    if (i > 0 && i % (4 + Math.floor(Math.random() * 3)) === 0 && i < totalCells - 2) {
+    if (i > 0 && i % (5 + Math.floor(Math.random() * 2)) === 0 && i < totalCells - 2) {
       const sp = BOARD_SPECIALS[Math.floor(Math.random() * BOARD_SPECIALS.length)];
       boardCells.push({type: 'special', special: sp});
-    } else if (wordIdx < words.length) {
+    } else if (wordIdx < totalWords) {
       const [pl, en] = words[wordIdx];
       const s = DB.getSentence(currentBookId, pl);
       const emoji = getEmojiStore()[pl] || '';
@@ -5235,6 +5276,11 @@ function boardGenerate() {
   }
 
   boardCells.push({type: 'finish'});
+
+  // Dopasuj do pełnych wierszy (kwadraty)
+  while (boardCells.length % BOARD_COLS !== 0) {
+    boardCells.splice(boardCells.length - 1, 0, {type: 'special', special: BOARD_SPECIALS[Math.floor(Math.random() * BOARD_SPECIALS.length)]});
+  }
 
   document.getElementById('boardStatus').textContent = boardCells.length + ' pól · ' + wordIdx + ' słów · rzuć kostką i graj!';
   boardRender();
@@ -5340,7 +5386,7 @@ function boardPrint() {
     'h1{font-size:1rem;text-align:center;margin:4px 0 2px}' +
     'h2{font-size:.68rem;text-align:center;color:#888;font-weight:400;margin:0 0 8px}' +
     '.grid{display:grid;grid-template-columns:repeat(' + cols + ',1fr);gap:0;max-width:100%;border:2px solid #333;border-radius:4px}' +
-    '.cell{border:1px solid #bbb;padding:4px;text-align:center;min-height:52px;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;background:#fff}' +
+    '.cell{border:1px solid #bbb;padding:4px;text-align:center;aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;background:#fff;overflow:hidden}' +
     '.cell-start{background:#d5f5e3}' +
     '.cell-finish{background:#fdebd0}' +
     '.cell-special{background:#ebdef0}' +
