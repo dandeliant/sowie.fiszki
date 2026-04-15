@@ -1446,6 +1446,8 @@ szkoła	school"></textarea>
     <button class="mode-btn" onclick="setMode('bridge')" id="mBridge">🌉 Most</button>
     <button class="mode-btn" onclick="setMode('speak')" id="mSpeak">🎤 Mów</button>
     <button class="mode-btn" onclick="setMode('speakSent')" id="mSpeakSent">🗣️ Zdania</button>
+    <button class="mode-btn" onclick="setMode('typeSent')" id="mTypeSent">✏️ Wpisz zd.</button>
+    <button class="mode-btn" onclick="setMode('dictSent')" id="mDictSent">🎧 Dykt. zd.</button>
   </div>
   <div class="stats">
     <span>Zostało: <strong id="stL">—</strong></span>
@@ -1680,6 +1682,38 @@ szkoła	school"></textarea>
         </div>
       </div>
     </div>
+  </div>
+
+  <!-- Type Sentences (Wpisz zdania) -->
+  <div id="typeSentArea" style="display:none;width:100%;margin-bottom:14px">
+    <div class="q-label">✏️ Wpisz tłumaczenie zdania</div>
+    <div style="text-align:center;margin-bottom:6px">
+      <div style="font-size:.68rem;color:var(--muted);font-weight:600;margin-bottom:4px">Przetłumacz zdanie:</div>
+      <div style="font-size:1.05rem;font-weight:800;color:var(--text);padding:12px;background:var(--surface);border:2px solid var(--border);border-radius:14px" id="tsSentPl">—</div>
+    </div>
+    <div style="font-size:.68rem;color:var(--muted);text-align:center;margin-bottom:8px" id="tsHint"></div>
+    <div class="type-row">
+      <input type="text" class="type-input" id="tsInp" placeholder="Wpisz zdanie w języku obcym…" autocomplete="off" autocorrect="off" spellcheck="false">
+      <button class="btn-sm accent" id="btnTsChk" onclick="checkTypeSent()">Sprawdź</button>
+    </div>
+    <div class="type-result" id="tsRes" style="margin-top:6px"></div>
+    <div class="alpha-keys" data-for="tsInp"></div>
+  </div>
+
+  <!-- Dictation Sentences (Dyktando ze zdań) -->
+  <div id="dictSentArea" style="display:none;width:100%;margin-bottom:14px">
+    <div class="q-label">🎧 Dyktando — wpisz usłyszane zdanie</div>
+    <div style="text-align:center;margin-bottom:8px">
+      <div class="dictate-icon">🎧</div>
+      <button class="btn-speak" onclick="playDictSent()">🔊 Odtwórz zdanie</button>
+      <div style="margin-top:4px;font-size:.68rem;color:var(--muted)">Usłyszysz zdanie — wpisz je poniżej</div>
+    </div>
+    <div class="type-row">
+      <input type="text" class="type-input" id="dsInp" placeholder="Wpisz usłyszane zdanie…" autocomplete="off" autocorrect="off" spellcheck="false">
+      <button class="btn-sm accent" id="btnDsChk" onclick="checkDictSent()">Sprawdź</button>
+    </div>
+    <div class="type-result" id="dsRes" style="margin-top:6px"></div>
+    <div class="alpha-keys" data-for="dsInp"></div>
   </div>
 
   <!-- Speak Sentences Mode (Mów zdania) -->
@@ -3276,6 +3310,14 @@ function renderCard() {
     const ma = document.getElementById('matchArea'); ma.style.display = 'block'; reAnim(ma);
     buildMatchMode();
 
+  } else if (mode === 'typeSent') {
+    const ts = document.getElementById('typeSentArea'); ts.style.display = 'block'; reAnim(ts);
+    buildTypeSentMode();
+
+  } else if (mode === 'dictSent') {
+    const ds = document.getElementById('dictSentArea'); ds.style.display = 'block'; reAnim(ds);
+    buildDictSentMode();
+
   } else if (mode === 'speakSent') {
     const ssa = document.getElementById('speakSentArea'); ssa.style.display = 'block'; reAnim(ssa);
     buildSpeakSentMode();
@@ -3339,7 +3381,7 @@ function buildMasked(word) {
 
 function reAnim(el) { el.style.animation = 'none'; el.offsetHeight; el.style.animation = ''; }
 function hideAreas() {
-  ['cardScene','quizArea','typeArea','missingArea','dictateArea','tfArea','gapArea','scrambleArea','sentScrArea','matchArea','speedArea','butterflyArea','jumpArea','bridgeArea','speakArea','speakSentArea','sentencePanel']
+  ['cardScene','quizArea','typeArea','missingArea','dictateArea','tfArea','gapArea','scrambleArea','sentScrArea','matchArea','speedArea','butterflyArea','jumpArea','bridgeArea','speakArea','speakSentArea','typeSentArea','dictSentArea','sentencePanel']
     .forEach(id => { const e = document.getElementById(id); if(e) e.style.display = 'none'; });
   // Zatrzymaj grę motylkową
   if (typeof bfRunning !== 'undefined' && bfRunning) {
@@ -3687,7 +3729,7 @@ function setMode(m) {
   clearInterval(studySpeedTimer); // zatrzymaj timer speed jeśli był aktywny
   mode = m;
   document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
-  const modeMap = {card:'mCard',quiz:'mQuiz',type:'mType',missing:'mMissing',dictate:'mDictate',tf:'mTF',gap:'mGap',scramble:'mScramble',sentscr:'mSentScr',match:'mMatch',speed:'mSpeed',butterfly:'mButterfly',jump:'mJump',bridge:'mBridge',speak:'mSpeak',speakSent:'mSpeakSent'};
+  const modeMap = {card:'mCard',quiz:'mQuiz',type:'mType',missing:'mMissing',dictate:'mDictate',tf:'mTF',gap:'mGap',scramble:'mScramble',sentscr:'mSentScr',match:'mMatch',speed:'mSpeed',butterfly:'mButterfly',jump:'mJump',bridge:'mBridge',speak:'mSpeak',speakSent:'mSpeakSent',typeSent:'mTypeSent',dictSent:'mDictSent'};
   document.getElementById(modeMap[m]).classList.add('active');
   document.getElementById('livesBar').classList.toggle('visible', m === 'quiz');
   hideAreas(); revealed = false; hideDiff();
@@ -3709,6 +3751,8 @@ function setMode(m) {
     else if (m === 'bridge') { document.getElementById('bridgeArea').style.display = 'block'; brReset(); }
     else if (m === 'speak') document.getElementById('speakArea').style.display = 'block';
     else if (m === 'speakSent') document.getElementById('speakSentArea').style.display = 'block';
+    else if (m === 'typeSent') document.getElementById('typeSentArea').style.display = 'block';
+    else if (m === 'dictSent') document.getElementById('dictSentArea').style.display = 'block';
   }
 }
 
@@ -4332,9 +4376,9 @@ document.addEventListener('keydown', e => {
   const studyActive = document.getElementById('sStudy').classList.contains('active');
   if (!studyActive) return;
 
-  const typeIDs = ['tInp','missingInp','dictInp','gapInp','scrambleInp'];
+  const typeIDs = ['tInp','missingInp','dictInp','gapInp','scrambleInp','tsInp','dsInp'];
   const onInput = typeIDs.includes(document.activeElement?.id);
-  if (onInput) { if (e.key === 'Enter') { e.preventDefault(); if (document.activeElement.id==='tInp') checkType(); else if (document.activeElement.id==='missingInp') checkMissing(); else if (document.activeElement.id==='gapInp') checkGap(); else if (document.activeElement.id==='scrambleInp') checkScramble(); else checkDictation(); } return; }
+  if (onInput) { if (e.key === 'Enter') { e.preventDefault(); if (document.activeElement.id==='tInp') checkType(); else if (document.activeElement.id==='missingInp') checkMissing(); else if (document.activeElement.id==='gapInp') checkGap(); else if (document.activeElement.id==='scrambleInp') checkScramble(); else if (document.activeElement.id==='tsInp') checkTypeSent(); else if (document.activeElement.id==='dsInp') checkDictSent(); else checkDictation(); } return; }
   if (!active) return;
   if (e.code === 'Space') { e.preventDefault(); if (mode==='card'&&!revealed) flipCard(); }
   if (revealed) {
@@ -5585,6 +5629,114 @@ function cubesPrint() {
   win.document.write('</body></html>');
   win.document.close();
   setTimeout(() => win.print(), 400);
+}
+
+// ══════════════════════════════════════════════
+//  TYPE SENTENCES (WPISZ ZDANIA)
+// ══════════════════════════════════════════════
+let tsSentAnswer = '';
+
+function buildTypeSentMode() {
+  if (curIdx === null) return;
+  const wordPl = activeWords[curIdx][0];
+  const wordEn = activeWords[curIdx][1];
+  const s = DB.getSentence(currentBookId, wordPl);
+
+  document.getElementById('tsRes').className = 'type-result';
+  document.getElementById('tsRes').innerHTML = '';
+  document.getElementById('btnTsChk').disabled = false;
+  const inp = document.getElementById('tsInp');
+  inp.value = ''; inp.className = 'type-input'; inp.disabled = false;
+
+  if (s && s.sentence_pl && s.sentence_target) {
+    document.getElementById('tsSentPl').textContent = '🇵🇱 ' + s.sentence_pl;
+    document.getElementById('tsHint').textContent = wordPl + ' → ' + wordEn;
+    tsSentAnswer = s.sentence_target;
+  } else {
+    document.getElementById('tsSentPl').textContent = '🇵🇱 ' + wordPl;
+    document.getElementById('tsHint').textContent = 'Brak zdania — wpisz tłumaczenie słowa';
+    tsSentAnswer = wordEn;
+  }
+  buildAlphaKeys('tsInp', tsSentAnswer);
+  setTimeout(() => inp.focus(), 120);
+}
+
+function checkTypeSent() {
+  if (revealed) return;
+  const inp = document.getElementById('tsInp');
+  const u = inp.value.trim();
+  if (!u) return;
+  revealed = true; inp.disabled = true; document.getElementById('btnTsChk').disabled = true;
+  const ok = fuzzy(u, tsSentAnswer) || levenshteinSimilar(u, tsSentAnswer);
+  const r = document.getElementById('tsRes');
+  if (ok) {
+    inp.classList.add('correct-inp'); r.className = 'type-result ok';
+    r.innerHTML = '✓ Poprawnie! <span class="ar">' + esc(tsSentAnswer) + '</span>';
+    playOk(); bounce('typeSentArea'); particles(true); owlR('easy');
+    DB.recordAnswer(currentUser, true);
+  } else {
+    inp.classList.add('wrong-inp'); r.className = 'type-result err';
+    r.innerHTML = '✗ Poprawne zdanie: <span class="ar">' + esc(tsSentAnswer) + '</span>';
+    playBad(); shake('typeSentArea'); owlR('hard');
+    DB.recordAnswer(currentUser, false);
+    trackMissed(); sessErrorCount++;
+  }
+  spkForeign(tsSentAnswer);
+  setTimeout(() => rate(ok ? 'easy' : 'hard'), 1800);
+}
+
+// ══════════════════════════════════════════════
+//  DICTATION SENTENCES (DYKTANDO ZE ZDAŃ)
+// ══════════════════════════════════════════════
+let dsSentAnswer = '';
+
+function buildDictSentMode() {
+  if (curIdx === null) return;
+  const wordPl = activeWords[curIdx][0];
+  const wordEn = activeWords[curIdx][1];
+  const s = DB.getSentence(currentBookId, wordPl);
+
+  document.getElementById('dsRes').className = 'type-result';
+  document.getElementById('dsRes').innerHTML = '';
+  document.getElementById('btnDsChk').disabled = false;
+  const inp = document.getElementById('dsInp');
+  inp.value = ''; inp.className = 'type-input'; inp.disabled = false;
+
+  if (s && s.sentence_target) {
+    dsSentAnswer = s.sentence_target;
+  } else {
+    dsSentAnswer = wordEn;
+  }
+  buildAlphaKeys('dsInp', dsSentAnswer);
+  setTimeout(() => { playDictSent(); inp.focus(); }, 300);
+}
+
+function playDictSent() {
+  spk(dsSentAnswer, getBookLang(), 0.8);
+}
+
+function checkDictSent() {
+  if (revealed) return;
+  const inp = document.getElementById('dsInp');
+  const u = inp.value.trim();
+  if (!u) return;
+  revealed = true; inp.disabled = true; document.getElementById('btnDsChk').disabled = true;
+  const ok = fuzzy(u, dsSentAnswer) || levenshteinSimilar(u, dsSentAnswer);
+  const r = document.getElementById('dsRes');
+  if (ok) {
+    inp.classList.add('correct-inp'); r.className = 'type-result ok';
+    r.innerHTML = '✓ Poprawnie! <span class="ar">' + esc(dsSentAnswer) + '</span>';
+    playOk(); bounce('dictSentArea'); particles(true); owlR('easy');
+    DB.recordAnswer(currentUser, true);
+  } else {
+    inp.classList.add('wrong-inp'); r.className = 'type-result err';
+    r.innerHTML = '✗ Poprawne zdanie: <span class="ar">' + esc(dsSentAnswer) + '</span>';
+    playBad(); shake('dictSentArea'); owlR('hard');
+    DB.recordAnswer(currentUser, false);
+    trackMissed(); sessErrorCount++;
+  }
+  spkForeign(dsSentAnswer);
+  setTimeout(() => rate(ok ? 'easy' : 'hard'), 1800);
 }
 
 // ══════════════════════════════════════════════
