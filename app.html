@@ -3041,6 +3041,7 @@ function renderCard() {
     document.getElementById('tRes').className = 'type-result';
     document.getElementById('tRes').innerHTML = '';
     document.getElementById('tSpeak').style.display = 'none';
+    buildAlphaKeys('tInp', a);
     setTimeout(() => inp.focus(), 120);
 
   } else if (mode === 'missing') {
@@ -3054,6 +3055,7 @@ function renderCard() {
     document.getElementById('btnMissChk').disabled = false;
     document.getElementById('missingRes').className = 'type-result';
     document.getElementById('missingRes').innerHTML = '';
+    buildAlphaKeys('missingInp', a);
     setTimeout(() => inp.focus(), 120);
 
   } else if (mode === 'dictate') {
@@ -3064,6 +3066,7 @@ function renderCard() {
     document.getElementById('dictRes').className = 'type-result';
     document.getElementById('dictRes').innerHTML = '';
     document.getElementById('dictSpeak').style.display = 'none';
+    buildAlphaKeys('dictInp', activeWords[curIdx][1]);
     setTimeout(() => { playDictation(); inp.focus(); }, 300);
 
   } else if (mode === 'gap') {
@@ -7499,6 +7502,7 @@ function buildGapMode() {
     hintEl.textContent = wordPl + ' → ' + wordTarget;
     gapAnswer = wordTarget;
     inp.placeholder = 'Wpisz tłumaczenie: ' + wordPl;
+    buildAlphaKeys('gapInp', wordTarget);
     setTimeout(() => inp.focus(), 120);
     return;
   }
@@ -7528,6 +7532,7 @@ function buildGapMode() {
   hintEl.textContent = '🇵🇱 ' + (s.sentence_pl || wordPl);
   sentenceEl.innerHTML = gapped;
   inp.placeholder = 'Wpisz brakujące słowo…';
+  buildAlphaKeys('gapInp', gapAnswer);
   setTimeout(() => inp.focus(), 120);
 }
 
@@ -7599,6 +7604,7 @@ function buildScramble() {
   document.getElementById('scrambleScrambled').textContent = scramblePhrase(a);
   const inp = document.getElementById('scrambleInp');
   inp.value = ''; inp.className = 'type-input'; inp.disabled = false;
+  buildAlphaKeys('scrambleInp', a);
   setTimeout(() => inp.focus(), 120);
 }
 
@@ -8989,31 +8995,33 @@ h2{font-size:.85rem;color:#666;margin-bottom:16px;font-weight:400}
 }
 
 // ══════════════════════════════════════════════
-// ── Alpha keyboards for input fields ──────────
-(function() {
-  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  document.querySelectorAll('.alpha-keys').forEach(container => {
-    const inputId = container.dataset.for;
-    if (!inputId) return;
+// ── Alpha keyboards — dynamiczne, tylko litery z odpowiedzi ──
+function buildAlphaKeys(inputId, answer) {
+  const container = document.querySelector('.alpha-keys[data-for="' + inputId + '"]');
+  if (!container) return;
+  container.innerHTML = '';
 
-    letters.split('').forEach(ch => {
-      const key = document.createElement('div');
-      key.className = 'alpha-key';
-      key.textContent = ch;
-      key.addEventListener('click', () => {
-        const inp = document.getElementById(inputId);
-        if (!inp || inp.disabled) return;
-        inp.value += ch.toLowerCase();
-        inp.focus();
-        inp.dispatchEvent(new Event('input'));
-      });
-      container.appendChild(key);
+  // Wyciągnij unikalne litery z odpowiedzi, posortuj alfabetycznie
+  const letters = [...new Set(answer.toUpperCase().replace(/[^A-ZĄĆĘŁŃÓŚŹŻ]/g, '').split(''))].sort();
+  const hasSpace = answer.includes(' ');
+
+  letters.forEach(ch => {
+    const key = document.createElement('div');
+    key.className = 'alpha-key';
+    key.textContent = ch;
+    key.addEventListener('click', () => {
+      const inp = document.getElementById(inputId);
+      if (!inp || inp.disabled) return;
+      inp.value += ch.toLowerCase();
+      inp.focus();
     });
+    container.appendChild(key);
+  });
 
-    // Spacja
+  if (hasSpace) {
     const space = document.createElement('div');
     space.className = 'alpha-key ak-space';
-    space.textContent = '␣ spacja';
+    space.textContent = '␣';
     space.addEventListener('click', () => {
       const inp = document.getElementById(inputId);
       if (!inp || inp.disabled) return;
@@ -9021,20 +9029,19 @@ h2{font-size:.85rem;color:#666;margin-bottom:16px;font-weight:400}
       inp.focus();
     });
     container.appendChild(space);
+  }
 
-    // Backspace
-    const bk = document.createElement('div');
-    bk.className = 'alpha-key ak-wide';
-    bk.textContent = '⌫';
-    bk.addEventListener('click', () => {
-      const inp = document.getElementById(inputId);
-      if (!inp || inp.disabled) return;
-      inp.value = inp.value.slice(0, -1);
-      inp.focus();
-    });
-    container.appendChild(bk);
+  const bk = document.createElement('div');
+  bk.className = 'alpha-key ak-wide';
+  bk.textContent = '⌫';
+  bk.addEventListener('click', () => {
+    const inp = document.getElementById(inputId);
+    if (!inp || inp.disabled) return;
+    inp.value = inp.value.slice(0, -1);
+    inp.focus();
   });
-})();
+  container.appendChild(bk);
+}
 
 // ══════════════════════════════════════════════
 //  SERVICE WORKER (PWA)
