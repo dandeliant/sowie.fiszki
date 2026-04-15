@@ -1375,6 +1375,7 @@ body.guest-mode .progress-wrap{opacity:.4;}
   <button class="btn-start" onclick="startStudyFromList()" style="margin-bottom:12px">🎲 Zacznij naukę!</button>
   <div class="wl-legend">🟢 opanowane &nbsp;🟡 w trakcie &nbsp;🔴 trudne &nbsp;⬜ nie ćwiczone</div>
   <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;margin-bottom:12px">
+    <button class="btn-sm accent" onclick="toggleSentences()" id="btnToggleSentences" style="font-size:.68rem">💬 Zobacz zdania</button>
     <button class="btn-sm" onclick="printWordList()" style="font-size:.68rem">🖨️ Drukuj listę</button>
     <button class="btn-sm" onclick="printFlashcards()" style="font-size:.68rem">🃏 Fiszki do druku</button>
     <button class="btn-sm" onclick="printScrambleSheet()" style="font-size:.68rem">🔀 Rozsypanka literowa</button>
@@ -1444,6 +1445,7 @@ szkoła	school"></textarea>
     <button class="mode-btn" onclick="setMode('jump')" id="mJump">🏝️ Skocz</button>
     <button class="mode-btn" onclick="setMode('bridge')" id="mBridge">🌉 Most</button>
     <button class="mode-btn" onclick="setMode('speak')" id="mSpeak">🎤 Mów</button>
+    <button class="mode-btn" onclick="setMode('speakSent')" id="mSpeakSent">🗣️ Zdania</button>
   </div>
   <div class="stats">
     <span>Zostało: <strong id="stL">—</strong></span>
@@ -1678,6 +1680,29 @@ szkoła	school"></textarea>
         </div>
       </div>
     </div>
+  </div>
+
+  <!-- Speak Sentences Mode (Mów zdania) -->
+  <div id="speakSentArea" style="display:none;width:100%;margin-bottom:14px">
+    <div class="q-label">🗣️ Powiedz zdanie w języku obcym</div>
+    <!-- Zdanie po polsku -->
+    <div style="text-align:center;margin-bottom:8px">
+      <div style="font-size:.72rem;color:var(--muted);font-weight:600;margin-bottom:4px">Przetłumacz i powiedz na głos:</div>
+      <div style="font-size:1.1rem;font-weight:800;color:var(--text);padding:12px;background:var(--surface);border:2px solid var(--border);border-radius:14px" id="ssSentPl">—</div>
+    </div>
+    <!-- Podpowiedź (ukryta) -->
+    <div id="ssHintWrap" style="text-align:center;margin-bottom:8px">
+      <button class="btn-sm" onclick="ssShowHint()" id="ssHintBtn" style="font-size:.7rem">💡 Pokaż podpowiedź</button>
+      <div id="ssHintText" style="display:none;font-size:.95rem;font-weight:700;color:var(--accent2);padding:8px;background:rgba(6,214,160,.08);border:1px solid rgba(6,214,160,.2);border-radius:10px;margin-top:6px"></div>
+    </div>
+    <!-- Mikrofon -->
+    <div style="text-align:center;margin-bottom:10px">
+      <button id="ssMicBtn" onclick="ssListen()" style="width:66px;height:66px;border-radius:50%;border:3px solid var(--border);background:var(--surface2);font-size:1.8rem;cursor:pointer;transition:all .2s;display:inline-flex;align-items:center;justify-content:center" title="Kliknij i mów">🎤</button>
+      <div style="font-size:.62rem;color:var(--muted);font-weight:600;margin-top:4px" id="ssMicStatus">Kliknij mikrofon i powiedz zdanie</div>
+    </div>
+    <div id="ssHeard" style="text-align:center;font-size:.88rem;font-weight:700;color:var(--accent);min-height:24px;margin-bottom:6px"></div>
+    <div class="type-result" id="ssRes" style="margin-top:6px"></div>
+    <div id="ssNoSupport" style="display:none;text-align:center;padding:12px;background:rgba(255,118,117,.08);border:1px solid rgba(255,118,117,.2);border-radius:12px;font-size:.78rem;color:var(--danger);font-weight:600">⚠️ Brak wsparcia rozpoznawania mowy. Użyj Chrome lub Edge.</div>
   </div>
 
   <!-- Speak Mode (Mówienie) -->
@@ -2853,8 +2878,13 @@ function printWordList() {
     </head><body>
     <h1>${esc(book.name)} — ${esc(u.name)}</h1>
     <h2>Sowie Fiszki · ${new Date().toLocaleDateString('pl-PL')}</h2>
-    <table><thead><tr><th>#</th><th>Polski</th><th>English</th></tr></thead><tbody>
-    ${u.words.map((w,i)=>`<tr><td>${i+1}</td><td>${esc(w[0])}</td><td>${esc(w[1])}</td></tr>`).join('')}
+    <table><thead><tr><th>#</th><th>Polski</th><th>English</th>${sentencesVisible ? '<th>Zdanie PL</th><th>Zdanie EN</th>' : ''}</tr></thead><tbody>
+    ${u.words.map((w,i)=>{
+      const s = sentencesVisible ? DB.getSentence(currentBookId, w[0]) : null;
+      return '<tr><td>'+(i+1)+'</td><td>'+esc(w[0])+'</td><td>'+esc(w[1])+'</td>'
+        + (sentencesVisible ? '<td style="font-size:.8rem;color:#555">'+(s?.sentence_pl||'')+'</td><td style="font-size:.8rem;color:#2c6e49">'+(s?.sentence_target||'')+'</td>' : '')
+        + '</tr>';
+    }).join('')}
     </tbody></table></body></html>`);
   win.document.close();
   win.print();
@@ -2896,7 +2926,9 @@ h2{text-align:center;font-size:9pt;color:#888;margin-bottom:4px;font-weight:400}
     for (let i = 0; i < perPage; i++) {
       const w = slice[i];
       if (w) {
-        html += '<div class="card"><div class="num">' + (p*perPage+i+1) + '</div><div class="word">' + esc(w[0]) + '</div></div>';
+        const s = sentencesVisible ? DB.getSentence(currentBookId, w[0]) : null;
+        const sentHtml = s?.sentence_pl ? '<div class="sub">' + esc(s.sentence_pl) + '</div>' : '';
+        html += '<div class="card"><div class="num">' + (p*perPage+i+1) + '</div><div class="word">' + esc(w[0]) + '</div>' + sentHtml + '</div>';
       } else {
         html += '<div class="card"></div>';
       }
@@ -2917,7 +2949,9 @@ h2{text-align:center;font-size:9pt;color:#888;margin-bottom:4px;font-weight:400}
       const w = mirrored[i];
       if (w) {
         const origIdx = (function(){ const r=Math.floor(i/cols); const c=i%cols; return r*cols+(cols-1-c); })();
-        html += '<div class="card"><div class="num">' + (p*perPage+origIdx+1) + '</div><div class="word">' + esc(w[1]) + '</div></div>';
+        const s2 = sentencesVisible ? DB.getSentence(currentBookId, w[0]) : null;
+        const sentHtml2 = s2?.sentence_target ? '<div class="sub">' + esc(s2.sentence_target) + '</div>' : '';
+        html += '<div class="card"><div class="num">' + (p*perPage+origIdx+1) + '</div><div class="word">' + esc(w[1]) + '</div>' + sentHtml2 + '</div>';
       } else {
         html += '<div class="card"></div>';
       }
@@ -3242,6 +3276,10 @@ function renderCard() {
     const ma = document.getElementById('matchArea'); ma.style.display = 'block'; reAnim(ma);
     buildMatchMode();
 
+  } else if (mode === 'speakSent') {
+    const ssa = document.getElementById('speakSentArea'); ssa.style.display = 'block'; reAnim(ssa);
+    buildSpeakSentMode();
+
   } else if (mode === 'speak') {
     const sa = document.getElementById('speakArea'); sa.style.display = 'block'; reAnim(sa);
     buildSpeakMode();
@@ -3301,7 +3339,7 @@ function buildMasked(word) {
 
 function reAnim(el) { el.style.animation = 'none'; el.offsetHeight; el.style.animation = ''; }
 function hideAreas() {
-  ['cardScene','quizArea','typeArea','missingArea','dictateArea','tfArea','gapArea','scrambleArea','sentScrArea','matchArea','speedArea','butterflyArea','jumpArea','bridgeArea','speakArea','sentencePanel']
+  ['cardScene','quizArea','typeArea','missingArea','dictateArea','tfArea','gapArea','scrambleArea','sentScrArea','matchArea','speedArea','butterflyArea','jumpArea','bridgeArea','speakArea','speakSentArea','sentencePanel']
     .forEach(id => { const e = document.getElementById(id); if(e) e.style.display = 'none'; });
   // Zatrzymaj grę motylkową
   if (typeof bfRunning !== 'undefined' && bfRunning) {
@@ -3649,7 +3687,7 @@ function setMode(m) {
   clearInterval(studySpeedTimer); // zatrzymaj timer speed jeśli był aktywny
   mode = m;
   document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
-  const modeMap = {card:'mCard',quiz:'mQuiz',type:'mType',missing:'mMissing',dictate:'mDictate',tf:'mTF',gap:'mGap',scramble:'mScramble',sentscr:'mSentScr',match:'mMatch',speed:'mSpeed',butterfly:'mButterfly',jump:'mJump',bridge:'mBridge',speak:'mSpeak'};
+  const modeMap = {card:'mCard',quiz:'mQuiz',type:'mType',missing:'mMissing',dictate:'mDictate',tf:'mTF',gap:'mGap',scramble:'mScramble',sentscr:'mSentScr',match:'mMatch',speed:'mSpeed',butterfly:'mButterfly',jump:'mJump',bridge:'mBridge',speak:'mSpeak',speakSent:'mSpeakSent'};
   document.getElementById(modeMap[m]).classList.add('active');
   document.getElementById('livesBar').classList.toggle('visible', m === 'quiz');
   hideAreas(); revealed = false; hideDiff();
@@ -3670,6 +3708,7 @@ function setMode(m) {
     else if (m === 'jump') { document.getElementById('jumpArea').style.display = 'block'; jumpReset(); }
     else if (m === 'bridge') { document.getElementById('bridgeArea').style.display = 'block'; brReset(); }
     else if (m === 'speak') document.getElementById('speakArea').style.display = 'block';
+    else if (m === 'speakSent') document.getElementById('speakSentArea').style.display = 'block';
   }
 }
 
@@ -5546,6 +5585,156 @@ function cubesPrint() {
   win.document.write('</body></html>');
   win.document.close();
   setTimeout(() => win.print(), 400);
+}
+
+// ══════════════════════════════════════════════
+//  SPEAK SENTENCES MODE (MÓW ZDANIA)
+// ══════════════════════════════════════════════
+let ssSentAnswer = '';
+
+function buildSpeakSentMode() {
+  if (curIdx === null) return;
+  const wordPl = activeWords[curIdx][0];
+  const wordEn = activeWords[curIdx][1];
+  const s = DB.getSentence(currentBookId, wordPl);
+
+  document.getElementById('ssRes').className = 'type-result';
+  document.getElementById('ssRes').innerHTML = '';
+  document.getElementById('ssHeard').textContent = '';
+  document.getElementById('ssHintText').style.display = 'none';
+  document.getElementById('ssHintBtn').style.display = '';
+  document.getElementById('ssMicStatus').textContent = 'Kliknij mikrofon i powiedz zdanie';
+  const btn = document.getElementById('ssMicBtn');
+  btn.classList.remove('listening');
+  btn.disabled = false;
+  btn.textContent = '🎤';
+
+  if (!SpeechRecognition) {
+    document.getElementById('ssNoSupport').style.display = 'block';
+    btn.style.display = 'none';
+  } else {
+    document.getElementById('ssNoSupport').style.display = 'none';
+    btn.style.display = '';
+  }
+
+  if (s && s.sentence_pl && s.sentence_target) {
+    document.getElementById('ssSentPl').textContent = '🇵🇱 ' + s.sentence_pl;
+    document.getElementById('ssHintText').textContent = s.sentence_target;
+    ssSentAnswer = s.sentence_target;
+  } else {
+    document.getElementById('ssSentPl').textContent = '🇵🇱 ' + wordPl + ' (brak zdania — powiedz tłumaczenie)';
+    document.getElementById('ssHintText').textContent = wordEn;
+    ssSentAnswer = wordEn;
+  }
+}
+
+function ssShowHint() {
+  document.getElementById('ssHintText').style.display = 'block';
+  document.getElementById('ssHintBtn').style.display = 'none';
+}
+
+function ssListen() {
+  if (!SpeechRecognition || revealed) return;
+  const btn = document.getElementById('ssMicBtn');
+  btn.classList.add('listening');
+  btn.textContent = '🔴';
+  document.getElementById('ssMicStatus').textContent = '🔴 Słucham... mów teraz!';
+  document.getElementById('ssHeard').textContent = '...';
+
+  const recognition = new SpeechRecognition();
+  recognition.lang = getBookLang();
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 3;
+
+  recognition.onresult = function(event) {
+    btn.classList.remove('listening');
+    btn.textContent = '🎤';
+    const results = [];
+    for (let i = 0; i < event.results[0].length; i++) results.push(event.results[0][i].transcript.trim().toLowerCase());
+    const heard = event.results[0][0].transcript.trim();
+    document.getElementById('ssHeard').textContent = '🗣️ "' + heard + '"';
+
+    const correct = ssSentAnswer.toLowerCase();
+    // Porównanie: dopasowanie fuzzy lub zawiera kluczowe słowa
+    const ok = results.some(r => r === correct || fuzzy(r, ssSentAnswer) || levenshteinSimilar(r, correct));
+
+    revealed = true;
+    btn.disabled = true;
+    const r = document.getElementById('ssRes');
+    if (ok) {
+      r.className = 'type-result ok';
+      r.innerHTML = '✓ Świetnie! <span class="ar">' + esc(ssSentAnswer) + '</span>';
+      document.getElementById('ssMicStatus').textContent = '🎉 Doskonała wymowa!';
+      playOk(); particles(true); owlR('easy');
+      DB.recordAnswer(currentUser, true);
+    } else {
+      r.className = 'type-result err';
+      r.innerHTML = '✗ Poprawne zdanie: <span class="ar">' + esc(ssSentAnswer) + '</span>';
+      document.getElementById('ssMicStatus').textContent = 'Powiedziałeś: "' + heard + '"';
+      playBad(); owlR('hard');
+      DB.recordAnswer(currentUser, false);
+      trackMissed(); sessErrorCount++;
+    }
+    // Pokaż podpowiedź po odpowiedzi
+    document.getElementById('ssHintText').style.display = 'block';
+    document.getElementById('ssHintBtn').style.display = 'none';
+    spkForeign(ssSentAnswer);
+    setTimeout(() => rate(ok ? 'easy' : 'hard'), 2000);
+  };
+
+  recognition.onerror = function(event) {
+    btn.classList.remove('listening');
+    btn.textContent = '🎤';
+    if (event.error === 'no-speech') document.getElementById('ssMicStatus').textContent = 'Nie usłyszałem. Spróbuj ponownie.';
+    else if (event.error === 'not-allowed') document.getElementById('ssMicStatus').textContent = '⚠️ Zezwól na mikrofon w przeglądarce.';
+    else document.getElementById('ssMicStatus').textContent = 'Błąd: ' + event.error;
+    document.getElementById('ssHeard').textContent = '';
+  };
+
+  recognition.onend = function() { btn.classList.remove('listening'); btn.textContent = '🎤'; };
+  recognition.start();
+}
+
+// Pomocnicza: podobieństwo Levenshteina (>80% = OK)
+function levenshteinSimilar(a, b) {
+  const d = lev(a.toLowerCase(), b.toLowerCase());
+  const maxLen = Math.max(a.length, b.length);
+  return maxLen > 0 && (1 - d / maxLen) > 0.7;
+}
+
+// ══════════════════════════════════════════════
+//  TOGGLE SENTENCES ON WORD LIST
+// ══════════════════════════════════════════════
+let sentencesVisible = false;
+
+function toggleSentences() {
+  sentencesVisible = !sentencesVisible;
+  const btn = document.getElementById('btnToggleSentences');
+  btn.textContent = sentencesVisible ? '💬 Ukryj zdania' : '💬 Zobacz zdania';
+
+  const rows = document.querySelectorAll('#wlBody tr');
+  rows.forEach(tr => {
+    const existing = tr.querySelector('.wl-sent-row');
+    if (sentencesVisible) {
+      if (existing) { existing.style.display = ''; return; }
+      const plCell = tr.querySelector('.td-pl');
+      if (!plCell) return;
+      const pl = plCell.textContent.trim();
+      const s = DB.getSentence(currentBookId, pl);
+      if (!s || (!s.sentence_pl && !s.sentence_target)) return;
+
+      const sentRow = document.createElement('tr');
+      sentRow.className = 'wl-sent-row';
+      const colSpan = tr.children.length;
+      sentRow.innerHTML = '<td colspan="' + colSpan + '" style="padding:2px 8px 8px;font-size:.68rem;color:var(--muted);line-height:1.4;border-bottom:1px solid var(--border)">' +
+        (s.sentence_pl ? '<div>🇵🇱 ' + esc(s.sentence_pl) + '</div>' : '') +
+        (s.sentence_target ? '<div style="color:var(--accent2)">🇬🇧 ' + esc(s.sentence_target) + '</div>' : '') +
+        '</td>';
+      tr.after(sentRow);
+    } else {
+      if (existing) existing.style.display = 'none';
+    }
+  });
 }
 
 // ══════════════════════════════════════════════
