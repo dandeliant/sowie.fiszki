@@ -260,6 +260,9 @@ header{width:100%;display:flex;align-items:flex-start;justify-content:space-betw
 .alpha-key:active{transform:scale(.9);background:var(--accent);color:#fff;}
 .alpha-key.ak-wide{width:40px;font-size:.6rem;}
 .alpha-key.ak-space{width:80px;font-size:.55rem;}
+/* Speak mode */
+#speakMicBtn.listening{border-color:var(--danger);background:rgba(255,118,117,.12);animation:speakPulse 1s ease-in-out infinite;}
+@keyframes speakPulse{0%,100%{box-shadow:0 0 0 0 rgba(255,118,117,.3)}50%{box-shadow:0 0 0 14px rgba(255,118,117,0)}}
 /* Bridge Game */
 .br-plank{flex:1;height:8px;background:#8B6914;margin:0 1px;border-radius:2px;transition:all .3s ease;position:relative;top:17px;box-shadow:0 2px 3px rgba(0,0,0,.2);}
 .br-plank.broken{opacity:0;transform:translateY(60px) rotate(20deg);}
@@ -1440,6 +1443,7 @@ szkoła	school"></textarea>
     <button class="mode-btn" onclick="setMode('butterfly')" id="mButterfly">🦋 Motyle</button>
     <button class="mode-btn" onclick="setMode('jump')" id="mJump">🏝️ Skocz</button>
     <button class="mode-btn" onclick="setMode('bridge')" id="mBridge">🌉 Most</button>
+    <button class="mode-btn" onclick="setMode('speak')" id="mSpeak">🎤 Mów</button>
   </div>
   <div class="stats">
     <span>Zostało: <strong id="stL">—</strong></span>
@@ -1673,6 +1677,28 @@ szkoła	school"></textarea>
           <button class="btn-sm accent" onclick="bfStartGame()" style="font-size:.9rem;padding:10px 24px">▶ Start</button>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- Speak Mode (Mówienie) -->
+  <div id="speakArea" style="display:none;width:100%;margin-bottom:14px">
+    <div class="q-label" id="speakLabel">🎤 Powiedz tłumaczenie na głos</div>
+    <div style="text-align:center;margin-bottom:10px">
+      <div style="font-size:.72rem;color:var(--muted);font-weight:600;margin-bottom:4px" id="speakDir"></div>
+      <div style="font-size:1.4rem;font-weight:900;color:var(--text);padding:12px;background:var(--surface);border:2px solid var(--border);border-radius:14px" id="speakWord">—</div>
+    </div>
+    <!-- Przycisk mikrofonu -->
+    <div style="text-align:center;margin-bottom:12px">
+      <button id="speakMicBtn" onclick="speakListen()" style="width:70px;height:70px;border-radius:50%;border:3px solid var(--border);background:var(--surface2);font-size:2rem;cursor:pointer;transition:all .2s;display:inline-flex;align-items:center;justify-content:center" title="Kliknij i mów">🎤</button>
+      <div style="font-size:.65rem;color:var(--muted);font-weight:600;margin-top:4px" id="speakMicStatus">Kliknij mikrofon i powiedz tłumaczenie</div>
+    </div>
+    <!-- To co usłyszał -->
+    <div id="speakHeard" style="text-align:center;font-size:1rem;font-weight:700;color:var(--accent);min-height:28px;margin-bottom:8px"></div>
+    <!-- Wynik -->
+    <div class="type-result" id="speakRes" style="margin-top:6px"></div>
+    <!-- Info o braku wsparcia -->
+    <div id="speakNoSupport" style="display:none;text-align:center;padding:16px;background:rgba(255,118,117,.08);border:1px solid rgba(255,118,117,.2);border-radius:12px;font-size:.8rem;color:var(--danger);font-weight:600">
+      ⚠️ Twoja przeglądarka nie obsługuje rozpoznawania mowy.<br>Użyj Chrome lub Edge.
     </div>
   </div>
 
@@ -3216,6 +3242,10 @@ function renderCard() {
     const ma = document.getElementById('matchArea'); ma.style.display = 'block'; reAnim(ma);
     buildMatchMode();
 
+  } else if (mode === 'speak') {
+    const sa = document.getElementById('speakArea'); sa.style.display = 'block'; reAnim(sa);
+    buildSpeakMode();
+
   } else if (mode === 'bridge') {
     document.getElementById('bridgeArea').style.display = 'block';
 
@@ -3271,7 +3301,7 @@ function buildMasked(word) {
 
 function reAnim(el) { el.style.animation = 'none'; el.offsetHeight; el.style.animation = ''; }
 function hideAreas() {
-  ['cardScene','quizArea','typeArea','missingArea','dictateArea','tfArea','gapArea','scrambleArea','sentScrArea','matchArea','speedArea','butterflyArea','jumpArea','bridgeArea','sentencePanel']
+  ['cardScene','quizArea','typeArea','missingArea','dictateArea','tfArea','gapArea','scrambleArea','sentScrArea','matchArea','speedArea','butterflyArea','jumpArea','bridgeArea','speakArea','sentencePanel']
     .forEach(id => { const e = document.getElementById(id); if(e) e.style.display = 'none'; });
   // Zatrzymaj grę motylkową
   if (typeof bfRunning !== 'undefined' && bfRunning) {
@@ -3619,7 +3649,7 @@ function setMode(m) {
   clearInterval(studySpeedTimer); // zatrzymaj timer speed jeśli był aktywny
   mode = m;
   document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
-  const modeMap = {card:'mCard',quiz:'mQuiz',type:'mType',missing:'mMissing',dictate:'mDictate',tf:'mTF',gap:'mGap',scramble:'mScramble',sentscr:'mSentScr',match:'mMatch',speed:'mSpeed',butterfly:'mButterfly',jump:'mJump',bridge:'mBridge'};
+  const modeMap = {card:'mCard',quiz:'mQuiz',type:'mType',missing:'mMissing',dictate:'mDictate',tf:'mTF',gap:'mGap',scramble:'mScramble',sentscr:'mSentScr',match:'mMatch',speed:'mSpeed',butterfly:'mButterfly',jump:'mJump',bridge:'mBridge',speak:'mSpeak'};
   document.getElementById(modeMap[m]).classList.add('active');
   document.getElementById('livesBar').classList.toggle('visible', m === 'quiz');
   hideAreas(); revealed = false; hideDiff();
@@ -3639,6 +3669,7 @@ function setMode(m) {
     else if (m === 'butterfly') { document.getElementById('butterflyArea').style.display = 'block'; bfReset(); }
     else if (m === 'jump') { document.getElementById('jumpArea').style.display = 'block'; jumpReset(); }
     else if (m === 'bridge') { document.getElementById('bridgeArea').style.display = 'block'; brReset(); }
+    else if (m === 'speak') document.getElementById('speakArea').style.display = 'block';
   }
 }
 
@@ -5515,6 +5546,136 @@ function cubesPrint() {
   win.document.write('</body></html>');
   win.document.close();
   setTimeout(() => win.print(), 400);
+}
+
+// ══════════════════════════════════════════════
+//  SPEAK MODE (MÓWIENIE)
+// ══════════════════════════════════════════════
+let speakAnswer = '';
+let speakRecognition = null;
+let speakListening = false;
+
+// Sprawdź wsparcie
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+
+function buildSpeakMode() {
+  if (curIdx === null) return;
+  const q = getQ(curIdx), a = getA(curIdx);
+  speakAnswer = a;
+  speakListening = false;
+
+  document.getElementById('speakLabel').textContent = '🎤 Powiedz tłumaczenie na głos';
+  document.getElementById('speakDir').textContent = getTranslLabel();
+  document.getElementById('speakWord').textContent = q;
+  document.getElementById('speakHeard').textContent = '';
+  document.getElementById('speakRes').className = 'type-result';
+  document.getElementById('speakRes').innerHTML = '';
+  document.getElementById('speakMicStatus').textContent = 'Kliknij mikrofon i powiedz tłumaczenie';
+
+  const btn = document.getElementById('speakMicBtn');
+  btn.classList.remove('listening');
+  btn.disabled = false;
+  btn.textContent = '🎤';
+
+  // Sprawdź wsparcie
+  if (!SpeechRecognition) {
+    document.getElementById('speakNoSupport').style.display = 'block';
+    btn.style.display = 'none';
+  } else {
+    document.getElementById('speakNoSupport').style.display = 'none';
+    btn.style.display = '';
+  }
+}
+
+function speakListen() {
+  if (!SpeechRecognition) { toast('Brak wsparcia rozpoznawania mowy!'); return; }
+  if (revealed) return;
+  if (speakListening) return;
+
+  speakListening = true;
+  const btn = document.getElementById('speakMicBtn');
+  btn.classList.add('listening');
+  btn.textContent = '🔴';
+  document.getElementById('speakMicStatus').textContent = '🔴 Słucham... mów teraz!';
+  document.getElementById('speakHeard').textContent = '...';
+
+  const recognition = new SpeechRecognition();
+  recognition.lang = getBookLang();
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 3;
+  recognition.continuous = false;
+  speakRecognition = recognition;
+
+  recognition.onresult = function(event) {
+    speakListening = false;
+    btn.classList.remove('listening');
+    btn.textContent = '🎤';
+
+    // Zbierz wszystkie alternatywy
+    const results = [];
+    for (let i = 0; i < event.results[0].length; i++) {
+      results.push(event.results[0][i].transcript.trim().toLowerCase());
+    }
+
+    const heard = event.results[0][0].transcript.trim();
+    document.getElementById('speakHeard').textContent = '🗣️ "' + heard + '"';
+
+    // Sprawdź czy którakolwiek alternatywa pasuje (fuzzy)
+    const correct = speakAnswer.toLowerCase();
+    const ok = results.some(r => r === correct || fuzzy(r, speakAnswer));
+
+    speakShowResult(ok, heard);
+  };
+
+  recognition.onerror = function(event) {
+    speakListening = false;
+    btn.classList.remove('listening');
+    btn.textContent = '🎤';
+
+    if (event.error === 'no-speech') {
+      document.getElementById('speakMicStatus').textContent = 'Nie usłyszałem. Spróbuj ponownie.';
+      document.getElementById('speakHeard').textContent = '';
+    } else if (event.error === 'not-allowed') {
+      document.getElementById('speakMicStatus').textContent = '⚠️ Brak dostępu do mikrofonu. Zezwól w przeglądarce.';
+    } else {
+      document.getElementById('speakMicStatus').textContent = 'Błąd: ' + event.error + '. Spróbuj ponownie.';
+    }
+  };
+
+  recognition.onend = function() {
+    if (speakListening) {
+      speakListening = false;
+      btn.classList.remove('listening');
+      btn.textContent = '🎤';
+      document.getElementById('speakMicStatus').textContent = 'Kliknij mikrofon i spróbuj ponownie';
+    }
+  };
+
+  recognition.start();
+}
+
+function speakShowResult(ok, heard) {
+  revealed = true;
+  const r = document.getElementById('speakRes');
+  const btn = document.getElementById('speakMicBtn');
+  btn.disabled = true;
+
+  if (ok) {
+    r.className = 'type-result ok';
+    r.innerHTML = '✓ Poprawnie! <span class="ar">' + esc(speakAnswer) + '</span>';
+    document.getElementById('speakMicStatus').textContent = '🎉 Świetna wymowa!';
+    playOk(); bounce('speakArea'); particles(true); owlR('easy');
+    DB.recordAnswer(currentUser, true);
+  } else {
+    r.className = 'type-result err';
+    r.innerHTML = '✗ Poprawna odpowiedź: <span class="ar">' + esc(speakAnswer) + '</span>';
+    document.getElementById('speakMicStatus').textContent = 'Powiedziałeś: "' + heard + '"';
+    playBad(); shake('speakArea'); owlR('hard');
+    DB.recordAnswer(currentUser, false);
+    trackMissed(); sessErrorCount++;
+  }
+  spkForeign(speakAnswer);
+  setTimeout(() => rate(ok ? 'easy' : 'hard'), 1800);
 }
 
 // ══════════════════════════════════════════════
