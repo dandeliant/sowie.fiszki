@@ -887,6 +887,10 @@ body.guest-mode .progress-wrap{opacity:.4;}
     <span class="cw-row-label" style="color:var(--blue)">📜 Rozsypanka zdaniowa:</span>
     <div class="cw-row-btns" id="sentScrGameRowBtns"></div>
   </div>
+  <div class="cw-row" id="spellCardRow" style="border-color:rgba(85,239,196,.25);">
+    <span class="cw-row-label" style="color:var(--success)">✍️ Pisanie graficzne:</span>
+    <div class="cw-row-btns" id="spellCardRowBtns"></div>
+  </div>
   <div class="cw-row" id="sentBuildRow" style="border-color:rgba(162,155,254,.25);">
     <span class="cw-row-label" style="color:var(--purple)">✏️ Budowanie zdań:</span>
     <div class="cw-row-btns" id="sentBuildRowBtns"></div>
@@ -895,6 +899,36 @@ body.guest-mode .progress-wrap{opacity:.4;}
     <button class="btn-sm" onclick="showMyProgress()">📊 Moje postępy</button>
     <button class="btn-sm accent" onclick="startSpeed()">⚡ Speed Challenge</button>
     <button class="btn-sm accent" onclick="startDailyQuiz()" style="background:var(--accent2);border-color:rgba(6,214,160,.35)">📊 Codzienny test</button>
+  </div>
+</div>
+
+<!-- ══ SCREEN: SPELL CARD (Pisanie graficzne) ══ -->
+<div class="screen" id="sSpellCard">
+  <div style="width:100%">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;gap:8px;flex-wrap:wrap">
+      <div>
+        <div style="font-family:'Playfair Display',serif;font-size:1.4rem;color:var(--success)" id="spellTitle">✍️ Pisanie graficzne</div>
+        <div style="font-size:.72rem;color:var(--muted);font-weight:600">Zaznacz słówka i wygeneruj kartę pracy</div>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button class="btn-sm accent" onclick="spellGenerate()">🎲 Generuj</button>
+        <button class="btn-sm" onclick="spellPrint()">🖨️ Drukuj</button>
+        <button class="btn-sm" onclick="showScreen('sUnits')">← Wróć</button>
+      </div>
+    </div>
+    <!-- Panel wyboru słów -->
+    <div class="cw-sel-panel" id="spellSelPanel">
+      <div class="cw-sel-title">
+        <span>☑️ Wybierz słówka <span id="spellSelCount" style="color:var(--accent2);margin-left:4px"></span></span>
+      </div>
+      <div class="cw-word-chips" id="spellWordChips"></div>
+      <div class="cw-sel-btns">
+        <button class="btn-sm" onclick="spellSelAll()" style="font-size:.7rem;padding:5px 11px">☑️ Wszystkie</button>
+        <button class="btn-sm" onclick="spellSelNone()" style="font-size:.7rem;padding:5px 11px">☐ Żadne</button>
+      </div>
+    </div>
+    <!-- Podgląd -->
+    <div id="spellPreview" style="margin-top:12px"></div>
   </div>
 </div>
 
@@ -2317,6 +2351,19 @@ function refreshGrid() {
     d.addEventListener('click', openAdminUnitModal);
     g.appendChild(d);
   }
+
+  // Spell Card buttons row
+  const spellBtns = document.getElementById('spellCardRowBtns');
+  spellBtns.innerHTML = '';
+  Object.keys(book.units).forEach(k => {
+    const u = units[k];
+    const btn = document.createElement('button');
+    btn.className = 'btn-cw';
+    btn.style.cssText = 'border-color:rgba(85,239,196,.35);color:var(--success);';
+    btn.textContent = u.icon + ' ' + u.name;
+    btn.addEventListener('click', () => openSpellCard(k));
+    spellBtns.appendChild(btn);
+  });
 
   // Sentence Builder buttons row
   const sentBuildBtns = document.getElementById('sentBuildRowBtns');
@@ -4951,6 +4998,171 @@ function cwPrint() {
       document.body.classList.remove('cw-print');
     }, 500);
   }, 80);
+}
+
+// ══════════════════════════════════════════════
+//  SPELL CARD (PISANIE GRAFICZNE)
+// ══════════════════════════════════════════════
+let spellUnitKey = null;
+let spellItems = []; // [{pl, en, emoji, imgUrl}]
+
+function openSpellCard(unitKey) {
+  spellUnitKey = unitKey;
+  const units = getUnitsWithCustom(currentBookId);
+  const u = units[unitKey];
+  document.getElementById('spellTitle').textContent = '✍️ ' + u.name + ' — Pisanie graficzne';
+  spellBuildWordPanel(u);
+  document.getElementById('spellPreview').innerHTML = '';
+  showScreen('sSpellCard');
+}
+
+function spellBuildWordPanel(unit) {
+  const container = document.getElementById('spellWordChips');
+  container.innerHTML = '';
+  unit.words.forEach(([pl, en]) => {
+    const chip = document.createElement('div');
+    chip.className = 'cw-word-chip eligible selected';
+    chip.dataset.pl = pl;
+    chip.dataset.en = en;
+    chip.innerHTML = '<span>' + esc(en) + '</span>';
+    chip.addEventListener('click', () => { chip.classList.toggle('selected'); spellUpdateCount(); });
+    container.appendChild(chip);
+  });
+  spellUpdateCount();
+}
+
+function spellUpdateCount() {
+  const sel = document.querySelectorAll('#spellWordChips .cw-word-chip.selected').length;
+  document.getElementById('spellSelCount').textContent = '(' + sel + ' zaznaczonych)';
+}
+function spellSelAll() { document.querySelectorAll('#spellWordChips .cw-word-chip').forEach(c => c.classList.add('selected')); spellUpdateCount(); }
+function spellSelNone() { document.querySelectorAll('#spellWordChips .cw-word-chip').forEach(c => c.classList.remove('selected')); spellUpdateCount(); }
+
+function spellGenerate() {
+  const chips = [...document.querySelectorAll('#spellWordChips .cw-word-chip.selected')];
+  if (chips.length < 1) { toast('Zaznacz co najmniej 1 słowo!'); return; }
+
+  spellItems = chips.map(c => {
+    const pl = c.dataset.pl, en = c.dataset.en;
+    const s = DB.getSentence(currentBookId, pl);
+    const emoji = getEmojiStore()[pl] || '';
+    const imgUrl = s?.image_url || '';
+    return {pl, en, emoji, imgUrl};
+  });
+
+  spellRender();
+}
+
+function spellRender() {
+  const preview = document.getElementById('spellPreview');
+  // Bank słów na górze
+  let html = '<div style="display:flex;flex-wrap:wrap;gap:6px;padding:10px;background:var(--surface);border:2px solid var(--border);border-radius:12px;margin-bottom:14px;justify-content:center">';
+  const shuffled = shuffle([...spellItems]);
+  shuffled.forEach(item => {
+    html += '<div style="padding:5px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--surface2);font-size:.78rem;font-weight:700;color:var(--text)">' + esc(item.en) + '</div>';
+  });
+  html += '</div>';
+
+  // Siatka: 2 kolumny
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">';
+  spellItems.forEach(item => {
+    const word = item.en.toUpperCase();
+    html += '<div style="text-align:center;padding:10px;background:var(--surface);border:1px solid var(--border);border-radius:12px">';
+    // Obrazek/emoji
+    if (item.imgUrl) {
+      html += '<div style="margin-bottom:6px"><img src="' + esc(item.imgUrl) + '" style="width:60px;height:60px;object-fit:contain;border-radius:8px" onerror="this.textContent=\'❓\'"></div>';
+    } else if (item.emoji) {
+      html += '<div style="font-size:2.5rem;margin-bottom:6px">' + item.emoji + '</div>';
+    } else {
+      html += '<div style="font-size:.7rem;color:var(--muted);font-weight:700;margin-bottom:6px">' + esc(item.pl) + '</div>';
+    }
+    // Kratki na litery
+    html += '<div style="display:flex;gap:2px;justify-content:center;flex-wrap:wrap">';
+    for (let i = 0; i < word.length; i++) {
+      const ch = word[i];
+      if (ch === ' ') {
+        html += '<div style="width:10px"></div>';
+      } else {
+        // Szerokość kratki zależy od litery (I,L węższe, M,W szersze)
+        const narrow = 'ILJ1'.includes(ch);
+        const wide = 'MWQ'.includes(ch);
+        const w = narrow ? 18 : wide ? 28 : 22;
+        html += '<div style="width:' + w + 'px;height:28px;border:2px solid var(--border);border-radius:4px;background:var(--surface2)"></div>';
+      }
+    }
+    html += '</div>';
+    html += '</div>';
+  });
+  html += '</div>';
+
+  preview.innerHTML = html;
+}
+
+function spellPrint() {
+  if (!spellItems.length) { toast('Najpierw wygeneruj!'); return; }
+  const units = getUnitsWithCustom(currentBookId);
+  const u = units[spellUnitKey];
+  const book = BOOKS[currentBookId];
+
+  const win = window.open('', '_blank');
+  win.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Pisanie graficzne — ' + esc(u.name) + '</title><style>' +
+    '@page{size:A4;margin:10mm}' +
+    '*{box-sizing:border-box}body{font-family:Arial,sans-serif;padding:0;margin:0;color:#222}' +
+    '.header{display:flex;justify-content:space-between;padding:8px 16px;font-size:.75rem;color:#666}' +
+    '.header span{display:inline-block}' +
+    '.bank{display:flex;flex-wrap:wrap;gap:6px;padding:8px 12px;border:2px solid #333;border-radius:6px;margin:4px 16px 10px;justify-content:center}' +
+    '.bank-word{padding:4px 12px;border:1.5px solid #999;border-radius:6px;font-size:.8rem;font-weight:700}' +
+    '.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:0 16px}' +
+    '.card{text-align:center;padding:10px;border:1px solid #ddd;border-radius:8px;page-break-inside:avoid}' +
+    '.card img{width:64px;height:64px;object-fit:contain;border-radius:6px}' +
+    '.card .emoji{font-size:2.8rem}' +
+    '.card .pl-hint{font-size:.7rem;color:#888;font-weight:600;margin-bottom:4px}' +
+    '.boxes{display:flex;gap:2px;justify-content:center;flex-wrap:wrap;margin-top:6px}' +
+    '.box{height:28px;border:2px solid #333;border-radius:3px;background:#fff}' +
+    '.spacer{width:8px}' +
+    '</style></head><body>');
+
+  // Nagłówek
+  win.document.write('<div class="header"><span>imię: ________________________</span><span>wynik: __________</span></div>');
+  win.document.write('<div class="header"><span>nauczyciel: ________________________</span><span>data: __________</span></div>');
+
+  // Bank słów
+  const shuffled = shuffle([...spellItems]);
+  win.document.write('<div class="bank">');
+  shuffled.forEach(item => {
+    win.document.write('<span class="bank-word">' + esc(item.en) + '</span>');
+  });
+  win.document.write('</div>');
+
+  // Siatka
+  win.document.write('<div class="grid">');
+  spellItems.forEach(item => {
+    const word = item.en.toUpperCase();
+    win.document.write('<div class="card">');
+    if (item.imgUrl) {
+      win.document.write('<img src="' + esc(item.imgUrl) + '">');
+    } else if (item.emoji) {
+      win.document.write('<div class="emoji">' + item.emoji + '</div>');
+    } else {
+      win.document.write('<div class="pl-hint">' + esc(item.pl) + '</div>');
+    }
+    win.document.write('<div class="boxes">');
+    for (let i = 0; i < word.length; i++) {
+      const ch = word[i];
+      if (ch === ' ') {
+        win.document.write('<div class="spacer"></div>');
+      } else {
+        const narrow = 'ILJ1'.includes(ch);
+        const wide = 'MWQ'.includes(ch);
+        const w = narrow ? 18 : wide ? 28 : 22;
+        win.document.write('<div class="box" style="width:' + w + 'px"></div>');
+      }
+    }
+    win.document.write('</div></div>');
+  });
+  win.document.write('</div></body></html>');
+  win.document.close();
+  setTimeout(() => win.print(), 500);
 }
 
 // ══════════════════════════════════════════════
