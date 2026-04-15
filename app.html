@@ -1641,12 +1641,15 @@ szkoła	school"></textarea>
       <div style="position:absolute;top:8px;right:10px;z-index:20;background:rgba(0,0,0,.5);color:#fff;padding:4px 12px;border-radius:10px;font-size:.75rem;font-weight:800">⭐ <span id="jumpScore">0</span></div>
       <!-- Timer bar -->
       <div style="position:absolute;top:34px;left:10px;right:10px;height:6px;background:rgba(0,0,0,.15);border-radius:3px;z-index:20"><div id="jumpTimerBar" style="width:100%;height:100%;background:var(--accent);border-radius:3px;transition:width .1s linear"></div></div>
-      <!-- Polskie słowo -->
-      <div id="jumpWord" style="position:absolute;bottom:12px;left:50%;transform:translateX(-50%);background:rgba(255,255,255,.9);padding:8px 20px;border-radius:12px;font-size:1rem;font-weight:800;color:#333;z-index:20;box-shadow:0 2px 8px rgba(0,0,0,.12);text-align:center;min-width:140px">Kliknij Start</div>
-      <!-- Ludzik -->
-      <div id="jumpGuy" style="position:absolute;top:80px;left:50%;transform:translateX(-50%);font-size:1.8rem;z-index:15;transition:all .4s cubic-bezier(.34,1.56,.64,1);pointer-events:none">🧍</div>
-      <!-- 3 kwadraty -->
-      <div id="jumpBlocks" style="position:absolute;bottom:60px;left:0;right:0;display:flex;justify-content:space-around;padding:0 12px;z-index:10"></div>
+      <!-- 3 kwadraty (na górze) -->
+      <div id="jumpBlocks" style="position:absolute;top:50px;left:0;right:0;display:flex;justify-content:space-around;padding:0 12px;z-index:10"></div>
+      <!-- Polskie słowo (pod kwadratami) -->
+      <div id="jumpWord" style="position:absolute;top:190px;left:50%;transform:translateX(-50%);background:rgba(255,255,255,.9);padding:8px 20px;border-radius:12px;font-size:1rem;font-weight:800;color:#333;z-index:5;box-shadow:0 2px 8px rgba(0,0,0,.12);text-align:center;min-width:140px">Kliknij Start</div>
+      <!-- Ludzik na podeście (na dole) -->
+      <div id="jumpGuyWrap" style="position:absolute;bottom:30px;left:50%;transform:translateX(-50%);z-index:15;text-align:center;pointer-events:none">
+        <div id="jumpGuy" style="font-size:2.4rem;transition:all .4s cubic-bezier(.34,1.56,.64,1)">🧍</div>
+        <div id="jumpGuyPlatform" class="jump-block" style="width:80px;padding:6px;pointer-events:none;margin-top:-4px"><div class="jb-text" style="font-size:.55rem;color:#999">🏝️</div></div>
+      </div>
       <!-- Start / Game Over overlay -->
       <div id="jumpOverlay" style="position:absolute;inset:0;background:rgba(0,0,0,.7);z-index:30;display:flex;align-items:center;justify-content:center">
         <div style="text-align:center;color:#fff;padding:20px">
@@ -5256,7 +5259,9 @@ function jumpReset() {
   document.getElementById('jumpTimerBar').style.width = '100%';
   document.getElementById('jumpWord').textContent = 'Kliknij Start';
   document.getElementById('jumpBlocks').innerHTML = '';
-  document.getElementById('jumpGuy').style.cssText = 'position:absolute;top:80px;left:50%;transform:translateX(-50%);font-size:1.8rem;z-index:15;transition:all .4s cubic-bezier(.34,1.56,.64,1);pointer-events:none;opacity:1';
+  const gw = document.getElementById('jumpGuyWrap');
+  if (gw) { gw.style.cssText = 'position:absolute;bottom:30px;left:50%;transform:translateX(-50%);z-index:15;text-align:center;pointer-events:none;opacity:1'; gw.style.animation = ''; }
+  document.getElementById('jumpGuy').style.fontSize = '2.4rem';
   const ov = document.getElementById('jumpOverlay');
   ov.style.display = 'flex';
   document.getElementById('jumpOverlayEmoji').textContent = '🏝️';
@@ -5282,9 +5287,16 @@ function jpNextRound() {
   const [pl, en] = jpWords[jpIdx];
   document.getElementById('jumpWord').textContent = '🇵🇱 ' + pl;
 
-  // Reset ludzik
-  const guy = document.getElementById('jumpGuy');
-  guy.style.cssText = 'position:absolute;top:80px;left:50%;transform:translateX(-50%);font-size:1.8rem;z-index:15;transition:all .4s cubic-bezier(.34,1.56,.64,1);pointer-events:none;opacity:1';
+  // Reset ludzik na podest
+  const guyWrap = document.getElementById('jumpGuyWrap');
+  guyWrap.style.animation = '';
+  guyWrap.style.transition = 'none';
+  guyWrap.style.left = '50%';
+  guyWrap.style.top = '';
+  guyWrap.style.bottom = '30px';
+  guyWrap.style.transform = 'translateX(-50%)';
+  guyWrap.style.opacity = '1';
+  document.getElementById('jumpGuy').style.fontSize = '2.4rem';
 
   // 2 złe + 1 dobra
   const others = activeAllWords.filter(w => w[1] !== en);
@@ -5343,17 +5355,19 @@ function jpChoose(block, opt, idx) {
   clearInterval(jpTimer);
   cancelAnimationFrame(jpFloatFrame);
 
+  const guyWrap = document.getElementById('jumpGuyWrap');
   const guy = document.getElementById('jumpGuy');
-  const blocks = [...document.querySelectorAll('.jump-block')];
+  const blocks = [...document.querySelectorAll('#jumpBlocks .jump-block')];
   const blockRect = block.getBoundingClientRect();
   const gameRect = document.getElementById('jumpGame').getBoundingClientRect();
 
-  // Ludzik skacze na wybrany kwadrat
+  // Ludzik skacze z podesty na wybrany kwadrat
   const targetX = blockRect.left + blockRect.width / 2 - gameRect.left;
-  const targetY = blockRect.top - gameRect.top - 30;
-  guy.style.left = targetX + 'px';
-  guy.style.top = targetY + 'px';
-  guy.style.transform = 'translateX(-50%)';
+  const targetY = blockRect.top - gameRect.top - 28;
+  guyWrap.style.transition = 'all .4s cubic-bezier(.34,1.56,.64,1)';
+  guyWrap.style.left = targetX + 'px';
+  guyWrap.style.bottom = 'auto';
+  guyWrap.style.top = targetY + 'px';
 
   setTimeout(() => {
     if (opt.correct) {
@@ -5365,14 +5379,24 @@ function jpChoose(block, opt, idx) {
       spkForeign(opt.text);
       particles(true);
 
-      // Złe kwadraty spadają
+      // Złe kwadraty spadają (z z-index wyższym — zakrywają polskie słowo)
       blocks.forEach(b => {
         if (b !== block) {
+          b.style.zIndex = '25';
           b.style.animation = 'jumpBlockFall .6s ease-in forwards';
         }
       });
 
-      setTimeout(() => { jpIdx++; jpNextRound(); }, 1400);
+      // Ludzik wraca na podest — nowe słowo na podeście
+      setTimeout(() => {
+        guyWrap.style.transition = 'none';
+        guyWrap.style.left = '50%';
+        guyWrap.style.top = '';
+        guyWrap.style.bottom = '30px';
+        guyWrap.style.transform = 'translateX(-50%)';
+        jpIdx++;
+        jpNextRound();
+      }, 1400);
     } else {
       // ŹLE — ludzik + kwadrat spadają
       jpLives--;
@@ -5381,9 +5405,9 @@ function jpChoose(block, opt, idx) {
       block.classList.add('jb-wrong');
       playBad();
 
-      // Ludzik spada
-      guy.style.animation = 'jumpGuyFall .7s ease-in forwards';
-      // Błędny kwadrat spada
+      // Ludzik i kwadrat spadają
+      guyWrap.style.animation = 'jumpGuyFall .7s ease-in forwards';
+      block.style.zIndex = '25';
       block.style.animation = 'jumpBlockFall .6s ease-in forwards';
 
       // Pokaż poprawną
@@ -5397,7 +5421,18 @@ function jpChoose(block, opt, idx) {
       if (jpLives <= 0) {
         setTimeout(() => jpGameOver(), 1800);
       } else {
-        setTimeout(() => { jpIdx++; jpNextRound(); }, 2000);
+        setTimeout(() => {
+          // Reset ludzika na podest
+          guyWrap.style.animation = '';
+          guyWrap.style.transition = 'none';
+          guyWrap.style.left = '50%';
+          guyWrap.style.top = '';
+          guyWrap.style.bottom = '30px';
+          guyWrap.style.transform = 'translateX(-50%)';
+          guyWrap.style.opacity = '1';
+          jpIdx++;
+          jpNextRound();
+        }, 2000);
       }
     }
   }, 450);
@@ -5410,12 +5445,12 @@ function jpTimeout() {
   document.getElementById('jumpLives').textContent = hearts;
   playBad();
 
-  // Ludzik spada
-  const guy = document.getElementById('jumpGuy');
-  guy.style.animation = 'jumpGuyFall .7s ease-in forwards';
+  // Ludzik spada z podesty
+  const guyWrap = document.getElementById('jumpGuyWrap');
+  guyWrap.style.animation = 'jumpGuyFall .7s ease-in forwards';
 
   // Pokaż poprawną
-  const blocks = document.querySelectorAll('.jump-block');
+  const blocks = document.querySelectorAll('#jumpBlocks .jump-block');
   blocks.forEach(b => { if (b.dataset.correct === '1') b.classList.add('jb-correct'); });
 
   const correctWord = jpWords[jpIdx]?.[1];
@@ -5424,7 +5459,12 @@ function jpTimeout() {
   if (jpLives <= 0) {
     setTimeout(() => jpGameOver(), 1800);
   } else {
-    setTimeout(() => { jpIdx++; jpNextRound(); }, 2000);
+    setTimeout(() => {
+      guyWrap.style.animation = '';
+      guyWrap.style.cssText = 'position:absolute;bottom:30px;left:50%;transform:translateX(-50%);z-index:15;text-align:center;pointer-events:none;opacity:1';
+      jpIdx++;
+      jpNextRound();
+    }, 2000);
   }
 }
 
@@ -5604,17 +5644,21 @@ function bfStartGame() {
 (function() {
   const game = document.getElementById('bfGame');
   if (!game) return;
-  function moveNet(clientX) {
+  function moveNet(clientX, clientY) {
     if (!bfRunning) return;
     const rect = game.getBoundingClientRect();
     const player = document.getElementById('bfPlayer');
     let x = clientX - rect.left;
+    let y = clientY - rect.top;
     x = Math.max(30, Math.min(rect.width - 30, x));
+    y = Math.max(40, Math.min(rect.height - 20, y));
     player.style.left = x + 'px';
-    player.style.transform = 'translateX(-50%)';
+    player.style.top = y + 'px';
+    player.style.bottom = 'auto';
+    player.style.transform = 'translate(-50%,-50%)';
   }
-  game.addEventListener('mousemove', e => moveNet(e.clientX));
-  game.addEventListener('touchmove', e => { if (e.touches[0]) moveNet(e.touches[0].clientX); }, {passive: true});
+  game.addEventListener('mousemove', e => moveNet(e.clientX, e.clientY));
+  game.addEventListener('touchmove', e => { if (e.touches[0]) moveNet(e.touches[0].clientX, e.touches[0].clientY); }, {passive: true});
 })();
 
 // Przy zmianie trybu — zatrzymaj grę motylkową
@@ -7782,14 +7826,12 @@ function buildSentScramble() {
   document.getElementById('sentScrClue').textContent = '🇵🇱 ' + (s.sentence_pl || wordPl);
   document.getElementById('sentScrHint').textContent = sentScrAnswer.length + ' słów · ' + wordPl + ' → ' + wordEn;
 
-  // Pomieszaj słowa
-  let shuffled = shuffle([...sentScrAnswer]);
-  let tries = 0;
-  while (shuffled.join(' ') === sentScrAnswer.join(' ') && tries < 20) { shuffled = shuffle([...sentScrAnswer]); tries++; }
+  // Posortuj słowa alfabetycznie
+  const sorted = [...sentScrAnswer].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
 
   const tilesEl = document.getElementById('sentScrTiles');
   tilesEl.innerHTML = '';
-  shuffled.forEach((word, i) => {
+  sorted.forEach((word, i) => {
     const tile = document.createElement('div');
     tile.className = 'scr-word-tile';
     tile.textContent = word;
