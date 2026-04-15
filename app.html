@@ -253,6 +253,17 @@ header{width:100%;display:flex;align-items:flex-start;justify-content:space-betw
 .match-item.wrong-flash{animation:matchWrong .5s ease;border-color:var(--danger)!important;background:rgba(255,118,117,.15)!important;}
 @keyframes matchWrong{0%{transform:translateX(0)}20%{transform:translateX(-6px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(4px)}100%{transform:translateX(0)}}
 /* Gap fill / Uzupełnij lukę */
+/* Jump Game */
+.jump-block{width:28%;max-width:110px;background:linear-gradient(to bottom,#7bc67b 0%,#7bc67b 8px,#f5f0e0 8px,#fff 100%);border:2.5px solid #999;border-radius:12px 12px 6px 6px;padding:10px 4px;text-align:center;cursor:pointer;transition:all .3s ease;position:relative;user-select:none;box-shadow:0 6px 14px rgba(0,0,0,.15);}
+.jump-block::before{content:'🌿';position:absolute;top:-10px;left:50%;transform:translateX(-50%);font-size:.8rem;pointer-events:none;}
+.jump-block:hover{transform:translateY(-4px);box-shadow:0 10px 20px rgba(0,0,0,.2);}
+.jump-block:active{transform:translateY(0);}
+.jump-block .jb-text{font-size:.78rem;font-weight:800;color:#333;line-height:1.15;word-break:break-word;}
+.jump-block.jb-correct{border-color:var(--accent2);background:linear-gradient(to bottom,#2ecc71 0%,#2ecc71 8px,#d5f5e3 8px,#eafaf1 100%);}
+.jump-block.jb-wrong{border-color:var(--danger);}
+@keyframes jumpBlockFall{0%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(200px) rotate(15deg)}}
+@keyframes jumpGuyJump{0%{transform:translate(-50%,0)}40%{transform:translate(-50%,-40px) scale(1.1)}100%{transform:translate(-50%,0)}}
+@keyframes jumpGuyFall{0%{opacity:1;transform:translate(-50%,0)}100%{opacity:0;transform:translate(-50%,200px)}}
 /* Speaking Cubes */
 .cube-cell{aspect-ratio:1;background:var(--surface);border:2.5px solid var(--border);border-radius:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:8px;cursor:pointer;transition:all .2s;overflow:hidden;user-select:none;}
 .cube-cell:hover{border-color:var(--accent);transform:scale(1.04);box-shadow:0 6px 16px rgba(0,0,0,.15);}
@@ -1349,6 +1360,7 @@ szkoła	school"></textarea>
     <button class="mode-btn" onclick="setMode('sentscr')" id="mSentScr">📜 Zdania</button>
     <button class="mode-btn speed-mode" onclick="setMode('speed')" id="mSpeed">⚡ Speed</button>
     <button class="mode-btn" onclick="setMode('butterfly')" id="mButterfly">🦋 Motyle</button>
+    <button class="mode-btn" onclick="setMode('jump')" id="mJump">🏝️ Skocz</button>
   </div>
   <div class="stats">
     <span>Zostało: <strong id="stL">—</strong></span>
@@ -1575,6 +1587,35 @@ szkoła	school"></textarea>
           <div style="font-size:2rem;margin-bottom:6px">🦋 Łap motyle!</div>
           <div style="font-size:.8rem;margin-bottom:12px;color:#ccc">Przesuwaj siatkę i łap motyla z poprawnym tłumaczeniem</div>
           <button class="btn-sm accent" onclick="bfStartGame()" style="font-size:.9rem;padding:10px 24px">▶ Start</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Jump Game (lewitujące kwadraty) -->
+  <div id="jumpArea" style="display:none;width:100%;margin-bottom:14px">
+    <div style="position:relative;width:100%;height:380px;border-radius:16px;overflow:hidden;background:linear-gradient(to bottom,#87CEEB 0%,#dff6ff 55%,#bff0b8 55%,#8ddb84 100%)" id="jumpGame">
+      <!-- Chmury -->
+      <div style="position:absolute;left:6%;top:8%;width:70px;height:22px;background:rgba(255,255,255,.7);border-radius:999px"></div>
+      <div style="position:absolute;left:70%;top:5%;width:90px;height:28px;background:rgba(255,255,255,.6);border-radius:999px"></div>
+      <!-- HUD -->
+      <div style="position:absolute;top:8px;left:10px;z-index:20;display:flex;gap:4px" id="jumpLives">❤️❤️❤️</div>
+      <div style="position:absolute;top:8px;right:10px;z-index:20;background:rgba(0,0,0,.5);color:#fff;padding:4px 12px;border-radius:10px;font-size:.75rem;font-weight:800">⭐ <span id="jumpScore">0</span></div>
+      <!-- Timer bar -->
+      <div style="position:absolute;top:34px;left:10px;right:10px;height:6px;background:rgba(0,0,0,.15);border-radius:3px;z-index:20"><div id="jumpTimerBar" style="width:100%;height:100%;background:var(--accent);border-radius:3px;transition:width .1s linear"></div></div>
+      <!-- Polskie słowo -->
+      <div id="jumpWord" style="position:absolute;bottom:12px;left:50%;transform:translateX(-50%);background:rgba(255,255,255,.9);padding:8px 20px;border-radius:12px;font-size:1rem;font-weight:800;color:#333;z-index:20;box-shadow:0 2px 8px rgba(0,0,0,.12);text-align:center;min-width:140px">Kliknij Start</div>
+      <!-- Ludzik -->
+      <div id="jumpGuy" style="position:absolute;top:80px;left:50%;transform:translateX(-50%);font-size:1.8rem;z-index:15;transition:all .4s cubic-bezier(.34,1.56,.64,1);pointer-events:none">🧍</div>
+      <!-- 3 kwadraty -->
+      <div id="jumpBlocks" style="position:absolute;bottom:60px;left:0;right:0;display:flex;justify-content:space-around;padding:0 12px;z-index:10"></div>
+      <!-- Start / Game Over overlay -->
+      <div id="jumpOverlay" style="position:absolute;inset:0;background:rgba(0,0,0,.7);z-index:30;display:flex;align-items:center;justify-content:center">
+        <div style="text-align:center;color:#fff;padding:20px">
+          <div style="font-size:2rem;margin-bottom:6px" id="jumpOverlayEmoji">🏝️</div>
+          <div style="font-size:1.2rem;font-weight:800;margin-bottom:4px" id="jumpOverlayTitle">Skocz na właściwy!</div>
+          <div style="font-size:.75rem;color:#ccc;margin-bottom:12px" id="jumpOverlayDesc">Wybierz kwadrat z poprawnym tłumaczeniem</div>
+          <button class="btn-sm accent" onclick="jumpStart()" style="font-size:.9rem;padding:10px 24px">▶ Start</button>
         </div>
       </div>
     </div>
@@ -3029,6 +3070,10 @@ function renderCard() {
     const ma = document.getElementById('matchArea'); ma.style.display = 'block'; reAnim(ma);
     buildMatchMode();
 
+  } else if (mode === 'jump') {
+    document.getElementById('jumpArea').style.display = 'block';
+    // Gra obsługuje się samodzielnie
+
   } else if (mode === 'butterfly') {
     const ba = document.getElementById('butterflyArea'); ba.style.display = 'block';
     // Gra obsługuje się samodzielnie — nie renderujemy karty
@@ -3077,12 +3122,17 @@ function buildMasked(word) {
 
 function reAnim(el) { el.style.animation = 'none'; el.offsetHeight; el.style.animation = ''; }
 function hideAreas() {
-  ['cardScene','quizArea','typeArea','missingArea','dictateArea','tfArea','gapArea','scrambleArea','sentScrArea','matchArea','speedArea','butterflyArea','sentencePanel']
+  ['cardScene','quizArea','typeArea','missingArea','dictateArea','tfArea','gapArea','scrambleArea','sentScrArea','matchArea','speedArea','butterflyArea','jumpArea','sentencePanel']
     .forEach(id => { const e = document.getElementById(id); if(e) e.style.display = 'none'; });
   // Zatrzymaj grę motylkową
   if (typeof bfRunning !== 'undefined' && bfRunning) {
     bfRunning = false;
     clearInterval(bfSpawnInt); clearInterval(bfTimerInt); cancelAnimationFrame(bfAnimFrame);
+  }
+  // Zatrzymaj grę jump
+  if (typeof jpRunning !== 'undefined' && jpRunning) {
+    jpRunning = false;
+    clearInterval(jpTimer); cancelAnimationFrame(jpFloatFrame);
   }
 }
 
@@ -3418,7 +3468,7 @@ function setMode(m) {
   clearInterval(studySpeedTimer); // zatrzymaj timer speed jeśli był aktywny
   mode = m;
   document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
-  const modeMap = {card:'mCard',quiz:'mQuiz',type:'mType',missing:'mMissing',dictate:'mDictate',tf:'mTF',gap:'mGap',scramble:'mScramble',sentscr:'mSentScr',match:'mMatch',speed:'mSpeed',butterfly:'mButterfly'};
+  const modeMap = {card:'mCard',quiz:'mQuiz',type:'mType',missing:'mMissing',dictate:'mDictate',tf:'mTF',gap:'mGap',scramble:'mScramble',sentscr:'mSentScr',match:'mMatch',speed:'mSpeed',butterfly:'mButterfly',jump:'mJump'};
   document.getElementById(modeMap[m]).classList.add('active');
   document.getElementById('livesBar').classList.toggle('visible', m === 'quiz');
   hideAreas(); revealed = false; hideDiff();
@@ -3436,6 +3486,7 @@ function setMode(m) {
     else if (m === 'match') document.getElementById('matchArea').style.display = 'block';
     else if (m === 'speed') document.getElementById('speedArea').style.display = 'block';
     else if (m === 'butterfly') { document.getElementById('butterflyArea').style.display = 'block'; bfReset(); }
+    else if (m === 'jump') { document.getElementById('jumpArea').style.display = 'block'; jumpReset(); }
   }
 }
 
@@ -5148,6 +5199,208 @@ function cubesPrint() {
   win.document.close();
   setTimeout(() => win.print(), 400);
 }
+
+// ══════════════════════════════════════════════
+//  JUMP GAME (LEWITUJĄCE KWADRATY)
+// ══════════════════════════════════════════════
+let jpRunning = false, jpScore = 0, jpLives = 3, jpLocked = false;
+let jpTimer = null, jpTimeLeft = 5;
+let jpWords = [], jpIdx = 0;
+
+function jumpReset() {
+  jpRunning = false; jpScore = 0; jpLives = 3; jpLocked = false; jpIdx = 0;
+  clearInterval(jpTimer);
+  document.getElementById('jumpScore').textContent = '0';
+  document.getElementById('jumpLives').textContent = '❤️❤️❤️';
+  document.getElementById('jumpTimerBar').style.width = '100%';
+  document.getElementById('jumpWord').textContent = 'Kliknij Start';
+  document.getElementById('jumpBlocks').innerHTML = '';
+  document.getElementById('jumpGuy').style.cssText = 'position:absolute;top:80px;left:50%;transform:translateX(-50%);font-size:1.8rem;z-index:15;transition:all .4s cubic-bezier(.34,1.56,.64,1);pointer-events:none;opacity:1';
+  const ov = document.getElementById('jumpOverlay');
+  ov.style.display = 'flex';
+  document.getElementById('jumpOverlayEmoji').textContent = '🏝️';
+  document.getElementById('jumpOverlayTitle').textContent = 'Skocz na właściwy!';
+  document.getElementById('jumpOverlayDesc').textContent = 'Wybierz kwadrat z poprawnym tłumaczeniem';
+}
+
+function jumpStart() {
+  if (!activeWords || activeWords.length < 3) { toast('Najpierw wybierz unit i kliknij Generuj! 🎲'); return; }
+  jpRunning = true; jpScore = 0; jpLives = 3; jpIdx = 0; jpLocked = false;
+  jpWords = shuffle([...activeWords]);
+  document.getElementById('jumpScore').textContent = '0';
+  document.getElementById('jumpLives').textContent = '❤️❤️❤️';
+  document.getElementById('jumpOverlay').style.display = 'none';
+  jpNextRound();
+}
+
+function jpNextRound() {
+  if (!jpRunning) return;
+  if (jpIdx >= jpWords.length) jpIdx = 0; // zapętl
+  jpLocked = false;
+
+  const [pl, en] = jpWords[jpIdx];
+  document.getElementById('jumpWord').textContent = '🇵🇱 ' + pl;
+
+  // Reset ludzik
+  const guy = document.getElementById('jumpGuy');
+  guy.style.cssText = 'position:absolute;top:80px;left:50%;transform:translateX(-50%);font-size:1.8rem;z-index:15;transition:all .4s cubic-bezier(.34,1.56,.64,1);pointer-events:none;opacity:1';
+
+  // 2 złe + 1 dobra
+  const others = activeAllWords.filter(w => w[1] !== en);
+  const wrong = shuffle(others).slice(0, 2).map(w => w[1]);
+  const options = shuffle([{text: en, correct: true}, {text: wrong[0] || 'cat', correct: false}, {text: wrong[1] || 'dog', correct: false}]);
+
+  const blocksEl = document.getElementById('jumpBlocks');
+  blocksEl.innerHTML = '';
+  options.forEach((opt, i) => {
+    const block = document.createElement('div');
+    block.className = 'jump-block';
+    block.innerHTML = '<div class="jb-text">' + esc(opt.text) + '</div>';
+    block.dataset.correct = opt.correct ? '1' : '0';
+    block.addEventListener('click', () => jpChoose(block, opt, i));
+    // Lewitacja
+    block.style.animation = 'none';
+    block.style.transform = 'translateY(' + (Math.sin(i * 2) * 4) + 'px)';
+    blocksEl.appendChild(block);
+  });
+
+  // Animuj lewitację
+  jpAnimateBlocks();
+
+  // Timer 5s
+  jpTimeLeft = 5;
+  document.getElementById('jumpTimerBar').style.width = '100%';
+  clearInterval(jpTimer);
+  jpTimer = setInterval(() => {
+    jpTimeLeft -= 0.1;
+    document.getElementById('jumpTimerBar').style.width = Math.max(0, (jpTimeLeft / 5) * 100) + '%';
+    if (jpTimeLeft <= 0) {
+      clearInterval(jpTimer);
+      if (!jpLocked) jpTimeout();
+    }
+  }, 100);
+}
+
+let jpFloatFrame = null;
+function jpAnimateBlocks() {
+  const blocks = document.querySelectorAll('.jump-block');
+  let t = 0;
+  function frame() {
+    t += 0.03;
+    blocks.forEach((b, i) => {
+      b.style.transform = 'translateY(' + (Math.sin(t + i * 2.1) * 5) + 'px)';
+    });
+    if (jpRunning && !jpLocked) jpFloatFrame = requestAnimationFrame(frame);
+  }
+  cancelAnimationFrame(jpFloatFrame);
+  frame();
+}
+
+function jpChoose(block, opt, idx) {
+  if (jpLocked || !jpRunning) return;
+  jpLocked = true;
+  clearInterval(jpTimer);
+  cancelAnimationFrame(jpFloatFrame);
+
+  const guy = document.getElementById('jumpGuy');
+  const blocks = [...document.querySelectorAll('.jump-block')];
+  const blockRect = block.getBoundingClientRect();
+  const gameRect = document.getElementById('jumpGame').getBoundingClientRect();
+
+  // Ludzik skacze na wybrany kwadrat
+  const targetX = blockRect.left + blockRect.width / 2 - gameRect.left;
+  const targetY = blockRect.top - gameRect.top - 30;
+  guy.style.left = targetX + 'px';
+  guy.style.top = targetY + 'px';
+  guy.style.transform = 'translateX(-50%)';
+
+  setTimeout(() => {
+    if (opt.correct) {
+      // DOBRZE
+      jpScore += 10;
+      document.getElementById('jumpScore').textContent = jpScore;
+      block.classList.add('jb-correct');
+      playOk();
+      spkForeign(opt.text);
+      particles(true);
+
+      // Złe kwadraty spadają
+      blocks.forEach(b => {
+        if (b !== block) {
+          b.style.animation = 'jumpBlockFall .6s ease-in forwards';
+        }
+      });
+
+      setTimeout(() => { jpIdx++; jpNextRound(); }, 1400);
+    } else {
+      // ŹLE — ludzik + kwadrat spadają
+      jpLives--;
+      const hearts = '❤️'.repeat(Math.max(0, jpLives)) + '🖤'.repeat(3 - Math.max(0, jpLives));
+      document.getElementById('jumpLives').textContent = hearts;
+      block.classList.add('jb-wrong');
+      playBad();
+
+      // Ludzik spada
+      guy.style.animation = 'jumpGuyFall .7s ease-in forwards';
+      // Błędny kwadrat spada
+      block.style.animation = 'jumpBlockFall .6s ease-in forwards';
+
+      // Pokaż poprawną
+      const correctBlock = blocks.find(b => b.dataset.correct === '1');
+      if (correctBlock) correctBlock.classList.add('jb-correct');
+
+      // Odczytaj poprawną odpowiedź
+      const correctWord = jpWords[jpIdx]?.[1];
+      setTimeout(() => { if (correctWord) spkForeign(correctWord); }, 800);
+
+      if (jpLives <= 0) {
+        setTimeout(() => jpGameOver(), 1800);
+      } else {
+        setTimeout(() => { jpIdx++; jpNextRound(); }, 2000);
+      }
+    }
+  }, 450);
+}
+
+function jpTimeout() {
+  jpLocked = true;
+  jpLives--;
+  const hearts = '❤️'.repeat(Math.max(0, jpLives)) + '🖤'.repeat(3 - Math.max(0, jpLives));
+  document.getElementById('jumpLives').textContent = hearts;
+  playBad();
+
+  // Ludzik spada
+  const guy = document.getElementById('jumpGuy');
+  guy.style.animation = 'jumpGuyFall .7s ease-in forwards';
+
+  // Pokaż poprawną
+  const blocks = document.querySelectorAll('.jump-block');
+  blocks.forEach(b => { if (b.dataset.correct === '1') b.classList.add('jb-correct'); });
+
+  const correctWord = jpWords[jpIdx]?.[1];
+  setTimeout(() => { if (correctWord) spkForeign(correctWord); }, 600);
+
+  if (jpLives <= 0) {
+    setTimeout(() => jpGameOver(), 1800);
+  } else {
+    setTimeout(() => { jpIdx++; jpNextRound(); }, 2000);
+  }
+}
+
+function jpGameOver() {
+  jpRunning = false;
+  clearInterval(jpTimer);
+  cancelAnimationFrame(jpFloatFrame);
+  const ov = document.getElementById('jumpOverlay');
+  ov.style.display = 'flex';
+  document.getElementById('jumpOverlayEmoji').textContent = '💀';
+  document.getElementById('jumpOverlayTitle').textContent = 'Game Over!';
+  document.getElementById('jumpOverlayDesc').textContent = 'Wynik: ' + jpScore + ' punktów';
+  document.getElementById('jumpBlocks').innerHTML = '';
+}
+
+// Cleanup przy zmianie trybu
+const _origHideAreas = hideAreas;
 
 // ══════════════════════════════════════════════
 //  BUTTERFLY CATCH GAME
