@@ -360,11 +360,14 @@ const DB = (() => {
 
   async function setUserPlan(userId, plan) {
     if (!_profile?.isAdmin) throw new Error('Brak uprawnień');
+    // Plan 'teacher' automatycznie nadaje rolę nauczyciela (is_teacher=true);
+    // pozostałe plany (free/premium) ją zdejmują. is_admin pozostaje bez zmian.
+    const updates = { plan, is_teacher: plan === 'teacher' };
     const { data, error } = await supabase
       .from('profiles')
-      .update({ plan })
+      .update(updates)
       .eq('id', userId)
-      .select('id, plan');
+      .select('id, plan, is_teacher');
     if (error) throw new Error(error.message);
     if (!data || data.length === 0) {
       throw new Error('Nie udało się zapisać planu — sprawdź uprawnienia (RLS) w bazie.');
