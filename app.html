@@ -4460,18 +4460,31 @@ function isCurrentUserAdmin() {
   return DB.isAdmin(currentUser);
 }
 
+function isCurrentUserTeacher() {
+  if (isGuest) return false;
+  return DB.isTeacher(currentUser);
+}
+
 function initAdminUI() {
   const badge = document.getElementById('adminBadge');
-  if (!isCurrentUserAdmin()) {
-    // Pokaż status konta (pomocne przy debugowaniu)
-    const profile = DB.getUser(currentUser);
-    console.info('[Admin] is_admin:', profile.isAdmin, '| username:', profile.username);
+  const profile = DB.getUser(currentUser);
+
+  if (isCurrentUserAdmin()) {
+    badge.style.display = 'inline-flex';
+    badge.innerHTML = '🛡️ Admin';
+    renderAdminPanel();
+    toast('🛡️ Zalogowano jako admin.', 3000);
+  } else if (isCurrentUserTeacher()) {
+    badge.style.display = 'inline-flex';
+    badge.innerHTML = '👩‍🏫 Nauczyciel';
+    badge.style.background = 'rgba(255,209,102,.12)';
+    badge.style.borderColor = 'rgba(255,209,102,.3)';
+    badge.style.color = 'var(--accent)';
+    renderAdminPanel();
+    toast('👩‍🏫 Zalogowano jako nauczyciel.', 3000);
+  } else {
     badge.style.display = 'none';
-    return;
   }
-  badge.style.display = 'inline-flex';
-  renderAdminPanel();
-  toast('🛡️ Zalogowano jako admin — możesz zarządzać treścią.', 3500);
 }
 
 // ══════════════════════════════════════════════
@@ -4619,7 +4632,7 @@ async function submitAdminUnit() {
 }
 
 function renderAdminPanel() {
-  if (!isCurrentUserAdmin()) return;
+  if (!isCurrentUserAdmin() && !isCurrentUserTeacher()) return;
   const panel = document.getElementById('adminPanel');
   panel.style.display = 'block';
   const reqs = DB.getAdminRequests().filter(r => r.status === 'pending');
@@ -9567,7 +9580,7 @@ function renderAccessUserList() {
     card.style.cssText = 'background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 16px;margin-bottom:8px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;transition:border-color .2s;';
     card.innerHTML = `
       <div>
-        <div style="font-size:.88rem;font-weight:700;color:var(--text)">${esc(u.username)}</div>
+        <div style="font-size:.88rem;font-weight:700;color:var(--text)">${esc(u.username)} ${u.is_teacher ? '<span style="font-size:.58rem;background:rgba(255,209,102,.15);color:var(--accent);padding:1px 6px;border-radius:100px;margin-left:4px">👩‍🏫 Nauczyciel</span>' : '<span style="font-size:.58rem;background:rgba(6,214,160,.1);color:var(--accent2);padding:1px 6px;border-radius:100px;margin-left:4px">🎓 Uczeń</span>'}</div>
         <div style="font-size:.65rem;color:var(--muted)">Poz. ${u.level || 1} · ${u.total_sessions || 0} sesji</div>
       </div>
       <div style="display:flex;gap:8px;align-items:center">

@@ -67,6 +67,7 @@ const DB = (() => {
       dailyXPDate:   row.daily_xp_date   || null,
       speedBest:     row.speed_best      || 0,
       isAdmin:       row.is_admin        || false,
+      isTeacher:     row.is_teacher      || false,
       unitProgress
     };
   }
@@ -345,6 +346,10 @@ const DB = (() => {
     return _profile ? (_profile.isAdmin === true) : false;
   }
 
+  function isTeacher(username) {
+    return _profile ? (_profile.isTeacher === true || _profile.isAdmin === true) : false;
+  }
+
   function getAdminRequests() {
     return _adminRequests;
   }
@@ -617,17 +622,17 @@ const DB = (() => {
   // ── Admin: Zarządzanie klasami ──────────────────────────────────
 
   async function loadAllProfiles() {
-    if (!_profile?.isAdmin) return [];
+    if (!_profile?.isAdmin && !_profile?.isTeacher) return [];
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, username, xp, level, streak, total_sessions, total_answers, correct_answers, last_study_date, is_admin')
+      .select('id, username, xp, level, streak, total_sessions, total_answers, correct_answers, last_study_date, is_admin, is_teacher')
       .order('username');
     if (error) throw new Error(error.message);
     return data || [];
   }
 
   async function loadUserProgress(userId) {
-    if (!_profile?.isAdmin) return [];
+    if (!_profile?.isAdmin && !_profile?.isTeacher) return [];
     const { data, error } = await supabase
       .from('unit_progress')
       .select('book_key, unit_key, known_count, total, last_studied')
@@ -648,7 +653,7 @@ const DB = (() => {
   }
 
   async function saveClass(name, classId = null) {
-    if (!_profile?.isAdmin) throw new Error('Brak uprawnień');
+    if (!_profile?.isAdmin && !_profile?.isTeacher) throw new Error('Brak uprawnień');
     if (classId) {
       const { data, error } = await supabase.from('classes')
         .update({ name }).eq('id', classId).select().single();
@@ -663,20 +668,20 @@ const DB = (() => {
   }
 
   async function deleteClass(classId) {
-    if (!_profile?.isAdmin) throw new Error('Brak uprawnień');
+    if (!_profile?.isAdmin && !_profile?.isTeacher) throw new Error('Brak uprawnień');
     const { error } = await supabase.from('classes').delete().eq('id', classId);
     if (error) throw new Error(error.message);
   }
 
   async function addClassMember(classId, userId) {
-    if (!_profile?.isAdmin) throw new Error('Brak uprawnień');
+    if (!_profile?.isAdmin && !_profile?.isTeacher) throw new Error('Brak uprawnień');
     const { error } = await supabase.from('class_members')
       .upsert({ class_id: classId, user_id: userId });
     if (error) throw new Error(error.message);
   }
 
   async function removeClassMember(classId, userId) {
-    if (!_profile?.isAdmin) throw new Error('Brak uprawnień');
+    if (!_profile?.isAdmin && !_profile?.isTeacher) throw new Error('Brak uprawnień');
     const { error } = await supabase.from('class_members')
       .delete().eq('class_id', classId).eq('user_id', userId);
     if (error) throw new Error(error.message);
@@ -687,7 +692,7 @@ const DB = (() => {
   function getUserBooks() { return _myBooks; }
 
   async function adminLoadUserBooks(userId) {
-    if (!_profile?.isAdmin) return [];
+    if (!_profile?.isAdmin && !_profile?.isTeacher) return [];
     const { data, error } = await supabase
       .from('user_books').select('book_id').eq('user_id', userId);
     if (error) throw new Error(error.message);
@@ -695,7 +700,7 @@ const DB = (() => {
   }
 
   async function adminSetUserBooks(userId, bookIds) {
-    if (!_profile?.isAdmin) throw new Error('Brak uprawnień');
+    if (!_profile?.isAdmin && !_profile?.isTeacher) throw new Error('Brak uprawnień');
     // Usuń stare wpisy
     const { error: delErr } = await supabase
       .from('user_books').delete().eq('user_id', userId);
@@ -709,7 +714,7 @@ const DB = (() => {
   }
 
   async function adminCreateUser(username, password) {
-    if (!_profile?.isAdmin) throw new Error('Brak uprawnień');
+    if (!_profile?.isAdmin && !_profile?.isTeacher) throw new Error('Brak uprawnień');
     const { data, error } = await supabase.rpc('admin_create_user', {
       p_username: username, p_password: password
     });
@@ -718,7 +723,7 @@ const DB = (() => {
   }
 
   async function adminDeleteUser(userId) {
-    if (!_profile?.isAdmin) throw new Error('Brak uprawnień');
+    if (!_profile?.isAdmin && !_profile?.isTeacher) throw new Error('Brak uprawnień');
     const { error } = await supabase.rpc('admin_delete_user', { target_user_id: userId });
     if (error) throw new Error(error.message);
   }
@@ -757,6 +762,7 @@ const DB = (() => {
     getSpeedBest,
     // admin
     isAdmin,
+    isTeacher,
     addAdminRequest,
     getAdminRequests,
     approveAdminRequest,
