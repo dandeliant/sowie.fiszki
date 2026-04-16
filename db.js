@@ -68,6 +68,7 @@ const DB = (() => {
       speedBest:     row.speed_best      || 0,
       isAdmin:       row.is_admin        || false,
       isTeacher:     row.is_teacher      || false,
+      plan:          row.plan            || 'free',
       unitProgress
     };
   }
@@ -350,6 +351,19 @@ const DB = (() => {
     return _profile ? (_profile.isTeacher === true || _profile.isAdmin === true) : false;
   }
 
+  function getUserPlan() {
+    if (!_profile) return 'free';
+    if (_profile.isAdmin) return 'teacher'; // admin = pełny dostęp
+    if (_profile.isTeacher) return _profile.plan === 'free' ? 'teacher' : _profile.plan;
+    return _profile.plan || 'free';
+  }
+
+  async function setUserPlan(userId, plan) {
+    if (!_profile?.isAdmin) throw new Error('Brak uprawnień');
+    const { error } = await supabase.from('profiles').update({ plan }).eq('id', userId);
+    if (error) throw new Error(error.message);
+  }
+
   function getAdminRequests() {
     return _adminRequests;
   }
@@ -625,7 +639,7 @@ const DB = (() => {
     if (!_profile?.isAdmin && !_profile?.isTeacher) return [];
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, username, xp, level, streak, total_sessions, total_answers, correct_answers, last_study_date, is_admin, is_teacher')
+      .select('id, username, xp, level, streak, total_sessions, total_answers, correct_answers, last_study_date, is_admin, is_teacher, plan')
       .order('username');
     if (error) throw new Error(error.message);
     return data || [];
@@ -763,6 +777,8 @@ const DB = (() => {
     // admin
     isAdmin,
     isTeacher,
+    getUserPlan,
+    setUserPlan,
     addAdminRequest,
     getAdminRequests,
     approveAdminRequest,

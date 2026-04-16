@@ -260,6 +260,9 @@ header{width:100%;display:flex;align-items:flex-start;justify-content:space-betw
 .alpha-key:active{transform:scale(.9);background:var(--accent);color:#fff;}
 .alpha-key.ak-wide{width:40px;font-size:.6rem;}
 .alpha-key.ak-space{width:80px;font-size:.55rem;}
+/* Premium lock */
+.mode-btn.locked{opacity:.45;position:relative;}
+.mode-btn.locked::after{content:'🔒';position:absolute;right:2px;top:1px;font-size:.55rem;}
 /* Speak mode */
 #speakMicBtn.listening{border-color:var(--danger);background:rgba(255,118,117,.12);animation:speakPulse 1s ease-in-out infinite;}
 @keyframes speakPulse{0%,100%{box-shadow:0 0 0 0 rgba(255,118,117,.3)}50%{box-shadow:0 0 0 14px rgba(255,118,117,0)}}
@@ -2430,8 +2433,9 @@ function getBookAllWordsCustom(bId) {
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
-  if (id === 'sBooks') { refreshBooks(); if (isGuest) document.getElementById('guestBanner').style.display = 'flex'; if (isCurrentUserAdmin()) renderAdminPanel(); }
+  if (id === 'sBooks') { refreshBooks(); if (isGuest) document.getElementById('guestBanner').style.display = 'flex'; if (isCurrentUserAdmin() || isCurrentUserTeacher()) renderAdminPanel(); }
   if (id === 'sUnits') refreshGrid();
+  if (id === 'sStudy') updateModeLocks();
   if (id === 'sStats') { if (isGuest) { toast('📊 Statystyki dostępne po zalogowaniu! 🦉'); return; } renderStats(); }
   window.scrollTo(0, 0);
 }
@@ -3766,7 +3770,8 @@ function loseLife() { if (mode !== 'quiz' || lives === 0) return; lives = Math.m
 function resetLives() { lives = 3; document.getElementById('gameoverBar').style.display = 'none'; renderLives(); }
 
 function setMode(m) {
-  clearInterval(studySpeedTimer); // zatrzymaj timer speed jeśli był aktywny
+  if (isPremiumMode(m)) { showPremiumModal(); return; }
+  clearInterval(studySpeedTimer);
   mode = m;
   document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
   const modeMap = {card:'mCard',quiz:'mQuiz',type:'mType',missing:'mMissing',dictate:'mDictate',tf:'mTF',gap:'mGap',scramble:'mScramble',sentscr:'mSentScr',match:'mMatch',speed:'mSpeed',butterfly:'mButterfly',jump:'mJump',bridge:'mBridge',speak:'mSpeak',speakSent:'mSpeakSent',typeSent:'mTypeSent',dictSent:'mDictSent'};
@@ -4458,6 +4463,39 @@ function initGuestMode() {
 function isCurrentUserAdmin() {
   if (isGuest) return false;
   return DB.isAdmin(currentUser);
+}
+
+// ─── PREMIUM GATING ──────────────────────────
+const FREE_MODES = ['card','quiz','type','missing','tf','dictate'];
+const PREMIUM_MODES = ['gap','scramble','sentscr','match','speed','butterfly','jump','bridge','speak','speakSent','typeSent','dictSent'];
+
+function isPremiumMode(m) {
+  if (isGuest) return false; // gość ma dostęp do wszystkiego (demo)
+  const plan = DB.getUserPlan();
+  if (plan === 'premium' || plan === 'teacher') return false;
+  return PREMIUM_MODES.includes(m);
+}
+
+function showPremiumModal() {
+  document.getElementById('premiumModal').style.display = 'flex';
+}
+function closePremiumModal() {
+  document.getElementById('premiumModal').style.display = 'none';
+}
+
+function updateModeLocks() {
+  const plan = isGuest ? 'premium' : DB.getUserPlan();
+  document.querySelectorAll('.mode-btn').forEach(btn => {
+    const onclick = btn.getAttribute('onclick') || '';
+    const match = onclick.match(/setMode\('([^']+)'\)/);
+    if (!match) return;
+    const m = match[1];
+    if (PREMIUM_MODES.includes(m) && plan === 'free') {
+      btn.classList.add('locked');
+    } else {
+      btn.classList.remove('locked');
+    }
+  });
 }
 
 function isCurrentUserTeacher() {
@@ -9607,8 +9645,35 @@ async function openAccessDetail(userId, username) {
   listEl.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:.8rem;padding:24px;font-weight:600">⏳ Ładowanie…</div>';
 
   try {
-    const userBooks = await DB.adminLoadUserBooks(userId);
+    // Plan użytkownika
+    const userProfile = _allProfiles.find(p => p.id === userId);
+    const currentPlan = userProfile?.plan || 'free';
     listEl.innerHTML = '';
+
+    // Selektor planu (tylko admin)
+    if (isCurrentUserAdmin()) {
+      const planDiv = document.createElement('div');
+      planDiv.style.cssText = 'margin-bottom:12px;padding:12px 16px;background:var(--surface);border:1px solid var(--border);border-radius:12px;';
+      planDiv.innerHTML = `
+        <div style="font-size:.72rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Plan konta</div>
+        <div style="display:flex;gap:6px">
+          <label style="flex:1;display:flex;align-items:center;gap:6px;padding:8px;border:1.5px solid ${currentPlan==='free'?'var(--accent2)':'var(--border)'};border-radius:8px;cursor:pointer;background:${currentPlan==='free'?'rgba(6,214,160,.08)':'transparent'}">
+            <input type="radio" name="userPlan" value="free" ${currentPlan==='free'?'checked':''} style="accent-color:var(--accent2)">
+            <span style="font-size:.72rem;font-weight:700">Free</span>
+          </label>
+          <label style="flex:1;display:flex;align-items:center;gap:6px;padding:8px;border:1.5px solid ${currentPlan==='premium'?'var(--accent)':'var(--border)'};border-radius:8px;cursor:pointer;background:${currentPlan==='premium'?'rgba(255,209,102,.08)':'transparent'}">
+            <input type="radio" name="userPlan" value="premium" ${currentPlan==='premium'?'checked':''} style="accent-color:var(--accent)">
+            <span style="font-size:.72rem;font-weight:700">⭐ Premium</span>
+          </label>
+          <label style="flex:1;display:flex;align-items:center;gap:6px;padding:8px;border:1.5px solid ${currentPlan==='teacher'?'var(--purple)':'var(--border)'};border-radius:8px;cursor:pointer;background:${currentPlan==='teacher'?'rgba(162,155,254,.08)':'transparent'}">
+            <input type="radio" name="userPlan" value="teacher" ${currentPlan==='teacher'?'checked':''} style="accent-color:var(--purple)">
+            <span style="font-size:.72rem;font-weight:700">👩‍🏫 Teacher</span>
+          </label>
+        </div>`;
+      listEl.appendChild(planDiv);
+    }
+
+    const userBooks = await DB.adminLoadUserBooks(userId);
     Object.values(BOOKS).forEach(book => {
       const checked = userBooks.includes(book.id);
       const row = document.createElement('label');
@@ -9636,7 +9701,12 @@ async function saveUserAccess() {
     const checks = document.querySelectorAll('#accessBookList input[type=checkbox]');
     const selected = [...checks].filter(c => c.checked).map(c => c.value);
     await DB.adminSetUserBooks(_accessUserId, selected);
-    toast('✅ Zapisano dostęp dla ' + _accessUsername + '!');
+    // Zapisz plan (jeśli admin)
+    const planRadio = document.querySelector('input[name="userPlan"]:checked');
+    if (planRadio && isCurrentUserAdmin()) {
+      await DB.setUserPlan(_accessUserId, planRadio.value);
+    }
+    toast('✅ Zapisano dostęp i plan dla ' + _accessUsername + '!');
     showScreen('sAdminAccess');
   } catch(e) {
     toast('❌ Błąd: ' + e.message, 3000);
@@ -10219,6 +10289,30 @@ if ('serviceWorker' in navigator) {
   }, 350);
 })();
 </script>
+<!-- Modal Premium -->
+<div class="modal-overlay" id="premiumModal" style="display:none" onclick="if(event.target===this)closePremiumModal()">
+  <div class="modal-box" style="text-align:center;max-width:360px">
+    <div style="font-size:2.5rem;margin-bottom:8px">⭐</div>
+    <div class="modal-title" style="color:var(--accent)">Funkcja Premium</div>
+    <div style="font-size:.82rem;color:var(--muted);margin-bottom:16px;line-height:1.5">
+      Ten tryb jest dostępny w planie <strong style="color:var(--accent)">Premium</strong>.<br>
+      Uaktualnij konto, aby odblokować wszystkie tryby, gry, drukowanie i więcej!
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
+      <div style="background:var(--surface2);border:1.5px solid var(--border);border-radius:12px;padding:10px;text-align:left">
+        <div style="font-size:.75rem;font-weight:800;color:var(--accent)">⭐ Premium — 19 zł/mies.</div>
+        <div style="font-size:.62rem;color:var(--muted);margin-top:3px">Wszystkie tryby · Gry · Drukowanie · Mówienie · AI</div>
+      </div>
+      <div style="background:var(--surface2);border:1.5px solid rgba(255,209,102,.3);border-radius:12px;padding:10px;text-align:left">
+        <div style="font-size:.75rem;font-weight:800;color:var(--accent)">👩‍🏫 Teacher — 39 zł/mies.</div>
+        <div style="font-size:.62rem;color:var(--muted);margin-top:3px">Premium + Klasy + Raporty + Zarządzanie uczniami</div>
+      </div>
+    </div>
+    <div style="font-size:.65rem;color:var(--muted);margin-bottom:12px">Skontaktuj się z administratorem aby uaktualnić konto.</div>
+    <button class="btn-modal-cancel" onclick="closePremiumModal()">Zamknij</button>
+  </div>
+</div>
+
 <footer style="text-align:center;padding:18px 12px 24px;font-size:.62rem;color:rgba(155,142,196,.5);font-weight:600;letter-spacing:.03em">
   © 2026 Daniel Ostrowski. Wszelkie prawa zastrzeżone. · Sowie Fiszki
 </footer>
