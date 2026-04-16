@@ -893,7 +893,57 @@ body.guest-mode .progress-wrap{opacity:.4;}
 </header>
 
 <!-- ══ SCREEN: BOOK SELECT ══ -->
-<div class="screen active" id="sBooks">
+<!-- ══ SCREEN: LANGUAGE PICK ══ -->
+<div class="screen active" id="sLang">
+  <div class="unit-title">Wybierz język 🌍</div>
+  <div class="unit-subtitle">Jakiego języka chcesz się uczyć?</div>
+  <div class="book-grid">
+    <div class="book-card" onclick="selectLanguage('en')">
+      <div class="book-icon">🇬🇧</div>
+      <div class="book-name">Angielski</div>
+      <div class="book-desc">Szkoła podstawowa · średnia · inne</div>
+    </div>
+    <div class="book-card" onclick="selectLanguage('fr')">
+      <div class="book-icon">🇫🇷</div>
+      <div class="book-name">Francuski</div>
+      <div class="book-desc">Słownictwo podstawowe</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ SCREEN: SCHOOL TYPE PICK (tylko dla angielskiego) ══ -->
+<div class="screen" id="sSchool">
+  <div class="unit-title">Angielski 🇬🇧</div>
+  <div class="unit-subtitle">Wybierz poziom nauczania</div>
+  <div class="book-grid" id="schoolGrid">
+    <div class="book-card" onclick="selectSchoolType('primary')">
+      <div class="book-icon">🏫</div>
+      <div class="book-name">Szkoła Podstawowa</div>
+      <div class="book-desc">Klasy 1–8</div>
+    </div>
+    <div class="book-card" onclick="selectSchoolType('secondary')">
+      <div class="book-icon">🎓</div>
+      <div class="book-name">Szkoła Średnia</div>
+      <div class="book-desc">Poziom A2+ / B1</div>
+    </div>
+    <div class="book-card" onclick="selectSchoolType('other')" style="grid-column:1/-1">
+      <div class="book-icon">📖</div>
+      <div class="book-name">Inne</div>
+      <div class="book-desc">Czasowniki nieregularne i dodatki</div>
+    </div>
+  </div>
+  <div style="margin-top:12px"><button class="btn-sm" onclick="showScreen('sLang')">← Wróć</button></div>
+</div>
+
+<!-- ══ SCREEN: CLASS PICK ══ -->
+<div class="screen" id="sClass">
+  <div class="unit-title" id="classScreenTitle">Wybierz klasę</div>
+  <div class="unit-subtitle" id="classScreenSub">Którą klasę ćwiczysz?</div>
+  <div class="unit-grid" id="classGrid"></div>
+  <div style="margin-top:12px"><button class="btn-sm" onclick="showScreen('sSchool')">← Wróć</button></div>
+</div>
+
+<div class="screen" id="sBooks">
   <!-- Baner gościa -->
   <div class="guest-banner" id="guestBanner" style="display:none">
     <div class="guest-banner-icon">🚶</div>
@@ -939,9 +989,13 @@ body.guest-mode .progress-wrap{opacity:.4;}
     <!-- Prośby admina -->
     <div id="adminRequestsList" style="font-size:.72rem;color:var(--muted);font-weight:600;padding:6px 0"></div>
   </div>
-  <div class="unit-title">Wybierz podręcznik 📖</div>
-  <div class="unit-subtitle">Z którego podręcznika chcesz ćwiczyć?</div>
+  <div class="unit-title" id="booksScreenTitle">Wybierz podręcznik 📖</div>
+  <div class="unit-subtitle" id="booksScreenSub">Z którego podręcznika chcesz ćwiczyć?</div>
   <div class="book-grid" id="bookGrid"></div>
+  <div id="booksEmptyMsg" style="display:none;text-align:center;color:var(--muted);font-size:.85rem;font-weight:600;padding:28px 14px">
+    Brak podręczników w tej klasie.
+  </div>
+  <div style="margin-top:12px"><button class="btn-sm" id="booksBackBtn" onclick="navBackFromBooks()">← Wróć</button></div>
 </div>
 
 <!-- ══ SCREEN: UNIT SELECT ══ -->
@@ -2515,14 +2569,116 @@ function showScreen(id) {
 }
 
 // ══════════════════════════════════════════════
+//  NAVIGATION STATE (język → szkoła → klasa → książki)
+// ══════════════════════════════════════════════
+let _navLanguage = null;    // 'en' | 'fr' | null
+let _navSchoolType = null;  // 'primary' | 'secondary' | 'other' | null
+let _navGrade = null;       // 1..8 | null
+
+function selectLanguage(lang) {
+  _navLanguage = lang;
+  _navSchoolType = null;
+  _navGrade = null;
+  if (lang === 'fr') {
+    // Dla francuskiego przeskakujemy szkołę/klasę — idziemy prosto do listy książek
+    showScreen('sBooks');
+  } else {
+    showScreen('sSchool');
+  }
+}
+
+function selectSchoolType(type) {
+  _navSchoolType = type;
+  _navGrade = null;
+  if (type === 'other') {
+    // „Inne" nie ma podziału na klasy — od razu książki
+    showScreen('sBooks');
+  } else {
+    buildClassGrid(type);
+    showScreen('sClass');
+  }
+}
+
+function selectGrade(grade) {
+  _navGrade = grade;
+  showScreen('sBooks');
+}
+
+function buildClassGrid(type) {
+  const grid = document.getElementById('classGrid');
+  const title = document.getElementById('classScreenTitle');
+  const sub = document.getElementById('classScreenSub');
+  grid.innerHTML = '';
+  const grades = type === 'primary' ? [1,2,3,4,5,6,7,8] : [1];
+  title.textContent = type === 'primary' ? 'Szkoła Podstawowa 🏫' : 'Szkoła Średnia 🎓';
+  sub.textContent = 'Wybierz klasę';
+  grades.forEach(g => {
+    const d = document.createElement('div');
+    d.className = 'unit-card';
+    d.innerHTML = `<div class="unit-icon">🎒</div><div class="unit-name">Klasa ${g}</div>`;
+    d.addEventListener('click', () => selectGrade(g));
+    grid.appendChild(d);
+  });
+}
+
+function navBackFromBooks() {
+  // Powrót z sBooks na odpowiedni poziom wyżej w hierarchii
+  if (_navLanguage === 'fr') {
+    showScreen('sLang');
+  } else if (_navSchoolType === 'other') {
+    showScreen('sSchool');
+  } else {
+    showScreen('sClass');
+  }
+}
+
+// ══════════════════════════════════════════════
 //  BOOK GRID
 // ══════════════════════════════════════════════
 function refreshBooks() {
   const g = document.getElementById('bookGrid');
+  const titleEl = document.getElementById('booksScreenTitle');
+  const subEl = document.getElementById('booksScreenSub');
+  const emptyEl = document.getElementById('booksEmptyMsg');
   g.innerHTML = '';
+  if (emptyEl) emptyEl.style.display = 'none';
+  // Fallback: brak kontekstu nawigacji → wracamy do wyboru języka
+  if (!_navLanguage) { showScreen('sLang'); return; }
+  // Ustaw dynamiczny tytuł wg poziomu nawigacji
+  if (titleEl && subEl) {
+    if (_navLanguage === 'fr') {
+      titleEl.textContent = 'Francuski 🇫🇷';
+      subEl.textContent = 'Wybierz podręcznik';
+    } else if (_navSchoolType === 'other') {
+      titleEl.textContent = 'Inne 📖';
+      subEl.textContent = 'Dodatkowe materiały';
+    } else if (_navSchoolType === 'primary') {
+      titleEl.textContent = `Klasa ${_navGrade} · Szkoła Podstawowa`;
+      subEl.textContent = 'Wybierz podręcznik';
+    } else if (_navSchoolType === 'secondary') {
+      titleEl.textContent = `Klasa ${_navGrade} · Szkoła Średnia`;
+      subEl.textContent = 'Wybierz podręcznik';
+    } else {
+      titleEl.textContent = 'Wybierz podręcznik 📖';
+      subEl.textContent = 'Z którego podręcznika chcesz ćwiczyć?';
+    }
+  }
   const myBooks = DB.getUserBooks(); // null=brak ograniczeń/admin, ['id1','id2']=dozwolone
   const allBooks = Object.values(BOOKS);
-  const visibleBooks = myBooks ? allBooks.filter(b => myBooks.includes(b.id)) : allBooks;
+  // Filtr uprawnień + filtr kontekstu nawigacji
+  const visibleBooks = (myBooks ? allBooks.filter(b => myBooks.includes(b.id)) : allBooks)
+    .filter(b => {
+      if (_navLanguage && b.language !== _navLanguage) return false;
+      if (_navLanguage === 'fr') return true; // francuski — bez dalszego filtra
+      if (_navSchoolType && b.schoolType !== _navSchoolType) return false;
+      if (_navSchoolType === 'other') return true; // „Inne" — bez filtra klasy
+      if (_navGrade != null && b.grade !== _navGrade) return false;
+      return true;
+    });
+  if (visibleBooks.length === 0 && emptyEl) {
+    emptyEl.style.display = 'block';
+    return;
+  }
   visibleBooks.sort((a, b) => a.name.localeCompare(b.name, 'pl')).forEach(book => {
     const prog = DB.getBookProgress(currentUser, book);
     const unitKeys = Object.keys(book.units);
@@ -9669,6 +9825,11 @@ let _accessUsername = '';
 async function openAdminAccess() {
   showScreen('sAdminAccess');
   const listEl = document.getElementById('accessUserList');
+  // Nauczyciel (nie-admin) nie widzi pełnej listy — musi znać login ucznia.
+  if (!isCurrentUserAdmin() && isCurrentUserTeacher()) {
+    renderTeacherSearchUI();
+    return;
+  }
   listEl.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:.8rem;padding:24px;font-weight:600">⏳ Ładowanie użytkowników…</div>';
   try {
     if (!_allProfiles.length) _allProfiles = await DB.loadAllProfiles();
@@ -9676,6 +9837,26 @@ async function openAdminAccess() {
   } catch(e) {
     listEl.innerHTML = `<div style="color:var(--danger);font-size:.8rem;padding:16px;font-weight:600">❌ Błąd: ${esc(e.message)}</div>`;
   }
+}
+
+function buildAccessUserCard(u) {
+  const card = document.createElement('div');
+  card.style.cssText = 'background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 16px;margin-bottom:8px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;transition:border-color .2s;';
+  card.innerHTML = `
+    <div>
+      <div style="font-size:.88rem;font-weight:700;color:var(--text)">${esc(u.username)} ${u.is_teacher ? '<span style="font-size:.58rem;background:rgba(255,209,102,.15);color:var(--accent);padding:1px 6px;border-radius:100px;margin-left:4px">👩‍🏫 Nauczyciel</span>' : '<span style="font-size:.58rem;background:rgba(6,214,160,.1);color:var(--accent2);padding:1px 6px;border-radius:100px;margin-left:4px">🎓 Uczeń</span>'}</div>
+      <div style="font-size:.65rem;color:var(--muted)">Poz. ${u.level || 1} · ${u.total_sessions || 0} sesji</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <div style="font-size:.72rem;font-weight:700;color:var(--accent2)" class="access-manage-btn">📋 Zarządzaj</div>
+      <div style="font-size:.72rem;font-weight:700;color:var(--danger);padding:4px 8px;border-radius:8px;border:1px solid rgba(255,118,117,.3)" class="access-delete-btn">🗑️</div>
+    </div>`;
+  card.querySelector('.access-manage-btn').addEventListener('click', (e) => { e.stopPropagation(); openAccessDetail(u.id, u.username); });
+  card.querySelector('.access-delete-btn').addEventListener('click', (e) => { e.stopPropagation(); confirmDeleteUser(u.id, u.username); });
+  card.addEventListener('click', () => openAccessDetail(u.id, u.username));
+  card.addEventListener('mouseenter', () => card.style.borderColor = 'var(--accent)');
+  card.addEventListener('mouseleave', () => card.style.borderColor = 'var(--border)');
+  return card;
 }
 
 function renderAccessUserList() {
@@ -9687,25 +9868,73 @@ function renderAccessUserList() {
     return;
   }
   el.innerHTML = '';
-  users.forEach(u => {
-    const card = document.createElement('div');
-    card.style.cssText = 'background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 16px;margin-bottom:8px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;transition:border-color .2s;';
-    card.innerHTML = `
-      <div>
-        <div style="font-size:.88rem;font-weight:700;color:var(--text)">${esc(u.username)} ${u.is_teacher ? '<span style="font-size:.58rem;background:rgba(255,209,102,.15);color:var(--accent);padding:1px 6px;border-radius:100px;margin-left:4px">👩‍🏫 Nauczyciel</span>' : '<span style="font-size:.58rem;background:rgba(6,214,160,.1);color:var(--accent2);padding:1px 6px;border-radius:100px;margin-left:4px">🎓 Uczeń</span>'}</div>
-        <div style="font-size:.65rem;color:var(--muted)">Poz. ${u.level || 1} · ${u.total_sessions || 0} sesji</div>
+  users.forEach(u => el.appendChild(buildAccessUserCard(u)));
+}
+
+// ── Tryb nauczyciela: wyszukaj ucznia po loginie ──────────────────────
+function renderTeacherSearchUI() {
+  const el = document.getElementById('accessUserList');
+  el.innerHTML = `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:12px">
+      <div style="font-size:.72rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">🔎 Wyszukaj ucznia po loginie</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <input type="text" id="teacherSearchLogin" placeholder="Wpisz dokładny login ucznia" style="flex:1;min-width:150px;padding:9px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:.85rem;font-weight:600;outline:none" autocomplete="off" autocapitalize="off" spellcheck="false">
+        <button class="btn-sm accent" onclick="teacherSearchStudent()" style="padding:9px 16px;white-space:nowrap">Szukaj</button>
       </div>
-      <div style="display:flex;gap:8px;align-items:center">
-        <div style="font-size:.72rem;font-weight:700;color:var(--accent2)" class="access-manage-btn">📋 Zarządzaj</div>
-        <div style="font-size:.72rem;font-weight:700;color:var(--danger);padding:4px 8px;border-radius:8px;border:1px solid rgba(255,118,117,.3)" class="access-delete-btn">🗑️</div>
-      </div>`;
-    card.querySelector('.access-manage-btn').addEventListener('click', (e) => { e.stopPropagation(); openAccessDetail(u.id, u.username); });
-    card.querySelector('.access-delete-btn').addEventListener('click', (e) => { e.stopPropagation(); confirmDeleteUser(u.id, u.username); });
-    card.addEventListener('click', () => openAccessDetail(u.id, u.username));
-    card.addEventListener('mouseenter', () => card.style.borderColor = 'var(--accent)');
-    card.addEventListener('mouseleave', () => card.style.borderColor = 'var(--border)');
-    el.appendChild(card);
-  });
+      <div id="teacherSearchMsg" style="font-size:.7rem;margin-top:8px;font-weight:600;min-height:16px;color:var(--muted)">Wpisz login ucznia, aby nim zarządzać.</div>
+    </div>
+    <div id="teacherSearchResult"></div>
+  `;
+  setTimeout(() => {
+    const inp = document.getElementById('teacherSearchLogin');
+    if (inp) {
+      inp.focus();
+      inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') teacherSearchStudent(); });
+    }
+  }, 50);
+}
+
+async function teacherSearchStudent() {
+  const inp = document.getElementById('teacherSearchLogin');
+  const msgEl = document.getElementById('teacherSearchMsg');
+  const resEl = document.getElementById('teacherSearchResult');
+  const login = (inp?.value || '').trim();
+  resEl.innerHTML = '';
+  if (!login) {
+    msgEl.textContent = '⚠️ Wpisz login.';
+    msgEl.style.color = 'var(--danger)';
+    return;
+  }
+  msgEl.textContent = '⏳ Szukam…';
+  msgEl.style.color = 'var(--muted)';
+  try {
+    const user = await DB.findProfileByUsername(login);
+    if (!user) {
+      msgEl.textContent = '❌ Nie znaleziono ucznia o loginie „' + login + '".';
+      msgEl.style.color = 'var(--danger)';
+      return;
+    }
+    if (user.is_admin) {
+      msgEl.textContent = '⚠️ Tego konta nie można zarządzać.';
+      msgEl.style.color = 'var(--danger)';
+      return;
+    }
+    if (user.id === DB.getUserId()) {
+      msgEl.textContent = '⚠️ Nie możesz zarządzać własnym kontem.';
+      msgEl.style.color = 'var(--danger)';
+      return;
+    }
+    // Wstaw do lokalnego cache, żeby openAccessDetail mógł go znaleźć
+    const idx = _allProfiles.findIndex(p => p.id === user.id);
+    if (idx >= 0) _allProfiles[idx] = user; else _allProfiles.push(user);
+    msgEl.textContent = '✅ Znaleziono: ' + user.username;
+    msgEl.style.color = 'var(--success)';
+    resEl.appendChild(buildAccessUserCard(user));
+  } catch(e) {
+    console.error('[teacherSearchStudent]', e);
+    msgEl.textContent = '❌ Błąd: ' + e.message;
+    msgEl.style.color = 'var(--danger)';
+  }
 }
 
 async function openAccessDetail(userId, username) {
@@ -9787,7 +10016,7 @@ async function saveUserAccess() {
       }
     }
     toast('✅ Zapisano dostęp i plan dla ' + _accessUsername + '!');
-    showScreen('sAdminAccess');
+    openAdminAccess();
   } catch(e) {
     console.error('[saveUserAccess]', e);
     toast('❌ Błąd: ' + e.message, 3500);

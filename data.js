@@ -9,6 +9,7 @@ const BOOKS = {
   // ─── BRAINY 6 ─────────────────────────────────────────
   brainy6: {
     id: 'brainy6',
+    language: 'en', schoolType: 'primary', grade: 6,
     name: 'Brainy 6',
     shortName: 'Brainy 6',
     icon: '🧠',
@@ -563,6 +564,7 @@ const BOOKS = {
   // ─── BRAINY 7 ─────────────────────────────────────────
   ,brainy7: {
     id: 'brainy7',
+    language: 'en', schoolType: 'primary', grade: 7,
     name: 'Brainy 7',
     shortName: 'Brainy 7',
     icon: '🎬',
@@ -970,6 +972,7 @@ const BOOKS = {
   // ─── BUGS TEAM 2 ──────────────────────────────────────
   ,bugsteam2: {
     id: 'bugsteam2',
+    language: 'en', schoolType: 'primary', grade: 2,
     name: 'Bugs Team 2',
     shortName: 'Bugs Team 2',
     icon: '🐛',
@@ -1178,6 +1181,7 @@ const BOOKS = {
   // ─── BUGS TEAM 3 ──────────────────────────────────────
   ,bugsteam3: {
     id: 'bugsteam3',
+    language: 'en', schoolType: 'primary', grade: 3,
     name: 'Bugs Team 3',
     shortName: 'Bugs Team 3',
     icon: '🐞',
@@ -1292,6 +1296,7 @@ const BOOKS = {
   // ─── CZASOWNIKI NIEREGULARNE ──────────────────────────
   ,czasowniki: {
     id: 'czasowniki',
+    language: 'en', schoolType: 'other',
     name: 'Czasowniki nieregularne',
     shortName: 'Czas. nieregularne',
     icon: '📝',
@@ -1386,6 +1391,7 @@ const BOOKS = {
   // ─── NEW PASSWORD A2+ B1 ──────────────────────────────
   ,newpassword: {
     id: 'newpassword',
+    language: 'en', schoolType: 'secondary', grade: 1,
     name: 'New Password A2+ B1',
     shortName: 'New Password',
     icon: '🔑',
@@ -2485,6 +2491,7 @@ const BOOKS = {
   // ─── STEPS PLUS 4 ─────────────────────────────────────
   ,stepsplus4: {
     id: 'stepsplus4',
+    language: 'en', schoolType: 'primary', grade: 4,
     name: 'Steps Plus 4',
     shortName: 'Steps Plus 4',
     icon: '👣',
@@ -3215,6 +3222,7 @@ const BOOKS = {
   // ─── TIGER AND FRIENDS 1 ──────────────────────────────
   ,tiger1: {
     id: 'tiger1',
+    language: 'en', schoolType: 'primary', grade: 1,
     name: 'Tiger and Friends 1',
     shortName: 'Tiger 1',
     icon: '🐯',
@@ -3319,6 +3327,7 @@ const BOOKS = {
   // ─── TIGER AND FRIENDS 2 ──────────────────────────────
   ,tiger2: {
     id: 'tiger2',
+    language: 'en', schoolType: 'primary', grade: 2,
     name: 'Tiger and Friends 2',
     shortName: 'Tiger 2',
     icon: '🐯',
@@ -3447,6 +3456,7 @@ const BOOKS = {
   // ─── TIGER AND FRIENDS 3 ──────────────────────────────
   ,tiger3: {
     id: 'tiger3',
+    language: 'en', schoolType: 'primary', grade: 3,
     name: 'Tiger and Friends 3',
     shortName: 'Tiger 3',
     icon: '🐯',
@@ -3577,6 +3587,7 @@ const BOOKS = {
   // ─── TOGETHER 4 ───────────────────────────────────────
   ,together4: {
     id: 'together4',
+    language: 'en', schoolType: 'primary', grade: 4,
     name: 'Together 4',
     shortName: 'Together 4',
     icon: '🌟',
@@ -4057,6 +4068,7 @@ const BOOKS = {
   // ─── TOGETHER 5 ───────────────────────────────────────
   ,together5: {
     id: 'together5',
+    language: 'en', schoolType: 'primary', grade: 5,
     name: 'Together 5',
     shortName: 'Together 5',
     icon: '🎓',
@@ -4234,6 +4246,7 @@ const BOOKS = {
   // ─── TOGETHER 6 ───────────────────────────────────────
   ,together6: {
     id: 'together6',
+    language: 'en', schoolType: 'primary', grade: 6,
     name: 'Together 6',
     shortName: 'Together 6',
     icon: '🤝',
@@ -4656,6 +4669,7 @@ const BOOKS = {
   // ─── FRANÇAIS ─────────────────────────────────────────────
   francais: {
     id: 'francais',
+    language: 'fr',
     name: 'Francuski',
     shortName: 'Franc.',
     icon: '🇫🇷',
@@ -4741,6 +4755,7 @@ const BOOKS = {
   // ─── ENGLISH CLASS A1 (klasa 4) ──────────────────────────────
   englishA1: {
     id: 'englishA1',
+    language: 'en', schoolType: 'primary', grade: 4,
     name: 'English Class A1',
     shortName: 'EC A1',
     icon: '🇬🇧',
@@ -5232,6 +5247,7 @@ const BOOKS = {
   // ─── BE HAPPY 2 ──────────────────────────────────────────
   beHappy2: {
     id: 'beHappy2',
+    language: 'en', schoolType: 'primary', grade: 2,
     name: 'Be Happy! 2',
     shortName: 'Be Happy 2',
     icon: '😊',
