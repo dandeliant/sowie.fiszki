@@ -360,8 +360,16 @@ const DB = (() => {
 
   async function setUserPlan(userId, plan) {
     if (!_profile?.isAdmin) throw new Error('Brak uprawnień');
-    const { error } = await supabase.from('profiles').update({ plan }).eq('id', userId);
+    const { data, error } = await supabase
+      .from('profiles')
+      .update({ plan })
+      .eq('id', userId)
+      .select('id, plan');
     if (error) throw new Error(error.message);
+    if (!data || data.length === 0) {
+      throw new Error('Nie udało się zapisać planu — sprawdź uprawnienia (RLS) w bazie.');
+    }
+    return data[0];
   }
 
   function getAdminRequests() {
