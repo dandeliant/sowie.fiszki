@@ -5581,6 +5581,40 @@ const BOOKS = {
           ['mundurek', 'school uniform', 'W naszej szkole nie nosimy mundurków.', "We don't wear uniforms at our school."],
         ],
       },
+      unit3: {
+        name: 'Zawody i czynności', icon: '💼', color: '#27ae60',
+        words: [
+          // Zawody
+          ['budowniczy', 'builder', 'Mój wujek jest budowniczym.', 'My uncle is a builder.'],
+          ['kucharz', 'chef', 'Kucharz przygotowuje posiłki w restauracji.', 'The chef prepares meals in the restaurant.'],
+          ['programista komputerowy', 'computer programmer', 'Mój tata jest programistą komputerowym.', 'My dad is a computer programmer.'],
+          ['lekarz', 'doctor', 'Lekarz bada pacjentów.', 'The doctor examines patients.'],
+          ['strażak', 'firefighter', 'Strażak gasi pożar.', 'The firefighter puts out the fire.'],
+          ['dziennikarz', 'journalist', 'Dziennikarz pisze artykuły.', 'The journalist writes articles.'],
+          ['mechanik', 'mechanic', 'Mechanik naprawia samochody.', 'The mechanic fixes cars.'],
+          ['pielęgniarka', 'nurse', 'Pielęgniarka pomaga lekarzowi.', 'The nurse helps the doctor.'],
+          ['pracownik biurowy', 'office worker', 'Pracownik biurowy używa komputera.', 'The office worker uses a computer.'],
+          ['policjant', 'police officer', 'Policjant pilnuje porządku.', 'The police officer keeps order.'],
+          ['naukowiec', 'scientist', 'Naukowiec prowadzi eksperymenty.', 'The scientist conducts experiments.'],
+          ['sprzedawca', 'shop assistant', 'Sprzedawca pomaga klientom.', 'The shop assistant helps customers.'],
+          ['żołnierz', 'soldier', 'Żołnierz nosi mundur.', 'The soldier wears a uniform.'],
+          ['kierowca autobusu', 'bus driver', 'Kierowca autobusu jeździ ostrożnie.', 'The bus driver drives carefully.'],
+          ['nauczyciel', 'teacher', 'Nauczyciel uczy w szkole.', 'The teacher teaches at school.'],
+          ['weterynarz', 'vet', 'Weterynarz leczy zwierzęta.', 'The vet treats animals.'],
+          ['kelner', 'waiter', 'Kelner obsługuje gości w restauracji.', 'The waiter serves guests in the restaurant.'],
+          // Czynności
+          ['robić prace domowe', 'do housework', 'W sobotę robimy prace domowe.', 'We do housework on Saturday.'],
+          ['jeść spaghetti', 'eat spaghetti', 'Lubię jeść spaghetti z serem.', 'I like to eat spaghetti with cheese.'],
+          ['jeździć na łyżwach', 'go skating', 'Zimą jeździmy na łyżwach.', 'In winter we go skating.'],
+          ['zrobić ciasto', 'make a cake', 'Mama zrobi ciasto na urodziny.', 'Mum will make a cake for the birthday.'],
+          // Zwroty
+          ['Mów dalej!', 'Go on!', 'Słucham, mów dalej!', "I'm listening, go on!"],
+          ['Nabraliśmy cię!', 'We tricked you!', 'Żart! Nabraliśmy cię!', 'Just a joke! We tricked you!'],
+          ['Co masz na myśli?', 'What do you mean?', 'Nie rozumiem. Co masz na myśli?', "I don't understand. What do you mean?"],
+          ['Nie wierzysz mi?', "Don't you believe me?", 'Mówię prawdę — nie wierzysz mi?', "I'm telling the truth — don't you believe me?"],
+          ['Oczywiście, że nie.', 'Of course not!', 'Czy kłamię? Oczywiście, że nie!', 'Am I lying? Of course not!'],
+        ],
+      },
     },
   }
 
