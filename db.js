@@ -646,6 +646,173 @@ const DB = (() => {
 
   // ── Admin: Zarządzanie klasami ──────────────────────────────────
 
+  // ═══════════════════════════════════════════════════════════════
+  //  TEACHER SETS — zestawy słów tworzone przez nauczyciela
+  // ═══════════════════════════════════════════════════════════════
+
+  async function teacherLoadMySets() {
+    if (!_userId) return [];
+    const { data, error } = await supabase
+      .from('teacher_sets')
+      .select('id, name, school_type, grade, topic, source_note, created_at, updated_at')
+      .eq('owner_id', _userId)
+      .order('updated_at', { ascending: false });
+    if (error) throw new Error(error.message);
+    return data || [];
+  }
+
+  async function teacherGetSet(setId) {
+    const { data, error } = await supabase
+      .from('teacher_sets')
+      .select('*')
+      .eq('id', setId)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return data;
+  }
+
+  async function teacherCreateSet(fields) {
+    if (!_userId) throw new Error('Nie jesteś zalogowany.');
+    const payload = {
+      owner_id: _userId,
+      name: fields.name,
+      school_type: fields.school_type || null,
+      grade: fields.grade || null,
+      topic: fields.topic || null,
+      source_note: fields.source_note || null,
+      is_public: false
+    };
+    const { data, error } = await supabase
+      .from('teacher_sets')
+      .insert(payload)
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    return data;
+  }
+
+  async function teacherUpdateSet(setId, fields) {
+    const allowed = {};
+    ['name','school_type','grade','topic','source_note'].forEach(k => {
+      if (fields[k] !== undefined) allowed[k] = fields[k];
+    });
+    const { data, error } = await supabase
+      .from('teacher_sets')
+      .update(allowed)
+      .eq('id', setId)
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    return data;
+  }
+
+  async function teacherDeleteSet(setId) {
+    const { error } = await supabase
+      .from('teacher_sets')
+      .delete()
+      .eq('id', setId);
+    if (error) throw new Error(error.message);
+  }
+
+  async function teacherLoadWords(setId) {
+    const { data, error } = await supabase
+      .from('teacher_words')
+      .select('id, word, translation, example, position')
+      .eq('set_id', setId)
+      .order('position', { ascending: true })
+      .order('created_at', { ascending: true });
+    if (error) throw new Error(error.message);
+    return data || [];
+  }
+
+  async function teacherAddWord(setId, { word, translation, example, position }) {
+    const payload = {
+      set_id: setId,
+      word: word,
+      translation: translation,
+      example: example || null,
+      position: (typeof position === 'number') ? position : 0
+    };
+    const { data, error } = await supabase
+      .from('teacher_words')
+      .insert(payload)
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    return data;
+  }
+
+  async function teacherAddWordsBulk(setId, wordsArr) {
+    if (!Array.isArray(wordsArr) || wordsArr.length === 0) return [];
+    const payload = wordsArr.map((w, i) => ({
+      set_id: setId,
+      word: w.word,
+      translation: w.translation,
+      example: w.example || null,
+      position: (typeof w.position === 'number') ? w.position : i
+    }));
+    const { data, error } = await supabase
+      .from('teacher_words')
+      .insert(payload)
+      .select();
+    if (error) throw new Error(error.message);
+    return data || [];
+  }
+
+  async function teacherUpdateWord(wordId, fields) {
+    const allowed = {};
+    ['word','translation','example','position'].forEach(k => {
+      if (fields[k] !== undefined) allowed[k] = fields[k];
+    });
+    const { data, error } = await supabase
+      .from('teacher_words')
+      .update(allowed)
+      .eq('id', wordId)
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    return data;
+  }
+
+  async function teacherDeleteWord(wordId) {
+    const { error } = await supabase
+      .from('teacher_words')
+      .delete()
+      .eq('id', wordId);
+    if (error) throw new Error(error.message);
+  }
+
+  async function teacherLoadAssignments(setId) {
+    const { data, error } = await supabase
+      .from('teacher_assignments')
+      .select('id, class_id, assigned_at')
+      .eq('set_id', setId);
+    if (error) throw new Error(error.message);
+    return data || [];
+  }
+
+  async function teacherAssignSet(setId, classId) {
+    const { data, error } = await supabase
+      .from('teacher_assignments')
+      .insert({ set_id: setId, class_id: classId })
+      .select()
+      .single();
+    if (error) {
+      if (String(error.message).includes('duplicate')) return null; // już przypisane
+      throw new Error(error.message);
+    }
+    return data;
+  }
+
+  async function teacherUnassignSet(setId, classId) {
+    const { error } = await supabase
+      .from('teacher_assignments')
+      .delete()
+      .eq('set_id', setId)
+      .eq('class_id', classId);
+    if (error) throw new Error(error.message);
+  }
+
   async function loadAllProfiles() {
     if (!_profile?.isAdmin && !_profile?.isTeacher) return [];
     const { data, error } = await supabase
@@ -844,6 +1011,20 @@ const DB = (() => {
     loadAllProfiles,
     findProfileByUsername,
     deleteOwnAccount,
+    // teacher sets
+    teacherLoadMySets,
+    teacherGetSet,
+    teacherCreateSet,
+    teacherUpdateSet,
+    teacherDeleteSet,
+    teacherLoadWords,
+    teacherAddWord,
+    teacherAddWordsBulk,
+    teacherUpdateWord,
+    teacherDeleteWord,
+    teacherLoadAssignments,
+    teacherAssignSet,
+    teacherUnassignSet,
     loadUserProgress,
     loadClasses,
     saveClass,
