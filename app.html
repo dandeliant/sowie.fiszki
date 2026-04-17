@@ -981,7 +981,7 @@ body.guest-mode .progress-wrap{opacity:.4;}
         <div style="font-size:.78rem;font-weight:800;color:var(--text)">Zestawy</div>
         <div style="font-size:.6rem;color:var(--muted);font-weight:600;margin-top:2px">Twoje słówka dla klas</div>
       </div>
-      <div onclick="openAccessRequests()" style="position:relative;background:var(--surface);border:1.5px solid var(--border);border-radius:14px;padding:14px 10px;text-align:center;cursor:pointer;transition:all .2s" onmouseover="this.style.borderColor='var(--pink)'" onmouseout="this.style.borderColor='var(--border)'">
+      <div id="accessReqTile" onclick="openAccessRequests()" style="display:none;position:relative;background:var(--surface);border:1.5px solid var(--border);border-radius:14px;padding:14px 10px;text-align:center;cursor:pointer;transition:all .2s" onmouseover="this.style.borderColor='var(--pink)'" onmouseout="this.style.borderColor='var(--border)'">
         <div style="font-size:1.6rem;margin-bottom:4px">📩</div>
         <div style="font-size:.78rem;font-weight:800;color:var(--text)">Prośby</div>
         <div style="font-size:.6rem;color:var(--muted);font-weight:600;margin-top:2px">Dostęp do podręczników</div>
@@ -1018,8 +1018,11 @@ body.guest-mode .progress-wrap{opacity:.4;}
   <div class="modal-box" style="max-width:460px">
     <div style="font-family:'Playfair Display',serif;font-size:1.15rem;color:var(--accent);margin-bottom:4px">📩 Poproś o dostęp</div>
     <div style="font-size:.72rem;color:var(--muted);margin-bottom:12px;font-weight:600;line-height:1.45">
-      Nauczyciel lub administrator rozpatrzy Twoją prośbę i przydzieli dostęp do podręcznika.
+      Administrator rozpatrzy Twoją prośbę i przydzieli dostęp do podręcznika. Do weryfikacji konieczne jest Twoje imię i nazwisko.
     </div>
+
+    <label style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px">Imię i nazwisko *</label>
+    <input type="text" id="reqAccessStudentName" placeholder="np. Jan Kowalski" autocomplete="name" style="width:100%;padding:9px 11px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.85rem;font-weight:600;outline:none;margin-bottom:10px">
 
     <label style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px">W jakiej jesteś klasie? *</label>
     <div style="display:flex;gap:6px;margin-bottom:10px">
@@ -5163,6 +5166,9 @@ function renderAdminPanel() {
   if (!isCurrentUserAdmin() && !isCurrentUserTeacher()) return;
   const panel = document.getElementById('adminPanel');
   panel.style.display = 'block';
+  // Kafelek "Prośby o dostęp" widoczny TYLKO dla administratora
+  const reqTile = document.getElementById('accessReqTile');
+  if (reqTile) reqTile.style.display = isCurrentUserAdmin() ? '' : 'none';
   // Odśwież licznik próśb o dostęp w kafelku "Prośby"
   if (typeof window._refreshAccessReqBadge === 'function') window._refreshAccessReqBadge();
   const reqs = DB.getAdminRequests().filter(r => r.status === 'pending');
@@ -11085,6 +11091,7 @@ if ('serviceWorker' in navigator) {
         <li>Użytkownik ponosi odpowiedzialność za bezpieczeństwo swoich danych logowania. Nie wolno udostępniać ich osobom trzecim.</li>
         <li>Użytkownik może w każdej chwili usunąć swoje Konto za pomocą funkcji „Usuń konto" dostępnej w Platformie lub wysyłając żądanie na adres <a href="mailto:sowie.fiszki@gmail.com" style="color:var(--accent)">sowie.fiszki@gmail.com</a>.</li>
         <li>Operator może zablokować lub usunąć Konto w przypadku rażącego naruszenia Regulaminu, z wcześniejszym powiadomieniem (o ile nie jest to niemożliwe z uwagi na naruszenie prawa).</li>
+        <li>Dostęp do wybranych podręczników może wymagać odrębnego przydziału. Użytkownik może wysłać prośbę o dostęp przez formularz w Platformie — w tym celu podaje swoje imię i nazwisko (w celu weryfikacji przez Administratora). Prośby rozpatruje wyłącznie Administrator; Nauczyciele nie mają dostępu do tych zgłoszeń. Podanie imienia i nazwiska jest dobrowolne, lecz niezbędne do rozpatrzenia prośby.</li>
       </ol>
 
       <h3 style="font-family:'Playfair Display',serif;font-size:.92rem;color:var(--accent)">§6 Odpowiedzialność za treści Użytkownika</h3>
@@ -11179,14 +11186,16 @@ if ('serviceWorker' in navigator) {
         <li><strong>Dane postępów nauki:</strong> punkty XP, poziom, odblokowane odznaki, czas ostatniej nauki, statystyki odpowiedzi, liczba sesji.</li>
         <li><strong>Dane roli:</strong> przynależność do klasy (uczeń ↔ nauczyciel), plan konta (Free/Premium/Teacher).</li>
         <li><strong>Preferencje:</strong> wybrany motyw interfejsu (przechowywany w localStorage przeglądarki).</li>
+        <li><strong>Dane w formularzu prośby o dostęp do podręcznika</strong> (dobrowolne, podawane tylko jeśli Użytkownik zdecyduje się wysłać prośbę): imię i nazwisko (wymagane do weryfikacji), szkoła i klasa, wybrany podręcznik oraz opcjonalna wiadomość. Dane te widzi <strong>wyłącznie Administrator</strong> — Nauczyciele nie mają do nich dostępu.</li>
         <li><strong>Dane techniczne:</strong> identyfikatory sesji (cookies Supabase Auth), pliki Service Worker dla działania PWA.</li>
       </ul>
-      <p style="margin:4px 0 10px">Platforma <strong>nie prosi o e-mail, imię, nazwisko, adres, numer telefonu</strong> ani inne dane kontaktowe. Login może być wybrany dowolnie i nie musi identyfikować osoby.</p>
+      <p style="margin:4px 0 10px">Platforma <strong>nie prosi o e-mail, adres ani numer telefonu</strong>. Login może być wybrany dowolnie i nie musi identyfikować osoby. Imię i nazwisko są zbierane <strong>tylko wtedy</strong>, gdy Użytkownik wysyła prośbę o dostęp do podręcznika.</p>
 
       <h3 style="font-family:'Playfair Display',serif;font-size:.92rem;color:var(--accent)">3. Cele i podstawy prawne przetwarzania</h3>
       <ul style="margin:4px 0 10px 20px;padding:0">
         <li><strong>Prowadzenie Konta i świadczenie usługi nauki</strong> — art. 6 ust. 1 lit. b RODO (wykonanie umowy).</li>
         <li><strong>Zarządzanie klasą przez Nauczyciela</strong> (Nauczyciel widzi login i postępy swoich uczniów) — art. 6 ust. 1 lit. b RODO.</li>
+        <li><strong>Rozpatrywanie próśb o dostęp do podręczników</strong> (weryfikacja osoby wnioskującej na podstawie imienia i nazwiska) — art. 6 ust. 1 lit. a RODO (zgoda wyrażona przez wysłanie formularza).</li>
         <li><strong>Ulepszanie Platformy, statystyki techniczne</strong> — art. 6 ust. 1 lit. f RODO (uzasadniony interes Administratora).</li>
         <li><strong>Obsługa zgłoszeń naruszeń</strong> — art. 6 ust. 1 lit. c RODO (obowiązek prawny).</li>
       </ul>
@@ -11205,6 +11214,7 @@ if ('serviceWorker' in navigator) {
       <ul style="margin:4px 0 10px 20px;padding:0">
         <li>Dane Konta — przez cały okres istnienia Konta.</li>
         <li>Po usunięciu Konta dane są usuwane niezwłocznie lub anonimizowane w terminie do 30 dni (czas wymagany na wykonanie kopii zapasowej).</li>
+        <li>Prośby o dostęp do podręczników (w tym imię i nazwisko podane przy prośbie) — do 12 miesięcy od dnia rozpatrzenia, a następnie usuwane lub anonimizowane.</li>
         <li>Zgłoszenia naruszeń i ewentualna korespondencja reklamacyjna — do 3 lat od zakończenia sprawy (ze względu na możliwe roszczenia).</li>
       </ul>
 
@@ -11642,13 +11652,16 @@ if ('serviceWorker' in navigator) {
     const sc = document.getElementById('reqAccessSchool');
     const gr = document.getElementById('reqAccessGrade');
     const msg = document.getElementById('reqAccessMsg');
+    const nameInp = document.getElementById('reqAccessStudentName');
     // Podstaw domyślnie aktualny kontekst nawigacji
     if (sc && typeof _navSchoolType !== 'undefined' && _navSchoolType) sc.value = _navSchoolType;
     if (gr && typeof _navGrade !== 'undefined' && _navGrade) gr.value = String(_navGrade);
+    if (nameInp) nameInp.value = '';
     document.getElementById('reqAccessMessage').value = '';
     if (msg) msg.textContent = '';
     reqAccessUpdateBookList();
     document.getElementById('requestAccessModal').style.display = 'flex';
+    if (nameInp) setTimeout(()=>nameInp.focus(), 60);
   };
   window.closeRequestAccessModal = function(){ document.getElementById('requestAccessModal').style.display='none'; };
 
@@ -11679,12 +11692,16 @@ if ('serviceWorker' in navigator) {
   };
 
   window.submitRequestAccess = async function(){
+    const studentName = document.getElementById('reqAccessStudentName').value.trim();
     const sc = document.getElementById('reqAccessSchool').value;
     const grRaw = document.getElementById('reqAccessGrade').value;
     const book = document.getElementById('reqAccessBook').value;
     const message = document.getElementById('reqAccessMessage').value.trim();
     const msgEl = document.getElementById('reqAccessMsg');
     const btn = document.getElementById('btnSubmitReqAccess');
+    if (!studentName || studentName.length < 3) {
+      msgEl.style.color='var(--danger)'; msgEl.textContent='⚠️ Podaj imię i nazwisko.'; return;
+    }
     if (!sc) { msgEl.style.color='var(--danger)'; msgEl.textContent='⚠️ Wybierz szkołę.'; return; }
     if (sc !== 'other' && !grRaw) { msgEl.style.color='var(--danger)'; msgEl.textContent='⚠️ Wybierz klasę.'; return; }
     if (!book) { msgEl.style.color='var(--danger)'; msgEl.textContent='⚠️ Wybierz podręcznik.'; return; }
@@ -11695,11 +11712,12 @@ if ('serviceWorker' in navigator) {
         book_id: book,
         school_type: sc,
         grade: grRaw ? parseInt(grRaw,10) : null,
+        student_name: studentName,
         message
       });
       msgEl.style.color='var(--success)';
-      msgEl.textContent='✓ Prośba wysłana. Poczekaj na decyzję nauczyciela.';
-      setTimeout(()=>closeRequestAccessModal(), 1400);
+      msgEl.textContent='✓ Prośba wysłana. Administrator rozpatrzy ją i przydzieli dostęp.';
+      setTimeout(()=>closeRequestAccessModal(), 1600);
       if (typeof toast==='function') toast('📩 Prośba wysłana.', 2400);
     } catch(e) {
       console.error('[submitRequestAccess]', e);
@@ -11717,7 +11735,7 @@ if ('serviceWorker' in navigator) {
   async function refreshAccessReqBadge(){
     const badge = document.getElementById('accessReqBadge');
     if (!badge) return;
-    if (!isCurrentUserAdmin() && !isCurrentUserTeacher()) { badge.style.display='none'; return; }
+    if (!isCurrentUserAdmin()) { badge.style.display='none'; return; }
     try {
       const n = await DB.countPendingBookAccessRequests();
       if (n > 0) { badge.textContent = n; badge.style.display = ''; }
@@ -11727,7 +11745,10 @@ if ('serviceWorker' in navigator) {
   window._refreshAccessReqBadge = refreshAccessReqBadge;
 
   window.openAccessRequests = async function(){
-    if (!isCurrentUserAdmin() && !isCurrentUserTeacher()) return;
+    if (!isCurrentUserAdmin()) {
+      if (typeof toast === 'function') toast('Prośby o dostęp rozpatruje tylko administrator.', 2800);
+      return;
+    }
     showScreen('sAccessRequests');
     await refreshAccessRequests();
   };
@@ -11764,9 +11785,10 @@ if ('serviceWorker' in navigator) {
         card.style.cssText = 'background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:8px;display:flex;flex-direction:column;gap:6px';
         card.innerHTML = `
           <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;flex-wrap:wrap">
-            <div>
-              <div style="font-size:.88rem;font-weight:800;color:var(--text)">${escHtml(p.username || '(nieznany)')}${grade}</div>
-              <div style="font-size:.7rem;color:var(--muted);font-weight:600">Prosi o: <strong style="color:var(--text)">${escHtml(bookLbl)}</strong></div>
+            <div style="min-width:0;flex:1">
+              ${r.student_name ? `<div style="font-size:.95rem;font-weight:800;color:var(--accent);word-break:break-word">${escHtml(r.student_name)}</div>` : ''}
+              <div style="font-size:.72rem;color:var(--muted);font-weight:700">Login: <span style="color:var(--text)">${escHtml(p.username || '(nieznany)')}</span>${grade}</div>
+              <div style="font-size:.7rem;color:var(--muted);font-weight:600;margin-top:2px">Prosi o: <strong style="color:var(--text)">${escHtml(bookLbl)}</strong></div>
               <div style="font-size:.62rem;color:var(--muted);font-weight:600">${escHtml(when)}</div>
             </div>
             <div>${statusBadge}</div>

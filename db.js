@@ -650,13 +650,17 @@ const DB = (() => {
   //  BOOK ACCESS REQUESTS — prośby ucznia o dostęp do podręcznika
   // ═══════════════════════════════════════════════════════════════
 
-  async function requestBookAccess({ book_id, school_type, grade, message }) {
+  async function requestBookAccess({ book_id, school_type, grade, student_name, message }) {
     if (!_userId) throw new Error('Musisz być zalogowany.');
+    if (!student_name || !student_name.trim()) {
+      throw new Error('Podaj swoje imię i nazwisko — jest wymagane, aby administrator mógł Cię zidentyfikować.');
+    }
     const payload = {
       user_id: _userId,
       book_id,
       school_type: school_type || null,
       grade: grade || null,
+      student_name: student_name.trim(),
       message: message || null,
       status: 'pending'
     };
@@ -680,11 +684,12 @@ const DB = (() => {
     return data || [];
   }
 
+  // Tylko admin — nauczyciel nie widzi próśb (zmiana wobec poprzedniej wersji)
   async function listAllBookAccessRequests(status) {
-    if (!_profile?.isAdmin && !_profile?.isTeacher) return [];
+    if (!_profile?.isAdmin) return [];
     let q = supabase
       .from('book_access_requests')
-      .select('id, user_id, book_id, school_type, grade, message, status, created_at, reviewed_at');
+      .select('id, user_id, book_id, school_type, grade, student_name, message, status, created_at, reviewed_at');
     if (status) q = q.eq('status', status);
     q = q.order('created_at', { ascending: false });
     const { data, error } = await q;
@@ -693,12 +698,13 @@ const DB = (() => {
   }
 
   async function approveBookAccessRequest(requestId) {
+    if (!_profile?.isAdmin) throw new Error('Tylko administrator może rozpatrywać prośby.');
     const { error } = await supabase.rpc('approve_book_access_request', { p_request_id: requestId });
     if (error) throw new Error(error.message);
   }
 
   async function rejectBookAccessRequest(requestId) {
-    if (!_profile?.isAdmin && !_profile?.isTeacher) throw new Error('Brak uprawnień');
+    if (!_profile?.isAdmin) throw new Error('Tylko administrator może rozpatrywać prośby.');
     const { error } = await supabase
       .from('book_access_requests')
       .update({ status: 'rejected', reviewed_by: _userId, reviewed_at: new Date().toISOString() })
@@ -707,7 +713,7 @@ const DB = (() => {
   }
 
   async function countPendingBookAccessRequests() {
-    if (!_profile?.isAdmin && !_profile?.isTeacher) return 0;
+    if (!_profile?.isAdmin) return 0;
     const { count, error } = await supabase
       .from('book_access_requests')
       .select('id', { count: 'exact', head: true })
