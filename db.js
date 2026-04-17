@@ -647,6 +647,143 @@ const DB = (() => {
   // ── Admin: Zarządzanie klasami ──────────────────────────────────
 
   // ═══════════════════════════════════════════════════════════════
+  //  BOOK ACCESS REQUESTS — prośby ucznia o dostęp do podręcznika
+  // ═══════════════════════════════════════════════════════════════
+
+  async function requestBookAccess({ book_id, school_type, grade, message }) {
+    if (!_userId) throw new Error('Musisz być zalogowany.');
+    const payload = {
+      user_id: _userId,
+      book_id,
+      school_type: school_type || null,
+      grade: grade || null,
+      message: message || null,
+      status: 'pending'
+    };
+    const { data, error } = await supabase
+      .from('book_access_requests')
+      .insert(payload)
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    return data;
+  }
+
+  async function listMyBookAccessRequests() {
+    if (!_userId) return [];
+    const { data, error } = await supabase
+      .from('book_access_requests')
+      .select('id, book_id, school_type, grade, status, created_at, reviewed_at')
+      .eq('user_id', _userId)
+      .order('created_at', { ascending: false });
+    if (error) throw new Error(error.message);
+    return data || [];
+  }
+
+  async function listAllBookAccessRequests(status) {
+    if (!_profile?.isAdmin && !_profile?.isTeacher) return [];
+    let q = supabase
+      .from('book_access_requests')
+      .select('id, user_id, book_id, school_type, grade, message, status, created_at, reviewed_at');
+    if (status) q = q.eq('status', status);
+    q = q.order('created_at', { ascending: false });
+    const { data, error } = await q;
+    if (error) throw new Error(error.message);
+    return data || [];
+  }
+
+  async function approveBookAccessRequest(requestId) {
+    const { error } = await supabase.rpc('approve_book_access_request', { p_request_id: requestId });
+    if (error) throw new Error(error.message);
+  }
+
+  async function rejectBookAccessRequest(requestId) {
+    if (!_profile?.isAdmin && !_profile?.isTeacher) throw new Error('Brak uprawnień');
+    const { error } = await supabase
+      .from('book_access_requests')
+      .update({ status: 'rejected', reviewed_by: _userId, reviewed_at: new Date().toISOString() })
+      .eq('id', requestId);
+    if (error) throw new Error(error.message);
+  }
+
+  async function countPendingBookAccessRequests() {
+    if (!_profile?.isAdmin && !_profile?.isTeacher) return 0;
+    const { count, error } = await supabase
+      .from('book_access_requests')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'pending');
+    if (error) return 0;
+    return count || 0;
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  BULK STUDENT CREATION — masowe tworzenie kont uczniów
+  // ═══════════════════════════════════════════════════════════════
+
+  function _randomPassword(len = 8) {
+    const chars = 'abcdefghjkmnpqrstuvwxyz23456789'; // bez 0,1,o,i,l
+    let out = '';
+    for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
+    return out;
+  }
+  function _slugifyClassName(name) {
+    return (name || 'klasa').toLowerCase()
+      .replace(/[ąćęłńóśżź]/g, m => ({'ą':'a','ć':'c','ę':'e','ł':'l','ń':'n','ó':'o','ś':'s','ż':'z','ź':'z'}[m] || m))
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 24) || 'klasa';
+  }
+
+  // Tworzy `count` kont uczniów, dodaje ich do klasy, zwraca listę {username, password}
+  async function bulkCreateStudentsForClass(classId, className, count) {
+    if (!_profile?.isAdmin && !_profile?.isTeacher) throw new Error('Brak uprawnień');
+    if (!classId) throw new Error('Brak ID klasy.');
+    if (!count || count < 1 || count > 50) throw new Error('Podaj liczbę uczniów od 1 do 50.');
+
+    const slug = _slugifyClassName(className);
+    const created = [];
+    const errors = [];
+
+    // Znajdź pierwszy wolny numer (żeby nie nadpisywać istniejących loginów klasy)
+    let offset = 1;
+    for (let i = 0; i < count; i++) {
+      // Szukaj wolnego loginu slug_NN
+      let username = null, pass = null, userId = null;
+      for (let tries = 0; tries < 20; tries++) {
+        const num = String(offset).padStart(2, '0');
+        const candidate = `${slug}_${num}`;
+        offset++;
+        // Spróbuj utworzyć; jeśli konflikt — idź dalej
+        pass = _randomPassword(8);
+        try {
+          const { data, error } = await supabase.rpc('admin_create_user', {
+            p_username: candidate, p_password: pass
+          });
+          if (error) {
+            if (/exist|duplicat|zaj/i.test(error.message)) continue; // login zajęty — próbuj dalej
+            throw new Error(error.message);
+          }
+          username = candidate;
+          userId = (data && data.user_id) || data;
+          break;
+        } catch(e) {
+          if (/exist|duplicat|zaj/i.test(e.message)) continue;
+          throw e;
+        }
+      }
+      if (!username) { errors.push('Nie udało się utworzyć konta #' + (i+1)); continue; }
+
+      // Dodaj do klasy (best-effort)
+      try {
+        if (userId) await addClassMember(classId, userId);
+      } catch(e) { /* nie blokuj reszty */ }
+
+      created.push({ username, password: pass });
+    }
+    return { created, errors };
+  }
+
+  // ═══════════════════════════════════════════════════════════════
   //  TEACHER SETS — zestawy słów tworzone przez nauczyciela
   // ═══════════════════════════════════════════════════════════════
 
@@ -1011,6 +1148,15 @@ const DB = (() => {
     loadAllProfiles,
     findProfileByUsername,
     deleteOwnAccount,
+    // book access requests
+    requestBookAccess,
+    listMyBookAccessRequests,
+    listAllBookAccessRequests,
+    approveBookAccessRequest,
+    rejectBookAccessRequest,
+    countPendingBookAccessRequests,
+    // bulk student creation
+    bulkCreateStudentsForClass,
     // teacher sets
     teacherLoadMySets,
     teacherGetSet,

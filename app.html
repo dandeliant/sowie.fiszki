@@ -981,6 +981,12 @@ body.guest-mode .progress-wrap{opacity:.4;}
         <div style="font-size:.78rem;font-weight:800;color:var(--text)">Zestawy</div>
         <div style="font-size:.6rem;color:var(--muted);font-weight:600;margin-top:2px">Twoje słówka dla klas</div>
       </div>
+      <div onclick="openAccessRequests()" style="position:relative;background:var(--surface);border:1.5px solid var(--border);border-radius:14px;padding:14px 10px;text-align:center;cursor:pointer;transition:all .2s" onmouseover="this.style.borderColor='var(--pink)'" onmouseout="this.style.borderColor='var(--border)'">
+        <div style="font-size:1.6rem;margin-bottom:4px">📩</div>
+        <div style="font-size:.78rem;font-weight:800;color:var(--text)">Prośby</div>
+        <div style="font-size:.6rem;color:var(--muted);font-weight:600;margin-top:2px">Dostęp do podręczników</div>
+        <span id="accessReqBadge" style="display:none;position:absolute;top:6px;right:6px;background:var(--danger);color:#fff;border-radius:100px;padding:1px 7px;font-size:.58rem;font-weight:900"></span>
+      </div>
       <div onclick="showScreen('sBooks')" style="background:var(--surface);border:1.5px solid var(--border);border-radius:14px;padding:14px 10px;text-align:center;cursor:pointer;transition:all .2s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
         <div style="font-size:1.6rem;margin-bottom:4px">📊</div>
         <div style="font-size:.78rem;font-weight:800;color:var(--text)">Raporty</div>
@@ -1001,7 +1007,50 @@ body.guest-mode .progress-wrap{opacity:.4;}
   <div id="booksEmptyMsg" style="display:none;text-align:center;color:var(--muted);font-size:.85rem;font-weight:600;padding:28px 14px">
     Brak podręczników w tej klasie.
   </div>
-  <div style="margin-top:12px"><button class="btn-sm" id="booksBackBtn" onclick="navBackFromBooks()">← Wróć</button></div>
+  <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;justify-content:center">
+    <button class="btn-sm" id="booksBackBtn" onclick="navBackFromBooks()">← Wróć</button>
+    <button class="btn-sm accent" id="booksRequestBtn" onclick="openRequestAccessModal()" style="display:none">📩 Poproś o dostęp do podręcznika</button>
+  </div>
+</div>
+
+<!-- Modal: Uczeń — poproś o dostęp do podręcznika -->
+<div class="modal-overlay" id="requestAccessModal" style="display:none" onclick="if(event.target===this)closeRequestAccessModal()">
+  <div class="modal-box" style="max-width:460px">
+    <div style="font-family:'Playfair Display',serif;font-size:1.15rem;color:var(--accent);margin-bottom:4px">📩 Poproś o dostęp</div>
+    <div style="font-size:.72rem;color:var(--muted);margin-bottom:12px;font-weight:600;line-height:1.45">
+      Nauczyciel lub administrator rozpatrzy Twoją prośbę i przydzieli dostęp do podręcznika.
+    </div>
+
+    <label style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px">W jakiej jesteś klasie? *</label>
+    <div style="display:flex;gap:6px;margin-bottom:10px">
+      <select id="reqAccessSchool" onchange="reqAccessUpdateBookList()" style="flex:1;padding:9px 11px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.82rem;font-weight:600;outline:none;font-family:inherit">
+        <option value="">— szkoła —</option>
+        <option value="primary">Szkoła Podstawowa</option>
+        <option value="secondary">Szkoła Średnia</option>
+        <option value="other">Inne</option>
+      </select>
+      <select id="reqAccessGrade" onchange="reqAccessUpdateBookList()" style="flex:1;padding:9px 11px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.82rem;font-weight:600;outline:none;font-family:inherit">
+        <option value="">— klasa —</option>
+        <option value="1">Klasa 1</option><option value="2">Klasa 2</option><option value="3">Klasa 3</option>
+        <option value="4">Klasa 4</option><option value="5">Klasa 5</option><option value="6">Klasa 6</option>
+        <option value="7">Klasa 7</option><option value="8">Klasa 8</option>
+      </select>
+    </div>
+
+    <label style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px">Który podręcznik? *</label>
+    <select id="reqAccessBook" style="width:100%;padding:9px 11px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.82rem;font-weight:600;outline:none;margin-bottom:10px;font-family:inherit">
+      <option value="">— najpierw wybierz klasę —</option>
+    </select>
+
+    <label style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px">Wiadomość (opcjonalnie)</label>
+    <textarea id="reqAccessMessage" rows="3" placeholder="np. Jestem uczniem pani X z klasy 4b…" style="width:100%;padding:9px 11px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.82rem;font-weight:500;outline:none;margin-bottom:10px;font-family:inherit;resize:vertical"></textarea>
+
+    <div id="reqAccessMsg" style="font-size:.72rem;margin-bottom:6px;min-height:16px;font-weight:600"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn-modal-cancel" onclick="closeRequestAccessModal()">Anuluj</button>
+      <button class="btn-modal-save" id="btnSubmitReqAccess" onclick="submitRequestAccess()">Wyślij prośbę</button>
+    </div>
+  </div>
 </div>
 
 <!-- ══ SCREEN: UNIT SELECT ══ -->
@@ -2377,6 +2426,71 @@ szkoła	school"></textarea>
   </div>
 </div>
 
+<!-- ══ SCREEN: ACCESS REQUESTS (admin/teacher) ══ -->
+<div class="screen" id="sAccessRequests">
+  <div style="width:100%">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+      <div>
+        <div style="font-family:'Playfair Display',serif;font-size:1.4rem;color:var(--pink)">📩 Prośby o dostęp</div>
+        <div style="font-size:.72rem;color:var(--muted);font-weight:600;margin-top:2px">Uczniowie proszą o dostęp do podręczników</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <select id="accessReqFilter" onchange="refreshAccessRequests()" style="padding:5px 10px;border-radius:100px;border:1.5px solid var(--border);background:var(--surface);color:var(--text);font-size:.72rem;font-weight:700;outline:none;font-family:inherit">
+          <option value="pending">Oczekujące</option>
+          <option value="approved">Zaakceptowane</option>
+          <option value="rejected">Odrzucone</option>
+          <option value="">Wszystkie</option>
+        </select>
+        <button class="btn-sm" onclick="showScreen('sBooks')">← Panel</button>
+      </div>
+    </div>
+    <div id="accessReqList" style="width:100%">
+      <div style="text-align:center;color:var(--muted);font-size:.8rem;padding:24px;font-weight:600">⏳ Ładowanie…</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ SCREEN: BULK STUDENT CREATION ══ -->
+<div class="screen" id="sBulkStudents">
+  <div style="width:100%">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+      <div>
+        <div style="font-family:'Playfair Display',serif;font-size:1.3rem;color:var(--accent)" id="bulkStudentsTitle">➕ Generuj konta uczniów</div>
+        <div style="font-size:.7rem;color:var(--muted);font-weight:600;margin-top:2px" id="bulkStudentsSub">Dla klasy: —</div>
+      </div>
+      <div style="display:flex;gap:6px">
+        <button class="btn-sm" id="bulkBackBtn" onclick="showScreen('sAdminClasses')">← Klasy</button>
+      </div>
+    </div>
+
+    <!-- Formularz -->
+    <div id="bulkStudentsForm" style="background:var(--surface);border:1.5px solid var(--border);border-radius:14px;padding:14px 16px;margin-bottom:14px">
+      <label style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px">Ilu uczniów chcesz utworzyć? (1–50)</label>
+      <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+        <input type="number" id="bulkCountInp" min="1" max="50" value="10" style="flex:1;min-width:100px;padding:9px 11px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.95rem;font-weight:700;outline:none">
+        <button class="btn-sm accent" id="btnBulkAdd" onclick="handleBulkCreate()" style="padding:9px 18px;white-space:nowrap">✓ Dodaj</button>
+      </div>
+      <div id="bulkStudentsMsg" style="font-size:.7rem;color:var(--muted);margin-top:6px;font-weight:600;min-height:16px"></div>
+    </div>
+
+    <!-- Wynik: lista loginów i haseł -->
+    <div id="bulkStudentsResult" style="display:none">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px;flex-wrap:wrap">
+        <div style="font-size:.78rem;font-weight:800;color:var(--text)" id="bulkResultTitle">Utworzono konta</div>
+        <div style="display:flex;gap:6px">
+          <button class="btn-sm" onclick="printBulkCredentials()">🖨️ Drukuj</button>
+          <button class="btn-sm accent" onclick="downloadBulkCredentialsPdf()">📄 PDF</button>
+        </div>
+      </div>
+      <div id="bulkStudentsWarnings" style="font-size:.72rem;color:var(--danger);font-weight:700;margin-bottom:6px"></div>
+      <div id="bulkCredentialsArea" style="background:var(--surface);border:1.5px solid var(--border);border-radius:12px;padding:12px"></div>
+      <div style="font-size:.68rem;color:var(--muted);font-weight:600;margin-top:10px;line-height:1.5;padding:10px 12px;border:1px dashed var(--border);border-radius:10px">
+        ⚠️ Zapisz lub wydrukuj te dane teraz — hasła są pokazywane tylko raz. Potem można je zresetować tylko ręcznie w bazie.
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: Nowy zestaw / Edycja metadanych zestawu -->
 <div class="modal-overlay" id="setMetaModal" style="display:none" onclick="if(event.target===this)closeSetMetaModal()">
   <div class="modal-box" style="max-width:440px">
@@ -2504,6 +2618,10 @@ szkoła	school"></textarea>
     <div class="modal-title" id="classModalTitle">➕ Nowa klasa</div>
     <div class="modal-label">Nazwa klasy</div>
     <input class="modal-input" id="classModalName" type="text" placeholder="np. IIIa, Klasa 7b, Angielski gr.1…">
+    <label id="classModalBulkWrap" style="display:flex;align-items:flex-start;gap:8px;margin-top:10px;font-size:.76rem;color:var(--text);font-weight:600;line-height:1.45;cursor:pointer">
+      <input type="checkbox" id="classModalBulk" style="margin-top:2px;flex-shrink:0;width:16px;height:16px;cursor:pointer">
+      <span>Wygeneruj loginy dla całej klasy po utworzeniu <span style="color:var(--muted);font-weight:500">(przejdziesz do ekranu generowania)</span></span>
+    </label>
     <div class="modal-btns">
       <button class="btn-modal-cancel" onclick="closeModal('classModal')">Anuluj</button>
       <button class="btn-modal-save" id="btnClassSave" onclick="submitClass()">💾 Zapisz</button>
@@ -2783,6 +2901,12 @@ function refreshBooks() {
   }
   const myBooks = DB.getUserBooks(); // null=brak ograniczeń/admin, ['id1','id2']=dozwolone
   const allBooks = Object.values(BOOKS);
+  // Pokaż/ukryj przycisk "Poproś o dostęp" — tylko dla ucznia (zalogowanego non-staff)
+  const reqBtn = document.getElementById('booksRequestBtn');
+  if (reqBtn) {
+    const isStaff = isCurrentUserAdmin() || isCurrentUserTeacher();
+    reqBtn.style.display = (!isStaff && !isGuest) ? '' : 'none';
+  }
   // Filtr uprawnień:
   //  - admin / nauczyciel → widzi wszystko
   //  - gość / uczeń       → domyślne (defaultAccess: true) + to, co przydzielił admin w user_books
@@ -5039,6 +5163,8 @@ function renderAdminPanel() {
   if (!isCurrentUserAdmin() && !isCurrentUserTeacher()) return;
   const panel = document.getElementById('adminPanel');
   panel.style.display = 'block';
+  // Odśwież licznik próśb o dostęp w kafelku "Prośby"
+  if (typeof window._refreshAccessReqBadge === 'function') window._refreshAccessReqBadge();
   const reqs = DB.getAdminRequests().filter(r => r.status === 'pending');
   const pending = document.getElementById('pendingBadge');
   const notifDot = document.getElementById('adminNotifDot');
@@ -10259,6 +10385,10 @@ function openClassModal() {
   document.getElementById('classModalTitle').textContent = '➕ Nowa klasa';
   document.getElementById('classModalName').value = '';
   document.getElementById('btnClassSave').textContent = '💾 Utwórz';
+  const bulkWrap = document.getElementById('classModalBulkWrap');
+  const bulkChk = document.getElementById('classModalBulk');
+  if (bulkWrap) bulkWrap.style.display = '';
+  if (bulkChk) bulkChk.checked = false;
   document.getElementById('classModal').style.display = 'flex';
   setTimeout(() => document.getElementById('classModalName').focus(), 80);
 }
@@ -10268,6 +10398,8 @@ function openEditClassModal(classId, className) {
   document.getElementById('classModalTitle').textContent = '✏️ Zmień nazwę klasy';
   document.getElementById('classModalName').value = className;
   document.getElementById('btnClassSave').textContent = '💾 Zapisz';
+  const bulkWrap = document.getElementById('classModalBulkWrap');
+  if (bulkWrap) bulkWrap.style.display = 'none'; // przy edycji — niepotrzebne
   document.getElementById('classModal').style.display = 'flex';
   setTimeout(() => document.getElementById('classModalName').focus(), 80);
 }
@@ -10276,17 +10408,26 @@ async function submitClass() {
   const name = document.getElementById('classModalName').value.trim();
   if (!name) { toast('Podaj nazwę klasy! ⚠️'); return; }
   const btn = document.getElementById('btnClassSave');
+  const bulkChk = document.getElementById('classModalBulk');
+  const bulk = bulkChk ? bulkChk.checked : false;
   btn.disabled = true; btn.textContent = 'Zapisuję…';
   try {
-    await DB.saveClass(name, _curClassEditId);
+    const saved = await DB.saveClass(name, _curClassEditId);
     closeModal('classModal');
     toast(_curClassEditId ? '✅ Zmieniono nazwę klasy.' : '✅ Klasa „' + name + '" utworzona!');
-    await openAdminClasses();
+    // Po utworzeniu (nie edycji) z zaznaczonym bulk → ekran masowego tworzenia kont
+    if (!_curClassEditId && bulk && saved && saved.id) {
+      if (typeof openBulkStudents === 'function') openBulkStudents(saved.id, saved.name || name);
+      else await openAdminClasses();
+    } else {
+      await openAdminClasses();
+    }
   } catch(e) {
     toast('❌ Błąd: ' + e.message, 3000);
   } finally {
     btn.disabled = false;
     btn.textContent = _curClassEditId ? '💾 Zapisz' : '💾 Utwórz';
+    if (bulkChk) bulkChk.checked = false;
   }
 }
 
@@ -11492,6 +11633,324 @@ if ('serviceWorker' in navigator) {
     }
   };
   window.closeAssignSetModal = function(){ document.getElementById('assignSetModal').style.display='none'; };
+
+  // ═══════════════════════════════════════════════
+  //  PROŚBY O DOSTĘP DO PODRĘCZNIKA (UCZEŃ)
+  // ═══════════════════════════════════════════════
+
+  window.openRequestAccessModal = function(){
+    const sc = document.getElementById('reqAccessSchool');
+    const gr = document.getElementById('reqAccessGrade');
+    const msg = document.getElementById('reqAccessMsg');
+    // Podstaw domyślnie aktualny kontekst nawigacji
+    if (sc && typeof _navSchoolType !== 'undefined' && _navSchoolType) sc.value = _navSchoolType;
+    if (gr && typeof _navGrade !== 'undefined' && _navGrade) gr.value = String(_navGrade);
+    document.getElementById('reqAccessMessage').value = '';
+    if (msg) msg.textContent = '';
+    reqAccessUpdateBookList();
+    document.getElementById('requestAccessModal').style.display = 'flex';
+  };
+  window.closeRequestAccessModal = function(){ document.getElementById('requestAccessModal').style.display='none'; };
+
+  window.reqAccessUpdateBookList = function(){
+    const sc = document.getElementById('reqAccessSchool').value;
+    const gr = document.getElementById('reqAccessGrade').value;
+    const sel = document.getElementById('reqAccessBook');
+    sel.innerHTML = '';
+    if (!sc) { sel.innerHTML = '<option value="">— najpierw wybierz szkołę —</option>'; return; }
+    const grNum = gr ? parseInt(gr,10) : null;
+    const books = Object.values(BOOKS).filter(b => {
+      if (b.language !== 'en') return false;
+      if (b.schoolType !== sc) return false;
+      if (sc === 'other') return true;
+      if (grNum != null && b.grade !== grNum) return false;
+      return true;
+    });
+    if (!books.length) {
+      sel.innerHTML = '<option value="">— brak podręczników w tej klasie —</option>';
+      return;
+    }
+    sel.innerHTML = '<option value="">— wybierz podręcznik —</option>';
+    books.forEach(b => {
+      const opt = document.createElement('option');
+      opt.value = b.id; opt.textContent = (b.icon ? b.icon + ' ' : '') + b.name;
+      sel.appendChild(opt);
+    });
+  };
+
+  window.submitRequestAccess = async function(){
+    const sc = document.getElementById('reqAccessSchool').value;
+    const grRaw = document.getElementById('reqAccessGrade').value;
+    const book = document.getElementById('reqAccessBook').value;
+    const message = document.getElementById('reqAccessMessage').value.trim();
+    const msgEl = document.getElementById('reqAccessMsg');
+    const btn = document.getElementById('btnSubmitReqAccess');
+    if (!sc) { msgEl.style.color='var(--danger)'; msgEl.textContent='⚠️ Wybierz szkołę.'; return; }
+    if (sc !== 'other' && !grRaw) { msgEl.style.color='var(--danger)'; msgEl.textContent='⚠️ Wybierz klasę.'; return; }
+    if (!book) { msgEl.style.color='var(--danger)'; msgEl.textContent='⚠️ Wybierz podręcznik.'; return; }
+    btn.disabled = true;
+    msgEl.style.color='var(--muted)'; msgEl.textContent='⏳ Wysyłam prośbę…';
+    try {
+      await DB.requestBookAccess({
+        book_id: book,
+        school_type: sc,
+        grade: grRaw ? parseInt(grRaw,10) : null,
+        message
+      });
+      msgEl.style.color='var(--success)';
+      msgEl.textContent='✓ Prośba wysłana. Poczekaj na decyzję nauczyciela.';
+      setTimeout(()=>closeRequestAccessModal(), 1400);
+      if (typeof toast==='function') toast('📩 Prośba wysłana.', 2400);
+    } catch(e) {
+      console.error('[submitRequestAccess]', e);
+      msgEl.style.color='var(--danger)';
+      msgEl.textContent='❌ ' + e.message;
+    } finally {
+      btn.disabled = false;
+    }
+  };
+
+  // ═══════════════════════════════════════════════
+  //  PANEL ADMINA — PROŚBY O DOSTĘP
+  // ═══════════════════════════════════════════════
+
+  async function refreshAccessReqBadge(){
+    const badge = document.getElementById('accessReqBadge');
+    if (!badge) return;
+    if (!isCurrentUserAdmin() && !isCurrentUserTeacher()) { badge.style.display='none'; return; }
+    try {
+      const n = await DB.countPendingBookAccessRequests();
+      if (n > 0) { badge.textContent = n; badge.style.display = ''; }
+      else badge.style.display = 'none';
+    } catch(e) { badge.style.display='none'; }
+  }
+  window._refreshAccessReqBadge = refreshAccessReqBadge;
+
+  window.openAccessRequests = async function(){
+    if (!isCurrentUserAdmin() && !isCurrentUserTeacher()) return;
+    showScreen('sAccessRequests');
+    await refreshAccessRequests();
+  };
+
+  window.refreshAccessRequests = async function(){
+    const status = document.getElementById('accessReqFilter').value;
+    const listEl = document.getElementById('accessReqList');
+    listEl.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:.8rem;padding:24px;font-weight:600">⏳ Ładowanie…</div>';
+    try {
+      const [reqs, profiles] = await Promise.all([
+        DB.listAllBookAccessRequests(status || null),
+        (_allProfiles && _allProfiles.length) ? Promise.resolve(_allProfiles) : DB.loadAllProfiles()
+      ]);
+      if (profiles && profiles.length && (!_allProfiles || !_allProfiles.length)) _allProfiles = profiles;
+      const profById = Object.fromEntries((profiles||[]).map(p=>[p.id, p]));
+      if (!reqs.length) {
+        listEl.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:.85rem;padding:30px 14px;font-weight:600">Brak próśb w tym statusie.</div>';
+        refreshAccessReqBadge();
+        return;
+      }
+      listEl.innerHTML = '';
+      reqs.forEach(r => {
+        const p = profById[r.user_id] || {};
+        const book = BOOKS[r.book_id];
+        const bookLbl = book ? ((book.icon?book.icon+' ':'') + book.name) : r.book_id;
+        const grade = r.grade ? ' · Klasa ' + r.grade : '';
+        const statusBadge = r.status === 'pending'
+          ? '<span style="background:rgba(255,209,102,.15);color:var(--accent);border:1px solid rgba(255,209,102,.3);border-radius:100px;padding:1px 8px;font-size:.6rem;font-weight:800">⏳ oczekuje</span>'
+          : r.status === 'approved'
+            ? '<span style="background:rgba(85,239,196,.15);color:var(--success);border:1px solid rgba(85,239,196,.3);border-radius:100px;padding:1px 8px;font-size:.6rem;font-weight:800">✓ zaakceptowana</span>'
+            : '<span style="background:rgba(255,118,117,.15);color:var(--danger);border:1px solid rgba(255,118,117,.3);border-radius:100px;padding:1px 8px;font-size:.6rem;font-weight:800">✗ odrzucona</span>';
+        const when = r.created_at ? new Date(r.created_at).toLocaleString('pl-PL') : '';
+        const card = document.createElement('div');
+        card.style.cssText = 'background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:8px;display:flex;flex-direction:column;gap:6px';
+        card.innerHTML = `
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;flex-wrap:wrap">
+            <div>
+              <div style="font-size:.88rem;font-weight:800;color:var(--text)">${escHtml(p.username || '(nieznany)')}${grade}</div>
+              <div style="font-size:.7rem;color:var(--muted);font-weight:600">Prosi o: <strong style="color:var(--text)">${escHtml(bookLbl)}</strong></div>
+              <div style="font-size:.62rem;color:var(--muted);font-weight:600">${escHtml(when)}</div>
+            </div>
+            <div>${statusBadge}</div>
+          </div>
+          ${r.message ? `<div style="font-size:.72rem;color:var(--muted);font-weight:500;font-style:italic;padding:6px 10px;background:var(--surface2);border-radius:8px;word-break:break-word">„${escHtml(r.message)}"</div>` : ''}
+        `;
+        if (r.status === 'pending') {
+          const actions = document.createElement('div');
+          actions.style.cssText = 'display:flex;gap:6px;justify-content:flex-end';
+          actions.innerHTML = `
+            <button class="btn-sm" data-act="reject" style="border-color:rgba(255,118,117,.4);color:var(--danger);padding:5px 13px;font-size:.72rem">✗ Odrzuć</button>
+            <button class="btn-sm accent" data-act="approve" style="padding:5px 13px;font-size:.72rem">✓ Zaakceptuj</button>
+          `;
+          actions.querySelector('[data-act="approve"]').addEventListener('click', ()=>handleApproveAccessReq(r.id));
+          actions.querySelector('[data-act="reject"]').addEventListener('click', ()=>handleRejectAccessReq(r.id));
+          card.appendChild(actions);
+        }
+        listEl.appendChild(card);
+      });
+      refreshAccessReqBadge();
+    } catch(e) {
+      console.error('[refreshAccessRequests]', e);
+      listEl.innerHTML = `<div style="color:var(--danger);font-size:.8rem;padding:16px;font-weight:600">❌ ${escHtml(e.message)}</div>`;
+    }
+  };
+
+  async function handleApproveAccessReq(id){
+    try {
+      await DB.approveBookAccessRequest(id);
+      if (typeof toast==='function') toast('✓ Zaakceptowano. Uczeń otrzymał dostęp.', 2600);
+      await refreshAccessRequests();
+    } catch(e) {
+      if (typeof toast==='function') toast('❌ ' + e.message, 3200);
+    }
+  }
+  async function handleRejectAccessReq(id){
+    if (!confirm('Odrzucić tę prośbę?')) return;
+    try {
+      await DB.rejectBookAccessRequest(id);
+      if (typeof toast==='function') toast('✗ Odrzucono.', 2200);
+      await refreshAccessRequests();
+    } catch(e) {
+      if (typeof toast==='function') toast('❌ ' + e.message, 3200);
+    }
+  }
+
+  // ═══════════════════════════════════════════════
+  //  MASOWE TWORZENIE KONT UCZNIÓW
+  // ═══════════════════════════════════════════════
+  let _bulkClassId = null;
+  let _bulkClassName = '';
+  let _bulkLastCredentials = []; // [{username, password}]
+
+  window.openBulkStudents = function(classId, className){
+    if (!classId) return;
+    _bulkClassId = classId;
+    _bulkClassName = className || '';
+    _bulkLastCredentials = [];
+    document.getElementById('bulkStudentsTitle').textContent = '➕ Generuj konta uczniów';
+    document.getElementById('bulkStudentsSub').textContent = 'Dla klasy: ' + (className || '—');
+    document.getElementById('bulkCountInp').value = 10;
+    document.getElementById('bulkStudentsMsg').textContent = '';
+    document.getElementById('bulkStudentsResult').style.display = 'none';
+    document.getElementById('bulkCredentialsArea').innerHTML = '';
+    document.getElementById('bulkStudentsWarnings').textContent = '';
+    showScreen('sBulkStudents');
+  };
+
+  window.handleBulkCreate = async function(){
+    if (!_bulkClassId) { if (typeof toast==='function') toast('⚠️ Brak klasy.', 2400); return; }
+    const inp = document.getElementById('bulkCountInp');
+    const count = parseInt(inp.value, 10);
+    if (!count || count < 1 || count > 50) {
+      const msg = document.getElementById('bulkStudentsMsg');
+      msg.style.color = 'var(--danger)'; msg.textContent = '⚠️ Podaj liczbę od 1 do 50.';
+      return;
+    }
+    const btn = document.getElementById('btnBulkAdd');
+    const msg = document.getElementById('bulkStudentsMsg');
+    btn.disabled = true; btn.textContent = '⏳ Tworzę…';
+    msg.style.color = 'var(--muted)'; msg.textContent = 'Trwa tworzenie kont — to może chwilę potrwać.';
+    try {
+      const { created, errors } = await DB.bulkCreateStudentsForClass(_bulkClassId, _bulkClassName, count);
+      _bulkLastCredentials = created;
+      msg.style.color = 'var(--success)';
+      msg.textContent = `✓ Utworzono ${created.length} z ${count} kont.`;
+      document.getElementById('bulkStudentsResult').style.display = '';
+      document.getElementById('bulkResultTitle').textContent = `Utworzono ${created.length} kont dla klasy „${_bulkClassName}"`;
+      const warn = document.getElementById('bulkStudentsWarnings');
+      warn.textContent = errors && errors.length ? ('⚠️ ' + errors.join('; ')) : '';
+      renderBulkCredentials();
+    } catch(e) {
+      console.error('[handleBulkCreate]', e);
+      msg.style.color = 'var(--danger)';
+      msg.textContent = '❌ ' + e.message;
+    } finally {
+      btn.disabled = false; btn.textContent = '✓ Dodaj';
+    }
+  };
+
+  function renderBulkCredentials(){
+    const area = document.getElementById('bulkCredentialsArea');
+    if (!_bulkLastCredentials.length) { area.innerHTML = '<div style="color:var(--muted);font-size:.8rem;padding:10px;text-align:center">Brak utworzonych kont.</div>'; return; }
+    let html = `<table style="width:100%;border-collapse:collapse;font-size:.82rem">
+      <thead>
+        <tr style="border-bottom:1.5px solid var(--border)">
+          <th style="text-align:left;padding:6px 8px;font-size:.68rem;color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.05em">#</th>
+          <th style="text-align:left;padding:6px 8px;font-size:.68rem;color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.05em">Login</th>
+          <th style="text-align:left;padding:6px 8px;font-size:.68rem;color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.05em">Hasło</th>
+        </tr>
+      </thead><tbody>`;
+    _bulkLastCredentials.forEach((c, i) => {
+      html += `<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
+        <td style="padding:6px 8px;color:var(--muted);font-weight:600">${i+1}</td>
+        <td style="padding:6px 8px;color:var(--text);font-weight:700;font-family:monospace">${escHtml(c.username)}</td>
+        <td style="padding:6px 8px;color:var(--accent);font-weight:700;font-family:monospace">${escHtml(c.password)}</td>
+      </tr>`;
+    });
+    html += '</tbody></table>';
+    area.innerHTML = html;
+  }
+
+  window.printBulkCredentials = function(){
+    if (!_bulkLastCredentials.length) return;
+    const w = window.open('', '_blank');
+    if (!w) { if (typeof toast==='function') toast('⚠️ Popup zablokowany przez przeglądarkę.', 3200); return; }
+    const rows = _bulkLastCredentials.map((c,i)=>`<tr><td>${i+1}</td><td>${escHtml(c.username)}</td><td>${escHtml(c.password)}</td></tr>`).join('');
+    w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Konta — ${escHtml(_bulkClassName)}</title>
+      <style>
+        body{font-family:Arial,sans-serif;padding:24px;color:#111}
+        h1{font-size:18px;margin:0 0 4px}
+        h2{font-size:13px;color:#555;margin:0 0 16px;font-weight:normal}
+        table{border-collapse:collapse;width:100%;font-size:13px}
+        th,td{border:1px solid #aaa;padding:8px 10px;text-align:left}
+        th{background:#eee}
+        td:nth-child(1){width:40px;text-align:center}
+        td:nth-child(2),td:nth-child(3){font-family:'Courier New',monospace;font-weight:700}
+        @media print{body{padding:12px}}
+      </style></head><body>
+      <h1>Sowie Fiszki — konta uczniów</h1>
+      <h2>Klasa: ${escHtml(_bulkClassName)} · utworzono ${_bulkLastCredentials.length} kont · ${new Date().toLocaleString('pl-PL')}</h2>
+      <table><thead><tr><th>#</th><th>Login</th><th>Hasło</th></tr></thead><tbody>${rows}</tbody></table>
+      <p style="font-size:11px;color:#666;margin-top:14px">⚠ Hasła są pokazywane tylko raz — zachowaj ten dokument w bezpiecznym miejscu.</p>
+      <script>window.onload=function(){window.print();};<\/script>
+      </body></html>`);
+    w.document.close();
+  };
+
+  window.downloadBulkCredentialsPdf = function(){
+    if (!_bulkLastCredentials.length) return;
+    try {
+      const jsPDFConstructor = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+      if (!jsPDFConstructor) { if (typeof toast==='function') toast('❌ Biblioteka PDF niedostępna.', 3200); return; }
+      const doc = new jsPDFConstructor({ unit:'pt', format:'a4' });
+      doc.setFont('helvetica','bold'); doc.setFontSize(16);
+      doc.text('Sowie Fiszki — konta uczniów', 40, 50);
+      doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(90);
+      doc.text('Klasa: ' + _bulkClassName + '  ·  utworzono ' + _bulkLastCredentials.length + ' kont  ·  ' + new Date().toLocaleString('pl-PL'), 40, 68);
+      // tabela
+      const startY = 96;
+      const rowH = 22;
+      doc.setFontSize(11); doc.setTextColor(0);
+      doc.setFont('helvetica','bold');
+      doc.text('#',     50, startY);
+      doc.text('Login', 90, startY);
+      doc.text('Hasło', 300, startY);
+      doc.setDrawColor(120);
+      doc.line(40, startY+5, 555, startY+5);
+      doc.setFont('helvetica','normal');
+      _bulkLastCredentials.forEach((c, i) => {
+        const y = startY + rowH * (i+1);
+        doc.text(String(i+1), 50, y);
+        doc.text(c.username,  90, y);
+        doc.text(c.password, 300, y);
+      });
+      doc.setFontSize(9); doc.setTextColor(120);
+      const bottomY = startY + rowH * (_bulkLastCredentials.length + 2);
+      doc.text('Hasła sa pokazywane tylko raz — zachowaj ten dokument.', 40, Math.min(bottomY, 810));
+      doc.save(('konta_' + _bulkClassName + '.pdf').replace(/\s+/g,'_'));
+    } catch(e) {
+      console.error('[downloadBulkCredentialsPdf]', e);
+      if (typeof toast==='function') toast('❌ Błąd generowania PDF: ' + e.message, 3600);
+    }
+  };
 })();
 </script>
 
