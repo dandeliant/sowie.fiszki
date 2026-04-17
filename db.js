@@ -656,6 +656,34 @@ const DB = (() => {
     return data || [];
   }
 
+  // Samodzielne usunięcie własnego konta („prawo do bycia zapomnianym" — RODO art. 17).
+  // Wywołuje funkcję SQL delete_own_account(), która kasuje powiązane dane i auth.users.
+  // Po tej operacji sesja przestaje być ważna — klient powinien wylogować użytkownika.
+  async function deleteOwnAccount() {
+    if (!_userId) throw new Error('Nie jesteś zalogowany.');
+    const { data, error } = await supabase.rpc('delete_own_account');
+    if (error) throw new Error(error.message);
+    // Wyloguj i wyczyść lokalną sesję
+    try { await supabase.auth.signOut(); } catch(e) {}
+    _profile = null;
+    _userId = null;
+    return data; // 'ok'
+  }
+
+  // Wyszukanie jednego profilu po loginie — używane przez panel nauczyciela,
+  // który nie ma listy wszystkich uczniów, tylko wpisuje konkretny login.
+  async function findProfileByUsername(username) {
+    if (!_profile?.isAdmin && !_profile?.isTeacher) return null;
+    if (!username) return null;
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, username, xp, level, streak, total_sessions, total_answers, correct_answers, last_study_date, is_admin, is_teacher, plan')
+      .eq('username', username)
+      .limit(1);
+    if (error) throw new Error(error.message);
+    return (data && data[0]) || null;
+  }
+
   async function loadUserProgress(userId) {
     if (!_profile?.isAdmin && !_profile?.isTeacher) return [];
     const { data, error } = await supabase
@@ -814,6 +842,8 @@ const DB = (() => {
     adminDeleteUser,
     // admin — klasy
     loadAllProfiles,
+    findProfileByUsername,
+    deleteOwnAccount,
     loadUserProgress,
     loadClasses,
     saveClass,

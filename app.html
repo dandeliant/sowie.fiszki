@@ -876,6 +876,7 @@ body.guest-mode .progress-wrap{opacity:.4;}
       <button class="btn-hdr" id="btnAchHdr" onclick="showAchievements()" title="Odznaki">🏆 <span class="achieve-badge-count" id="achieveCount">0</span></button>
       <button class="btn-hdr" onclick="openThemeModal()" title="Motyw">🎨</button>
       <button class="btn-hdr" onclick="openTermsModal()" title="Regulamin">📜</button>
+      <button class="btn-hdr" onclick="openAccountModal()" title="Moje konto">👤</button>
     </div>
     <div class="xp-panel">
       <div class="level-badge"><span id="lvlI">🌱</span><span>Poziom <span id="lvlN">1</span></span></div>
@@ -10717,6 +10718,45 @@ if ('serviceWorker' in navigator) {
 })();
 </script>
 
+<!-- Modal Moje konto -->
+<div class="modal-overlay" id="accountModal" style="display:none" onclick="if(event.target===this)closeAccountModal()">
+  <div class="modal-box" style="max-width:440px;padding:22px 22px 18px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:8px">
+      <div style="font-family:'Playfair Display',serif;font-size:1.2rem;color:var(--accent)">👤 Moje konto</div>
+      <button class="btn-modal-cancel" onclick="closeAccountModal()" style="padding:5px 11px;font-size:.72rem">✕</button>
+    </div>
+
+    <div id="accountInfo" style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:12px 16px;margin-bottom:14px">
+      <div style="font-size:.65rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">Login</div>
+      <div id="accountUsername" style="font-size:.95rem;font-weight:800;color:var(--text)">—</div>
+      <div style="font-size:.65rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin:8px 0 3px">Plan</div>
+      <div id="accountPlan" style="font-size:.82rem;font-weight:700;color:var(--accent)">—</div>
+    </div>
+
+    <!-- Strefa niebezpieczna: usuwanie konta -->
+    <div style="border:1.5px solid rgba(255,118,117,.3);border-radius:12px;padding:12px 14px;background:rgba(255,118,117,.05)">
+      <div style="font-size:.78rem;font-weight:800;color:var(--danger);margin-bottom:5px">⚠️ Strefa niebezpieczna</div>
+      <div style="font-size:.72rem;color:var(--muted);font-weight:600;line-height:1.45;margin-bottom:10px">
+        Usunięcie konta jest <strong style="color:var(--text)">nieodwracalne</strong>. Znikną wszystkie Twoje postępy, punkty XP, odznaki i przynależność do klas. Jeśli jesteś nauczycielem — Twoje klasy zostaną zamknięte (uczniowie pozostają).
+      </div>
+      <button id="btnDeleteAccountInit" onclick="initDeleteAccount()" style="width:100%;padding:10px 16px;background:transparent;border:1.5px solid var(--danger);color:var(--danger);border-radius:100px;font-family:'Nunito',sans-serif;font-size:.8rem;font-weight:800;cursor:pointer;transition:all .2s">🗑️ Usuń moje konto</button>
+
+      <!-- Krok potwierdzenia (pojawia się po kliknięciu) -->
+      <div id="deleteAccountConfirm" style="display:none;margin-top:12px">
+        <div style="font-size:.72rem;color:var(--text);font-weight:600;margin-bottom:6px;line-height:1.45">
+          Aby potwierdzić, wpisz dokładnie swój login: <strong id="deleteExpectedName" style="color:var(--accent)"></strong>
+        </div>
+        <input type="text" id="deleteConfirmInput" placeholder="Wpisz login…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" style="width:100%;padding:9px 12px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);color:var(--text);font-size:.85rem;font-weight:600;outline:none;margin-bottom:8px;font-family:inherit">
+        <div style="display:flex;gap:8px">
+          <button onclick="cancelDeleteAccount()" style="flex:1;padding:9px 12px;background:var(--surface2);border:1.5px solid var(--border);color:var(--muted);border-radius:100px;font-family:'Nunito',sans-serif;font-size:.78rem;font-weight:700;cursor:pointer">Anuluj</button>
+          <button id="btnDeleteAccountConfirm" onclick="confirmDeleteAccount()" style="flex:1;padding:9px 12px;background:var(--danger);border:none;color:#fff;border-radius:100px;font-family:'Nunito',sans-serif;font-size:.78rem;font-weight:800;cursor:pointer">🗑️ Usuń bezpowrotnie</button>
+        </div>
+        <div id="deleteAccountMsg" style="font-size:.72rem;margin-top:6px;min-height:16px;font-weight:600;color:var(--danger)"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Modal Regulamin -->
 <div class="modal-overlay" id="termsModal" style="display:none" onclick="if(event.target===this)closeTermsModal()">
   <div class="modal-box" style="max-width:560px;max-height:86vh;overflow-y:auto;padding:22px 22px 18px">
@@ -10725,58 +10765,209 @@ if ('serviceWorker' in navigator) {
       <button class="btn-modal-cancel" onclick="closeTermsModal()" style="padding:5px 11px;font-size:.72rem">✕</button>
     </div>
     <div style="font-size:.78rem;line-height:1.55;color:var(--text);font-weight:500">
+      <p style="font-size:.68rem;color:var(--muted);margin-bottom:10px;font-style:italic">Obowiązuje od: 17 kwietnia 2026 r.</p>
+
       <h3 style="font-family:'Playfair Display',serif;font-size:.92rem;color:var(--accent);margin-top:6px">§1 Postanowienia ogólne</h3>
       <ol style="margin:4px 0 10px 20px;padding:0">
-        <li>Platforma „Sowie Fiszki" jest narzędziem edukacyjnym umożliwiającym użytkownikom tworzenie i naukę słownictwa.</li>
-        <li>Właścicielem platformy jest Daniel Ostrowski.</li>
+        <li>Niniejszy Regulamin określa zasady korzystania z platformy edukacyjnej „Sowie Fiszki" (dalej: „Platforma"), dostępnej online pod adresem prowadzonym przez Operatora.</li>
+        <li>Operatorem Platformy jest Daniel Ostrowski (osoba fizyczna prowadząca Platformę w charakterze niekomercyjnym), e-mail kontaktowy: <a href="mailto:sowie.fiszki@gmail.com" style="color:var(--accent)">sowie.fiszki@gmail.com</a>.</li>
+        <li>Platforma jest narzędziem edukacyjnym umożliwiającym naukę słownictwa w formie fiszek, gier i ćwiczeń.</li>
       </ol>
 
-      <h3 style="font-family:'Playfair Display',serif;font-size:.92rem;color:var(--accent)">§2 Zasady korzystania</h3>
+      <h3 style="font-family:'Playfair Display',serif;font-size:.92rem;color:var(--accent)">§2 Definicje</h3>
+      <ol style="margin:4px 0 10px 20px;padding:0">
+        <li><strong>Użytkownik</strong> — osoba fizyczna korzystająca z Platformy (Uczeń, Nauczyciel lub gość bez konta).</li>
+        <li><strong>Konto</strong> — indywidualny profil Użytkownika w Platformie, chroniony loginem i hasłem.</li>
+        <li><strong>Uczeń</strong> — Użytkownik korzystający z Platformy w celu nauki.</li>
+        <li><strong>Nauczyciel</strong> — Użytkownik z rozszerzonymi uprawnieniami zarządzania uczniami i zestawami.</li>
+        <li><strong>Zestaw</strong> — zbiór słówek (fiszek) przypisany do podręcznika lub utworzony przez Użytkownika.</li>
+        <li><strong>Operator</strong> — administrator Platformy określony w §1 ust. 2.</li>
+      </ol>
+
+      <h3 style="font-family:'Playfair Display',serif;font-size:.92rem;color:var(--accent)">§3 Zasady korzystania</h3>
       <ol style="margin:4px 0 10px 20px;padding:0">
         <li>Użytkownik może:
           <ul style="margin:3px 0 3px 18px">
-            <li>tworzyć własne zestawy słówek,</li>
-            <li>korzystać z gotowych zestawów udostępnionych przez platformę,</li>
-            <li>generować treści przy użyciu narzędzi AI.</li>
+            <li>tworzyć własne zestawy słówek (w ramach udostępnionych funkcjonalności),</li>
+            <li>korzystać z gotowych zestawów udostępnionych przez Platformę,</li>
+            <li>korzystać z funkcji generowania treści przy użyciu narzędzi AI (jeżeli zostaną udostępnione).</li>
           </ul>
         </li>
-        <li>Użytkownik zobowiązuje się do korzystania z platformy zgodnie z prawem.</li>
+        <li>Użytkownik zobowiązuje się do korzystania z Platformy zgodnie z prawem, dobrymi obyczajami i niniejszym Regulaminem.</li>
+        <li>Zabronione jest w szczególności: publikowanie treści obraźliwych, bezprawnych, naruszających prawa osób trzecich, w tym prawa autorskie.</li>
       </ol>
 
-      <h3 style="font-family:'Playfair Display',serif;font-size:.92rem;color:var(--accent)">§3 Odpowiedzialność za treści użytkownika</h3>
+      <h3 style="font-family:'Playfair Display',serif;font-size:.92rem;color:var(--accent)">§4 Wiek Użytkownika i zgoda opiekuna</h3>
       <ol style="margin:4px 0 10px 20px;padding:0">
-        <li>Użytkownik ponosi pełną odpowiedzialność za treści dodawane do platformy.</li>
+        <li>Platforma jest przeznaczona dla osób uczących się języków obcych, w tym uczniów szkół podstawowych i średnich.</li>
+        <li>Osoby poniżej 16. roku życia mogą korzystać z Platformy wyłącznie za zgodą rodzica lub opiekuna prawnego (zgodnie z art. 8 RODO).</li>
+        <li>Podczas zakładania Konta osoba poniżej 16 lat lub rodzic/opiekun w jej imieniu oświadcza, że posiada zgodę opiekuna prawnego na korzystanie z Platformy.</li>
+        <li>Nauczyciel tworzący konta dla uczniów w swojej klasie oświadcza, że dopełnił obowiązku uzyskania stosownej zgody opiekunów prawnych uczniów.</li>
+      </ol>
+
+      <h3 style="font-family:'Playfair Display',serif;font-size:.92rem;color:var(--accent)">§5 Konto Użytkownika</h3>
+      <ol style="margin:4px 0 10px 20px;padding:0">
+        <li>Rejestracja Konta jest dobrowolna i nieodpłatna. Platforma umożliwia również przeglądanie w trybie gościa (bez rejestracji).</li>
+        <li>Użytkownik ponosi odpowiedzialność za bezpieczeństwo swoich danych logowania. Nie wolno udostępniać ich osobom trzecim.</li>
+        <li>Użytkownik może w każdej chwili usunąć swoje Konto za pomocą funkcji „Usuń konto" dostępnej w Platformie lub wysyłając żądanie na adres <a href="mailto:sowie.fiszki@gmail.com" style="color:var(--accent)">sowie.fiszki@gmail.com</a>.</li>
+        <li>Operator może zablokować lub usunąć Konto w przypadku rażącego naruszenia Regulaminu, z wcześniejszym powiadomieniem (o ile nie jest to niemożliwe z uwagi na naruszenie prawa).</li>
+      </ol>
+
+      <h3 style="font-family:'Playfair Display',serif;font-size:.92rem;color:var(--accent)">§6 Odpowiedzialność za treści Użytkownika</h3>
+      <ol style="margin:4px 0 10px 20px;padding:0">
+        <li>Użytkownik ponosi pełną odpowiedzialność za treści dodawane do Platformy.</li>
         <li>Użytkownik zobowiązuje się nie dodawać treści naruszających prawa autorskie, w tym materiałów pochodzących z podręczników bez zgody wydawcy.</li>
-        <li>Platforma nie weryfikuje zgodności treści użytkownika z prawem.</li>
+        <li>Platforma nie weryfikuje zgodności treści Użytkownika z prawem.</li>
+        <li>W przypadku importu własnych list słów Użytkownik oświadcza, że ma prawo ich używać lub są jego autorstwa.</li>
       </ol>
 
-      <h3 style="font-family:'Playfair Display',serif;font-size:.92rem;color:var(--accent)">§4 Prawa autorskie</h3>
+      <h3 style="font-family:'Playfair Display',serif;font-size:.92rem;color:var(--accent)">§7 Prawa autorskie</h3>
       <ol style="margin:4px 0 10px 20px;padding:0">
-        <li>Wszystkie materiały dostępne na platformie stanowią własność operatora lub zostały wygenerowane automatycznie.</li>
+        <li>Materiały dostępne na Platformie (z wyłączeniem treści dodanych przez Użytkowników) stanowią własność Operatora lub zostały wygenerowane automatycznie.</li>
         <li>Platforma nie jest powiązana z żadnym wydawnictwem edukacyjnym.</li>
-        <li>Nazwy podręczników mogą być używane wyłącznie jako informacja pomocnicza przez użytkownika.</li>
+        <li>Nazwy podręczników pojawiają się wyłącznie jako informacja pomocnicza (do której klasy/poziomu odnosi się dany zestaw słów) i nie stanowią reprodukcji chronionych materiałów wydawniczych.</li>
       </ol>
 
-      <h3 style="font-family:'Playfair Display',serif;font-size:.92rem;color:var(--accent)">§5 Ograniczenie odpowiedzialności</h3>
+      <h3 style="font-family:'Playfair Display',serif;font-size:.92rem;color:var(--accent)">§8 Ograniczenie odpowiedzialności</h3>
       <ol style="margin:4px 0 10px 20px;padding:0">
-        <li>Platforma nie ponosi odpowiedzialności za treści dodane przez użytkowników.</li>
-        <li>W przypadku zgłoszenia naruszenia praw autorskich treści mogą zostać usunięte.</li>
+        <li>Operator nie ponosi odpowiedzialności za treści dodane przez Użytkowników.</li>
+        <li>Operator dokłada należytej staranności, aby Platforma działała prawidłowo, nie gwarantuje jednak jej nieprzerwanej dostępności (przerwy techniczne, awarie dostawców infrastruktury).</li>
+        <li>Operator nie ponosi odpowiedzialności za szkody wynikające z błędów w treściach wygenerowanych automatycznie (AI) — Użytkownik korzysta z nich na własną odpowiedzialność.</li>
       </ol>
 
-      <h3 style="font-family:'Playfair Display',serif;font-size:.92rem;color:var(--accent)">§6 Usuwanie treści (DMCA / notice &amp; takedown)</h3>
+      <h3 style="font-family:'Playfair Display',serif;font-size:.92rem;color:var(--accent)">§9 Zgłaszanie naruszeń (notice &amp; takedown)</h3>
       <ol style="margin:4px 0 10px 20px;padding:0">
-        <li>Osoby trzecie mogą zgłaszać naruszenia praw autorskich.</li>
-        <li>Po otrzymaniu zgłoszenia administrator ma prawo usunąć treści bez uprzedzenia.</li>
+        <li>Osoby trzecie (w tym wydawcy) mogą zgłaszać naruszenia praw autorskich za pomocą funkcji „🚩 Zgłoś naruszenie" w Platformie lub na adres <a href="mailto:sowie.fiszki@gmail.com" style="color:var(--accent)">sowie.fiszki@gmail.com</a>.</li>
+        <li>Po otrzymaniu uzasadnionego zgłoszenia Operator ma prawo usunąć treści bez uprzedzenia.</li>
+        <li>Zgłoszenie powinno zawierać: opis naruszenia, wskazanie treści, podstawę prawną oraz dane kontaktowe zgłaszającego.</li>
       </ol>
 
-      <h3 style="font-family:'Playfair Display',serif;font-size:.92rem;color:var(--accent)">§7 Postanowienia końcowe</h3>
+      <h3 style="font-family:'Playfair Display',serif;font-size:.92rem;color:var(--accent)">§10 Usługi płatne (Premium)</h3>
       <ol style="margin:4px 0 10px 20px;padding:0">
-        <li>Regulamin może ulec zmianie.</li>
-        <li>Korzystanie z platformy oznacza jego akceptację.</li>
+        <li>Obecnie Platforma jest udostępniana nieodpłatnie. Plany odpłatne (Premium, Teacher) są w przygotowaniu.</li>
+        <li>Warunki świadczenia usług płatnych, ceny, operator płatności oraz prawo odstąpienia zostaną udostępnione w formie aneksu do niniejszego Regulaminu przed uruchomieniem usług płatnych.</li>
+      </ol>
+
+      <h3 style="font-family:'Playfair Display',serif;font-size:.92rem;color:var(--accent)">§11 Dane osobowe</h3>
+      <ol style="margin:4px 0 10px 20px;padding:0">
+        <li>Administratorem danych osobowych Użytkowników jest Daniel Ostrowski (e-mail: <a href="mailto:sowie.fiszki@gmail.com" style="color:var(--accent)">sowie.fiszki@gmail.com</a>).</li>
+        <li>Szczegółowe zasady przetwarzania danych osobowych określa <a href="#" onclick="event.preventDefault();closeTermsModal();openPrivacyModal();" style="color:var(--accent)">Polityka prywatności</a>, stanowiąca integralną część Regulaminu.</li>
+      </ol>
+
+      <h3 style="font-family:'Playfair Display',serif;font-size:.92rem;color:var(--accent)">§12 Reklamacje</h3>
+      <ol style="margin:4px 0 10px 20px;padding:0">
+        <li>Reklamacje dotyczące działania Platformy można składać na adres <a href="mailto:sowie.fiszki@gmail.com" style="color:var(--accent)">sowie.fiszki@gmail.com</a>.</li>
+        <li>Reklamacja powinna zawierać: login Użytkownika, opis problemu, datę wystąpienia oraz dane kontaktowe.</li>
+        <li>Operator rozpatruje reklamacje w terminie do 14 dni roboczych od dnia otrzymania zgłoszenia.</li>
+      </ol>
+
+      <h3 style="font-family:'Playfair Display',serif;font-size:.92rem;color:var(--accent)">§13 Zmiany Regulaminu</h3>
+      <ol style="margin:4px 0 10px 20px;padding:0">
+        <li>Operator zastrzega prawo do zmiany Regulaminu z ważnych przyczyn (zmiana przepisów, rozwój funkcjonalności, wprowadzenie usług płatnych).</li>
+        <li>O zmianach Użytkownik zostanie poinformowany drogą elektroniczną lub komunikatem w Platformie co najmniej 14 dni przed wejściem zmian w życie.</li>
+        <li>W razie braku akceptacji zmian Użytkownik może rozwiązać umowę poprzez usunięcie Konta.</li>
+      </ol>
+
+      <h3 style="font-family:'Playfair Display',serif;font-size:.92rem;color:var(--accent)">§14 Prawo właściwe i rozstrzyganie sporów</h3>
+      <ol style="margin:4px 0 10px 20px;padding:0">
+        <li>W sprawach nieuregulowanych Regulaminem zastosowanie mają przepisy prawa polskiego, w tym Kodeks cywilny, ustawa o prawach konsumenta oraz RODO.</li>
+        <li>Spory pomiędzy Operatorem a Użytkownikiem będącym konsumentem rozstrzyga sąd właściwy dla miejsca zamieszkania konsumenta.</li>
+      </ol>
+
+      <h3 style="font-family:'Playfair Display',serif;font-size:.92rem;color:var(--accent)">§15 Postanowienia końcowe</h3>
+      <ol style="margin:4px 0 10px 20px;padding:0">
+        <li>Ewentualna nieważność pojedynczych postanowień Regulaminu nie wpływa na ważność pozostałych.</li>
+        <li>Korzystanie z Platformy oznacza akceptację niniejszego Regulaminu.</li>
       </ol>
     </div>
     <div style="display:flex;justify-content:flex-end;margin-top:14px">
       <button class="btn-modal-save" onclick="closeTermsModal()">Zamknij</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Polityka prywatności -->
+<div class="modal-overlay" id="privacyModal" style="display:none" onclick="if(event.target===this)closePrivacyModal()">
+  <div class="modal-box" style="max-width:560px;max-height:86vh;overflow-y:auto;padding:22px 22px 18px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px">
+      <div style="font-family:'Playfair Display',serif;font-size:1.25rem;color:var(--accent)">🔐 Polityka prywatności</div>
+      <button class="btn-modal-cancel" onclick="closePrivacyModal()" style="padding:5px 11px;font-size:.72rem">✕</button>
+    </div>
+    <div style="font-size:.78rem;line-height:1.55;color:var(--text);font-weight:500">
+      <p style="font-size:.68rem;color:var(--muted);margin-bottom:10px;font-style:italic">Obowiązuje od: 17 kwietnia 2026 r.</p>
+
+      <h3 style="font-family:'Playfair Display',serif;font-size:.92rem;color:var(--accent);margin-top:6px">1. Administrator danych</h3>
+      <p style="margin:4px 0 10px">Administratorem danych osobowych Użytkowników Platformy „Sowie Fiszki" jest <strong>Daniel Ostrowski</strong> (osoba fizyczna prowadząca Platformę w charakterze niekomercyjnym). Kontakt w sprawach danych osobowych: <a href="mailto:sowie.fiszki@gmail.com" style="color:var(--accent)">sowie.fiszki@gmail.com</a>.</p>
+
+      <h3 style="font-family:'Playfair Display',serif;font-size:.92rem;color:var(--accent)">2. Jakie dane przetwarzamy</h3>
+      <ul style="margin:4px 0 10px 20px;padding:0">
+        <li><strong>Dane Konta:</strong> login (nazwa użytkownika), hasło (przechowywane w postaci zaszyfrowanej przez Supabase).</li>
+        <li><strong>Dane postępów nauki:</strong> punkty XP, poziom, odblokowane odznaki, czas ostatniej nauki, statystyki odpowiedzi, liczba sesji.</li>
+        <li><strong>Dane roli:</strong> przynależność do klasy (uczeń ↔ nauczyciel), plan konta (Free/Premium/Teacher).</li>
+        <li><strong>Preferencje:</strong> wybrany motyw interfejsu (przechowywany w localStorage przeglądarki).</li>
+        <li><strong>Dane techniczne:</strong> identyfikatory sesji (cookies Supabase Auth), pliki Service Worker dla działania PWA.</li>
+      </ul>
+      <p style="margin:4px 0 10px">Platforma <strong>nie prosi o e-mail, imię, nazwisko, adres, numer telefonu</strong> ani inne dane kontaktowe. Login może być wybrany dowolnie i nie musi identyfikować osoby.</p>
+
+      <h3 style="font-family:'Playfair Display',serif;font-size:.92rem;color:var(--accent)">3. Cele i podstawy prawne przetwarzania</h3>
+      <ul style="margin:4px 0 10px 20px;padding:0">
+        <li><strong>Prowadzenie Konta i świadczenie usługi nauki</strong> — art. 6 ust. 1 lit. b RODO (wykonanie umowy).</li>
+        <li><strong>Zarządzanie klasą przez Nauczyciela</strong> (Nauczyciel widzi login i postępy swoich uczniów) — art. 6 ust. 1 lit. b RODO.</li>
+        <li><strong>Ulepszanie Platformy, statystyki techniczne</strong> — art. 6 ust. 1 lit. f RODO (uzasadniony interes Administratora).</li>
+        <li><strong>Obsługa zgłoszeń naruszeń</strong> — art. 6 ust. 1 lit. c RODO (obowiązek prawny).</li>
+      </ul>
+
+      <h3 style="font-family:'Playfair Display',serif;font-size:.92rem;color:var(--accent)">4. Odbiorcy danych (procesorzy)</h3>
+      <p style="margin:4px 0 10px">Dane są przetwarzane przez:</p>
+      <ul style="margin:4px 0 10px 20px;padding:0">
+        <li><strong>Supabase Inc.</strong> (hosting bazy danych i uwierzytelniania). Supabase działa na infrastrukturze AWS. Szczegóły lokalizacji serwerów są dostępne u dostawcy: <a href="https://supabase.com/privacy" style="color:var(--accent)" target="_blank" rel="noopener">supabase.com/privacy</a>.</li>
+      </ul>
+      <p style="margin:4px 0 10px">Administrator nie sprzedaje ani nie udostępnia danych osobowych osobom trzecim w celach marketingowych.</p>
+
+      <h3 style="font-family:'Playfair Display',serif;font-size:.92rem;color:var(--accent)">5. Przekazywanie danych poza EOG</h3>
+      <p style="margin:4px 0 10px">Dane mogą być przechowywane na serwerach dostawcy infrastruktury (Supabase) również poza Europejskim Obszarem Gospodarczym (EOG). W takim wypadku przekazanie odbywa się na podstawie standardowych klauzul umownych zatwierdzonych przez Komisję Europejską.</p>
+
+      <h3 style="font-family:'Playfair Display',serif;font-size:.92rem;color:var(--accent)">6. Okres przechowywania</h3>
+      <ul style="margin:4px 0 10px 20px;padding:0">
+        <li>Dane Konta — przez cały okres istnienia Konta.</li>
+        <li>Po usunięciu Konta dane są usuwane niezwłocznie lub anonimizowane w terminie do 30 dni (czas wymagany na wykonanie kopii zapasowej).</li>
+        <li>Zgłoszenia naruszeń i ewentualna korespondencja reklamacyjna — do 3 lat od zakończenia sprawy (ze względu na możliwe roszczenia).</li>
+      </ul>
+
+      <h3 style="font-family:'Playfair Display',serif;font-size:.92rem;color:var(--accent)">7. Prawa Użytkownika</h3>
+      <p style="margin:4px 0 6px">Zgodnie z RODO, Użytkownikowi przysługują następujące prawa:</p>
+      <ul style="margin:4px 0 10px 20px;padding:0">
+        <li>prawo dostępu do swoich danych (art. 15),</li>
+        <li>prawo do sprostowania (art. 16),</li>
+        <li>prawo do usunięcia („prawo do bycia zapomnianym", art. 17) — realizowane również przez przycisk „Usuń konto" w aplikacji,</li>
+        <li>prawo do ograniczenia przetwarzania (art. 18),</li>
+        <li>prawo do przenoszenia danych (art. 20),</li>
+        <li>prawo sprzeciwu wobec przetwarzania opartego na uzasadnionym interesie (art. 21),</li>
+        <li>prawo wniesienia skargi do organu nadzorczego — w Polsce: Prezes Urzędu Ochrony Danych Osobowych (uodo.gov.pl).</li>
+      </ul>
+      <p style="margin:4px 0 10px">W celu realizacji powyższych praw prosimy o kontakt: <a href="mailto:sowie.fiszki@gmail.com" style="color:var(--accent)">sowie.fiszki@gmail.com</a>.</p>
+
+      <h3 style="font-family:'Playfair Display',serif;font-size:.92rem;color:var(--accent)">8. Osoby poniżej 16 lat</h3>
+      <p style="margin:4px 0 10px">Dane dzieci poniżej 16. roku życia są przetwarzane wyłącznie za zgodą rodzica lub opiekuna prawnego (art. 8 RODO). Akceptacja Regulaminu i Polityki prywatności przy rejestracji oznacza w przypadku osoby poniżej 16 lat — że zgoda rodzica została udzielona.</p>
+
+      <h3 style="font-family:'Playfair Display',serif;font-size:.92rem;color:var(--accent)">9. Pliki cookies i localStorage</h3>
+      <ul style="margin:4px 0 10px 20px;padding:0">
+        <li><strong>Cookies Supabase Auth</strong> — niezbędne do utrzymania sesji logowania (nie można się bez nich zalogować).</li>
+        <li><strong>localStorage</strong> — przechowuje: token sesji, wybrany motyw interfejsu (klucz <code>fiszki_theme</code>), tymczasowe preferencje nauki. Dane te są zapisywane wyłącznie lokalnie w przeglądarce Użytkownika.</li>
+        <li>Platforma <strong>nie używa plików cookies w celach analitycznych ani reklamowych</strong>.</li>
+      </ul>
+
+      <h3 style="font-family:'Playfair Display',serif;font-size:.92rem;color:var(--accent)">10. Bezpieczeństwo danych</h3>
+      <p style="margin:4px 0 10px">Hasła są przechowywane w formie zaszyfrowanego skrótu (Supabase Auth — bcrypt). Komunikacja między aplikacją a serwerem jest szyfrowana (HTTPS/TLS). Dostęp do danych w bazie jest ograniczony przez reguły Row Level Security (RLS) — użytkownicy widzą tylko własne dane; nauczyciele — dane swoich uczniów; administrator — wszystkie.</p>
+
+      <h3 style="font-family:'Playfair Display',serif;font-size:.92rem;color:var(--accent)">11. Zmiany Polityki</h3>
+      <p style="margin:4px 0 10px">Polityka prywatności może ulec zmianie. O zmianach Użytkownik zostanie poinformowany w Platformie co najmniej 14 dni przed ich wejściem w życie.</p>
+
+      <h3 style="font-family:'Playfair Display',serif;font-size:.92rem;color:var(--accent)">12. Kontakt</h3>
+      <p style="margin:4px 0 10px">W sprawach związanych z przetwarzaniem danych osobowych: <a href="mailto:sowie.fiszki@gmail.com" style="color:var(--accent)">sowie.fiszki@gmail.com</a>.</p>
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-top:14px">
+      <button class="btn-modal-save" onclick="closePrivacyModal()">Zamknij</button>
     </div>
   </div>
 </div>
@@ -10807,6 +10998,73 @@ if ('serviceWorker' in navigator) {
 
   window.openTermsModal = function(){ document.getElementById('termsModal').style.display='flex'; };
   window.closeTermsModal = function(){ document.getElementById('termsModal').style.display='none'; };
+  window.openPrivacyModal = function(){ document.getElementById('privacyModal').style.display='flex'; };
+  window.closePrivacyModal = function(){ document.getElementById('privacyModal').style.display='none'; };
+
+  // ── Moje konto ──
+  window.openAccountModal = function(){
+    if (typeof isGuest !== 'undefined' && isGuest) {
+      if (typeof toast === 'function') toast('🚶 Tryb gościa — zaloguj się, aby zarządzać kontem.', 3200);
+      return;
+    }
+    // Uzupełnij dane w modalu
+    const uname = (typeof currentUser !== 'undefined' && currentUser) ? currentUser : '—';
+    let planLabel = '—';
+    try {
+      const p = DB.getUserPlan();
+      const labels = { free: '🆓 Free', premium: '⭐ Premium', teacher: '👩‍🏫 Teacher' };
+      planLabel = labels[p] || p;
+      if (DB.isAdmin && DB.isAdmin(uname)) planLabel = '🛡️ Admin';
+    } catch(e) {}
+    document.getElementById('accountUsername').textContent = uname;
+    document.getElementById('accountPlan').textContent = planLabel;
+    document.getElementById('deleteExpectedName').textContent = uname;
+    // Resetuj UI usuwania
+    document.getElementById('deleteAccountConfirm').style.display = 'none';
+    document.getElementById('btnDeleteAccountInit').style.display = '';
+    document.getElementById('deleteConfirmInput').value = '';
+    document.getElementById('deleteAccountMsg').textContent = '';
+    document.getElementById('accountModal').style.display = 'flex';
+  };
+  window.closeAccountModal = function(){ document.getElementById('accountModal').style.display='none'; };
+
+  window.initDeleteAccount = function(){
+    document.getElementById('btnDeleteAccountInit').style.display = 'none';
+    document.getElementById('deleteAccountConfirm').style.display = 'block';
+    setTimeout(()=>document.getElementById('deleteConfirmInput').focus(), 50);
+  };
+  window.cancelDeleteAccount = function(){
+    document.getElementById('deleteAccountConfirm').style.display = 'none';
+    document.getElementById('btnDeleteAccountInit').style.display = '';
+  };
+
+  window.confirmDeleteAccount = async function(){
+    const expected = document.getElementById('deleteExpectedName').textContent.trim();
+    const typed = document.getElementById('deleteConfirmInput').value.trim();
+    const msgEl = document.getElementById('deleteAccountMsg');
+    const btn = document.getElementById('btnDeleteAccountConfirm');
+    if (typed !== expected) {
+      msgEl.textContent = '⚠️ Login nie zgadza się — wpisz dokładnie „' + expected + '".';
+      return;
+    }
+    btn.disabled = true;
+    btn.textContent = '⏳ Usuwanie…';
+    msgEl.style.color = 'var(--muted)';
+    msgEl.textContent = 'Usuwanie konta…';
+    try {
+      await DB.deleteOwnAccount();
+      msgEl.style.color = 'var(--success)';
+      msgEl.textContent = '✓ Konto usunięte. Do widzenia!';
+      // Przekieruj do strony logowania po krótkim opóźnieniu
+      setTimeout(()=>{ window.location.href = 'index.html'; }, 1200);
+    } catch(e) {
+      console.error('[deleteOwnAccount]', e);
+      msgEl.style.color = 'var(--danger)';
+      msgEl.textContent = '❌ Błąd: ' + e.message;
+      btn.disabled = false;
+      btn.textContent = '🗑️ Usuń bezpowrotnie';
+    }
+  };
 
   window.openReportModal = function(){
     // Automatyczny kontekst: aktywny podręcznik/unit (jeśli znany)
@@ -10846,6 +11104,7 @@ if ('serviceWorker' in navigator) {
 <footer style="text-align:center;padding:18px 12px 24px;font-size:.62rem;color:rgba(155,142,196,.5);font-weight:600;letter-spacing:.03em">
   © 2026 Daniel Ostrowski. Wszelkie prawa zastrzeżone. · Sowie Fiszki
   · <a href="#" onclick="event.preventDefault();openTermsModal()" style="color:inherit;text-decoration:underline;text-decoration-color:rgba(155,142,196,.3)">Regulamin</a>
+  · <a href="#" onclick="event.preventDefault();openPrivacyModal()" style="color:inherit;text-decoration:underline;text-decoration-color:rgba(155,142,196,.3)">Polityka prywatności</a>
 </footer>
 </body>
 </html>
