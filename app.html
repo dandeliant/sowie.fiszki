@@ -2932,16 +2932,19 @@ function refreshBooks() {
     reqBtn.style.display = (!isStaff && !isGuest) ? '' : 'none';
   }
   // Filtr uprawnień:
-  //  - admin / nauczyciel → widzi wszystko
-  //  - gość / uczeń       → domyślne (defaultAccess: true) + to, co przydzielił admin w user_books
-  const isElevated = isCurrentUserAdmin() || isCurrentUserTeacher();
-  let allowedBooks;
-  if (isElevated) {
-    allowedBooks = allBooks;
-  } else {
-    const assigned = new Set(Array.isArray(myBooks) ? myBooks : []);
-    allowedBooks = allBooks.filter(b => b.defaultAccess === true || assigned.has(b.id));
-  }
+  //  - admin                 → widzi wszystko (także adminOnly)
+  //  - nauczyciel            → widzi wszystko oprócz adminOnly (chyba że przydzielone)
+  //  - gość / uczeń          → domyślne (defaultAccess) + to, co przydzielił admin w user_books
+  //                            (z wyłączeniem adminOnly, chyba że wprost przydzielone)
+  const isAdmin = isCurrentUserAdmin();
+  const isTeacher = isCurrentUserTeacher();
+  const assigned = new Set(Array.isArray(myBooks) ? myBooks : []);
+  const allowedBooks = allBooks.filter(b => {
+    if (isAdmin) return true;
+    if (b.adminOnly) return assigned.has(b.id);
+    if (isTeacher) return true;
+    return b.defaultAccess === true || assigned.has(b.id);
+  });
   // Filtr kontekstu nawigacji
   const visibleBooks = allowedBooks
     .filter(b => {
