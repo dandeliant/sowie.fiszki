@@ -2632,6 +2632,27 @@ szkoła	school"></textarea>
   </div>
 </div>
 
+<!-- Modal: pokaż nowe hasło po resecie -->
+<div class="modal-overlay" id="newPasswordModal" style="display:none" onclick="if(event.target===this)closeNewPasswordModal()">
+  <div class="modal-box" style="max-width:400px">
+    <div style="font-family:'Playfair Display',serif;font-size:1.15rem;color:var(--accent);margin-bottom:4px">🔑 Nowe hasło</div>
+    <div style="font-size:.72rem;color:var(--muted);margin-bottom:12px;font-weight:600;line-height:1.45">
+      Nowe hasło dla <strong id="newPassUserLbl" style="color:var(--text)">—</strong>. Przekaż je uczniowi — <strong style="color:var(--danger)">nie będzie już nigdzie zapisane</strong>.
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
+      <input type="text" id="newPassValue" readonly style="flex:1;padding:10px 12px;border-radius:8px;border:1.5px solid var(--accent);background:var(--surface2);color:var(--accent);font-size:1.1rem;font-weight:900;font-family:monospace;outline:none;text-align:center;letter-spacing:.1em">
+      <button class="btn-sm accent" onclick="copyNewPassword()" style="padding:10px 14px">📋 Kopiuj</button>
+    </div>
+    <div id="newPassCopyMsg" style="font-size:.7rem;color:var(--success);font-weight:700;min-height:16px;margin-bottom:4px"></div>
+    <div style="font-size:.68rem;color:var(--muted);font-weight:600;padding:8px 10px;border:1px dashed var(--border);border-radius:8px;line-height:1.5">
+      ⚠️ Stare hasło ucznia przestało działać. Jeżeli zamkniesz to okno bez zapisania hasła, będziesz musiał wygenerować nowe jeszcze raz.
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-top:10px">
+      <button class="btn-modal-save" onclick="closeNewPasswordModal()">Zamknij</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: dodaj ucznia do klasy -->
 <div class="modal-overlay" id="addStudentModal" style="display:none" onclick="if(event.target===this)closeModal('addStudentModal')">
   <div class="modal-box">
@@ -10504,6 +10525,7 @@ function renderClassStudents(memberIds, allProfiles) {
           <div class="student-card-name">${esc(profile.username)}</div>
           <div style="display:flex;gap:5px">
             <button class="btn-sm accent" style="font-size:.65rem;padding:4px 9px" onclick="event.stopPropagation();openStudentProgress('${profile.id}','${esc(profile.username)}')">📊 Postęp</button>
+            <button class="btn-sm" style="font-size:.65rem;padding:4px 9px" title="Resetuj hasło" onclick="event.stopPropagation();resetStudentPassword('${profile.id}','${esc(profile.username)}')">🔑</button>
             <button class="btn-sm" style="font-size:.65rem;padding:4px 9px;color:var(--danger)" onclick="event.stopPropagation();removeStudentConfirm('${profile.id}','${esc(profile.username)}')">✕</button>
           </div>
         </div>
@@ -11935,6 +11957,42 @@ if ('serviceWorker' in navigator) {
       <script>window.onload=function(){window.print();};<\/script>
       </body></html>`);
     w.document.close();
+  };
+
+  // ═══════════════════════════════════════════════
+  //  RESET HASŁA UCZNIA
+  // ═══════════════════════════════════════════════
+  window.resetStudentPassword = async function(userId, username){
+    if (!userId) return;
+    if (!confirm('Zresetować hasło dla „' + username + '"?\n\nStare hasło natychmiast przestanie działać. Nowe hasło zobaczysz RAZ — zapisz je lub przekaż uczniowi od razu.')) return;
+    try {
+      const newPass = await DB.adminResetUserPassword(userId);
+      document.getElementById('newPassUserLbl').textContent = username;
+      document.getElementById('newPassValue').value = newPass;
+      document.getElementById('newPassCopyMsg').textContent = '';
+      document.getElementById('newPasswordModal').style.display = 'flex';
+    } catch(e) {
+      console.error('[resetStudentPassword]', e);
+      if (typeof toast === 'function') toast('❌ ' + e.message, 3800);
+    }
+  };
+  window.closeNewPasswordModal = function(){
+    document.getElementById('newPasswordModal').style.display = 'none';
+    document.getElementById('newPassValue').value = '';
+  };
+  window.copyNewPassword = async function(){
+    const v = document.getElementById('newPassValue').value;
+    const msg = document.getElementById('newPassCopyMsg');
+    try {
+      await navigator.clipboard.writeText(v);
+      msg.style.color = 'var(--success)';
+      msg.textContent = '✓ Skopiowano do schowka.';
+    } catch(e) {
+      const inp = document.getElementById('newPassValue');
+      inp.select(); inp.setSelectionRange(0, 99);
+      try { document.execCommand('copy'); msg.style.color='var(--success)'; msg.textContent='✓ Skopiowano.'; }
+      catch(_) { msg.style.color='var(--danger)'; msg.textContent='⚠️ Zaznacz i skopiuj ręcznie.'; }
+    }
   };
 
   window.downloadBulkCredentialsPdf = function(){

@@ -723,6 +723,24 @@ const DB = (() => {
   }
 
   // ═══════════════════════════════════════════════════════════════
+  //  RESET HASŁA UCZNIA — nie zapisujemy hasła, pokazujemy raz
+  // ═══════════════════════════════════════════════════════════════
+  //
+  // Generuje nowe losowe hasło, zmienia je w auth.users przez RPC,
+  // zwraca nowe hasło w jawnej postaci — UI pokaże je jednorazowo.
+  // Po tej operacji hasło nie jest już nigdzie w bazie dostępne.
+  async function adminResetUserPassword(userId) {
+    if (!_profile?.isAdmin && !_profile?.isTeacher) throw new Error('Brak uprawnień.');
+    const newPass = _randomPassword(8);
+    const { error } = await supabase.rpc('admin_reset_user_password', {
+      p_user_id: userId,
+      p_new_password: newPass
+    });
+    if (error) throw new Error(error.message);
+    return newPass;
+  }
+
+  // ═══════════════════════════════════════════════════════════════
   //  BULK STUDENT CREATION — masowe tworzenie kont uczniów
   // ═══════════════════════════════════════════════════════════════
 
@@ -1163,6 +1181,7 @@ const DB = (() => {
     countPendingBookAccessRequests,
     // bulk student creation
     bulkCreateStudentsForClass,
+    adminResetUserPassword,
     // teacher sets
     teacherLoadMySets,
     teacherGetSet,
