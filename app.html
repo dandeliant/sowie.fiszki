@@ -2783,8 +2783,19 @@ function refreshBooks() {
   }
   const myBooks = DB.getUserBooks(); // null=brak ograniczeń/admin, ['id1','id2']=dozwolone
   const allBooks = Object.values(BOOKS);
-  // Filtr uprawnień + filtr kontekstu nawigacji
-  const visibleBooks = (myBooks ? allBooks.filter(b => myBooks.includes(b.id)) : allBooks)
+  // Filtr uprawnień:
+  //  - admin / nauczyciel → widzi wszystko
+  //  - gość / uczeń       → domyślne (defaultAccess: true) + to, co przydzielił admin w user_books
+  const isElevated = isCurrentUserAdmin() || isCurrentUserTeacher();
+  let allowedBooks;
+  if (isElevated) {
+    allowedBooks = allBooks;
+  } else {
+    const assigned = new Set(Array.isArray(myBooks) ? myBooks : []);
+    allowedBooks = allBooks.filter(b => b.defaultAccess === true || assigned.has(b.id));
+  }
+  // Filtr kontekstu nawigacji
+  const visibleBooks = allowedBooks
     .filter(b => {
       if (_navLanguage && b.language !== _navLanguage) return false;
       if (_navLanguage === 'fr') return true; // francuski — bez dalszego filtra
@@ -3806,9 +3817,16 @@ function flipCard() {
 // ══════════════════════════════════════════════
 function showCardSentence() {
   if (curIdx === null) return;
-  const wordPl = activeWords[curIdx][0];
-  const wordTarget = activeWords[curIdx][1];
-  const s = DB.getSentence(currentBookId, wordPl);
+  const word = activeWords[curIdx];
+  const wordPl = word[0];
+  const wordTarget = word[1];
+  // Źródło zdań — priorytet: wbudowane w słowo (word[2], word[3]), fallback: tabela word_sentences
+  let s = null;
+  if (word[2] || word[3]) {
+    s = { sentence_pl: word[2] || '', sentence_target: word[3] || '' };
+  } else {
+    s = DB.getSentence(currentBookId, wordPl);
+  }
   const hasSentence = s && (s.sentence_pl || s.sentence_target);
   const adminUser = isCurrentUserAdmin();
 

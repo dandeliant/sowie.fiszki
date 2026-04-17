@@ -5369,7 +5369,226 @@ const BOOKS = {
       },
 
     },
-  },
+  }
+
+  // ─── PODRĘCZNIKI DOMYŚLNIE DOSTĘPNE (klasa1–klasa8, temat: Dom) ────
+  // Pole defaultAccess: true oznacza, że podręcznik jest widoczny dla
+  // każdego zalogowanego użytkownika bez specjalnego przydziału.
+  ,klasa1: {
+    id: 'klasa1',
+    language: 'en', schoolType: 'primary', grade: 1, defaultAccess: true,
+    name: 'Klasa 1',
+    shortName: 'Klasa 1',
+    icon: '🎒',
+    color: '#60b8ff',
+    description: 'Klasa 1 · Dom (poziom A1)',
+    units: {
+      unit1: {
+        name: 'Dom', icon: '🏠', color: '#60b8ff',
+        words: [
+          ['dom', 'house', 'To jest mój dom.', 'This is my house.'],
+          ['kuchnia', 'kitchen', 'Mama jest w kuchni.', 'Mum is in the kitchen.'],
+          ['pokój', 'room', 'Mam swój pokój.', 'I have my own room.'],
+          ['łóżko', 'bed', 'Moje łóżko jest miękkie.', 'My bed is soft.'],
+          ['okno', 'window', 'Spójrz na okno.', 'Look at the window.'],
+          ['drzwi', 'door', 'Zamknij drzwi, proszę.', 'Close the door, please.'],
+          ['stół', 'table', 'Książka jest na stole.', 'The book is on the table.'],
+          ['krzesło', 'chair', 'Usiądź na krześle.', 'Sit on the chair.'],
+          ['lampa', 'lamp', 'Włącz lampę.', 'Turn on the lamp.'],
+          ['podłoga', 'floor', 'Podłoga jest zimna.', 'The floor is cold.'],
+        ],
+      },
+    },
+  }
+
+  ,klasa2: {
+    id: 'klasa2',
+    language: 'en', schoolType: 'primary', grade: 2, defaultAccess: true,
+    name: 'Klasa 2',
+    shortName: 'Klasa 2',
+    icon: '📚',
+    color: '#55efc4',
+    description: 'Klasa 2 · Dom (poziom A1)',
+    units: {
+      unit1: {
+        name: 'Dom — jaki?', icon: '🏠', color: '#55efc4',
+        words: [
+          ['duży', 'big', 'Mamy duży dom.', 'We have a big house.'],
+          ['mały', 'small', 'Jej pokój jest mały.', 'Her room is small.'],
+          ['nowy', 'new', 'To nasza nowa kanapa.', 'This is our new sofa.'],
+          ['stary', 'old', 'Ten stół jest bardzo stary.', 'This table is very old.'],
+          ['czysty', 'clean', 'Mój pokój jest dziś czysty.', 'My room is clean today.'],
+          ['brudny', 'dirty', 'Podłoga jest brudna.', 'The floor is dirty.'],
+          ['ciepły', 'warm', 'W kuchni jest ciepło.', 'The kitchen is warm.'],
+          ['zimny', 'cold', 'W tym pokoju jest zimno zimą.', 'This room is cold in winter.'],
+          ['jasny', 'bright', 'Salon jest jasny.', 'The living room is bright.'],
+          ['ciemny', 'dark', 'W łazience jest ciemno.', 'The bathroom is dark.'],
+        ],
+      },
+    },
+  }
+
+  ,klasa3: {
+    id: 'klasa3',
+    language: 'en', schoolType: 'primary', grade: 3, defaultAccess: true,
+    name: 'Klasa 3',
+    shortName: 'Klasa 3',
+    icon: '⭐',
+    color: '#ffd166',
+    description: 'Klasa 3 · Dom (poziom A1+)',
+    units: {
+      unit1: {
+        name: 'Dom — sprzęty', icon: '🏠', color: '#ffd166',
+        words: [
+          ['lodówka', 'fridge', 'W lodówce jest mleko.', 'There is milk in the fridge.'],
+          ['telewizor', 'TV', 'Telewizor jest w salonie.', 'The TV is in the living room.'],
+          ['kanapa', 'sofa', 'Usiądź na kanapie.', 'Sit on the sofa.'],
+          ['dywan', 'carpet', 'Dywan jest miękki.', 'The carpet is soft.'],
+          ['szafa', 'wardrobe', 'Moje ubrania są w szafie.', 'My clothes are in the wardrobe.'],
+          ['kuchenka', 'cooker', 'Kuchenka jest gorąca.', 'The cooker is hot.'],
+          ['zmywarka', 'dishwasher', 'Włóż talerze do zmywarki.', 'Put the plates in the dishwasher.'],
+          ['pralka', 'washing machine', 'Pralka jest nowa.', 'The washing machine is new.'],
+          ['mikrofalówka', 'microwave', 'Podgrzej zupę w mikrofalówce.', 'Heat your soup in the microwave.'],
+          ['zlew', 'sink', 'Umyj kubki w zlewie.', 'Wash the cups in the sink.'],
+        ],
+      },
+    },
+  }
+
+  ,klasa4: {
+    id: 'klasa4',
+    language: 'en', schoolType: 'primary', grade: 4, defaultAccess: true,
+    name: 'Klasa 4',
+    shortName: 'Klasa 4',
+    icon: '🎨',
+    color: '#ff6b6b',
+    description: 'Klasa 4 · Dom (poziom A2)',
+    units: {
+      unit1: {
+        name: 'Dom — czynności', icon: '🏠', color: '#ff6b6b',
+        words: [
+          ['sprzątać', 'to clean', 'Sprzątam swój pokój co sobotę.', 'I clean my room every Saturday.'],
+          ['gotować', 'to cook', 'Mama gotuje obiad o szóstej.', 'Mum cooks dinner at six.'],
+          ['odkurzać', 'to vacuum', 'Odkurza dywan dwa razy w tygodniu.', 'He vacuums the carpet twice a week.'],
+          ['zmywać', 'to wash up', 'Proszę pozmywać po obiedzie.', 'Please wash up after dinner.'],
+          ['ścielić łóżko', 'to make the bed', 'Pościel łóżko przed szkołą.', 'Make your bed before school.'],
+          ['podlewać kwiaty', 'to water the plants', 'Podlej kwiaty, wyglądają na suche.', 'Water the plants, they look dry.'],
+          ['wyjść z domu', 'to leave the house', 'Wychodzimy z domu o 7:30.', 'We leave the house at 7:30.'],
+          ['zamykać na klucz', 'to lock', 'Zamykaj drzwi na klucz, gdy wychodzisz.', 'Lock the door when you leave.'],
+          ['otwierać', 'to open', 'Czy możesz otworzyć okno?', 'Can you open the window?'],
+          ['wietrzyć', 'to air', 'Wietrz pokoje każdego ranka.', 'Air the rooms every morning.'],
+        ],
+      },
+    },
+  }
+
+  ,klasa5: {
+    id: 'klasa5',
+    language: 'en', schoolType: 'primary', grade: 5, defaultAccess: true,
+    name: 'Klasa 5',
+    shortName: 'Klasa 5',
+    icon: '🏆',
+    color: '#fd79a8',
+    description: 'Klasa 5 · Dom (poziom A2)',
+    units: {
+      unit1: {
+        name: 'Dom — okolica', icon: '🏠', color: '#fd79a8',
+        words: [
+          ['mieszkanie', 'flat', 'Mieszkamy w małym mieszkaniu.', 'We live in a small flat.'],
+          ['osiedle', 'housing estate', 'Nasze osiedle jest bardzo ciche.', 'Our estate is very quiet.'],
+          ['sąsiad', 'neighbour', 'Nasz sąsiad ma dużego psa.', 'Our neighbour has a big dog.'],
+          ['ogród', 'garden', 'W ogrodzie są kwiaty.', 'There are flowers in the garden.'],
+          ['garaż', 'garage', 'Tata trzyma samochód w garażu.', 'Dad keeps the car in the garage.'],
+          ['balkon', 'balcony', 'Latem jemy śniadanie na balkonie.', 'We have breakfast on the balcony in summer.'],
+          ['piętro', 'floor', 'Nasze mieszkanie jest na trzecim piętrze.', 'Our flat is on the third floor.'],
+          ['parter', 'ground floor', 'Sklep jest na parterze.', 'The shop is on the ground floor.'],
+          ['winda', 'lift', 'Wjedź windą na piąte piętro.', 'Take the lift to the fifth floor.'],
+          ['schody', 'stairs', 'Schody są bardzo strome.', 'The stairs are very steep.'],
+        ],
+      },
+    },
+  }
+
+  ,klasa6: {
+    id: 'klasa6',
+    language: 'en', schoolType: 'primary', grade: 6, defaultAccess: true,
+    name: 'Klasa 6',
+    shortName: 'Klasa 6',
+    icon: '🌟',
+    color: '#a29bfe',
+    description: 'Klasa 6 · Dom (poziom A2+)',
+    units: {
+      unit1: {
+        name: 'Dom — opisy', icon: '🏠', color: '#a29bfe',
+        words: [
+          ['przestronny', 'spacious', 'Nowy salon jest bardzo przestronny.', 'The new living room is very spacious.'],
+          ['przytulny', 'cosy', 'Uwielbiam naszą przytulną kuchnię.', 'I love our cosy kitchen.'],
+          ['zagracony', 'cluttered', 'Jego biurko jest zawsze zagracone.', 'His desk is always cluttered.'],
+          ['umeblowany', 'furnished', 'Mieszkanie jest pięknie umeblowane.', 'The flat is beautifully furnished.'],
+          ['odnowiony', 'renovated', 'Nasza łazienka została niedawno odnowiona.', 'Our bathroom has just been renovated.'],
+          ['dobrze oświetlony', 'well-lit', 'Gabinet jest dobrze oświetlony.', 'The study is well-lit.'],
+          ['niewielki', 'compact', 'To niewielka, ale nowoczesna kuchnia.', "It's a compact but modern kitchen."],
+          ['luksusowy', 'luxurious', 'Mieszkają w luksusowej willi.', 'They live in a luxurious villa.'],
+          ['skromny', 'modest', 'Ich dom jest skromny, ale wygodny.', 'Their home is modest but comfortable.'],
+          ['hałaśliwy', 'noisy', 'Ulica na zewnątrz jest zbyt hałaśliwa.', 'The street outside is too noisy.'],
+        ],
+      },
+    },
+  }
+
+  ,klasa7: {
+    id: 'klasa7',
+    language: 'en', schoolType: 'primary', grade: 7, defaultAccess: true,
+    name: 'Klasa 7',
+    shortName: 'Klasa 7',
+    icon: '🎓',
+    color: '#74b9ff',
+    description: 'Klasa 7 · Dom (poziom B1−)',
+    units: {
+      unit1: {
+        name: 'Dom — architektura', icon: '🏠', color: '#74b9ff',
+        words: [
+          ['fasada', 'facade', 'Fasada tego domu wygląda klasycznie.', 'The facade of this house looks classical.'],
+          ['strych', 'attic', 'Trzymamy stare zdjęcia na strychu.', 'We keep old photos in the attic.'],
+          ['piwnica', 'cellar', 'Tata ma warsztat w piwnicy.', 'Dad has a workshop in the cellar.'],
+          ['klatka schodowa', 'staircase', 'Spotkajmy się na klatce schodowej.', 'Meet me in the staircase.'],
+          ['poddasze', 'loft', 'Mój kuzyn mieszka na poddaszu.', 'My cousin lives in a loft apartment.'],
+          ['taras', 'terrace', 'Budujemy nowy taras.', 'We are building a new terrace.'],
+          ['podjazd', 'driveway', 'Zaparkuj na podjeździe, proszę.', 'Park on the driveway, please.'],
+          ['płot', 'fence', 'Wczoraj pomalowali płot.', 'They painted the fence yesterday.'],
+          ['dachówka', 'roof tile', 'Dachówka spadła podczas burzy.', 'A roof tile fell during the storm.'],
+          ['ogrzewanie', 'heating', 'Ogrzewanie znowu się zepsuło.', 'The heating is broken again.'],
+        ],
+      },
+    },
+  }
+
+  ,klasa8: {
+    id: 'klasa8',
+    language: 'en', schoolType: 'primary', grade: 8, defaultAccess: true,
+    name: 'Klasa 8',
+    shortName: 'Klasa 8',
+    icon: '🏅',
+    color: '#e17055',
+    description: 'Klasa 8 · Dom (poziom B1)',
+    units: {
+      unit1: {
+        name: 'Dom — nieruchomości', icon: '🏠', color: '#e17055',
+        words: [
+          ['nieruchomość', 'property', 'Inwestują w nieruchomości.', 'They invest in property.'],
+          ['hipoteka', 'mortgage', 'Spłacamy hipotekę.', "We're paying off a mortgage."],
+          ['wynajem', 'rent', 'Wynajem w tym mieście jest bardzo wysoki.', 'The rent in this city is very high.'],
+          ['umeblowany', 'furnished', 'Szukamy umeblowanego mieszkania.', "We're looking for a furnished flat."],
+          ['lokator', 'tenant', 'Nowy lokator wprowadza się jutro.', 'The new tenant moves in tomorrow.'],
+          ['czynsz', 'rent (monthly)', 'Miesięczny czynsz obejmuje media.', 'The monthly rent includes utilities.'],
+          ['kaucja', 'deposit', 'Właściciel zażądał dwumiesięcznej kaucji.', 'The landlord asked for a two-month deposit.'],
+          ['umowa najmu', 'tenancy agreement', 'Podpisz umowę najmu przed wprowadzeniem.', 'Sign the tenancy agreement before moving in.'],
+          ['eksmisja', 'eviction', 'Sąd wydał nakaz eksmisji.', 'The court issued an eviction notice.'],
+          ['pośrednik nieruchomości', 'estate agent', 'Znaleźliśmy to mieszkanie przez pośrednika.', 'We found this flat through an estate agent.'],
+        ],
+      },
+    },
+  }
 
 };
 // ─── HELPERS ────────────────────────────────────────────────
