@@ -697,10 +697,44 @@ const DB = (() => {
     return data || [];
   }
 
+  // Akceptacja prośby o dostęp. Wykonuje się bezpośrednio z klienta
+  // (zamiast RPC), żeby uniknąć problemów z wdrożeniem migracji SQL —
+  // używamy polityk RLS „admin UPDATE" na book_access_requests i
+  // admin INSERT na user_books. Weryfikujemy, że UPDATE faktycznie
+  // zmienił wiersz (dzięki `.select()`), żeby ujawnić ciche błędy.
   async function approveBookAccessRequest(requestId) {
     if (!_profile?.isAdmin) throw new Error('Tylko administrator może rozpatrywać prośby.');
-    const { error } = await supabase.rpc('approve_book_access_request', { p_request_id: requestId });
-    if (error) throw new Error(error.message);
+    if (!requestId) throw new Error('Brak ID prośby.');
+
+    // 1) Pobierz szczegóły prośby
+    const { data: req, error: qErr } = await supabase
+      .from('book_access_requests')
+      .select('id, user_id, book_id, status')
+      .eq('id', requestId)
+      .maybeSingle();
+    if (qErr) throw new Error('Nie udało się wczytać prośby: ' + qErr.message);
+    if (!req) throw new Error('Prośba nie istnieje.');
+    if (req.status !== 'pending') throw new Error('Prośba została już rozpatrzona (status: ' + req.status + ').');
+
+    // 2) Nadaj dostęp do podręcznika. Jeśli już istnieje — ignoruj duplikat.
+    const { error: ubErr } = await supabase
+      .from('user_books')
+      .insert({ user_id: req.user_id, book_id: req.book_id });
+    if (ubErr && !/duplicate|unique|already/i.test(ubErr.message)) {
+      throw new Error('Nie udało się nadać dostępu do podręcznika: ' + ubErr.message);
+    }
+
+    // 3) Zmień status prośby. Weryfikujemy, że UPDATE dotknął wiersza.
+    const { data: updated, error: upErr } = await supabase
+      .from('book_access_requests')
+      .update({ status: 'approved', reviewed_by: _userId, reviewed_at: new Date().toISOString() })
+      .eq('id', requestId)
+      .select('id, status');
+    if (upErr) throw new Error('Nie udało się zaktualizować statusu: ' + upErr.message);
+    if (!updated || updated.length === 0) {
+      throw new Error('UPDATE nie zmienił żadnego wiersza — sprawdź polityki RLS (polityka „bar: admin UPDATE").');
+    }
+    return updated[0];
   }
 
   async function rejectBookAccessRequest(requestId) {
