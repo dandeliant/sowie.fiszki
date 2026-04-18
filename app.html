@@ -992,7 +992,7 @@ body.guest-mode .progress-wrap{opacity:.4;}
         <div style="font-size:.78rem;font-weight:800;color:var(--text)">Raporty</div>
         <div style="font-size:.6rem;color:var(--muted);font-weight:600;margin-top:2px">Postępy uczniów</div>
       </div>
-      <div onclick="showScreen('sBooks')" style="background:var(--surface);border:1.5px solid var(--border);border-radius:14px;padding:14px 10px;text-align:center;cursor:pointer;transition:all .2s" onmouseover="this.style.borderColor='var(--pink)'" onmouseout="this.style.borderColor='var(--border)'">
+      <div onclick="openWorksheetModal()" style="background:var(--surface);border:1.5px solid var(--border);border-radius:14px;padding:14px 10px;text-align:center;cursor:pointer;transition:all .2s" onmouseover="this.style.borderColor='var(--pink)'" onmouseout="this.style.borderColor='var(--border)'">
         <div style="font-size:1.6rem;margin-bottom:4px">🖨️</div>
         <div style="font-size:.78rem;font-weight:800;color:var(--text)">Karty pracy</div>
         <div style="font-size:.6rem;color:var(--muted);font-weight:600;margin-top:2px">Wybierz unit → drukuj</div>
@@ -2628,6 +2628,36 @@ szkoła	school"></textarea>
     <div class="modal-btns">
       <button class="btn-modal-cancel" onclick="closeModal('classModal')">Anuluj</button>
       <button class="btn-modal-save" id="btnClassSave" onclick="submitClass()">💾 Zapisz</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Karty pracy -->
+<div class="modal-overlay" id="worksheetModal" style="display:none" onclick="if(event.target===this)closeWorksheetModal()">
+  <div class="modal-box" style="max-width:460px">
+    <div style="font-family:'Playfair Display',serif;font-size:1.15rem;color:var(--accent);margin-bottom:4px">🖨️ Karty pracy</div>
+    <div style="font-size:.72rem;color:var(--muted);margin-bottom:12px;font-weight:600;line-height:1.45">
+      Wybierz podręcznik i unit, a następnie wariant karty pracy do wydruku.
+    </div>
+
+    <label style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px">Podręcznik</label>
+    <select id="wsBook" onchange="wsUpdateUnits()" style="width:100%;padding:9px 11px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.85rem;font-weight:600;outline:none;margin-bottom:10px;font-family:inherit"></select>
+
+    <label style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px">Unit</label>
+    <select id="wsUnit" style="width:100%;padding:9px 11px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.85rem;font-weight:600;outline:none;margin-bottom:10px;font-family:inherit"></select>
+
+    <label style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px">Wariant karty pracy</label>
+    <select id="wsVariant" style="width:100%;padding:9px 11px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.85rem;font-weight:600;outline:none;margin-bottom:10px;font-family:inherit">
+      <option value="full">📋 Z odpowiedziami (do nauki)</option>
+      <option value="blank_en">✏️ Pusta — wpisz angielski (uczeń widzi PL)</option>
+      <option value="blank_pl">✏️ Pusta — wpisz polski (uczeń widzi EN)</option>
+      <option value="mixed">🎲 Pomieszana (losowo PL lub EN do uzupełnienia)</option>
+    </select>
+
+    <div id="wsMsg" style="font-size:.72rem;color:var(--muted);margin-bottom:6px;min-height:16px;font-weight:600"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn-modal-cancel" onclick="closeWorksheetModal()">Anuluj</button>
+      <button class="btn-modal-save" id="btnGenWs" onclick="generateWorksheet()">🖨️ Otwórz do druku</button>
     </div>
   </div>
 </div>
@@ -11980,6 +12010,170 @@ if ('serviceWorker' in navigator) {
       <script>window.onload=function(){window.print();};<\/script>
       </body></html>`);
     w.document.close();
+  };
+
+  // ═══════════════════════════════════════════════
+  //  KARTY PRACY — druk listy słówek wybranego unitu
+  // ═══════════════════════════════════════════════
+  function wsAvailableBooks(){
+    const isAdmin = isCurrentUserAdmin();
+    const isTeacher = isCurrentUserTeacher();
+    if (!isAdmin && !isTeacher) return [];
+    // Nauczyciel widzi wszystko oprócz adminOnly; admin widzi wszystko
+    return Object.values(BOOKS).filter(b => isAdmin || !b.adminOnly);
+  }
+
+  window.openWorksheetModal = function(){
+    if (!isCurrentUserAdmin() && !isCurrentUserTeacher()) {
+      if (typeof toast === 'function') toast('Dostępne tylko dla nauczyciela i administratora.', 2600);
+      return;
+    }
+    const bookSel = document.getElementById('wsBook');
+    bookSel.innerHTML = '';
+    const books = wsAvailableBooks().sort((a,b) => a.name.localeCompare(b.name, 'pl'));
+    if (!books.length) {
+      bookSel.innerHTML = '<option value="">— brak dostępnych podręczników —</option>';
+    } else {
+      books.forEach(b => {
+        const opt = document.createElement('option');
+        opt.value = b.id;
+        opt.textContent = (b.icon ? b.icon + ' ' : '') + b.name;
+        bookSel.appendChild(opt);
+      });
+    }
+    document.getElementById('wsMsg').textContent = '';
+    wsUpdateUnits();
+    document.getElementById('worksheetModal').style.display = 'flex';
+  };
+
+  window.closeWorksheetModal = function(){
+    document.getElementById('worksheetModal').style.display = 'none';
+  };
+
+  window.wsUpdateUnits = function(){
+    const bookId = document.getElementById('wsBook').value;
+    const unitSel = document.getElementById('wsUnit');
+    unitSel.innerHTML = '';
+    const book = BOOKS[bookId];
+    if (!book || !book.units) {
+      unitSel.innerHTML = '<option value="">— brak unitów —</option>';
+      return;
+    }
+    // Dodaj opcję "Wszystkie słowa z podręcznika"
+    const optAll = document.createElement('option');
+    optAll.value = '__all__';
+    optAll.textContent = '🌍 Wszystkie słowa z podręcznika';
+    unitSel.appendChild(optAll);
+    Object.entries(book.units).forEach(([key, u]) => {
+      const opt = document.createElement('option');
+      opt.value = key;
+      opt.textContent = (u.icon ? u.icon + ' ' : '') + (u.name || key) + ' (' + (u.words ? u.words.length : 0) + ' słów)';
+      unitSel.appendChild(opt);
+    });
+  };
+
+  function escHtmlWs(s){ return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+  window.generateWorksheet = function(){
+    const bookId = document.getElementById('wsBook').value;
+    const unitKey = document.getElementById('wsUnit').value;
+    const variant = document.getElementById('wsVariant').value;
+    const msg = document.getElementById('wsMsg');
+    if (!bookId) { msg.style.color='var(--danger)'; msg.textContent='⚠️ Wybierz podręcznik.'; return; }
+    const book = BOOKS[bookId];
+    if (!book) { msg.style.color='var(--danger)'; msg.textContent='❌ Nie znaleziono podręcznika.'; return; }
+
+    // Zbierz słowa
+    let words = [];
+    let unitLabel = '';
+    if (unitKey === '__all__' || !unitKey) {
+      Object.values(book.units).forEach(u => { if (Array.isArray(u.words)) words = words.concat(u.words); });
+      unitLabel = 'Wszystkie słowa';
+    } else {
+      const u = book.units[unitKey];
+      if (!u) { msg.style.color='var(--danger)'; msg.textContent='❌ Nie znaleziono unitu.'; return; }
+      words = Array.isArray(u.words) ? u.words.slice() : [];
+      unitLabel = (u.icon ? u.icon + ' ' : '') + (u.name || unitKey);
+    }
+
+    if (!words.length) { msg.style.color='var(--danger)'; msg.textContent='⚠️ Unit nie zawiera słów.'; return; }
+
+    // Wygeneruj wiersze wg wariantu
+    const rows = words.map((w, i) => {
+      const pl = w[0] || '';
+      const en = w[1] || '';
+      let col1 = '', col2 = '';
+      if (variant === 'full') {
+        col1 = escHtmlWs(pl);
+        col2 = escHtmlWs(en);
+      } else if (variant === 'blank_en') {
+        col1 = escHtmlWs(pl);
+        col2 = '';
+      } else if (variant === 'blank_pl') {
+        col1 = '';
+        col2 = escHtmlWs(en);
+      } else { // mixed — losowo: połowa PL, połowa EN
+        if (Math.random() < 0.5) { col1 = escHtmlWs(pl); col2 = ''; }
+        else { col1 = ''; col2 = escHtmlWs(en); }
+      }
+      return `<tr><td class="nr">${i+1}</td><td class="pl">${col1}</td><td class="en">${col2}</td></tr>`;
+    }).join('');
+
+    const variantLabel = {
+      full: 'Z odpowiedziami',
+      blank_en: 'Wpisz tłumaczenie angielskie',
+      blank_pl: 'Wpisz tłumaczenie polskie',
+      mixed: 'Pomieszana — uzupełnij brakujące'
+    }[variant] || '';
+
+    const title = escHtmlWs((book.icon ? book.icon + ' ' : '') + book.name + ' — ' + unitLabel);
+    const html = `<!DOCTYPE html><html lang="pl"><head><meta charset="UTF-8"><title>Karta pracy — ${title}</title>
+<style>
+  body{font-family:Arial,sans-serif;padding:24px;color:#111;max-width:720px;margin:0 auto}
+  h1{font-size:1.2rem;margin:0 0 4px}
+  h2{font-size:.85rem;color:#666;margin:0 0 16px;font-weight:normal}
+  .meta{display:flex;gap:14px;font-size:.75rem;color:#555;margin-bottom:14px;flex-wrap:wrap}
+  .meta span{background:#f5f5f5;border:1px solid #e0e0e0;border-radius:100px;padding:3px 10px}
+  .fields{display:flex;gap:10px;margin-bottom:18px;font-size:.8rem}
+  .field{flex:1;border-bottom:1px solid #bbb;padding-bottom:2px}
+  .field label{color:#888;font-size:.7rem;display:block;margin-bottom:4px}
+  table{width:100%;border-collapse:collapse;font-size:.9rem}
+  th,td{border:1px solid #aaa;padding:9px 12px;text-align:left;vertical-align:middle}
+  th{background:#eee;font-size:.75rem;text-transform:uppercase;letter-spacing:.04em;color:#444}
+  td.nr{width:38px;text-align:center;color:#888;font-weight:600}
+  td.pl,td.en{min-height:24px;height:30px}
+  tr:nth-child(even){background:#fafafa}
+  .footer{margin-top:18px;padding-top:10px;border-top:1px solid #ddd;font-size:.7rem;color:#888;text-align:center}
+  @media print{body{padding:12px} .noprint{display:none}}
+  .noprint{position:fixed;top:14px;right:14px;display:flex;gap:8px}
+  .noprint button{background:#333;color:#fff;border:none;padding:8px 14px;border-radius:100px;font-size:.82rem;font-weight:700;cursor:pointer}
+  .noprint button.alt{background:#888}
+</style></head><body>
+<div class="noprint">
+  <button onclick="window.print()">🖨️ Drukuj</button>
+  <button class="alt" onclick="window.close()">Zamknij</button>
+</div>
+<h1>${title}</h1>
+<h2>Karta pracy · ${escHtmlWs(variantLabel)} · ${new Date().toLocaleDateString('pl-PL')}</h2>
+<div class="meta"><span>Słów: ${words.length}</span><span>Podręcznik: ${escHtmlWs(book.name)}</span></div>
+<div class="fields">
+  <div class="field"><label>Imię i nazwisko</label>&nbsp;</div>
+  <div class="field"><label>Klasa</label>&nbsp;</div>
+  <div class="field"><label>Data</label>&nbsp;</div>
+</div>
+<table>
+  <thead><tr><th>#</th><th>Polski</th><th>Angielski</th></tr></thead>
+  <tbody>${rows}</tbody>
+</table>
+<div class="footer">Sowie Fiszki — karta pracy</div>
+<script>window.onload=function(){setTimeout(function(){window.print();},200);};<\/script>
+</body></html>`;
+
+    const w = window.open('', '_blank');
+    if (!w) { msg.style.color='var(--danger)'; msg.textContent='⚠️ Popup zablokowany przez przeglądarkę — zezwól na otwieranie okien.'; return; }
+    w.document.write(html);
+    w.document.close();
+    closeWorksheetModal();
   };
 
   // ═══════════════════════════════════════════════
