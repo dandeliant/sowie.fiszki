@@ -2903,7 +2903,23 @@ function refreshBooks() {
   g.innerHTML = '';
   if (emptyEl) emptyEl.style.display = 'none';
   // Fallback: brak kontekstu nawigacji → wracamy do wyboru języka
-  if (!_navLanguage) { showScreen('sLang'); return; }
+  // (tylko dla zwykłych użytkowników — admin/nauczyciel zostaje na sBooks,
+  //  żeby od razu widział swój panel)
+  if (!_navLanguage) {
+    const isStaff = isCurrentUserAdmin() || isCurrentUserTeacher();
+    if (!isStaff) { showScreen('sLang'); return; }
+    // Admin/nauczyciel: pusty grid + ukryj przycisk "Wróć" (nie ma dokąd wrócić)
+    const backBtn = document.getElementById('booksBackBtn');
+    if (backBtn) backBtn.style.display = 'none';
+    const titleEl = document.getElementById('booksScreenTitle');
+    const subEl = document.getElementById('booksScreenSub');
+    if (titleEl) titleEl.textContent = 'Panel nauczyciela 👩‍🏫';
+    if (subEl) subEl.textContent = 'Wybierz zadanie z kafelków powyżej lub użyj nawigacji poniżej';
+    return;
+  }
+  // Przywróć przycisk Wróć gdy mamy kontekst
+  const backBtn = document.getElementById('booksBackBtn');
+  if (backBtn) backBtn.style.display = '';
   // Ustaw dynamiczny tytuł wg poziomu nawigacji
   if (titleEl && subEl) {
     if (_navLanguage === 'fr') {
@@ -10901,6 +10917,10 @@ if ('serviceWorker' in navigator) {
   refreshBooks();
   initGuestMode();
   initAdminUI();
+  // Admin i nauczyciel od razu lądują na ekranie z panelem zarządzania
+  if (!isGuest && (isCurrentUserAdmin() || isCurrentUserTeacher())) {
+    showScreen('sBooks');
+  }
   setTimeout(() => {
     const e = document.getElementById('owlMsg');
     if (e) { e.textContent = 'Cześć! Wybierz podręcznik! 📖'; e.classList.add('show'); setTimeout(() => e.classList.remove('show'), 4200); }
