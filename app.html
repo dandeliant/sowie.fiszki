@@ -896,6 +896,12 @@ body.guest-mode .progress-wrap{opacity:.4;}
 <!-- ══ SCREEN: BOOK SELECT ══ -->
 <!-- ══ SCREEN: LANGUAGE PICK ══ -->
 <div class="screen active" id="sLang">
+  <!-- Sekcja "Twoje podręczniki" — widoczna dla ucznia/nauczyciela, gdy admin przydzielił jakieś książki -->
+  <div id="myAssignedBooks" style="display:none;width:100%">
+    <div class="unit-title">Twoje podręczniki 📚</div>
+    <div class="unit-subtitle">Kliknij, aby rozpocząć naukę</div>
+    <div class="book-grid" id="myAssignedBooksGrid" style="margin-bottom:18px"></div>
+  </div>
   <div class="unit-title">Wybierz język 🌍</div>
   <div class="unit-subtitle">Jakiego języka chcesz się uczyć?</div>
   <div class="book-grid">
@@ -2851,6 +2857,7 @@ function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
   if (id === 'sBooks') { refreshBooks(); if (isGuest) document.getElementById('guestBanner').style.display = 'flex'; if (isCurrentUserAdmin() || isCurrentUserTeacher()) renderAdminPanel(); }
+  if (id === 'sLang') renderAssignedBooksOnLang();
   if (id === 'sUnits') refreshGrid();
   if (id === 'sStudy') updateModeLocks();
   if (id === 'sStats') { if (isGuest) { toast('📊 Statystyki dostępne po zalogowaniu! 🦉'); return; } renderStats(); }
@@ -2919,6 +2926,40 @@ function navBackFromBooks() {
   } else {
     showScreen('sClass');
   }
+}
+
+// Sekcja "Twoje podręczniki" nad wyborem języka — dla ucznia/nauczyciela
+// pokazuje książki, które admin przydzielił w user_books. Admin ma i tak
+// wszystko, więc u niego sekcja jest ukryta.
+function renderAssignedBooksOnLang() {
+  const section = document.getElementById('myAssignedBooks');
+  const grid = document.getElementById('myAssignedBooksGrid');
+  if (!section || !grid) return;
+  if (isGuest || isCurrentUserAdmin()) { section.style.display = 'none'; return; }
+  const myBookIds = DB.getUserBooks();
+  if (!Array.isArray(myBookIds) || !myBookIds.length) { section.style.display = 'none'; return; }
+  const myBooks = myBookIds.map(id => BOOKS[id]).filter(Boolean);
+  if (!myBooks.length) { section.style.display = 'none'; return; }
+  grid.innerHTML = '';
+  myBooks.sort((a, b) => a.name.localeCompare(b.name, 'pl')).forEach(book => {
+    const prog = DB.getBookProgress ? DB.getBookProgress(currentUser, book) : {};
+    const unitKeys = Object.keys(book.units || {});
+    const totalWords = unitKeys.reduce((s, k) => s + (book.units[k].words ? book.units[k].words.length : 0), 0);
+    const knownWords = unitKeys.reduce((s, k) => s + (prog && prog[k] ? prog[k].known : 0), 0);
+    const pct = totalWords > 0 ? Math.round((knownWords / totalWords) * 100) : 0;
+    const d = document.createElement('div');
+    d.className = 'book-card';
+    d.style.borderColor = pct > 0 ? book.color + '55' : '';
+    d.innerHTML = `
+      <div class="book-icon">${book.icon || '📖'}</div>
+      <div class="book-name">${book.name}</div>
+      <div class="book-desc">${book.description || ''}</div>
+      <div class="book-prog" style="color:${book.color}">${pct > 0 ? pct + '% opanowane' : 'Zacznij naukę!'}</div>
+      <div class="book-bar-bg"><div class="book-bar-fill" style="width:${pct}%;background:${book.color}"></div></div>`;
+    d.addEventListener('click', () => selectBook(book.id));
+    grid.appendChild(d);
+  });
+  section.style.display = 'block';
 }
 
 // ══════════════════════════════════════════════
@@ -2990,16 +3031,15 @@ function refreshBooks() {
   }
   // Filtr uprawnień:
   //  - admin                 → widzi wszystko (także adminOnly)
-  //  - nauczyciel            → widzi wszystko oprócz adminOnly (chyba że przydzielone)
-  //  - gość / uczeń          → domyślne (defaultAccess) + to, co przydzielił admin w user_books
-  //                            (z wyłączeniem adminOnly, chyba że wprost przydzielone)
+  //  - nauczyciel / uczeń    → defaultAccess + to, co przydzielił admin w user_books
+  //                            (adminOnly tylko gdy wprost przydzielone)
+  //  Admin może nadawać nauczycielowi dostęp do wybranych podręczników
+  //  w tym samym panelu „Dostęp" co dla ucznia.
   const isAdmin = isCurrentUserAdmin();
-  const isTeacher = isCurrentUserTeacher();
   const assigned = new Set(Array.isArray(myBooks) ? myBooks : []);
   const allowedBooks = allBooks.filter(b => {
     if (isAdmin) return true;
     if (b.adminOnly) return assigned.has(b.id);
-    if (isTeacher) return true;
     return b.defaultAccess === true || assigned.has(b.id);
   });
   // Filtr kontekstu nawigacji
@@ -10382,20 +10422,26 @@ async function openAccessDetail(userId, username) {
       };
       redraw();
 
-      // Dodawanie po nazwie (dokładna lub częściowa)
+      // Dodawanie po nazwie (dokładna lub częściowa).
+      // Nauczyciel może przydzielać tylko te podręczniki, do których sam ma dostęp.
       document.getElementById('btnTeacherAddBook').addEventListener('click', () => {
         const nameInp = document.getElementById('teacherAccessBookName');
         const msgEl = document.getElementById('teacherAccessMsg');
         const q = (nameInp.value || '').trim().toLowerCase();
         if (!q) { msgEl.style.color='var(--danger)'; msgEl.textContent='⚠️ Wpisz nazwę podręcznika.'; return; }
-        const match = Object.values(BOOKS).find(b => {
-          if (b.adminOnly) return false; // nauczyciel nie przydziela admin-only
+        const myBooks = window.currentUserAccessibleBooks ? window.currentUserAccessibleBooks() : Object.values(BOOKS);
+        const match = myBooks.find(b => {
+          if (b.adminOnly) return false;
           const n = (b.name || '').toLowerCase();
           const sn = (b.shortName || '').toLowerCase();
           const id = (b.id || '').toLowerCase();
           return n === q || sn === q || id === q || n.includes(q) || sn.includes(q);
         });
-        if (!match) { msgEl.style.color='var(--danger)'; msgEl.textContent='❌ Nie znaleziono podręcznika o takiej nazwie.'; return; }
+        if (!match) {
+          msgEl.style.color='var(--danger)';
+          msgEl.textContent='❌ Nie masz dostępu do podręcznika o takiej nazwie lub nie istnieje.';
+          return;
+        }
         if (state.ids.has(match.id)) { msgEl.style.color='var(--muted)'; msgEl.textContent='ℹ️ Ten podręcznik jest już przydzielony.'; return; }
         state.ids.add(match.id);
         msgEl.style.color='var(--success)';
@@ -12085,15 +12131,26 @@ if ('serviceWorker' in navigator) {
     w.document.close();
   };
 
+  // Zwraca listę podręczników dostępnych dla bieżącego użytkownika
+  // (admin: wszystko; pozostali: defaultAccess + user_books; adminOnly tylko gdy przydzielone).
+  window.currentUserAccessibleBooks = function(){
+    const isAdmin = isCurrentUserAdmin();
+    const myBooks = DB.getUserBooks();
+    const assigned = new Set(Array.isArray(myBooks) ? myBooks : []);
+    return Object.values(BOOKS).filter(b => {
+      if (isAdmin) return true;
+      if (b.adminOnly) return assigned.has(b.id);
+      return b.defaultAccess === true || assigned.has(b.id);
+    });
+  };
+
   // ═══════════════════════════════════════════════
   //  KARTY PRACY — druk listy słówek wybranego unitu
   // ═══════════════════════════════════════════════
   function wsAvailableBooks(){
-    const isAdmin = isCurrentUserAdmin();
-    const isTeacher = isCurrentUserTeacher();
-    if (!isAdmin && !isTeacher) return [];
-    // Nauczyciel widzi wszystko oprócz adminOnly; admin widzi wszystko
-    return Object.values(BOOKS).filter(b => isAdmin || !b.adminOnly);
+    if (!isCurrentUserAdmin() && !isCurrentUserTeacher()) return [];
+    // Admin widzi wszystko; nauczyciel tylko własne dostępne książki
+    return currentUserAccessibleBooks();
   }
 
   window.openWorksheetModal = function(){
