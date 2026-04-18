@@ -861,6 +861,30 @@ const DB = (() => {
     return data || [];
   }
 
+  // ADMIN: wszystkie zestawy wszystkich nauczycieli + nazwa właściciela.
+  // Wykorzystuje politykę RLS „teacher_sets: admin ALL".
+  async function adminLoadAllTeacherSets() {
+    if (!_profile?.isAdmin) return [];
+    const { data: sets, error } = await supabase
+      .from('teacher_sets')
+      .select('id, owner_id, name, school_type, grade, topic, source_note, created_at, updated_at')
+      .order('updated_at', { ascending: false });
+    if (error) throw new Error(error.message);
+    const list = sets || [];
+    // Dociągnij username właściciela (oddzielny select, bo Supabase nie
+    // robi joinów między schemą profili bez konfiguracji FK).
+    const ownerIds = [...new Set(list.map(s => s.owner_id).filter(Boolean))];
+    if (ownerIds.length) {
+      const { data: profs } = await supabase
+        .from('profiles')
+        .select('id, username')
+        .in('id', ownerIds);
+      const byId = Object.fromEntries((profs || []).map(p => [p.id, p.username]));
+      list.forEach(s => { s.owner_username = byId[s.owner_id] || '(nieznany)'; });
+    }
+    return list;
+  }
+
   async function teacherGetSet(setId) {
     const { data, error } = await supabase
       .from('teacher_sets')
@@ -1240,6 +1264,7 @@ const DB = (() => {
     adminResetUserPassword,
     // teacher sets
     teacherLoadMySets,
+    adminLoadAllTeacherSets,
     teacherGetSet,
     teacherCreateSet,
     teacherUpdateSet,

@@ -993,6 +993,11 @@ body.guest-mode .progress-wrap{opacity:.4;}
         <div style="font-size:.6rem;color:var(--muted);font-weight:600;margin-top:2px">Dostęp do podręczników</div>
         <span id="accessReqBadge" style="display:none;position:absolute;top:6px;right:6px;background:var(--danger);color:#fff;border-radius:100px;padding:1px 7px;font-size:.58rem;font-weight:900"></span>
       </div>
+      <div id="adminTeacherSetsTile" onclick="openAdminTeacherSets()" style="display:none;background:var(--surface);border:1.5px solid var(--border);border-radius:14px;padding:14px 10px;text-align:center;cursor:pointer;transition:all .2s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+        <div style="font-size:1.6rem;margin-bottom:4px">📚</div>
+        <div style="font-size:.78rem;font-weight:800;color:var(--text)">Podręczniki nauczycieli</div>
+        <div style="font-size:.6rem;color:var(--muted);font-weight:600;margin-top:2px">Wszystkie zestawy w bazie</div>
+      </div>
       <div onclick="showScreen('sBooks')" style="background:var(--surface);border:1.5px solid var(--border);border-radius:14px;padding:14px 10px;text-align:center;cursor:pointer;transition:all .2s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
         <div style="font-size:1.6rem;margin-bottom:4px">📊</div>
         <div style="font-size:.78rem;font-weight:800;color:var(--text)">Raporty</div>
@@ -1632,6 +1637,7 @@ szkoła	school"></textarea>
     <div class="unit-badge" id="unitBadge">📖 Unit 1</div>
     <div class="topbar-btns">
       <button class="btn-sm" onclick="openWordList(currentUnitKey)">📋 Lista</button>
+      <button class="btn-sm" onclick="openWordErrorModal()" title="Zgłoś błąd w słówku">🐛</button>
       <button class="btn-sm" onclick="openReportModal()" title="Zgłoś naruszenie praw autorskich">🚩</button>
       <button class="btn-sm" onclick="showScreen('sUnits')">← Zmień</button>
     </div>
@@ -2382,6 +2388,24 @@ szkoła	school"></textarea>
   </div>
 </div>
 
+<!-- ══ SCREEN: ADMIN — wszystkie zestawy wszystkich nauczycieli ══ -->
+<div class="screen" id="sAdminTeacherSets">
+  <div style="width:100%">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+      <div>
+        <div style="font-family:'Playfair Display',serif;font-size:1.4rem;color:var(--accent)">📚 Podręczniki stworzone przez nauczycieli</div>
+        <div style="font-size:.72rem;color:var(--muted);font-weight:600;margin-top:2px">Pełny nadzór nad zestawami i słówkami</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn-sm" onclick="showScreen('sBooks')">← Panel</button>
+      </div>
+    </div>
+    <div id="adminTsList" style="width:100%">
+      <div style="text-align:center;color:var(--muted);font-size:.8rem;padding:24px;font-weight:600">⏳ Ładowanie…</div>
+    </div>
+  </div>
+</div>
+
 <!-- ══ SCREEN: TEACHER SETS — lista zestawów ══ -->
 <div class="screen" id="sTeacherSets">
   <div style="width:100%">
@@ -2413,7 +2437,7 @@ szkoła	school"></textarea>
         <button class="btn-sm accent" onclick="openAssignSetModal()">🎯 Przypisz</button>
         <button class="btn-sm" onclick="openEditSetMetaModal()">✏️ Edytuj</button>
         <button class="btn-sm" onclick="confirmDeleteSet()" style="border-color:rgba(255,118,117,.4);color:var(--danger)">🗑️</button>
-        <button class="btn-sm" onclick="showScreen('sTeacherSets')">← Zestawy</button>
+        <button class="btn-sm" onclick="backFromSetEdit()">← Wróć</button>
       </div>
     </div>
 
@@ -5287,9 +5311,11 @@ function renderAdminPanel() {
   if (!isCurrentUserAdmin() && !isCurrentUserTeacher()) return;
   const panel = document.getElementById('adminPanel');
   panel.style.display = 'block';
-  // Kafelek "Prośby o dostęp" widoczny TYLKO dla administratora
+  // Kafelki widoczne TYLKO dla administratora
   const reqTile = document.getElementById('accessReqTile');
   if (reqTile) reqTile.style.display = isCurrentUserAdmin() ? '' : 'none';
+  const adminTsTile = document.getElementById('adminTeacherSetsTile');
+  if (adminTsTile) adminTsTile.style.display = isCurrentUserAdmin() ? '' : 'none';
   // Odśwież licznik próśb o dostęp w kafelku "Prośby"
   if (typeof window._refreshAccessReqBadge === 'function') window._refreshAccessReqBadge();
   const reqs = DB.getAdminRequests().filter(r => r.status === 'pending');
@@ -11473,6 +11499,27 @@ if ('serviceWorker' in navigator) {
   </div>
 </div>
 
+<!-- Modal Zgłoś błąd w słówku -->
+<div class="modal-overlay" id="wordErrorModal" style="display:none" onclick="if(event.target===this)closeWordErrorModal()">
+  <div class="modal-box" style="max-width:440px">
+    <div style="font-family:'Playfair Display',serif;font-size:1.15rem;color:var(--accent);margin-bottom:4px">🐛 Zgłoś błąd</div>
+    <div style="font-size:.75rem;color:var(--muted);margin-bottom:12px;font-weight:600;line-height:1.45">
+      Zauważyłeś literówkę, błąd w tłumaczeniu albo niepoprawne zdanie przykładowe? Opisz poniżej — zgłoszenie trafi do osoby, która wprowadziła to słówko lub do administratora.
+    </div>
+
+    <label style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px">Którego słówka dotyczy?</label>
+    <div id="wordErrorCtx" style="font-size:.82rem;font-weight:700;color:var(--text);padding:8px 10px;background:var(--surface2);border-radius:8px;margin-bottom:10px;word-break:break-word">—</div>
+
+    <label style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px">Opis błędu</label>
+    <textarea id="wordErrorText" rows="4" placeholder="np. Błędne tłumaczenie, brak przecinka, zły przykład zdania…" style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:.82rem;font-weight:500;outline:none;font-family:inherit;resize:vertical"></textarea>
+
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+      <button class="btn-modal-cancel" onclick="closeWordErrorModal()">Anuluj</button>
+      <button class="btn-modal-save" onclick="sendWordError()">Wyślij zgłoszenie</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal Zgłoś naruszenie -->
 <div class="modal-overlay" id="reportModal" style="display:none" onclick="if(event.target===this)closeReportModal()">
   <div class="modal-box" style="max-width:440px">
@@ -11583,6 +11630,49 @@ if ('serviceWorker' in navigator) {
   };
   window.closeReportModal = function(){ document.getElementById('reportModal').style.display='none'; };
 
+  // ── Zgłoś błąd w słówku ──
+  window.openWordErrorModal = function(){
+    let ctx = '—';
+    try {
+      const word = (typeof curIdx !== 'undefined' && curIdx !== null && typeof activeWords !== 'undefined' && activeWords[curIdx]) ? activeWords[curIdx] : null;
+      if (word) {
+        const pl = word[0] || '';
+        const en = word[1] || '';
+        ctx = (pl ? pl : '(brak PL)') + '  →  ' + (en ? en : '(brak EN)');
+        if (typeof currentBook !== 'undefined' && currentBook && BOOKS[currentBook]) {
+          ctx += '  ·  ' + BOOKS[currentBook].name;
+          if (typeof currentUnitKey !== 'undefined' && currentUnitKey && BOOKS[currentBook].units?.[currentUnitKey]) {
+            ctx += ' / ' + BOOKS[currentBook].units[currentUnitKey].name;
+          }
+        }
+      } else {
+        ctx = 'Brak wybranego słówka — otwórz kartę i spróbuj ponownie.';
+      }
+    } catch(e) {}
+    document.getElementById('wordErrorCtx').textContent = ctx;
+    document.getElementById('wordErrorText').value = '';
+    document.getElementById('wordErrorModal').style.display = 'flex';
+    setTimeout(()=>document.getElementById('wordErrorText').focus(), 60);
+  };
+  window.closeWordErrorModal = function(){ document.getElementById('wordErrorModal').style.display='none'; };
+
+  window.sendWordError = function(){
+    const text = document.getElementById('wordErrorText').value.trim();
+    const ctx = document.getElementById('wordErrorCtx').textContent;
+    if (!text) { alert('Opisz krótko, co jest nie tak.'); return; }
+    const user = (typeof currentUser !== 'undefined' && currentUser) ? currentUser : '(niezalogowany)';
+    const subject = encodeURIComponent('[Sowie Fiszki] Zgłoszenie błędu w słówku');
+    const body = encodeURIComponent(
+      'Zgłaszający: ' + user + '\n' +
+      'Słówko / kontekst: ' + ctx + '\n\n' +
+      'Opis błędu:\n' + text + '\n\n' +
+      '— Zgłoszenie wygenerowane przez aplikację Sowie Fiszki.'
+    );
+    window.location.href = 'mailto:' + CONTACT_EMAIL + '?subject=' + subject + '&body=' + body;
+    closeWordErrorModal();
+    if (typeof toast === 'function') toast('📨 Otwarto klienta poczty. Wyślij wiadomość, aby zakończyć zgłoszenie.', 4000);
+  };
+
   window.sendReport = function(){
     const text = document.getElementById('reportText').value.trim();
     const ctx = document.getElementById('reportCtx').textContent;
@@ -11605,6 +11695,9 @@ if ('serviceWorker' in navigator) {
   // ═══════════════════════════════════════════════
   let _currentSetId = null;
   let _currentSetData = null;
+  // Gdzie wrócić z ekranu edycji zestawu:
+  //   'teacher' → sTeacherSets (własne zestawy); 'admin' → sAdminTeacherSets
+  let _setEditReturnScreen = 'teacher';
 
   function escHtml(s){ return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
@@ -11613,6 +11706,7 @@ if ('serviceWorker' in navigator) {
       if (typeof toast === 'function') toast('Dostępne tylko dla nauczycieli i administratorów.', 2600);
       return;
     }
+    _setEditReturnScreen = 'teacher';
     showScreen('sTeacherSets');
     const listEl = document.getElementById('teacherSetsList');
     listEl.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:.8rem;padding:24px;font-weight:600">⏳ Ładowanie…</div>';
@@ -11645,6 +11739,61 @@ if ('serviceWorker' in navigator) {
       });
     } catch(e) {
       console.error('[openTeacherSets]', e);
+      listEl.innerHTML = `<div style="color:var(--danger);font-size:.8rem;padding:16px;font-weight:600">❌ Błąd: ${escHtml(e.message)}</div>`;
+    }
+  };
+
+  // Panel admina: wszystkie zestawy w bazie
+  window.openAdminTeacherSets = async function(){
+    if (!isCurrentUserAdmin()) {
+      if (typeof toast === 'function') toast('Dostępne tylko dla administratora.', 2600);
+      return;
+    }
+    _setEditReturnScreen = 'admin';
+    showScreen('sAdminTeacherSets');
+    const listEl = document.getElementById('adminTsList');
+    listEl.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:.8rem;padding:24px;font-weight:600">⏳ Ładowanie…</div>';
+    try {
+      const sets = await DB.adminLoadAllTeacherSets();
+      if (!sets.length) {
+        listEl.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:.82rem;padding:30px 14px;font-weight:600;line-height:1.5">Żaden nauczyciel nie utworzył jeszcze zestawu.</div>';
+        return;
+      }
+      listEl.innerHTML = '';
+      // Grupowanie po nauczycielu
+      const byOwner = {};
+      sets.forEach(s => {
+        const u = s.owner_username || '(nieznany)';
+        (byOwner[u] = byOwner[u] || []).push(s);
+      });
+      Object.keys(byOwner).sort((a,b)=>a.localeCompare(b,'pl')).forEach(owner => {
+        const hdr = document.createElement('div');
+        hdr.style.cssText = 'font-size:.72rem;font-weight:800;color:var(--accent);text-transform:uppercase;letter-spacing:.06em;margin:14px 0 6px;padding:4px 8px;border-left:3px solid var(--accent)';
+        hdr.textContent = '👩‍🏫 ' + owner + ' · ' + byOwner[owner].length + ' zestaw(y)';
+        listEl.appendChild(hdr);
+        byOwner[owner].forEach(s => {
+          const meta = [];
+          if (s.school_type === 'primary')   meta.push('Podstawówka');
+          if (s.school_type === 'secondary') meta.push('Średnia');
+          if (s.school_type === 'other')     meta.push('Inne');
+          if (s.grade) meta.push('Klasa ' + s.grade);
+          if (s.topic) meta.push(s.topic);
+          const card = document.createElement('div');
+          card.style.cssText = 'background:var(--surface);border:1.5px solid var(--border);border-radius:12px;padding:10px 14px;margin-bottom:6px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;transition:border-color .2s';
+          card.innerHTML = `
+            <div style="min-width:0;flex:1">
+              <div style="font-size:.88rem;font-weight:800;color:var(--text);word-break:break-word">${escHtml(s.name)}</div>
+              <div style="font-size:.64rem;color:var(--muted);font-weight:600;margin-top:2px">${escHtml(meta.join(' · ')) || '—'}</div>
+            </div>
+            <div style="font-size:.7rem;font-weight:700;color:var(--accent2);white-space:nowrap;margin-left:10px">Otwórz →</div>`;
+          card.addEventListener('mouseenter', ()=> card.style.borderColor = 'var(--accent)');
+          card.addEventListener('mouseleave', ()=> card.style.borderColor = 'var(--border)');
+          card.addEventListener('click', ()=> openTeacherSetEdit(s.id));
+          listEl.appendChild(card);
+        });
+      });
+    } catch(e) {
+      console.error('[openAdminTeacherSets]', e);
       listEl.innerHTML = `<div style="color:var(--danger);font-size:.8rem;padding:16px;font-weight:600">❌ Błąd: ${escHtml(e.message)}</div>`;
     }
   };
@@ -11801,10 +11950,15 @@ if ('serviceWorker' in navigator) {
     try {
       await DB.teacherDeleteSet(_currentSetId);
       if (typeof toast==='function') toast('🗑️ Zestaw usunięty.', 2200);
-      openTeacherSets();
+      backFromSetEdit();
     } catch(e) {
       if (typeof toast==='function') toast('❌ ' + e.message, 3200);
     }
+  };
+
+  window.backFromSetEdit = function(){
+    if (_setEditReturnScreen === 'admin') openAdminTeacherSets();
+    else openTeacherSets();
   };
 
   // ── Modal: przypisanie zestawu do klasy ─────────────────────
