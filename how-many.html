@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How Many? 🔢</title>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<style>
+  :root {
+    --green-dark:  #2d7a3a;
+    --green-mid:   #4caf50;
+    --green-light: #c8e6c9;
+    --green-pale:  #f1f8f2;
+    --accent:      #ff8f00;
+    --accent-soft: #fff3e0;
+    --tick:        #43a047;
+    --text:        #1b3a1e;
+    --shadow:      0 4px 18px rgba(45,122,58,.14);
+    --radius:      14px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Nunito', sans-serif;
+    background: var(--green-pale);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 20px 16px 40px;
+  }
+  h1 {
+    font-family: 'Fredoka One', cursive;
+    font-size: 2rem;
+    color: var(--green-dark);
+    text-align: center;
+    letter-spacing: .5px;
+    margin-bottom: 10px;
+  }
+  h1 span { color: var(--accent); }
+
+  /* Back link */
+  .back-link {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: 'Nunito', sans-serif; font-size: .85rem; font-weight: 700;
+    color: var(--green-dark); text-decoration: none;
+    background: white; padding: 7px 14px; border-radius: 20px;
+    border: 2px solid var(--green-mid); margin-bottom: 12px;
+    transition: background .15s;
+  }
+  .back-link:hover { background: var(--green-light); }
+
+  /* Mode switcher */
+  #mode-bar {
+    display: flex; justify-content: center; gap: 10px; margin-bottom: 14px;
+  }
+  .mode-btn {
+    font-family: 'Fredoka One', cursive; font-size: 1rem;
+    padding: 8px 22px; border: 3px solid var(--green-mid);
+    border-radius: 30px; background: white; color: var(--green-dark);
+    cursor: pointer; transition: all .18s;
+  }
+  .mode-btn.active { background: var(--green-mid); color: white; box-shadow: 0 3px 10px rgba(76,175,80,.35); }
+  .mode-btn:hover:not(.active) { background: var(--green-light); }
+
+  /* Hint bar */
+  #hint-bar {
+    background: white; border: 3px solid var(--green-mid);
+    border-radius: var(--radius); padding: 12px 20px;
+    margin: 0 auto 14px; max-width: 760px;
+    text-align: center; font-size: 1.2rem; font-weight: 700;
+    color: var(--green-dark); box-shadow: var(--shadow); line-height: 1.6;
+  }
+  #hint-bar .template { opacity: .5; font-weight: 600; font-size: .95rem; }
+  #hint-bar .live { font-size: 1.3rem; animation: popIn .35s ease; }
+  @keyframes popIn {
+    0%   { transform: scale(.85); opacity: 0; }
+    60%  { transform: scale(1.06); }
+    100% { transform: scale(1);   opacity: 1; }
+  }
+
+  /* Settings */
+  #settings {
+    background: white; border-radius: var(--radius); padding: 14px 18px;
+    margin: 0 auto 16px; max-width: 760px; box-shadow: var(--shadow);
+    display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center;
+  }
+  .setting-group { display: flex; flex-direction: column; gap: 4px; }
+  .setting-group > label {
+    font-size: .72rem; font-weight: 800; text-transform: uppercase;
+    letter-spacing: .6px; color: var(--green-dark);
+  }
+  .setting-group .row { display: flex; align-items: center; gap: 7px; }
+  input[type=number] {
+    width: 62px; border: 2px solid var(--green-light); border-radius: 8px;
+    padding: 4px 7px; font-family: 'Nunito', sans-serif; font-size: .92rem;
+    font-weight: 700; color: var(--text); background: var(--green-pale);
+  }
+  .toggle-wrap { display: flex; align-items: center; gap: 7px; font-weight: 700; font-size: .92rem; }
+  .toggle { position: relative; display: inline-block; width: 42px; height: 23px; }
+  .toggle input { opacity:0; width:0; height:0; }
+  .slider { position: absolute; cursor: pointer; inset: 0; background: #ccc; border-radius: 23px; transition: .22s; }
+  .slider:before {
+    position: absolute; content:''; height: 17px; width: 17px;
+    left: 3px; bottom: 3px; background: white; border-radius: 50%;
+    transition: .22s; box-shadow: 0 1px 4px rgba(0,0,0,.2);
+  }
+  input:checked + .slider { background: var(--green-mid); }
+  input:checked + .slider:before { transform: translateX(19px); }
+
+  .btn-group { display: flex; gap: 8px; margin-left: auto; flex-wrap: wrap; }
+  .action-btn {
+    font-family: 'Fredoka One', cursive; font-size: 1rem; border: none;
+    border-radius: 10px; padding: 9px 15px; cursor: pointer;
+    transition: transform .14s, box-shadow .14s; white-space: nowrap;
+  }
+  .action-btn:hover { transform: translateY(-2px); }
+  .action-btn:active { transform: translateY(0); }
+  #gen-btn   { background: linear-gradient(135deg,#4caf50,#2d7a3a); color:white; box-shadow:0 3px 10px rgba(45,122,58,.35); }
+  #print-btn { background: linear-gradient(135deg,#1976d2,#0d47a1); color:white; box-shadow:0 3px 10px rgba(25,118,210,.3); }
+  #jpeg-btn  { background: linear-gradient(135deg,#f57c00,#e65100); color:white; box-shadow:0 3px 10px rgba(245,124,0,.3); }
+
+  /* Table mode */
+  #table-wrap { max-width: 760px; margin: 0 auto; overflow-x: auto; border-radius: var(--radius); box-shadow: var(--shadow); }
+  table { border-collapse: collapse; width: 100%; background: white; border-radius: var(--radius); overflow: hidden; }
+  thead th {
+    background: var(--green-mid); color: white; font-family: 'Fredoka One', cursive;
+    font-size: 1.05rem; padding: 10px 5px; text-align: center; min-width: 50px;
+  }
+  thead th:first-child { background: var(--green-dark); min-width: 62px; }
+  thead th.header-num { background: linear-gradient(180deg,#66bb6a,#43a047); }
+  tbody tr { border-bottom: 1.5px solid var(--green-light); }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:nth-child(even) td { background: #f7fdf8; }
+  tbody tr:nth-child(odd)  td { background: white; }
+  td.emoji-cell {
+    text-align: center; font-size: 1.85rem; padding: 9px 8px;
+    cursor: pointer; transition: transform .14s, background .14s;
+    position: relative; user-select: none;
+  }
+  td.emoji-cell:hover { transform: scale(1.18); background: var(--accent-soft) !important; z-index:1; }
+  td.emoji-cell .speak-hint { position:absolute; bottom:2px; right:4px; font-size:.58rem; opacity:.35; font-weight:700; }
+  td.num-cell { text-align:center; padding:9px 4px; font-size:1.4rem; color:var(--tick); transition:background .2s; }
+  td.num-cell.has-tick { background: rgba(76,175,80,.1) !important; }
+  td.num-cell.has-tick .tick-mark { display:inline-block; animation: tickDrop .3s ease; }
+  @keyframes tickDrop {
+    0%   { opacity:0; transform: scale(.4) rotate(-20deg); }
+    70%  { transform: scale(1.15) rotate(5deg); }
+    100% { opacity:1; transform: scale(1) rotate(0deg); }
+  }
+  tr.speaking td { background: var(--accent-soft) !important; }
+
+  /* Single card mode */
+  #single-wrap { display: none; max-width: 760px; margin: 0 auto; }
+  #single-card {
+    background: white; border-radius: 24px; box-shadow: var(--shadow);
+    padding: 32px 24px; display: flex; flex-direction: column;
+    align-items: center;
+  }
+  .card-pair {
+    display: flex; gap: 12px; align-items: stretch; cursor: pointer;
+  }
+  .card-pair:hover .card-tile { box-shadow: 0 8px 28px rgba(45,122,58,.22); }
+  .card-pair:active .card-tile { transform: scale(.97); }
+  .card-tile {
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 18px; border: 4px solid var(--green-mid);
+    transition: transform .15s, box-shadow .15s;
+    user-select: none; min-width: 130px; min-height: 130px;
+  }
+  .card-tile.num-tile {
+    font-family: 'Fredoka One', cursive; font-size: 4.2rem;
+    color: var(--green-dark);
+    background: linear-gradient(145deg,#e8f5e9,#c8e6c9);
+    border-color: var(--green-dark); padding: 0 28px;
+  }
+  .card-tile.emj-tile {
+    font-size: 5.5rem;
+    background: linear-gradient(145deg,#fff8e1,#ffe082);
+    border-color: var(--accent); padding: 0 18px;
+  }
+  .card-hint {
+    font-size: .85rem; font-weight: 700; color: #bbb; text-align: center; letter-spacing: .3px;
+  }
+  #single-speak-btn {
+    font-family: 'Fredoka One', cursive; font-size: 1.15rem;
+    padding: 11px 34px; border: none; border-radius: 30px;
+    background: linear-gradient(135deg,#4caf50,#2d7a3a);
+    color: white; cursor: pointer;
+    box-shadow: 0 3px 12px rgba(45,122,58,.35); transition: transform .14s;
+  }
+  #single-speak-btn:hover { transform: scale(1.04); }
+
+  /* Voice badge */
+  #voice-badge { text-align: center; font-size: .78rem; color: #999; margin: 10px auto 0; max-width: 760px; }
+
+  /* Print */
+  @media print {
+    body { background: white !important; padding: 10px; }
+    .back-link, #mode-bar, #settings, #hint-bar, #voice-badge, #single-speak-btn, .card-hint, .speak-hint { display:none !important; }
+    #table-wrap, #single-wrap, #single-card { box-shadow: none !important; }
+    table { border: 1px solid #ccc; }
+    thead th { background: #4caf50 !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    td.num-cell.has-tick { background: #e8f5e9 !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    .card-tile { border: 3px solid #333 !important; }
+    .card-tile.num-tile { background: #e8f5e9 !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    .card-tile.emj-tile { background: #fff8e1 !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  }
+
+  @media (max-width: 540px) {
+    h1 { font-size: 1.55rem; }
+    #settings { flex-direction: column; }
+    .btn-group { margin-left: 0; width: 100%; }
+    .action-btn { flex: 1; text-align: center; font-size: .9rem; padding: 9px 10px; }
+    thead th { font-size: .8rem; min-width: 38px; padding: 7px 3px; }
+    td.emoji-cell { font-size: 1.4rem; }
+    td.num-cell { font-size: 1.1rem; }
+    .card-tile { min-width: 120px; min-height: 120px; }
+    .card-tile.num-tile { font-size: 3.2rem; }
+    .card-tile.emj-tile { font-size: 4.2rem; }
+  }
+</style>
+</head>
+<body>
+
+<a href="app.html" class="back-link">← Powrót do Sowie Fiszki</a>
+
+<h1>How <span>Many</span>? 🔢</h1>
+
+<div id="mode-bar">
+  <button class="mode-btn active" id="btn-table" onclick="setMode('table')">📊 Tabela</button>
+  <button class="mode-btn"        id="btn-card"  onclick="setMode('card')">🃏 Jedna karta</button>
+</div>
+
+<div id="hint-bar">
+  <div class="template">How many (🍎🍎) are there? &nbsp;·&nbsp; There are (🔟) (🍎🍎)</div>
+  <div id="live-sentence" class="live" style="display:none"></div>
+</div>
+
+<div id="settings">
+  <div class="setting-group">
+    <label>Zakres liczb</label>
+    <div class="row">
+      <span style="font-size:.82rem;font-weight:700">od</span>
+      <input type="number" id="range-min" value="10" min="1" max="990" step="1">
+      <span style="font-size:.82rem;font-weight:700">do</span>
+      <input type="number" id="range-max" value="100" min="2" max="1000" step="1">
+    </div>
+  </div>
+  <div class="setting-group" id="col-group">
+    <label>Kolumny</label>
+    <div class="row">
+      <input type="number" id="col-count" value="10" min="2" max="20" step="1" style="width:52px">
+      <span style="font-size:.82rem;font-weight:700">kolumn</span>
+    </div>
+  </div>
+  <div class="setting-group">
+    <label>Tylko dziesiątki</label>
+    <div class="row toggle-wrap">
+      <label class="toggle"><input type="checkbox" id="only-tens" checked><span class="slider"></span></label>
+      <span id="tens-label">TAK</span>
+    </div>
+  </div>
+  <div class="setting-group" id="rh-group">
+    <label>Losuj nagłówki</label>
+    <div class="row toggle-wrap">
+      <label class="toggle"><input type="checkbox" id="random-headers"><span class="slider"></span></label>
+      <span id="rh-label">NIE</span>
+    </div>
+  </div>
+  <div class="btn-group">
+    <button class="action-btn" id="gen-btn">🔀 Generuj</button>
+    <button class="action-btn" id="print-btn" onclick="doPrint()">🖨️ Drukuj / PDF</button>
+    <button class="action-btn" id="jpeg-btn"  onclick="doJpeg()">🖼️ JPEG</button>
+  </div>
+</div>
+
+<!-- TABLE MODE -->
+<div id="table-wrap">
+  <table id="main-table">
+    <thead><tr id="header-row"></tr></thead>
+    <tbody id="table-body"></tbody>
+  </table>
+</div>
+
+<!-- SINGLE CARD MODE -->
+<div id="single-wrap">
+  <div id="single-card">
+    <div class="card-pair" id="card-pair">
+      <div class="card-tile num-tile" id="card-number">—</div>
+      <div class="card-tile emj-tile" id="card-emoji">—</div>
+    </div>
+  </div>
+</div>
+
+<div id="voice-badge">🔊 Kliknij emoji w tabeli, aby usłyszeć zdanie (głos brytyjski)</div>
+
+<script>
+const ITEMS = [
+  { emoji: '🥚', singular: 'egg',             plural: 'eggs' },
+  { emoji: '🐣', singular: 'chick',           plural: 'chicks' },
+  { emoji: '✏️', singular: 'pencil',          plural: 'pencils' },
+  { emoji: '🌰', singular: 'nut',             plural: 'nuts' },
+  { emoji: '🦟', singular: 'mosquito',        plural: 'mosquitoes' },
+  { emoji: '🐌', singular: 'snail',           plural: 'snails' },
+  { emoji: '🧀', singular: 'piece of cheese', plural: 'pieces of cheese' },
+  { emoji: '🐕', singular: 'dog',             plural: 'dogs' },
+  { emoji: '🍎', singular: 'apple',           plural: 'apples' },
+  { emoji: '🦜', singular: 'parrot',          plural: 'parrots' },
+];
+
+let state       = { columns: [], rows: [] };
+let cardState   = { item: null, qty: 0 };
+let currentMode = 'table';
+let britishVoice = null;
+let speakingRow  = null;
+
+// ── Voice ─────────────────────────────────────────────────────────────────
+function loadVoices() {
+  const voices = window.speechSynthesis.getVoices();
+  const prefs  = ['Google UK English Female','Google UK English Male','Microsoft Hazel','en-GB'];
+  for (const p of prefs) {
+    const v = voices.find(v => v.name.includes(p) || v.lang === p);
+    if (v) { britishVoice = v; break; }
+  }
+  if (!britishVoice) britishVoice = voices.find(v=>v.lang.startsWith('en-GB')) || voices.find(v=>v.lang.startsWith('en'));
+  if (britishVoice) document.getElementById('voice-badge').textContent = `🔊 Głos: ${britishVoice.name} (${britishVoice.lang}) · kliknij emoji/kartę`;
+}
+window.speechSynthesis.onvoiceschanged = loadVoices;
+loadVoices();
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+const getMin   = () => parseInt(document.getElementById('range-min').value)  || 10;
+const getMax   = () => parseInt(document.getElementById('range-max').value)  || 100;
+const getCols  = () => parseInt(document.getElementById('col-count').value)  || 10;
+const onlyTens = () => document.getElementById('only-tens').checked;
+const randHdrs = () => document.getElementById('random-headers').checked;
+const randInt  = (lo,hi) => Math.floor(Math.random()*(hi-lo+1))+lo;
+const snapTen  = n => (Math.round(n/10)*10) || 10;
+
+function pickNumber() {
+  const lo = getMin(), hi = getMax(), tens = onlyTens();
+  if (tens) {
+    const s = snapTen(lo), e = snapTen(Math.max(hi,s));
+    return s + randInt(0, Math.floor((e-s)/10)) * 10;
+  }
+  return randInt(Math.max(1,lo), Math.max(2,hi));
+}
+
+function numberToWords(n) {
+  const ones = ['','one','two','three','four','five','six','seven','eight','nine',
+                 'ten','eleven','twelve','thirteen','fourteen','fifteen',
+                 'sixteen','seventeen','eighteen','nineteen'];
+  const ts   = ['','','twenty','thirty','forty','fifty','sixty','seventy','eighty','ninety'];
+  if (n < 20) return ones[n];
+  if (n < 100) { const t=Math.floor(n/10),o=n%10; return o ? ts[t]+'-'+ones[o] : ts[t]; }
+  if (n < 1000){ const h=Math.floor(n/100),r=n%100; return ones[h]+' hundred'+(r?' and '+numberToWords(r):''); }
+  return String(n);
+}
+
+// ── Mode ──────────────────────────────────────────────────────────────────
+function setMode(mode) {
+  currentMode = mode;
+  document.getElementById('table-wrap').style.display  = mode==='table' ? 'block' : 'none';
+  document.getElementById('single-wrap').style.display = mode==='card'  ? 'block' : 'none';
+  document.getElementById('col-group').style.display   = mode==='table' ? '' : 'none';
+  document.getElementById('rh-group').style.display    = mode==='table' ? '' : 'none';
+  document.getElementById('hint-bar').style.display    = mode==='table' ? '' : 'none';
+  document.getElementById('voice-badge').style.display = mode==='table' ? '' : 'none';
+  document.getElementById('btn-table').classList.toggle('active', mode==='table');
+  document.getElementById('btn-card').classList.toggle('active',  mode==='card');
+  if (mode==='card') generateCard();
+}
+
+// ── Generate table ────────────────────────────────────────────────────────
+function generate() {
+  if (currentMode === 'card') { generateCard(); return; }
+  const cols=getCols(), lo=getMin(), hi=getMax(), tens=onlyTens(), rndH=randHdrs();
+  let columns;
+  if (!rndH) {
+    const start = tens ? snapTen(lo) : lo;
+    const step  = tens ? 10 : 1;
+    columns = Array.from({length:cols}, (_,i) => start + i*step);
+  } else {
+    const pool = [];
+    if (tens) { const s=snapTen(lo),e=snapTen(hi); for(let n=s;n<=e;n+=10) pool.push(n); }
+    else       { for(let n=Math.max(1,lo);n<=hi;n++) pool.push(n); }
+    for(let i=pool.length-1;i>0;i--) { const j=randInt(0,i); [pool[i],pool[j]]=[pool[j],pool[i]]; }
+    columns = pool.slice(0,Math.min(cols,pool.length)).sort((a,b)=>a-b);
+    while(columns.length<cols) columns.push(columns[columns.length-1]+(tens?10:1));
+  }
+  const rows = ITEMS.map(()=>randInt(0,columns.length-1));
+  state = {columns, rows};
+  renderTable();
+}
+
+// ── Generate card ─────────────────────────────────────────────────────────
+function generateCard() {
+  cardState = { item: ITEMS[randInt(0,ITEMS.length-1)], qty: pickNumber() };
+  renderCard();
+}
+
+// ── Render table ──────────────────────────────────────────────────────────
+function renderTable() {
+  const {columns,rows} = state;
+  document.getElementById('header-row').innerHTML =
+    '<th>📦</th>' + columns.map(n=>`<th class="header-num">${n}</th>`).join('');
+  document.getElementById('table-body').innerHTML = ITEMS.map((item,ri)=>{
+    const ti = rows[ri];
+    const cells = columns.map((_,ci) =>
+      ci===ti ? `<td class="num-cell has-tick"><span class="tick-mark">✔</span></td>`
+              : `<td class="num-cell"></td>`
+    ).join('');
+    return `<tr id="row-${ri}"><td class="emoji-cell" data-row="${ri}">${item.emoji}<span class="speak-hint">▶</span></td>${cells}</tr>`;
+  }).join('');
+  document.querySelectorAll('.emoji-cell').forEach(c =>
+    c.addEventListener('click', ()=>speakRow(+c.dataset.row))
+  );
+}
+
+// ── Render card ───────────────────────────────────────────────────────────
+function renderCard() {
+  const {item, qty} = cardState;
+  const numEl = document.getElementById('card-number');
+  const emjEl = document.getElementById('card-emoji');
+  if (!numEl || !emjEl) return;
+  numEl.textContent = qty;
+  emjEl.textContent = item.emoji;
+  [numEl, emjEl].forEach(el => {
+    el.style.animation = 'none';
+    void el.offsetHeight;
+    el.style.animation = 'popIn .4s ease';
+  });
+}
+
+// ── Hint bar ──────────────────────────────────────────────────────────────
+function updateHint(item, qty) {
+  const bar = document.getElementById('hint-bar');
+  const el  = document.getElementById('live-sentence');
+  if (!el || !bar || bar.style.display === 'none') return;
+  el.style.display = 'block';
+  el.textContent = `How many ${item.emoji}${item.emoji} are there? There are ${qty} ${item.emoji}.`;
+  el.style.animation = 'none'; void el.offsetHeight; el.style.animation = '';
+}
+
+// ── TTS ───────────────────────────────────────────────────────────────────
+function speak(text) {
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang='en-GB'; u.rate=0.88; u.pitch=1.05;
+  if (britishVoice) u.voice = britishVoice;
+  window.speechSynthesis.speak(u);
+  return u;
+}
+
+function speakRow(ri) {
+  const item = ITEMS[ri];
+  const qty  = state.columns[state.rows[ri]];
+  const word = qty===1 ? item.singular : item.plural;
+  const u    = speak(`How many ${item.plural} are there? There are ${numberToWords(qty)} ${word}.`);
+  updateHint(item, qty);
+  if (speakingRow!==null) document.getElementById(`row-${speakingRow}`)?.classList.remove('speaking');
+  speakingRow = ri;
+  const row = document.getElementById(`row-${ri}`);
+  row?.classList.add('speaking');
+  u.onend = ()=>{ row?.classList.remove('speaking'); speakingRow=null; };
+}
+
+function speakCard() {
+  if (!cardState.item) return;
+  const {item, qty} = cardState;
+  const word = qty === 1 ? item.singular : item.plural;
+  speak(`How many ${item.plural} are there? There are ${numberToWords(qty)} ${word}.`);
+}
+
+// ── Export ────────────────────────────────────────────────────────────────
+function doPrint() { window.print(); }
+
+async function doJpeg() {
+  const btn = document.getElementById('jpeg-btn');
+  btn.textContent = '⏳ Generuję…'; btn.disabled = true;
+  try {
+    const target = currentMode==='table'
+      ? document.getElementById('table-wrap')
+      : document.getElementById('single-card');
+    const origShadow = target.style.boxShadow;
+    target.style.boxShadow = 'none';
+    const canvas = await html2canvas(target, { scale:2, backgroundColor:'#ffffff', useCORS:true, logging:false });
+    target.style.boxShadow = origShadow;
+    canvas.toBlob(blob => {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `how_many_${currentMode}_${Date.now()}.jpg`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }, 'image/jpeg', 0.93);
+  } catch(e) { alert('Błąd: '+e.message); }
+  finally { btn.textContent='🖼️ JPEG'; btn.disabled=false; }
+}
+
+// ── Controls ──────────────────────────────────────────────────────────────
+document.getElementById('gen-btn').addEventListener('click', generate);
+document.getElementById('only-tens').addEventListener('change', e =>
+  document.getElementById('tens-label').textContent = e.target.checked?'TAK':'NIE');
+document.getElementById('random-headers').addEventListener('change', e =>
+  document.getElementById('rh-label').textContent = e.target.checked?'TAK':'NIE');
+document.getElementById('range-min').addEventListener('change', ()=>{ if(getMin()>=getMax()) document.getElementById('range-max').value=getMin()+10; });
+document.getElementById('range-max').addEventListener('change', ()=>{ if(getMax()<=getMin()) document.getElementById('range-min').value=Math.max(1,getMax()-10); });
+
+// Card pair click → regenerate + speak
+document.getElementById('card-pair').addEventListener('click', () => { generateCard(); setTimeout(speakCard, 300); });
+
+// ── Init ──────────────────────────────────────────────────────────────────
+generate();
+</script>
+</body>
+</html>
