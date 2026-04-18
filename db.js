@@ -831,6 +831,11 @@ const DB = (() => {
       }
       if (!username) { errors.push('Nie udało się utworzyć konta #' + (i+1)); continue; }
 
+      // Zapisz twórcę konta (best-effort)
+      if (userId) {
+        try { await supabase.rpc('set_profile_creator', { p_user_id: userId }); } catch(e) {}
+      }
+
       // Dodaj do klasy (best-effort)
       try {
         if (userId) await addClassMember(classId, userId);
@@ -1008,12 +1013,18 @@ const DB = (() => {
     if (error) throw new Error(error.message);
   }
 
+  // Nauczyciel widzi tylko uczniów, których sam utworzył (created_by = jego ID).
+  // Admin widzi wszystkich.
   async function loadAllProfiles() {
     if (!_profile?.isAdmin && !_profile?.isTeacher) return [];
-    const { data, error } = await supabase
+    let q = supabase
       .from('profiles')
-      .select('id, username, xp, level, streak, total_sessions, total_answers, correct_answers, last_study_date, is_admin, is_teacher, plan')
-      .order('username');
+      .select('id, username, xp, level, streak, total_sessions, total_answers, correct_answers, last_study_date, is_admin, is_teacher, plan, created_by');
+    if (!_profile.isAdmin && _profile.isTeacher) {
+      q = q.eq('created_by', _userId);
+    }
+    q = q.order('username');
+    const { data, error } = await q;
     if (error) throw new Error(error.message);
     return data || [];
   }
@@ -1034,14 +1045,20 @@ const DB = (() => {
 
   // Wyszukanie jednego profilu po loginie — używane przez panel nauczyciela,
   // który nie ma listy wszystkich uczniów, tylko wpisuje konkretny login.
+  // Wyszukanie jednego profilu po loginie. Nauczyciel — tylko wśród
+  // uczniów, których sam utworzył. Admin — po każdym loginie.
   async function findProfileByUsername(username) {
     if (!_profile?.isAdmin && !_profile?.isTeacher) return null;
     if (!username) return null;
-    const { data, error } = await supabase
+    let q = supabase
       .from('profiles')
-      .select('id, username, xp, level, streak, total_sessions, total_answers, correct_answers, last_study_date, is_admin, is_teacher, plan')
-      .eq('username', username)
-      .limit(1);
+      .select('id, username, xp, level, streak, total_sessions, total_answers, correct_answers, last_study_date, is_admin, is_teacher, plan, created_by')
+      .eq('username', username);
+    if (!_profile.isAdmin && _profile.isTeacher) {
+      q = q.eq('created_by', _userId);
+    }
+    q = q.limit(1);
+    const { data, error } = await q;
     if (error) throw new Error(error.message);
     return (data && data[0]) || null;
   }
@@ -1134,7 +1151,12 @@ const DB = (() => {
       p_username: username, p_password: password
     });
     if (error) throw new Error(error.message);
-    return data; // returns new user UUID
+    // Zapisz twórcę, żeby nauczyciel widział "swoich" uczniów.
+    const newUserId = (data && data.user_id) || data;
+    if (newUserId && typeof newUserId === 'string') {
+      try { await supabase.rpc('set_profile_creator', { p_user_id: newUserId }); } catch(e) {}
+    }
+    return data; // returns new user UUID (lub obiekt {user_id})
   }
 
   async function adminDeleteUser(userId) {

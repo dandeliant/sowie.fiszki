@@ -1040,10 +1040,9 @@ body.guest-mode .progress-wrap{opacity:.4;}
       </select>
     </div>
 
-    <label style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px">Który podręcznik? *</label>
-    <select id="reqAccessBook" style="width:100%;padding:9px 11px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.82rem;font-weight:600;outline:none;margin-bottom:10px;font-family:inherit">
-      <option value="">— najpierw wybierz klasę —</option>
-    </select>
+    <label style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px">Wpisz nazwę podręcznika, z którego się uczysz *</label>
+    <input type="text" id="reqAccessBook" placeholder="np. Brainy 6, Together 5, Steps Plus 4" autocomplete="off" autocorrect="off" style="width:100%;padding:9px 11px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.82rem;font-weight:600;outline:none;margin-bottom:10px">
+    <div style="font-size:.62rem;color:var(--muted);font-weight:500;font-style:italic;margin-top:-6px;margin-bottom:10px;line-height:1.4">Administrator na podstawie Twojego zgłoszenia przydzieli odpowiedni podręcznik.</div>
 
     <label style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px">Wiadomość (opcjonalnie)</label>
     <textarea id="reqAccessMessage" rows="3" placeholder="np. Jestem uczniem pani X z klasy 4b…" style="width:100%;padding:9px 11px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.82rem;font-weight:500;outline:none;margin-bottom:10px;font-family:inherit;resize:vertical"></textarea>
@@ -10327,20 +10326,85 @@ async function openAccessDetail(userId, username) {
     }
 
     const userBooks = await DB.adminLoadUserBooks(userId);
-    Object.values(BOOKS).forEach(book => {
-      const checked = userBooks.includes(book.id);
-      const row = document.createElement('label');
-      row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--surface);border:1px solid var(--border);border-radius:12px;margin-bottom:8px;cursor:pointer;transition:border-color .2s;';
-      row.innerHTML = `
-        <input type="checkbox" value="${book.id}" ${checked ? 'checked' : ''} style="accent-color:var(--accent2);width:18px;height:18px;flex-shrink:0;cursor:pointer;">
-        <div style="flex:1">
-          <div style="font-size:.88rem;font-weight:700;color:var(--text)">${book.icon} ${book.name}</div>
-          <div style="font-size:.65rem;color:var(--muted)">${book.description}</div>
-        </div>`;
-      row.addEventListener('mouseenter', () => row.style.borderColor = 'var(--accent)');
-      row.addEventListener('mouseleave', () => row.style.borderColor = 'var(--border)');
-      listEl.appendChild(row);
-    });
+    if (isCurrentUserAdmin()) {
+      // ── ADMIN: pełna lista z checkboxami ──
+      Object.values(BOOKS).forEach(book => {
+        const checked = userBooks.includes(book.id);
+        const row = document.createElement('label');
+        row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--surface);border:1px solid var(--border);border-radius:12px;margin-bottom:8px;cursor:pointer;transition:border-color .2s;';
+        row.innerHTML = `
+          <input type="checkbox" value="${book.id}" ${checked ? 'checked' : ''} style="accent-color:var(--accent2);width:18px;height:18px;flex-shrink:0;cursor:pointer;">
+          <div style="flex:1">
+            <div style="font-size:.88rem;font-weight:700;color:var(--text)">${book.icon} ${book.name}</div>
+            <div style="font-size:.65rem;color:var(--muted)">${book.description}</div>
+          </div>`;
+        row.addEventListener('mouseenter', () => row.style.borderColor = 'var(--accent)');
+        row.addEventListener('mouseleave', () => row.style.borderColor = 'var(--border)');
+        listEl.appendChild(row);
+      });
+    } else {
+      // ── NAUCZYCIEL: bez listy podręczników; chips + pole tekstowe ──
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px';
+      wrap.innerHTML = `
+        <div style="font-size:.68rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Przydzielone podręczniki</div>
+        <div id="teacherAccessChips" style="display:flex;flex-wrap:wrap;gap:6px;min-height:28px;margin-bottom:12px"></div>
+        <div style="font-size:.66rem;color:var(--muted);font-weight:600;margin-bottom:6px">Dodaj podręcznik (wpisz dokładną nazwę):</div>
+        <div style="display:flex;gap:8px">
+          <input type="text" id="teacherAccessBookName" placeholder="np. Brainy 6, Together 4" autocomplete="off" style="flex:1;padding:9px 11px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.85rem;font-weight:600;outline:none">
+          <button type="button" class="btn-sm accent" id="btnTeacherAddBook" style="padding:9px 14px;white-space:nowrap">➕ Dodaj</button>
+        </div>
+        <div id="teacherAccessMsg" style="font-size:.68rem;margin-top:6px;min-height:14px;font-weight:600"></div>
+        <input type="hidden" id="teacherAccessIds">
+      `;
+      listEl.appendChild(wrap);
+
+      // Stan lokalny przydzielonych ID książek
+      const state = { ids: new Set(userBooks) };
+      const redraw = () => {
+        const chipsEl = document.getElementById('teacherAccessChips');
+        const hidden = document.getElementById('teacherAccessIds');
+        chipsEl.innerHTML = '';
+        if (!state.ids.size) {
+          chipsEl.innerHTML = '<div style="font-size:.7rem;color:var(--muted);font-weight:600;font-style:italic">— brak przydzielonych podręczników —</div>';
+        } else {
+          [...state.ids].forEach(id => {
+            const b = BOOKS[id];
+            const label = b ? ((b.icon ? b.icon + ' ' : '') + b.name) : id;
+            const chip = document.createElement('span');
+            chip.style.cssText = 'display:inline-flex;align-items:center;gap:4px;background:var(--surface2);border:1px solid rgba(85,239,196,.4);color:var(--text);border-radius:100px;padding:4px 10px 4px 12px;font-size:.75rem;font-weight:700';
+            chip.innerHTML = `<span>${esc(label)}</span><button type="button" style="background:transparent;border:none;color:var(--danger);cursor:pointer;font-size:.9rem;font-weight:900;padding:0 2px;line-height:1" title="Usuń">×</button>`;
+            chip.querySelector('button').addEventListener('click', () => { state.ids.delete(id); redraw(); });
+            chipsEl.appendChild(chip);
+          });
+        }
+        hidden.value = [...state.ids].join(',');
+      };
+      redraw();
+
+      // Dodawanie po nazwie (dokładna lub częściowa)
+      document.getElementById('btnTeacherAddBook').addEventListener('click', () => {
+        const nameInp = document.getElementById('teacherAccessBookName');
+        const msgEl = document.getElementById('teacherAccessMsg');
+        const q = (nameInp.value || '').trim().toLowerCase();
+        if (!q) { msgEl.style.color='var(--danger)'; msgEl.textContent='⚠️ Wpisz nazwę podręcznika.'; return; }
+        const match = Object.values(BOOKS).find(b => {
+          if (b.adminOnly) return false; // nauczyciel nie przydziela admin-only
+          const n = (b.name || '').toLowerCase();
+          const sn = (b.shortName || '').toLowerCase();
+          const id = (b.id || '').toLowerCase();
+          return n === q || sn === q || id === q || n.includes(q) || sn.includes(q);
+        });
+        if (!match) { msgEl.style.color='var(--danger)'; msgEl.textContent='❌ Nie znaleziono podręcznika o takiej nazwie.'; return; }
+        if (state.ids.has(match.id)) { msgEl.style.color='var(--muted)'; msgEl.textContent='ℹ️ Ten podręcznik jest już przydzielony.'; return; }
+        state.ids.add(match.id);
+        msgEl.style.color='var(--success)';
+        msgEl.textContent='✓ Dodano: ' + match.name;
+        nameInp.value = '';
+        redraw();
+        setTimeout(() => { msgEl.textContent = ''; }, 2200);
+      });
+    }
   } catch(e) {
     listEl.innerHTML = `<div style="color:var(--danger);font-size:.8rem;padding:16px;font-weight:600">❌ ${esc(e.message)}</div>`;
   }
@@ -10351,8 +10415,15 @@ async function saveUserAccess() {
   const btn = document.getElementById('btnSaveAccess');
   btn.disabled = true; btn.textContent = '⏳…';
   try {
-    const checks = document.querySelectorAll('#accessBookList input[type=checkbox]');
-    const selected = [...checks].filter(c => c.checked).map(c => c.value);
+    // Zbierz listę ID: admin → z checkboxów; nauczyciel → z ukrytego pola chipów
+    let selected;
+    if (isCurrentUserAdmin()) {
+      const checks = document.querySelectorAll('#accessBookList input[type=checkbox]');
+      selected = [...checks].filter(c => c.checked).map(c => c.value);
+    } else {
+      const hidden = document.getElementById('teacherAccessIds');
+      selected = hidden && hidden.value ? hidden.value.split(',').filter(Boolean) : [];
+    }
     await DB.adminSetUserBooks(_accessUserId, selected);
     // Zapisz plan (jeśli admin)
     const planRadio = document.querySelector('input[name="userPlan"]:checked');
@@ -10619,11 +10690,18 @@ async function removeStudentConfirm(userId, username) {
 
 async function openAddStudentModal() {
   document.getElementById('studentSearchInp').value = '';
+  const inp = document.getElementById('studentSearchInp');
+  // Różne placeholdery zależnie od roli
+  if (inp) {
+    inp.placeholder = isCurrentUserAdmin()
+      ? 'Wpisz nazwę użytkownika…'
+      : 'Wpisz login ucznia, którego dodałeś…';
+  }
   document.getElementById('addStudentModal').style.display = 'flex';
   const listEl = document.getElementById('studentSearchList');
-  listEl.innerHTML = '<div style="color:var(--muted);font-size:.78rem;text-align:center;padding:12px">⏳ Ładowanie użytkowników…</div>';
+  listEl.innerHTML = '<div style="color:var(--muted);font-size:.78rem;text-align:center;padding:12px">⏳ Ładowanie…</div>';
   try {
-    if (!_allProfiles.length) _allProfiles = await DB.loadAllProfiles();
+    _allProfiles = await DB.loadAllProfiles();
     renderStudentSearchList('');
   } catch(e) {
     listEl.innerHTML = `<div style="color:var(--danger);font-size:.78rem;padding:8px">❌ ${esc(e.message)}</div>`;
@@ -10639,6 +10717,12 @@ function filterStudentSearch() {
 function renderStudentSearchList(query) {
   const el = document.getElementById('studentSearchList');
   const myId = DB.getUserId();
+  const isAdmin = isCurrentUserAdmin();
+  // Dla nauczyciela: pusta kwerenda = pusty widok, tylko prośba o login
+  if (!isAdmin && !query) {
+    el.innerHTML = '<div style="color:var(--muted);font-size:.78rem;text-align:center;padding:14px;line-height:1.5">Wpisz login ucznia, aby go znaleźć.<br><span style="font-size:.68rem">Widzisz tylko uczniów, których sam dodałeś.</span></div>';
+    return;
+  }
   const filtered = _allProfiles
     .filter(p => p.id !== myId && p.username.toLowerCase().includes(query));
 
@@ -11740,49 +11824,26 @@ if ('serviceWorker' in navigator) {
     const gr = document.getElementById('reqAccessGrade');
     const msg = document.getElementById('reqAccessMsg');
     const nameInp = document.getElementById('reqAccessStudentName');
+    const bookInp = document.getElementById('reqAccessBook');
     // Podstaw domyślnie aktualny kontekst nawigacji
     if (sc && typeof _navSchoolType !== 'undefined' && _navSchoolType) sc.value = _navSchoolType;
     if (gr && typeof _navGrade !== 'undefined' && _navGrade) gr.value = String(_navGrade);
     if (nameInp) nameInp.value = '';
+    if (bookInp) bookInp.value = '';
     document.getElementById('reqAccessMessage').value = '';
     if (msg) msg.textContent = '';
-    reqAccessUpdateBookList();
     document.getElementById('requestAccessModal').style.display = 'flex';
     if (nameInp) setTimeout(()=>nameInp.focus(), 60);
   };
   window.closeRequestAccessModal = function(){ document.getElementById('requestAccessModal').style.display='none'; };
-
-  window.reqAccessUpdateBookList = function(){
-    const sc = document.getElementById('reqAccessSchool').value;
-    const gr = document.getElementById('reqAccessGrade').value;
-    const sel = document.getElementById('reqAccessBook');
-    sel.innerHTML = '';
-    if (!sc) { sel.innerHTML = '<option value="">— najpierw wybierz szkołę —</option>'; return; }
-    const grNum = gr ? parseInt(gr,10) : null;
-    const books = Object.values(BOOKS).filter(b => {
-      if (b.language !== 'en') return false;
-      if (b.schoolType !== sc) return false;
-      if (sc === 'other') return true;
-      if (grNum != null && b.grade !== grNum) return false;
-      return true;
-    });
-    if (!books.length) {
-      sel.innerHTML = '<option value="">— brak podręczników w tej klasie —</option>';
-      return;
-    }
-    sel.innerHTML = '<option value="">— wybierz podręcznik —</option>';
-    books.forEach(b => {
-      const opt = document.createElement('option');
-      opt.value = b.id; opt.textContent = (b.icon ? b.icon + ' ' : '') + b.name;
-      sel.appendChild(opt);
-    });
-  };
+  // Zachowuję pustą funkcję na wypadek starych wywołań onchange w DOM-ie
+  window.reqAccessUpdateBookList = function(){};
 
   window.submitRequestAccess = async function(){
     const studentName = document.getElementById('reqAccessStudentName').value.trim();
     const sc = document.getElementById('reqAccessSchool').value;
     const grRaw = document.getElementById('reqAccessGrade').value;
-    const book = document.getElementById('reqAccessBook').value;
+    const book = document.getElementById('reqAccessBook').value.trim();
     const message = document.getElementById('reqAccessMessage').value.trim();
     const msgEl = document.getElementById('reqAccessMsg');
     const btn = document.getElementById('btnSubmitReqAccess');
@@ -11791,7 +11852,7 @@ if ('serviceWorker' in navigator) {
     }
     if (!sc) { msgEl.style.color='var(--danger)'; msgEl.textContent='⚠️ Wybierz szkołę.'; return; }
     if (sc !== 'other' && !grRaw) { msgEl.style.color='var(--danger)'; msgEl.textContent='⚠️ Wybierz klasę.'; return; }
-    if (!book) { msgEl.style.color='var(--danger)'; msgEl.textContent='⚠️ Wybierz podręcznik.'; return; }
+    if (!book || book.length < 2) { msgEl.style.color='var(--danger)'; msgEl.textContent='⚠️ Wpisz nazwę podręcznika.'; return; }
     btn.disabled = true;
     msgEl.style.color='var(--muted)'; msgEl.textContent='⏳ Wysyłam prośbę…';
     try {
