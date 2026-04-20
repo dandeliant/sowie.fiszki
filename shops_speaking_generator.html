@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🏙️ Shops Speaking Generator — Bugs Team 3 · Unit 5</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --teal: #14b8c4;
+    --teal-d: #0e8f99;
+    --pink: #ec4f9a;
+    --pink-d: #c73a7f;
+    --purple: #8b3cff;
+    --purple-d: #6d28d9;
+    --yellow: #fbbf24;
+    --green: #10b981;
+    --bg1: #fef3f9;
+    --bg2: #e0f7fa;
+    --bg3: #f3e8ff;
+    --ink: #1a1a2e;
+    --ink-soft: #475569;
+    --card: #ffffff;
+    --shadow: 0 20px 60px -15px rgba(139, 60, 255, 0.25), 0 8px 20px -8px rgba(236, 79, 154, 0.2);
+  }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Fredoka', 'Nunito', system-ui, sans-serif;
+    background:
+      radial-gradient(circle at 15% 20%, var(--bg1) 0%, transparent 50%),
+      radial-gradient(circle at 85% 30%, var(--bg2) 0%, transparent 50%),
+      radial-gradient(circle at 50% 90%, var(--bg3) 0%, transparent 60%),
+      linear-gradient(135deg, #fff5fa 0%, #f0fdff 50%, #faf5ff 100%);
+    color: var(--ink);
+    min-height: 100vh;
+    padding: 20px 16px 40px;
+    overflow-x: hidden;
+  }
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      radial-gradient(circle at 10% 10%, rgba(236,79,154,0.08) 0%, transparent 8%),
+      radial-gradient(circle at 90% 20%, rgba(20,184,196,0.08) 0%, transparent 10%),
+      radial-gradient(circle at 20% 80%, rgba(139,60,255,0.08) 0%, transparent 12%),
+      radial-gradient(circle at 80% 70%, rgba(251,191,36,0.08) 0%, transparent 10%);
+    pointer-events: none;
+    z-index: 0;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; position: relative; z-index: 1; }
+
+  /* ---------- HEADER ---------- */
+  header {
+    text-align: center;
+    margin-bottom: 24px;
+    padding: 8px 0;
+  }
+  .badge-top {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: white;
+    padding: 6px 16px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--purple-d);
+    box-shadow: 0 4px 12px rgba(139,60,255,0.15);
+    margin-bottom: 12px;
+    letter-spacing: 0.5px;
+  }
+  h1 {
+    font-size: clamp(26px, 5vw, 40px);
+    font-weight: 900;
+    letter-spacing: -0.5px;
+    background: linear-gradient(135deg, var(--purple) 0%, var(--pink) 50%, var(--teal) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    margin-bottom: 6px;
+    line-height: 1.1;
+  }
+  .subtitle {
+    color: var(--ink-soft);
+    font-size: 14px;
+    font-weight: 500;
+  }
+
+  /* ---------- MODE TABS ---------- */
+  .modes {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    background: white;
+    padding: 6px;
+    border-radius: 16px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+    margin-bottom: 24px;
+  }
+  .mode-btn {
+    padding: 14px 10px;
+    border: none;
+    background: transparent;
+    border-radius: 12px;
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 14px;
+    color: var(--ink-soft);
+    transition: all 0.25s ease;
+    font-family: inherit;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+  .mode-btn .mode-emoji { font-size: 22px; }
+  .mode-btn .mode-sub { font-size: 11px; font-weight: 500; opacity: 0.7; }
+  .mode-btn:hover { background: #f8f8fc; color: var(--ink); }
+  .mode-btn.active {
+    background: linear-gradient(135deg, var(--purple) 0%, var(--pink) 100%);
+    color: white;
+    box-shadow: 0 8px 20px -6px rgba(139,60,255,0.5);
+  }
+  .mode-btn.active .mode-sub { opacity: 0.95; }
+
+  /* ---------- MAIN CARD ---------- */
+  .scene {
+    background: var(--card);
+    border-radius: 28px;
+    padding: 32px 24px;
+    box-shadow: var(--shadow);
+    position: relative;
+    overflow: hidden;
+    margin-bottom: 20px;
+  }
+  .scene::before {
+    content: '';
+    position: absolute;
+    top: -60px; right: -60px;
+    width: 180px; height: 180px;
+    background: radial-gradient(circle, rgba(20,184,196,0.15), transparent 70%);
+    border-radius: 50%;
+  }
+  .scene::after {
+    content: '';
+    position: absolute;
+    bottom: -50px; left: -50px;
+    width: 160px; height: 160px;
+    background: radial-gradient(circle, rgba(236,79,154,0.15), transparent 70%);
+    border-radius: 50%;
+  }
+
+  /* Shop visual */
+  .shop-visual {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+    z-index: 1;
+  }
+  .shop-emoji-box {
+    width: 200px;
+    height: 200px;
+    border-radius: 32px;
+    background: linear-gradient(135deg, #ffe4ef 0%, #e0f7fa 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 110px;
+    margin-bottom: 12px;
+    box-shadow: inset 0 -6px 0 rgba(0,0,0,0.04), 0 12px 30px -10px rgba(0,0,0,0.15);
+    position: relative;
+    transition: transform 0.3s cubic-bezier(.2,.9,.3,1.4);
+  }
+  .shop-emoji-box.animate { animation: popIn 0.5s cubic-bezier(.2,.9,.3,1.4); }
+  @keyframes popIn {
+    0% { transform: scale(0.5) rotate(-8deg); opacity: 0; }
+    60% { transform: scale(1.08) rotate(3deg); }
+    100% { transform: scale(1) rotate(0); opacity: 1; }
+  }
+
+  /* Number badge (top-left of shop) */
+  .number-badge {
+    position: absolute;
+    top: -14px;
+    left: -14px;
+    min-width: 56px;
+    height: 56px;
+    padding: 0 14px;
+    background: linear-gradient(135deg, var(--yellow) 0%, #f59e0b 100%);
+    color: white;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 30px;
+    font-weight: 900;
+    font-family: Georgia, serif;
+    box-shadow: 0 6px 16px -4px rgba(245,158,11,0.5), inset 0 -4px 0 rgba(0,0,0,0.15);
+    border: 3px solid white;
+    z-index: 2;
+    transition: transform 0.3s ease;
+  }
+  .number-badge.hidden { display: none; }
+
+  /* Shop name */
+  .shop-name {
+    font-size: 28px;
+    font-weight: 800;
+    color: var(--ink);
+    margin: 12px 0 18px;
+    text-align: center;
+    letter-spacing: -0.3px;
+  }
+
+  /* Street sign */
+  .street-sign {
+    background: linear-gradient(135deg, var(--purple) 0%, #a855f7 100%);
+    color: white;
+    padding: 14px 36px;
+    border-radius: 12px;
+    font-size: 24px;
+    font-weight: 800;
+    font-family: Georgia, 'Times New Roman', serif;
+    box-shadow: 0 10px 25px -8px rgba(139,60,255,0.5), inset 0 -4px 0 rgba(0,0,0,0.2);
+    letter-spacing: 0.5px;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    display: inline-block;
+    border: 3px solid rgba(255,255,255,0.4);
+  }
+  .street-sign.hidden { display: none; }
+
+  /* ---------- SPEAKING SECTION ---------- */
+  .speak-panel {
+    margin-top: 28px;
+    position: relative;
+    z-index: 1;
+  }
+  .prompt-label {
+    text-align: center;
+    font-size: 13px;
+    color: var(--ink-soft);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-bottom: 12px;
+  }
+  .prompt-label .pl-flag { font-size: 16px; vertical-align: -2px; }
+  .prompt-pl {
+    text-align: center;
+    color: var(--ink-soft);
+    font-style: italic;
+    font-size: 15px;
+    margin-bottom: 20px;
+    padding: 0 10px;
+  }
+
+  /* Try / Answer block */
+  .answer-box {
+    background: linear-gradient(135deg, #f0fdfa 0%, #ecfeff 100%);
+    border: 2px dashed var(--teal);
+    border-radius: 20px;
+    padding: 20px;
+    text-align: center;
+    min-height: 90px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+  }
+  .answer-box.revealed {
+    background: linear-gradient(135deg, #d1fae5 0%, #ccfbf1 100%);
+    border-style: solid;
+    border-color: var(--green);
+  }
+  .answer-hidden {
+    color: var(--teal-d);
+    font-weight: 600;
+    font-size: 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: center;
+  }
+  .answer-hidden .hint-icon { font-size: 32px; }
+  .answer-text {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--ink);
+    line-height: 1.4;
+    letter-spacing: -0.2px;
+  }
+  .answer-text .hl { color: var(--pink-d); }
+  .answer-text .hl-num { color: #b45309; }
+  .answer-text .hl-street { color: var(--purple-d); }
+
+  /* ---------- BUTTONS ---------- */
+  .actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 20px;
+  }
+  .actions.three { grid-template-columns: 1fr 1fr 1fr; }
+  .btn {
+    border: none;
+    border-radius: 16px;
+    padding: 16px 14px;
+    font-weight: 800;
+    font-size: 15px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: transform 0.15s ease, box-shadow 0.2s ease, filter 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: white;
+    letter-spacing: 0.2px;
+  }
+  .btn:active { transform: scale(0.97); }
+  .btn:hover { filter: brightness(1.08); }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; filter: grayscale(0.3); }
+  .btn-reveal {
+    background: linear-gradient(135deg, var(--teal) 0%, var(--teal-d) 100%);
+    box-shadow: 0 8px 20px -6px rgba(20,184,196,0.55), inset 0 -4px 0 rgba(0,0,0,0.15);
+  }
+  .btn-speak {
+    background: linear-gradient(135deg, var(--pink) 0%, var(--pink-d) 100%);
+    box-shadow: 0 8px 20px -6px rgba(236,79,154,0.55), inset 0 -4px 0 rgba(0,0,0,0.15);
+  }
+  .btn-speak.speaking {
+    animation: pulse 1s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.03); box-shadow: 0 12px 30px -6px rgba(236,79,154,0.7); }
+  }
+  .btn-generate {
+    background: linear-gradient(135deg, var(--purple) 0%, var(--purple-d) 100%);
+    box-shadow: 0 8px 20px -6px rgba(139,60,255,0.55), inset 0 -4px 0 rgba(0,0,0,0.15);
+    grid-column: 1 / -1;
+    padding: 18px 14px;
+    font-size: 16px;
+  }
+  .btn .emo { font-size: 20px; }
+
+  /* ---------- STATS ---------- */
+  .stats {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 16px;
+  }
+  .stat-pill {
+    background: white;
+    padding: 8px 16px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--ink-soft);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .stat-pill .val {
+    color: var(--purple-d);
+    font-weight: 900;
+    font-size: 14px;
+  }
+
+  /* ---------- FOOTER ---------- */
+  footer {
+    text-align: center;
+    margin-top: 24px;
+    font-size: 12px;
+    color: var(--ink-soft);
+    opacity: 0.75;
+  }
+
+  /* Voice status */
+  .voice-status {
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    background: white;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--ink-soft);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 220px;
+  }
+  .voice-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #cbd5e1;
+  }
+  .voice-status.ok .voice-dot { background: var(--green); }
+
+  /* Back link do Sowie Fiszki */
+  .back-link{
+    display:inline-flex;align-items:center;gap:6px;
+    font-family:inherit;font-size:.85rem;font-weight:800;
+    color:var(--purple-d);text-decoration:none;
+    background:#fff;padding:8px 16px;border-radius:999px;
+    border:2px solid var(--purple);
+    margin-bottom:14px;
+    box-shadow:0 4px 12px rgba(139,60,255,.18);
+    transition:background .15s, transform .1s;
+  }
+  .back-link:hover{background:#f5eeff;transform:translateY(-1px);}
+  @media print{.back-link{display:none !important;}}
+
+  /* Confetti burst micro */
+  @keyframes sparkle {
+    0% { opacity: 0; transform: translateY(0) scale(0); }
+    40% { opacity: 1; transform: translateY(-20px) scale(1); }
+    100% { opacity: 0; transform: translateY(-40px) scale(0.6); }
+  }
+  .sparkle {
+    position: absolute;
+    font-size: 20px;
+    pointer-events: none;
+    animation: sparkle 1s ease-out forwards;
+  }
+
+  /* Mobile */
+  @media (max-width: 520px) {
+    .shop-emoji-box { width: 160px; height: 160px; font-size: 88px; }
+    .shop-name { font-size: 22px; }
+    .street-sign { font-size: 18px; padding: 10px 24px; }
+    .answer-text { font-size: 18px; }
+    .mode-btn { padding: 10px 6px; font-size: 13px; }
+    .mode-btn .mode-emoji { font-size: 18px; }
+    .voice-status { font-size: 10px; padding: 4px 8px; max-width: 160px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="voice-status" id="voiceStatus">
+  <span class="voice-dot"></span>
+  <span id="voiceName">Ładowanie głosu…</span>
+</div>
+
+<div class="wrap">
+  <a href="app.html" class="back-link">← Powrót do Sowie Fiszki</a>
+  <header>
+    <div class="badge-top">📘 Bugs Team 3 · Unit 5 · Shops</div>
+    <h1>Shops Speaking Generator 🏙️</h1>
+    <p class="subtitle">Naciśnij <b>🎲 Losuj</b> i spróbuj powiedzieć zdanie po angielsku!</p>
+  </header>
+
+  <div class="modes">
+    <button class="mode-btn active" data-mode="looking">
+      <span class="mode-emoji">🔎</span>
+      <span>I'm looking for a...</span>
+      <span class="mode-sub">Szukam sklepu</span>
+    </button>
+    <button class="mode-btn" data-mode="thereIs">
+      <span class="mode-emoji">📍</span>
+      <span>There is / There are</span>
+      <span class="mode-sub">Na ulicy są...</span>
+    </button>
+  </div>
+
+  <div class="scene">
+    <div class="shop-visual">
+      <div class="shop-emoji-box" id="emojiBox">
+        <div class="number-badge hidden" id="numberBadge">1</div>
+        <span id="shopEmoji">🏪</span>
+      </div>
+      <div class="shop-name" id="shopName">—</div>
+      <div class="street-sign hidden" id="streetSign">— Street</div>
+    </div>
+
+    <div class="speak-panel">
+      <div class="prompt-label">🗣️ Say it in English</div>
+      <div class="prompt-pl" id="promptPl">Kliknij „Losuj", żeby zacząć!</div>
+
+      <div class="answer-box" id="answerBox">
+        <div class="answer-hidden" id="hiddenState">
+          <span class="hint-icon">🤔</span>
+          <span>Najpierw spróbuj powiedzieć sam — potem sprawdź!</span>
+        </div>
+        <div class="answer-text" id="answerText" style="display:none;"></div>
+      </div>
+
+      <div class="actions">
+        <button class="btn btn-reveal" id="btnReveal" disabled>
+          <span class="emo">👁️</span><span>Pokaż zdanie</span>
+        </button>
+        <button class="btn btn-speak" id="btnSpeak" disabled>
+          <span class="emo">🔊</span><span>Posłuchaj</span>
+        </button>
+      </div>
+      <div class="actions" style="margin-top: 10px;">
+        <button class="btn btn-generate" id="btnGenerate">
+          <span class="emo">🎲</span><span>Losuj nowe zadanie</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat-pill">🎯 Wylosowane: <span class="val" id="statGen">0</span></div>
+    <div class="stat-pill">🔊 Odtworzone: <span class="val" id="statSpk">0</span></div>
+    <div class="stat-pill">👁️ Sprawdzone: <span class="val" id="statRev">0</span></div>
+  </div>
+
+  <footer>
+    🎓 Materiał: Bugs Team 3 · Unit 5 · Shops &nbsp;·&nbsp; 🇬🇧 Google UK English Female
+  </footer>
+</div>
+
+<script>
+// ========== DANE ==========
+const SHOPS = [
+  { en: 'toy shop',       pl: 'sklep z zabawkami',   emoji: '🧸', plural: 'toy shops' },
+  { en: 'bakery',         pl: 'piekarnia',           emoji: '🥖', plural: 'bakeries' },
+  { en: 'pet shop',       pl: 'sklep zoologiczny',   emoji: '🐶', plural: 'pet shops' },
+  { en: 'sweet shop',     pl: 'cukiernia / słodycze',emoji: '🍬', plural: 'sweet shops' },
+  { en: 'shoe shop',      pl: 'sklep obuwniczy',     emoji: '👟', plural: 'shoe shops' },
+  { en: 'clothes shop',   pl: 'sklep z ubraniami',   emoji: '👗', plural: 'clothes shops' },
+  { en: 'school',         pl: 'szkoła',              emoji: '🏫', plural: 'schools' },
+  { en: 'hospital',       pl: 'szpital',             emoji: '🏥', plural: 'hospitals' },
+  { en: 'restaurant',     pl: 'restauracja',         emoji: '🍽️', plural: 'restaurants' },
+  { en: 'hotel',          pl: 'hotel',               emoji: '🏨', plural: 'hotels' },
+  { en: 'train station',  pl: 'dworzec kolejowy',    emoji: '🚉', plural: 'train stations' },
+  { en: 'post office',    pl: 'poczta',              emoji: '📮', plural: 'post offices' },
+  { en: 'supermarket',    pl: 'supermarket',         emoji: '🛒', plural: 'supermarkets' },
+  { en: 'sports centre',  pl: 'centrum sportowe',    emoji: '⚽', plural: 'sports centres' },
+  { en: 'pharmacy',       pl: 'apteka',              emoji: '💊', plural: 'pharmacies' }
+];
+
+const STREETS = [
+  'New Street','Old Street','Międzyrzecka Street','Toy Street','Pink Street',
+  'Sesame Street','iPhone Street','Bakery Street','Highway Street','Cat Street',
+  'Dog Street','Piłsudskiego Street','War Street','Kebab Street','Chicken Street',
+  'Kids Street','Cabbage Street','Butterfly Street','German Street','Farna Street',
+  'Poland Street','Owl Street','Kanałowa Street','English Street','Lidl Street',
+  'Mieszko Street','Ladybird Street','Tank Street','Wyszyńskiego Street','Rabbit Street',
+  'Bank Street','Happy Birthday Street','Ohio Street','Minecraft Street',
+  'Fortnite Street','Telephone Street',"McDonald's Street",'Kochanowskiego Street',
+  'Snake Street','Train Street','Clock Street','Ship Street','Flag Street',
+  'Cow Street','Name Street','Chrupkowa Street','Warszawska Street',
+  'Nieznana Street','Uknown Street','Krakowska Street','Frytkowa Street'
+];
+
+const NUM_WORDS = ['zero','one','two','three','four','five'];
+const NUM_WORDS_PL = ['zero','jeden','dwa','trzy','cztery','pięć'];
+
+// ========== TTS (wzorzec Dana) ==========
+let voices = [];
+function loadVoices() {
+  voices = speechSynthesis.getVoices();
+  updateVoiceStatus();
+}
+speechSynthesis.onvoiceschanged = loadVoices;
+loadVoices();
+
+function getV() {
+  return voices.find(v => v.name === 'Google UK English Female')
+      || voices.find(v => /en-GB/i.test(v.lang) && /female/i.test(v.name))
+      || voices.find(v => /Kate|Serena|Martha|Sonia/i.test(v.name) && /en/i.test(v.lang))
+      || voices.find(v => /en-GB/i.test(v.lang))
+      || voices.find(v => /^en/i.test(v.lang))
+      || null;
+}
+
+function updateVoiceStatus() {
+  const v = getV();
+  const el = document.getElementById('voiceName');
+  const box = document.getElementById('voiceStatus');
+  if (v) {
+    el.textContent = '🇬🇧 ' + v.name;
+    box.classList.add('ok');
+  } else if (voices.length === 0) {
+    el.textContent = 'Ładowanie głosów…';
+  } else {
+    el.textContent = 'Brak en-GB, używam domyślnego';
+  }
+}
+
+function spk(text) {
+  if (!text) return;
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  const v = getV();
+  if (v) u.voice = v;
+  u.lang = 'en-GB';
+  u.pitch = 1;
+  u.rate = 0.9;
+  const btn = document.getElementById('btnSpeak');
+  btn.classList.add('speaking');
+  u.onend = () => btn.classList.remove('speaking');
+  u.onerror = () => btn.classList.remove('speaking');
+  speechSynthesis.speak(u);
+}
+
+// ========== STAN ==========
+let state = {
+  mode: 'looking',
+  shop: null,
+  number: 1,
+  street: null,
+  revealed: false,
+  stats: { gen: 0, spk: 0, rev: 0 }
+};
+
+function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+function pickDifferent(arr, current) {
+  if (arr.length < 2) return pick(arr);
+  let n; do { n = pick(arr); } while (n === current);
+  return n;
+}
+
+// ========== ZDANIA ==========
+function buildSentence() {
+  if (state.mode === 'looking') {
+    return {
+      text: `Excuse me. I'm looking for a ${state.shop.en}.`,
+      html: `Excuse me. I'm looking for a <span class="hl">${state.shop.en}</span>.`,
+      pl: `Przepraszam. Szukam ${state.shop.pl}.`
+    };
+  } else {
+    if (state.number === 1) {
+      return {
+        text: `There is one ${state.shop.en} on ${state.street}.`,
+        html: `There is <span class="hl-num">one</span> <span class="hl">${state.shop.en}</span> on <span class="hl-street">${state.street}</span>.`,
+        pl: `Na ulicy ${state.street} jest jeden ${state.shop.pl}.`
+      };
+    } else {
+      const numWord = NUM_WORDS[state.number];
+      const numWordPl = NUM_WORDS_PL[state.number];
+      return {
+        text: `There are ${numWord} ${state.shop.plural} on ${state.street}.`,
+        html: `There are <span class="hl-num">${numWord}</span> <span class="hl">${state.shop.plural}</span> on <span class="hl-street">${state.street}</span>.`,
+        pl: `Na ulicy ${state.street} są ${numWordPl} ${state.shop.pl === 'szpital' ? 'szpitale' : state.shop.pl + 'y/e'}.`
+      };
+    }
+  }
+}
+
+// ========== RENDER ==========
+function render() {
+  document.getElementById('shopEmoji').textContent = state.shop ? state.shop.emoji : '🏪';
+  document.getElementById('shopName').textContent = state.shop ? state.shop.en : '—';
+
+  const badge = document.getElementById('numberBadge');
+  const sign = document.getElementById('streetSign');
+
+  if (state.mode === 'thereIs' && state.shop) {
+    badge.classList.remove('hidden');
+    badge.textContent = state.number;
+    sign.classList.remove('hidden');
+    sign.textContent = state.street;
+  } else {
+    badge.classList.add('hidden');
+    sign.classList.add('hidden');
+  }
+
+  // Prompt po polsku (żeby wiedział co ma powiedzieć)
+  const promptEl = document.getElementById('promptPl');
+  if (!state.shop) {
+    promptEl.textContent = 'Kliknij „Losuj", żeby zacząć!';
+  } else if (state.mode === 'looking') {
+    promptEl.innerHTML = `🎯 Powiedz: <b>"Szukam ${state.shop.pl}."</b>`;
+  } else {
+    if (state.number === 1) {
+      promptEl.innerHTML = `🎯 Powiedz: <b>"Na ulicy ${state.street} jest jeden ${state.shop.pl}."</b>`;
+    } else {
+      promptEl.innerHTML = `🎯 Powiedz, że na ulicy <b>${state.street}</b> są <b>${state.number}</b> ${state.shop.pl} 🗣️`;
+    }
+  }
+
+  // Reset odpowiedzi
+  const box = document.getElementById('answerBox');
+  const hidden = document.getElementById('hiddenState');
+  const text = document.getElementById('answerText');
+  if (state.revealed && state.shop) {
+    const s = buildSentence();
+    text.innerHTML = s.html;
+    text.style.display = 'block';
+    hidden.style.display = 'none';
+    box.classList.add('revealed');
+  } else {
+    text.style.display = 'none';
+    hidden.style.display = 'flex';
+    box.classList.remove('revealed');
+  }
+
+  // Przyciski
+  document.getElementById('btnReveal').disabled = !state.shop || state.revealed;
+  document.getElementById('btnSpeak').disabled = !state.shop;
+
+  // Statystyki
+  document.getElementById('statGen').textContent = state.stats.gen;
+  document.getElementById('statSpk').textContent = state.stats.spk;
+  document.getElementById('statRev').textContent = state.stats.rev;
+}
+
+// ========== AKCJE ==========
+function generate() {
+  state.shop = pickDifferent(SHOPS, state.shop);
+  if (state.mode === 'thereIs') {
+    state.number = 1 + Math.floor(Math.random() * 5); // 1..5
+    state.street = pickDifferent(STREETS, state.street);
+  }
+  state.revealed = false;
+  state.stats.gen++;
+
+  // animacja
+  const box = document.getElementById('emojiBox');
+  box.classList.remove('animate');
+  void box.offsetWidth;
+  box.classList.add('animate');
+
+  render();
+}
+
+function reveal() {
+  if (!state.shop || state.revealed) return;
+  state.revealed = true;
+  state.stats.rev++;
+  render();
+  sparkleBurst();
+}
+
+function speak() {
+  if (!state.shop) return;
+  const s = buildSentence();
+  spk(s.text);
+  state.stats.spk++;
+  render();
+}
+
+function setMode(mode) {
+  state.mode = mode;
+  document.querySelectorAll('.mode-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.mode === mode);
+  });
+  // odśwież jeśli coś już jest
+  if (state.shop) {
+    // dla trybu thereIs dolosuj brakujące dane
+    if (mode === 'thereIs' && !state.street) {
+      state.number = 1 + Math.floor(Math.random() * 5);
+      state.street = pick(STREETS);
+    }
+    state.revealed = false;
+  }
+  render();
+}
+
+function sparkleBurst() {
+  const box = document.getElementById('answerBox');
+  const emojis = ['✨','⭐','🎉','💫'];
+  for (let i = 0; i < 5; i++) {
+    const s = document.createElement('span');
+    s.className = 'sparkle';
+    s.textContent = pick(emojis);
+    s.style.left = (20 + Math.random() * 60) + '%';
+    s.style.top = (40 + Math.random() * 20) + '%';
+    s.style.animationDelay = (i * 0.08) + 's';
+    box.appendChild(s);
+    setTimeout(() => s.remove(), 1200);
+  }
+}
+
+// ========== EVENTS ==========
+document.getElementById('btnGenerate').addEventListener('click', generate);
+document.getElementById('btnReveal').addEventListener('click', reveal);
+document.getElementById('btnSpeak').addEventListener('click', speak);
+document.querySelectorAll('.mode-btn').forEach(btn => {
+  btn.addEventListener('click', () => setMode(btn.dataset.mode));
+});
+
+// Skróty klawiszowe
+document.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  if (e.code === 'Space') { e.preventDefault(); generate(); }
+  else if (e.key.toLowerCase() === 'r') { reveal(); }
+  else if (e.key.toLowerCase() === 's') { speak(); }
+  else if (e.key === '1') { setMode('looking'); }
+  else if (e.key === '2') { setMode('thereIs'); }
+});
+
+// Start z przykładem
+setTimeout(() => {
+  // lekki "teaser" — losujemy od razu, żeby było co zobaczyć
+  generate();
+}, 300);
+</script>
+
+</body>
+</html>
