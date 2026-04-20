@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🐾 Speaking Cards — Animals & Food</title>
+<style>
+  :root{
+    --bg1:#FFD3A5; --bg2:#FD6585; --bg3:#A18CD1; --bg4:#84FAB0;
+    --card:#ffffff; --ink:#1f1147; --ink-soft:#5a4b89;
+    --good:#22c55e; --good-soft:#dcfce7;
+    --bad:#ef4444; --bad-soft:#fee2e2;
+    --neutral:#6366f1; --neutral-soft:#e0e7ff;
+    --shadow:0 20px 60px -15px rgba(31,17,71,.35);
+    --shadow-lg:0 30px 80px -20px rgba(31,17,71,.45);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0;min-height:100%;font-family:'Nunito','Segoe UI',system-ui,-apple-system,sans-serif}
+  body{
+    background:linear-gradient(135deg,var(--bg1) 0%,var(--bg2) 35%,var(--bg3) 70%,var(--bg4) 100%);
+    background-size:300% 300%;
+    animation:bg 18s ease infinite;
+    color:var(--ink);
+    padding:20px 16px 60px;
+    display:flex;flex-direction:column;align-items:center;
+    overflow-x:hidden;
+  }
+  @keyframes bg{0%,100%{background-position:0 50%}50%{background-position:100% 50%}}
+
+  header{text-align:center;margin:10px 0 28px;color:#fff;text-shadow:0 4px 20px rgba(0,0,0,.25)}
+  header h1{margin:0;font-size:clamp(1.8rem,5vw,2.6rem);font-weight:900;letter-spacing:-.02em}
+  header p{margin:6px 0 0;font-size:clamp(.95rem,2.3vw,1.1rem);opacity:.95;font-weight:600}
+
+  .stage{width:100%;max-width:720px}
+
+  .card{
+    background:var(--card);
+    border-radius:32px;
+    box-shadow:var(--shadow-lg);
+    padding:clamp(20px,4vw,36px);
+    position:relative;
+    overflow:hidden;
+  }
+  .card::before{
+    content:"";position:absolute;inset:0;
+    background:radial-gradient(circle at 10% 0%,rgba(253,101,133,.08),transparent 40%),
+               radial-gradient(circle at 90% 100%,rgba(161,140,209,.10),transparent 45%);
+    pointer-events:none;
+  }
+
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:14px;position:relative;z-index:1}
+  @media (max-width:480px){.row{grid-template-columns:1fr}}
+
+  .tile{
+    border-radius:24px;padding:18px 14px;text-align:center;
+    background:var(--neutral-soft);
+    border:3px solid transparent;
+    transition:transform .35s cubic-bezier(.34,1.56,.64,1), box-shadow .3s;
+    position:relative;
+  }
+  .tile.animal{background:#fff5f7;border-color:#fecdd3}
+  .tile.likes{background:var(--good-soft);border-color:#bbf7d0}
+  .tile.dislikes{background:var(--bad-soft);border-color:#fecaca}
+
+  .tile .emoji{
+    font-size:clamp(4.5rem,14vw,7rem);
+    line-height:1;
+    display:block;
+    filter:drop-shadow(0 8px 18px rgba(0,0,0,.12));
+    animation:pop .6s cubic-bezier(.34,1.56,.64,1);
+  }
+  @keyframes pop{0%{transform:scale(.4);opacity:0}100%{transform:scale(1);opacity:1}}
+
+  .tile .label{
+    margin-top:8px;font-weight:800;font-size:1.15rem;
+    color:var(--ink);text-transform:capitalize;letter-spacing:.01em;
+  }
+  .tile .badge{
+    display:inline-block;margin-bottom:6px;font-size:.72rem;font-weight:800;
+    padding:4px 10px;border-radius:999px;letter-spacing:.08em;text-transform:uppercase;
+  }
+  .tile.animal .badge{background:#fecdd3;color:#9f1239}
+  .tile.likes .badge{background:#bbf7d0;color:#166534}
+  .tile.dislikes .badge{background:#fecaca;color:#991b1b}
+  .badge-icon{
+    font-size:1.4rem !important;
+    padding:4px 12px !important;
+    letter-spacing:0 !important;
+    line-height:1 !important;
+  }
+
+  /* ===== HIDE-TEXT / SPEAK-YOURSELF MODE ===== */
+  .stage.no-text .animal-big .name,
+  .stage.no-text .tile .label,
+  .stage.no-text .sentences{
+    display:none !important;
+  }
+  .stage.no-text .animal-big{
+    padding-bottom:10px;
+  }
+  .stage.no-text .tile .emoji{
+    font-size:clamp(5.5rem,16vw,8rem);
+  }
+  .stage.no-text .animal-big .emoji{
+    font-size:clamp(7rem,26vw,12rem);
+  }
+  .toggle-text{
+    background:linear-gradient(135deg,#fff,#fef3f8);
+    color:var(--ink);
+    border:2px solid #fce7f3;
+  }
+  .toggle-text:hover{box-shadow:0 14px 30px -8px rgba(253,101,133,.35)}
+  .toggle-text.active{
+    background:linear-gradient(135deg,#fd6585,#a18cd1);
+    color:#fff;
+    border-color:transparent;
+  }
+
+  .animal-big{
+    grid-column:1/-1;
+    background:linear-gradient(135deg,#fff 0%,#fef3f8 100%);
+    border:3px solid #fce7f3;
+    border-radius:28px;
+    padding:22px;
+    text-align:center;
+    margin-bottom:14px;
+    position:relative;
+    z-index:1;
+  }
+  .animal-big .emoji{
+    font-size:clamp(6rem,22vw,10rem);
+    line-height:1;display:block;
+    filter:drop-shadow(0 12px 28px rgba(0,0,0,.18));
+    animation:bounce .7s cubic-bezier(.34,1.56,.64,1);
+  }
+  @keyframes bounce{
+    0%{transform:scale(.3) rotate(-10deg);opacity:0}
+    60%{transform:scale(1.08) rotate(4deg)}
+    100%{transform:scale(1) rotate(0);opacity:1}
+  }
+  .animal-big .name{
+    font-size:clamp(1.4rem,4.5vw,1.9rem);font-weight:900;margin-top:6px;
+    color:var(--ink);text-transform:capitalize;
+  }
+
+  .sentences{
+    margin-top:22px;padding:18px;
+    background:linear-gradient(135deg,#fafaff 0%,#f0f4ff 100%);
+    border-radius:20px;position:relative;z-index:1;
+  }
+  .sentence{
+    display:flex;align-items:center;gap:10px;
+    font-size:clamp(1rem,2.8vw,1.25rem);font-weight:700;
+    color:var(--ink);padding:10px 4px;
+  }
+  .sentence + .sentence{border-top:1px dashed #d6d3e8}
+  .sentence .dot{
+    display:inline-flex;align-items:center;justify-content:center;
+    width:28px;height:28px;border-radius:50%;flex-shrink:0;
+    font-size:1rem;
+  }
+  .sentence.s1 .dot{background:var(--good-soft)}
+  .sentence.s2 .dot{background:var(--bad-soft)}
+  .sentence.s3 .dot{background:var(--neutral-soft)}
+  .sentence .txt{flex:1}
+  .sentence button.speak-line{
+    background:transparent;border:2px solid var(--neutral);color:var(--neutral);
+    width:36px;height:36px;border-radius:50%;cursor:pointer;
+    display:inline-flex;align-items:center;justify-content:center;
+    transition:all .2s;flex-shrink:0;font-size:.9rem;
+  }
+  .sentence button.speak-line:hover{background:var(--neutral);color:#fff;transform:scale(1.1)}
+  .sentence button.speak-line:active{transform:scale(.95)}
+
+  .controls{
+    display:flex;gap:12px;justify-content:center;
+    margin-top:24px;flex-wrap:wrap;
+  }
+  .btn{
+    border:none;border-radius:999px;cursor:pointer;
+    font-family:inherit;font-weight:800;letter-spacing:.02em;
+    padding:16px 28px;font-size:1.05rem;
+    display:inline-flex;align-items:center;gap:10px;
+    transition:transform .15s ease, box-shadow .2s ease, background .2s;
+    box-shadow:0 10px 25px -8px rgba(0,0,0,.25);
+  }
+  .btn:active{transform:translateY(2px) scale(.97)}
+  .btn-primary{
+    background:linear-gradient(135deg,#fd6585,#a18cd1);color:#fff;
+  }
+  .btn-primary:hover{box-shadow:0 14px 30px -8px rgba(253,101,133,.5)}
+  .btn-speak{
+    background:linear-gradient(135deg,#84fab0,#4ade80);color:#064e3b;
+  }
+  .btn-speak:hover{box-shadow:0 14px 30px -8px rgba(74,222,128,.5)}
+  .btn-speak.speaking{
+    background:linear-gradient(135deg,#fbbf24,#f59e0b);color:#78350f;
+    animation:pulse 1.2s ease infinite;
+  }
+  @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.04)}}
+
+  .settings{
+    margin-top:18px;padding:14px 18px;border-radius:18px;
+    background:rgba(255,255,255,.55);backdrop-filter:blur(12px);
+    display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:center;
+    font-size:.85rem;color:var(--ink);font-weight:700;
+    border:1px solid rgba(255,255,255,.6);
+  }
+  .settings label{display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+  .settings select,.settings input[type="range"]{
+    font-family:inherit;font-weight:700;font-size:.85rem;
+    padding:6px 10px;border-radius:10px;border:1.5px solid #d6d3e8;
+    background:#fff;color:var(--ink);cursor:pointer;
+  }
+  .settings input[type="range"]{padding:0;min-width:100px}
+  .pill{
+    display:inline-flex;align-items:center;gap:6px;
+    padding:4px 10px;border-radius:999px;
+    background:var(--neutral-soft);color:var(--neutral);
+    font-size:.75rem;font-weight:800;
+  }
+  .pill-status{
+    transition:background .3s, color .3s;
+  }
+  .pill-status.ok{
+    background:#dcfce7;color:#166534;
+    animation:pillGlow 2s ease;
+  }
+  .pill-status.fallback{
+    background:#fef3c7;color:#92400e;
+  }
+  .pill-status.error{
+    background:#fee2e2;color:#991b1b;
+  }
+  @keyframes pillGlow{
+    0%{box-shadow:0 0 0 0 rgba(34,197,94,.6)}
+    100%{box-shadow:0 0 0 12px rgba(34,197,94,0)}
+  }
+  .btn-mini{
+    border:none;border-radius:999px;cursor:pointer;
+    font-family:inherit;font-weight:800;font-size:.8rem;
+    padding:6px 14px;
+    background:linear-gradient(135deg,#84fab0,#4ade80);color:#064e3b;
+    transition:transform .15s, box-shadow .2s;
+    box-shadow:0 6px 14px -4px rgba(74,222,128,.5);
+  }
+  .btn-mini:hover{transform:translateY(-1px)}
+  .btn-mini:active{transform:scale(.95)}
+  .btn-mini.speaking{
+    background:linear-gradient(135deg,#fbbf24,#f59e0b);color:#78350f;
+    animation:pulse 1.2s ease infinite;
+  }
+  .voice-notice{
+    margin-top:10px;padding:10px 14px;border-radius:14px;
+    background:rgba(255,255,255,.75);backdrop-filter:blur(10px);
+    font-size:.78rem;color:var(--ink-soft);font-weight:600;
+    text-align:center;display:none;max-width:640px;
+    border:1px solid rgba(255,255,255,.6);
+    line-height:1.4;
+  }
+  .voice-notice.show{display:block}
+  .voice-notice b{color:var(--ink)}
+
+  .progress{
+    display:flex;gap:6px;justify-content:center;margin-top:14px;
+    color:#fff;font-weight:800;font-size:.85rem;
+    text-shadow:0 2px 8px rgba(0,0,0,.25);
+  }
+
+  .hidden{display:none !important}
+
+  /* flip animation */
+  .stage.flipping .card{animation:flip .45s ease}
+  @keyframes flip{
+    0%{transform:rotateY(0) scale(1)}
+    50%{transform:rotateY(90deg) scale(.95);opacity:.3}
+    100%{transform:rotateY(0) scale(1)}
+  }
+
+  footer{
+    margin-top:28px;color:#fff;text-align:center;font-size:.8rem;
+    opacity:.85;text-shadow:0 2px 8px rgba(0,0,0,.25);font-weight:600;
+  }
+
+  /* Back link do Sowie Fiszki */
+  .back-link{
+    align-self:flex-start;display:inline-flex;align-items:center;gap:6px;
+    font-family:inherit;font-size:.85rem;font-weight:800;
+    color:var(--ink);text-decoration:none;
+    background:#fff;padding:8px 16px;border-radius:999px;
+    border:2px solid var(--ink);margin-bottom:16px;
+    box-shadow:0 4px 12px rgba(31,17,71,.18);
+    transition:background .15s, transform .1s;
+  }
+  .back-link:hover{background:#fef3f8;transform:translateY(-1px);}
+  @media print{.back-link{display:none !important;}}
+</style>
+</head>
+<body>
+
+<a href="app.html" class="back-link">← Powrót do Sowie Fiszki</a>
+
+<header>
+  <h1>🐾 Speaking Cards</h1>
+  <p>Likes · doesn't like · eats</p>
+</header>
+
+<div class="stage" id="stage">
+  <div class="card" id="card">
+
+    <div class="animal-big">
+      <span class="emoji" id="animalEmoji">🐻</span>
+      <div class="name" id="animalName">bear</div>
+    </div>
+
+    <div class="row">
+      <div class="tile likes">
+        <span class="badge badge-icon">❤️</span>
+        <span class="emoji" id="likesEmoji">🍯</span>
+        <div class="label" id="likesLabel">honey</div>
+      </div>
+      <div class="tile dislikes">
+        <span class="badge badge-icon">🚫</span>
+        <span class="emoji" id="dislikesEmoji">🍕</span>
+        <div class="label" id="dislikesLabel">pizza</div>
+      </div>
+    </div>
+
+    <div class="sentences" id="sentences">
+      <div class="sentence s1">
+        <span class="dot">❤️</span>
+        <span class="txt" id="sent1">The bear likes honey.</span>
+        <button class="speak-line" data-line="1" title="Speak this line">🔊</button>
+      </div>
+      <div class="sentence s2">
+        <span class="dot">🚫</span>
+        <span class="txt" id="sent2">It doesn't like pizza.</span>
+        <button class="speak-line" data-line="2" title="Speak this line">🔊</button>
+      </div>
+      <div class="sentence s3">
+        <span class="dot">🍽️</span>
+        <span class="txt" id="sent3">It eats honey.</span>
+        <button class="speak-line" data-line="3" title="Speak this line">🔊</button>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button class="btn toggle-text" id="toggleTextBtn" title="Hide all text — speak by yourself!">🙈 Hide text</button>
+      <button class="btn btn-speak" id="speakBtn">🔊 Speak all</button>
+      <button class="btn btn-primary" id="nextBtn">🎲 Next card</button>
+    </div>
+
+  </div>
+
+  <div class="settings">
+    <span class="pill pill-status" id="voicePill" title="Current voice status">🔄 Loading voice...</span>
+    <button class="btn-mini" id="testVoiceBtn" title="Test the selected voice">🎤 Test</button>
+    <label>Voice:
+      <select id="voiceSelect"></select>
+    </label>
+    <label>Speed:
+      <input type="range" id="rate" min="0.6" max="1.2" step="0.05" value="0.9">
+      <span id="rateVal">0.9×</span>
+    </label>
+    <label><input type="checkbox" id="autoSpeak"> Auto-speak on Next</label>
+  </div>
+  <div class="voice-notice" id="voiceNotice"></div>
+
+  <div class="progress" id="progress">Card <span id="count">1</span></div>
+</div>
+
+<footer>Made for English speaking practice · tap 🔊 to hear each line</footer>
+
+<script>
+/* ---------- DATA ---------- */
+const ANIMALS = [
+  {name:"bear",      emoji:"🐻", food:{name:"honey",   emoji:"🍯"}},
+  {name:"chick",     emoji:"🐥", food:{name:"worms",   emoji:"🪱"}},
+  {name:"crocodile", emoji:"🐊", food:{name:"meat",    emoji:"🥩"}},
+  {name:"dog",       emoji:"🐶", food:{name:"a bone",  emoji:"🦴"}},
+  {name:"goat",      emoji:"🐐", food:{name:"grass",   emoji:"🌿"}},
+  {name:"lion",      emoji:"🦁", food:{name:"meat",    emoji:"🥩"}},
+  {name:"monkey",    emoji:"🐒", food:{name:"bananas", emoji:"🍌"}},
+  {name:"penguin",   emoji:"🐧", food:{name:"fish",    emoji:"🐟"}},
+  {name:"rabbit",    emoji:"🐰", food:{name:"carrots", emoji:"🥕"}},
+  {name:"mouse",     emoji:"🐭", food:{name:"cheese",  emoji:"🧀"}},
+];
+
+const OTHER_FOODS = [
+  {name:"bread",     emoji:"🍞"},
+  {name:"a bone",    emoji:"🦴"},
+  {name:"leaves",    emoji:"🍃"},
+  {name:"honey",     emoji:"🍯"},
+  {name:"cheese",    emoji:"🧀"},
+  {name:"carrots",   emoji:"🥕"},
+  {name:"meat",      emoji:"🥩"},
+  {name:"peppers",   emoji:"🫑"},
+  {name:"bananas",   emoji:"🍌"},
+  {name:"apples",    emoji:"🍎"},
+  {name:"grass",     emoji:"🌿"},
+  {name:"fish",      emoji:"🐟"},
+  {name:"milk",      emoji:"🥛"},
+];
+
+/* ---------- STATE ---------- */
+let voices = [];
+let chosenVoice = null;
+let cardIndex = 0;
+let current = null;
+let lastAnimalIdx = -1;
+let lastOtherIdx = -1;
+
+/* ---------- DOM ---------- */
+const $ = id => document.getElementById(id);
+const animalEmoji = $("animalEmoji"), animalName = $("animalName");
+const likesEmoji = $("likesEmoji"), likesLabel = $("likesLabel");
+const dislikesEmoji = $("dislikesEmoji"), dislikesLabel = $("dislikesLabel");
+const sent1 = $("sent1"), sent2 = $("sent2"), sent3 = $("sent3");
+const speakBtn = $("speakBtn"), nextBtn = $("nextBtn"), toggleTextBtn = $("toggleTextBtn");
+const voiceSelect = $("voiceSelect"), voicePill = $("voicePill"), voiceNotice = $("voiceNotice");
+const testVoiceBtn = $("testVoiceBtn");
+const rateInp = $("rate"), rateVal = $("rateVal");
+const autoSpeak = $("autoSpeak");
+const stage = $("stage"), countEl = $("count");
+
+/* ---------- VOICE LOADING ---------- */
+// Priority: exact "Google UK English Female" > other Google en-GB female > any en-GB female > any en-GB > any English
+const PREFERRED_VOICE_NAME = "Google UK English Female";
+
+let voiceMatchLevel = 0; // 0=none, 1=exact Google UK Female, 2=other female en-GB, 3=any en-GB, 4=non-GB
+
+function pickDefaultVoice(list){
+  // 1) exact preferred — the gold standard
+  let v = list.find(v => v.name === PREFERRED_VOICE_NAME);
+  if (v){ voiceMatchLevel = 1; return v; }
+  // Case-insensitive variant
+  v = list.find(v => /^google uk english female$/i.test(v.name));
+  if (v){ voiceMatchLevel = 1; return v; }
+
+  const enGB = list.filter(v => /en[-_]GB/i.test(v.lang));
+  // 2) any en-GB Google voice marked female
+  v = enGB.find(v => /google/i.test(v.name) && /female/i.test(v.name));
+  if (v){ voiceMatchLevel = 2; return v; }
+  // 3) any en-GB with "female" in name
+  v = enGB.find(v => /female/i.test(v.name));
+  if (v){ voiceMatchLevel = 2; return v; }
+  // 4) Known female en-GB names across platforms (Kate/Serena macOS, Hazel Windows, Libby/Sonia Edge, etc.)
+  v = enGB.find(v => /(Kate|Serena|Stephanie|Hazel|Libby|Sonia|Martha|Susan|Amy|Emma|Samantha|Fiona)/i.test(v.name));
+  if (v){ voiceMatchLevel = 2; return v; }
+  // 5) any en-GB
+  if (enGB.length){ voiceMatchLevel = 3; return enGB[0]; }
+  // 6) any en-*
+  v = list.find(v => /^en/i.test(v.lang));
+  if (v){ voiceMatchLevel = 4; return v; }
+  voiceMatchLevel = 0;
+  return list[0] || null;
+}
+
+function updateVoicePill(){
+  voicePill.classList.remove("ok","fallback","error");
+  if (!chosenVoice){
+    voicePill.textContent = "⚠️ No voice available";
+    voicePill.classList.add("error");
+    showVoiceNotice("error");
+    return;
+  }
+  const name = chosenVoice.name;
+  const isTarget = name === PREFERRED_VOICE_NAME || /^google uk english female$/i.test(name);
+  const isGB = /en[-_]GB/i.test(chosenVoice.lang);
+  const short = name.length > 30 ? name.slice(0,28) + "…" : name;
+
+  if (isTarget){
+    voicePill.textContent = `✅ ${short}`;
+    voicePill.classList.add("ok");
+    showVoiceNotice("ok");
+  } else if (isGB){
+    voicePill.textContent = `🇬🇧 ${short}`;
+    voicePill.classList.add("fallback");
+    showVoiceNotice("fallback-gb");
+  } else {
+    voicePill.textContent = `⚠️ ${short}`;
+    voicePill.classList.add("fallback");
+    showVoiceNotice("fallback-other");
+  }
+}
+
+function showVoiceNotice(kind){
+  const msgs = {
+    "ok": null, // hide when perfect
+    "fallback-gb": `ℹ️ Using <b>${chosenVoice.name}</b> as fallback. "Google UK English Female" isn't available in this browser — it exists only in <b>Chrome/Edge on desktop and Android</b>. For the exact voice, open this page in Chrome.`,
+    "fallback-other": `⚠️ No British English voice found on this device. Using <b>${chosenVoice.name}</b>. For "Google UK English Female", use <b>Chrome or Edge</b> on desktop or Android.`,
+    "error": `❌ Your browser doesn't support speech synthesis, or no English voices are installed.`,
+  };
+  const m = msgs[kind];
+  if (!m){ voiceNotice.classList.remove("show"); voiceNotice.innerHTML = ""; return; }
+  voiceNotice.innerHTML = m;
+  voiceNotice.classList.add("show");
+}
+
+function populateVoices(){
+  voices = (window.speechSynthesis.getVoices() || []).filter(v => /^en/i.test(v.lang));
+  if (!voices.length) return; // try again on next tick
+
+  // Sort: en-GB first, then female-sounding, then rest
+  voices.sort((a,b)=>{
+    // Preferred voice always at top
+    if (a.name === PREFERRED_VOICE_NAME) return -1;
+    if (b.name === PREFERRED_VOICE_NAME) return 1;
+    const gbA = /en[-_]GB/i.test(a.lang) ? 0 : 1;
+    const gbB = /en[-_]GB/i.test(b.lang) ? 0 : 1;
+    if (gbA !== gbB) return gbA - gbB;
+    const fA = /female|Google UK|Kate|Serena|Stephanie|Hazel|Libby|Sonia|Amy|Emma/i.test(a.name) ? 0 : 1;
+    const fB = /female|Google UK|Kate|Serena|Stephanie|Hazel|Libby|Sonia|Amy|Emma/i.test(b.name) ? 0 : 1;
+    if (fA !== fB) return fA - fB;
+    return a.name.localeCompare(b.name);
+  });
+
+  voiceSelect.innerHTML = "";
+  voices.forEach((v,i)=>{
+    const opt = document.createElement("option");
+    opt.value = i;
+    const flag = /en[-_]GB/i.test(v.lang) ? "🇬🇧" : /en[-_]US/i.test(v.lang) ? "🇺🇸" : /en[-_]AU/i.test(v.lang) ? "🇦🇺" : /en[-_]IN/i.test(v.lang) ? "🇮🇳" : "🌐";
+    const star = v.name === PREFERRED_VOICE_NAME ? "⭐ " : "";
+    opt.textContent = `${star}${flag} ${v.name} (${v.lang})`;
+    voiceSelect.appendChild(opt);
+  });
+
+  // Only auto-pick if the user hasn't manually chosen one
+  if (!chosenVoice || !voices.includes(chosenVoice)){
+    chosenVoice = pickDefaultVoice(voices);
+  }
+  if (chosenVoice){
+    const idx = voices.indexOf(chosenVoice);
+    if (idx >= 0) voiceSelect.value = idx;
+    updateVoicePill();
+  }
+}
+
+// Robust voice loading — browsers populate voices asynchronously & inconsistently.
+// Try several times to catch the voice list regardless of browser quirks.
+if ("speechSynthesis" in window){
+  populateVoices();
+  window.speechSynthesis.onvoiceschanged = populateVoices;
+  // Extra polling for browsers that don't fire the event reliably (Safari, some Android)
+  let pollCount = 0;
+  const poll = setInterval(()=>{
+    populateVoices();
+    pollCount++;
+    if (voices.length > 0 || pollCount > 20) clearInterval(poll);
+  }, 250);
+} else {
+  voicePill.textContent = "❌ No TTS support";
+  voicePill.classList.add("error");
+  voiceNotice.innerHTML = "❌ This browser doesn't support speech synthesis. Try Chrome, Edge, or Safari.";
+  voiceNotice.classList.add("show");
+}
+
+voiceSelect.addEventListener("change", e => {
+  chosenVoice = voices[+e.target.value] || null;
+  updateVoicePill();
+});
+
+testVoiceBtn.addEventListener("click", ()=>{
+  if (testVoiceBtn.classList.contains("speaking")){
+    window.speechSynthesis.cancel();
+    testVoiceBtn.classList.remove("speaking");
+    testVoiceBtn.textContent = "🎤 Test";
+    return;
+  }
+  testVoiceBtn.classList.add("speaking");
+  testVoiceBtn.textContent = "🎤 …";
+  speakText("Hello! I'm your speaking practice voice. The bear likes honey.", ()=>{
+    testVoiceBtn.classList.remove("speaking");
+    testVoiceBtn.textContent = "🎤 Test";
+  });
+});
+
+rateInp.addEventListener("input", ()=> rateVal.textContent = (+rateInp.value).toFixed(2) + "×");
+
+/* ---------- TTS ---------- */
+function speakText(text, onend){
+  if (!("speechSynthesis" in window)){
+    alert("Your browser doesn't support speech synthesis.");
+    return;
+  }
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = chosenVoice ? chosenVoice.lang : "en-GB";
+  if (chosenVoice) u.voice = chosenVoice;
+  u.rate = +rateInp.value;
+  u.pitch = 1.05;
+  u.volume = 1;
+  if (onend) u.onend = onend;
+  window.speechSynthesis.speak(u);
+}
+
+function speakQueue(lines, onAllDone){
+  let i = 0;
+  const next = () => {
+    if (i >= lines.length){ onAllDone && onAllDone(); return; }
+    speakText(lines[i++], next);
+  };
+  next();
+}
+
+/* ---------- CARD LOGIC ---------- */
+function rand(n, avoid=-1){
+  if (n <= 1) return 0;
+  let v;
+  do { v = Math.floor(Math.random() * n); } while (v === avoid);
+  return v;
+}
+
+function buildSentences(animal, dislike){
+  // capitalize animal name for first sentence
+  const A = animal.name.charAt(0).toUpperCase() + animal.name.slice(1);
+  // a/an article
+  const article = /^[aeiou]/i.test(animal.name) ? "An" : "A";
+  return [
+    `${article} ${animal.name} likes ${animal.food.name}.`,
+    `It doesn't like ${dislike.name}.`,
+    `It eats ${animal.food.name}.`,
+  ];
+}
+
+function render(){
+  const animal = ANIMALS[current.aIdx];
+  const dislike = OTHER_FOODS[current.dIdx];
+
+  animalEmoji.textContent = animal.emoji;
+  animalName.textContent = animal.name;
+  likesEmoji.textContent = animal.food.emoji;
+  likesLabel.textContent = animal.food.name;
+  dislikesEmoji.textContent = dislike.emoji;
+  dislikesLabel.textContent = dislike.name;
+
+  const sents = buildSentences(animal, dislike);
+  sent1.textContent = sents[0];
+  sent2.textContent = sents[1];
+  sent3.textContent = sents[2];
+  current.sentences = sents;
+
+  // replay pop animations
+  [animalEmoji, likesEmoji, dislikesEmoji].forEach(el=>{
+    el.style.animation = "none"; el.offsetHeight; el.style.animation = "";
+  });
+
+  countEl.textContent = cardIndex + 1;
+}
+
+function newCard(){
+  const aIdx = rand(ANIMALS.length, lastAnimalIdx);
+  lastAnimalIdx = aIdx;
+  const animal = ANIMALS[aIdx];
+
+  // pick a "dislike" that isn't the same food the animal eats
+  let dIdx, tries = 0;
+  do {
+    dIdx = rand(OTHER_FOODS.length, lastOtherIdx);
+    tries++;
+  } while (OTHER_FOODS[dIdx].name.toLowerCase() === animal.food.name.toLowerCase() && tries < 20);
+  lastOtherIdx = dIdx;
+
+  current = { aIdx, dIdx };
+  cardIndex++;
+
+  stage.classList.add("flipping");
+  setTimeout(()=> stage.classList.remove("flipping"), 450);
+  setTimeout(render, 120);
+
+  if (autoSpeak.checked){
+    setTimeout(()=> speakAll(), 600);
+  }
+}
+
+/* ---------- ACTIONS ---------- */
+function speakAll(){
+  if (!current) return;
+  speakBtn.classList.add("speaking");
+  speakBtn.textContent = "🗣️ Speaking...";
+  speakQueue(current.sentences, ()=>{
+    speakBtn.classList.remove("speaking");
+    speakBtn.textContent = "🔊 Speak all";
+  });
+}
+
+speakBtn.addEventListener("click", ()=>{
+  if (speakBtn.classList.contains("speaking")){
+    window.speechSynthesis.cancel();
+    speakBtn.classList.remove("speaking");
+    speakBtn.textContent = "🔊 Speak all";
+    return;
+  }
+  speakAll();
+});
+
+nextBtn.addEventListener("click", ()=>{
+  window.speechSynthesis.cancel();
+  speakBtn.classList.remove("speaking");
+  speakBtn.textContent = "🔊 Speak all";
+  newCard();
+});
+
+// Hide-text / speak-by-yourself mode
+toggleTextBtn.addEventListener("click", ()=>{
+  const hidden = stage.classList.toggle("no-text");
+  toggleTextBtn.classList.toggle("active", hidden);
+  toggleTextBtn.textContent = hidden ? "👁️ Show text" : "🙈 Hide text";
+  toggleTextBtn.title = hidden
+    ? "Show the words and sentences again"
+    : "Hide all text — try saying the sentences yourself!";
+});
+
+// per-line speak buttons
+document.querySelectorAll(".speak-line").forEach(btn => {
+  btn.addEventListener("click", ()=>{
+    const n = +btn.dataset.line;
+    if (!current) return;
+    const line = current.sentences[n-1];
+    btn.style.transform = "scale(1.25)";
+    setTimeout(()=> btn.style.transform = "", 200);
+    speakText(line);
+  });
+});
+
+// keyboard shortcuts
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+  if (e.code === "Space"){ e.preventDefault(); speakBtn.click(); }
+  else if (e.code === "ArrowRight" || e.code === "Enter"){ e.preventDefault(); nextBtn.click(); }
+  else if (e.key === "1") document.querySelector('.speak-line[data-line="1"]').click();
+  else if (e.key === "2") document.querySelector('.speak-line[data-line="2"]').click();
+  else if (e.key === "3") document.querySelector('.speak-line[data-line="3"]').click();
+  else if (e.key === "h" || e.key === "H") toggleTextBtn.click();
+});
+
+/* ---------- INIT ---------- */
+newCard();
+// Safari sometimes needs a user-gesture before voices populate
+setTimeout(populateVoices, 500);
+setTimeout(populateVoices, 1500);
+</script>
+</body>
+</html>
