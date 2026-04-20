@@ -1053,6 +1053,55 @@ const DB = (() => {
     return data || [];
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  //  BOOK NOTES — notatki administratora przy podręcznikach / unitach
+  // ═══════════════════════════════════════════════════════════════
+  // unitKey: '' (lub null/undefined) → notatka na poziomie podręcznika
+  //          'unit5'                 → notatka na poziomie unitu
+  async function loadBookNote(bookId, unitKey) {
+    if (!bookId) return null;
+    const key = unitKey || '';
+    const { data, error } = await supabase
+      .from('book_notes')
+      .select('id, book_id, unit_key, content, updated_at, updated_by')
+      .eq('book_id', bookId)
+      .eq('unit_key', key)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return data;
+  }
+
+  async function saveBookNote(bookId, unitKey, content) {
+    if (!_profile?.isAdmin) throw new Error('Tylko administrator może edytować notatki.');
+    if (!bookId) throw new Error('Brak book_id.');
+    const key = unitKey || '';
+    const payload = {
+      book_id: bookId,
+      unit_key: key,
+      content: content || '',
+      updated_by: _userId
+    };
+    const { data, error } = await supabase
+      .from('book_notes')
+      .upsert(payload, { onConflict: 'book_id,unit_key' })
+      .select()
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return data;
+  }
+
+  async function deleteBookNote(bookId, unitKey) {
+    if (!_profile?.isAdmin) throw new Error('Tylko administrator może usuwać notatki.');
+    if (!bookId) throw new Error('Brak book_id.');
+    const key = unitKey || '';
+    const { error } = await supabase
+      .from('book_notes')
+      .delete()
+      .eq('book_id', bookId)
+      .eq('unit_key', key);
+    if (error) throw new Error(error.message);
+  }
+
   // Samodzielne usunięcie własnego konta („prawo do bycia zapomnianym" — RODO art. 17).
   // Wywołuje funkcję SQL delete_own_account(), która kasuje powiązane dane i auth.users.
   // Po tej operacji sesja przestaje być ważna — klient powinien wylogować użytkownika.
@@ -1252,6 +1301,10 @@ const DB = (() => {
     loadAllProfiles,
     findProfileByUsername,
     deleteOwnAccount,
+    // book notes (admin)
+    loadBookNote,
+    saveBookNote,
+    deleteBookNote,
     // book access requests
     requestBookAccess,
     listMyBookAccessRequests,
