@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>What's the matter? — Speaking Generator · Unit 5</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Caveat:wght@600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --cream:#FFF8EE;
+    --paper:#FFFDF7;
+    --ink:#2B1F3A;
+    --ink-soft:#5A4A6B;
+    --coral:#FF6B6B;
+    --coral-deep:#E84545;
+    --mint:#4ECDC4;
+    --mint-deep:#2A9D8F;
+    --sun:#FFD93D;
+    --sun-deep:#F9B208;
+    --lavender:#B983FF;
+    --sky:#5BC0EB;
+    --pink:#FF9FB8;
+    --shadow-soft:0 10px 30px rgba(43,31,58,.10);
+    --shadow-big:0 20px 55px rgba(43,31,58,.18);
+    --shadow-hard:0 6px 0 rgba(43,31,58,.18);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    font-family:'Fredoka',system-ui,sans-serif;
+    background:
+      radial-gradient(circle at 12% 18%,rgba(255,217,61,.35),transparent 45%),
+      radial-gradient(circle at 88% 12%,rgba(185,131,255,.28),transparent 42%),
+      radial-gradient(circle at 78% 92%,rgba(78,205,196,.30),transparent 48%),
+      radial-gradient(circle at 18% 88%,rgba(255,159,184,.30),transparent 42%),
+      var(--cream);
+    color:var(--ink);
+    min-height:100vh;
+    padding:28px 18px 60px;
+    overflow-x:hidden;
+    position:relative;
+  }
+  /* noisy grain overlay */
+  body::before{
+    content:"";position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.35;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .06 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+  }
+  /* floating confetti shapes */
+  .confetti{position:fixed;z-index:0;pointer-events:none;opacity:.45;animation:floatY 9s ease-in-out infinite}
+  .confetti.c1{top:8%;left:4%;font-size:34px;animation-delay:-2s}
+  .confetti.c2{top:14%;right:6%;font-size:30px;animation-delay:-4s}
+  .confetti.c3{top:68%;left:3%;font-size:38px;animation-delay:-1s}
+  .confetti.c4{top:80%;right:5%;font-size:28px;animation-delay:-5s}
+  .confetti.c5{top:45%;right:2%;font-size:32px;animation-delay:-3s}
+  @keyframes floatY{
+    0%,100%{transform:translateY(0) rotate(-6deg)}
+    50%{transform:translateY(-18px) rotate(6deg)}
+  }
+
+  .wrap{max-width:880px;margin:0 auto;position:relative;z-index:1}
+
+  /* Back link do Sowie Fiszki */
+  .back-link{
+    display:inline-flex;align-items:center;gap:6px;
+    font-family:inherit;font-size:.85rem;font-weight:600;
+    color:var(--ink);text-decoration:none;
+    background:var(--paper);padding:8px 16px;border-radius:999px;
+    border:2px solid var(--ink);margin-bottom:16px;
+    box-shadow:var(--shadow-hard);
+    transition:transform .12s, box-shadow .12s;
+  }
+  .back-link:hover{transform:translate(-1px,-2px);box-shadow:0 8px 0 rgba(43,31,58,.22);}
+  .back-link:active{transform:translate(0,2px);box-shadow:0 2px 0 rgba(43,31,58,.2);}
+  @media print{.back-link{display:none !important;}}
+
+  /* HEADER */
+  header{
+    text-align:center;margin-bottom:22px;
+  }
+  .eyebrow{
+    display:inline-block;
+    background:var(--ink);color:var(--sun);
+    padding:6px 14px;border-radius:999px;
+    font-weight:600;font-size:13px;letter-spacing:.14em;text-transform:uppercase;
+    transform:rotate(-2deg);box-shadow:var(--shadow-hard);
+  }
+  h1{
+    font-weight:700;font-size:clamp(34px,6.2vw,56px);line-height:1;
+    margin:14px 0 6px;letter-spacing:-.02em;
+  }
+  h1 .accent{color:var(--coral-deep);position:relative;display:inline-block}
+  h1 .accent::after{
+    content:"";position:absolute;left:-4%;right:-4%;bottom:4px;height:14px;
+    background:var(--sun);z-index:-1;border-radius:8px;transform:rotate(-1deg);
+  }
+  .sub{
+    font-family:'Caveat',cursive;color:var(--ink-soft);
+    font-size:22px;margin-top:2px;
+  }
+
+  /* MODE SELECTOR */
+  .modes{
+    display:grid;grid-template-columns:repeat(2,1fr);gap:10px;
+    margin:22px 0 18px;
+  }
+  @media(min-width:680px){.modes{grid-template-columns:repeat(4,1fr)}}
+  .mode{
+    cursor:pointer;border:none;background:var(--paper);
+    border:3px solid var(--ink);border-radius:18px;
+    padding:14px 10px;text-align:center;
+    font-family:inherit;font-weight:600;font-size:14px;color:var(--ink);
+    box-shadow:var(--shadow-hard);
+    transition:transform .12s ease,box-shadow .12s ease,background .2s;
+    position:relative;
+  }
+  .mode .em{display:block;font-size:28px;margin-bottom:4px;line-height:1}
+  .mode .lbl{display:block;line-height:1.15}
+  .mode:hover{transform:translate(-1px,-2px);box-shadow:0 8px 0 rgba(43,31,58,.18)}
+  .mode:active{transform:translate(0,2px);box-shadow:0 2px 0 rgba(43,31,58,.18)}
+  .mode.active{background:var(--sun);transform:translate(0,2px);box-shadow:0 2px 0 rgba(43,31,58,.28)}
+
+  /* CARD */
+  .card{
+    background:var(--paper);
+    border:3px solid var(--ink);
+    border-radius:28px;
+    padding:28px 22px 24px;
+    box-shadow:var(--shadow-big);
+    position:relative;
+    overflow:hidden;
+  }
+  .card::before{
+    content:"";position:absolute;inset:0;z-index:0;pointer-events:none;
+    background:
+      radial-gradient(circle at 90% -10%,rgba(255,217,61,.35),transparent 40%),
+      radial-gradient(circle at -10% 110%,rgba(78,205,196,.25),transparent 45%);
+  }
+  .card>*{position:relative;z-index:1}
+
+  .tag-row{
+    display:flex;justify-content:space-between;align-items:center;gap:10px;
+    font-size:12px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--ink-soft);margin-bottom:6px;
+  }
+  .tag-chip{
+    background:var(--ink);color:var(--cream);
+    padding:5px 10px;border-radius:999px;font-size:11px;
+  }
+
+  .stage{
+    display:flex;align-items:center;justify-content:center;gap:14px;
+    flex-wrap:wrap;min-height:120px;padding:8px 0 2px;
+  }
+  .big-emoji{
+    font-size:clamp(62px,14vw,110px);line-height:1;
+    filter:drop-shadow(0 6px 0 rgba(43,31,58,.12));
+    animation:pop .45s cubic-bezier(.2,1.4,.4,1);
+  }
+  @keyframes pop{
+    0%{transform:scale(.6) rotate(-8deg);opacity:0}
+    60%{transform:scale(1.1) rotate(3deg);opacity:1}
+    100%{transform:scale(1) rotate(0)}
+  }
+  .plus{
+    font-size:40px;color:var(--coral);font-weight:700;
+  }
+
+  .question{
+    text-align:center;
+    font-size:clamp(22px,4.5vw,32px);
+    font-weight:600;line-height:1.25;
+    margin:10px 6px 6px;color:var(--ink);
+    animation:fadeUp .4s ease .05s both;
+  }
+  .answer{
+    text-align:center;
+    font-size:clamp(19px,3.8vw,26px);
+    font-weight:500;line-height:1.35;color:var(--mint-deep);
+    background:rgba(78,205,196,.14);
+    border:2px dashed var(--mint-deep);
+    border-radius:18px;padding:14px 16px;margin-top:14px;
+    animation:fadeUp .35s ease both;
+  }
+  .answer.hidden{display:none}
+  .pl{
+    display:block;margin-top:8px;font-family:'Caveat',cursive;
+    font-size:22px;color:var(--ink-soft);font-weight:600;
+  }
+  @keyframes fadeUp{
+    from{opacity:0;transform:translateY(8px)}
+    to{opacity:1;transform:translateY(0)}
+  }
+
+  /* TTS buttons inline */
+  .tts-mini{
+    border:none;background:var(--sun);color:var(--ink);
+    width:44px;height:44px;border-radius:50%;cursor:pointer;
+    display:inline-flex;align-items:center;justify-content:center;
+    font-size:20px;margin:0 4px;vertical-align:middle;
+    box-shadow:0 4px 0 rgba(43,31,58,.2);
+    transition:transform .12s,box-shadow .12s;
+  }
+  .tts-mini:hover{transform:translateY(-1px);box-shadow:0 5px 0 rgba(43,31,58,.22)}
+  .tts-mini:active,.tts-mini.speaking{transform:translateY(2px);box-shadow:0 1px 0 rgba(43,31,58,.2);background:var(--coral);color:#fff}
+
+  /* CONTROLS */
+  .controls{
+    margin-top:18px;display:grid;gap:10px;
+    grid-template-columns:1fr;
+  }
+  @media(min-width:520px){.controls{grid-template-columns:2fr 1fr 1fr}}
+  .btn{
+    cursor:pointer;border:3px solid var(--ink);border-radius:16px;
+    padding:14px 16px;font-family:inherit;font-weight:600;font-size:16px;
+    display:inline-flex;align-items:center;justify-content:center;gap:8px;
+    box-shadow:var(--shadow-hard);
+    transition:transform .12s,box-shadow .12s,background .2s;
+    background:var(--paper);color:var(--ink);
+  }
+  .btn:hover{transform:translate(-1px,-2px);box-shadow:0 8px 0 rgba(43,31,58,.22)}
+  .btn:active{transform:translate(0,2px);box-shadow:0 2px 0 rgba(43,31,58,.2)}
+  .btn.primary{background:var(--coral);color:#fff;border-color:var(--ink)}
+  .btn.mint{background:var(--mint);color:#07302C}
+  .btn.ghost{background:var(--paper)}
+
+  /* SETTINGS ROW */
+  .settings{
+    margin-top:16px;display:flex;flex-wrap:wrap;gap:10px;justify-content:center;
+    font-size:14px;color:var(--ink-soft);
+  }
+  .toggle{
+    display:inline-flex;align-items:center;gap:8px;
+    background:var(--paper);border:2px solid var(--ink);
+    padding:7px 12px;border-radius:999px;cursor:pointer;user-select:none;
+    font-weight:500;
+  }
+  .toggle input{appearance:none;width:32px;height:18px;background:#E6DCC7;border-radius:999px;position:relative;cursor:pointer;outline:none;transition:background .2s}
+  .toggle input::before{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;background:#fff;border-radius:50%;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+  .toggle input:checked{background:var(--mint-deep)}
+  .toggle input:checked::before{transform:translateX(14px)}
+
+  /* VOICE STATUS */
+  .voice-status{
+    text-align:center;margin-top:12px;font-size:12px;color:var(--ink-soft);
+    font-family:'Caveat',cursive;font-size:18px;
+  }
+  .voice-status .dot{
+    display:inline-block;width:8px;height:8px;border-radius:50%;
+    background:#C6B8A0;margin-right:6px;vertical-align:middle;
+  }
+  .voice-status.ready .dot{background:var(--mint-deep);box-shadow:0 0 0 4px rgba(78,205,196,.25)}
+
+  /* FOOTER */
+  footer{
+    text-align:center;margin-top:26px;font-size:13px;color:var(--ink-soft);
+    font-family:'Caveat',cursive;font-size:18px;
+  }
+
+  /* Responsive tweaks */
+  @media(max-width:480px){
+    .card{padding:22px 16px 20px;border-radius:22px}
+    .mode{padding:12px 6px}
+    .mode .em{font-size:24px}
+  }
+</style>
+</head>
+<body>
+
+<div class="confetti c1">⭐</div>
+<div class="confetti c2">✨</div>
+<div class="confetti c3">🎈</div>
+<div class="confetti c4">💫</div>
+<div class="confetti c5">🌟</div>
+
+<div class="wrap">
+
+  <a href="app.html" class="back-link">← Powrót do Sowie Fiszki</a>
+
+  <header>
+    <span class="eyebrow">Unit 5 · Tiger &amp; Friends 2</span>
+    <h1>What's the <span class="accent">matter?</span></h1>
+    <p class="sub">Speaking generator &middot; Mów na głos po angielsku 🎤</p>
+  </header>
+
+  <div class="modes" role="tablist" aria-label="Tryby zdań">
+    <button class="mode active" data-mode="illness_self">
+      <span class="em">🤒</span><span class="lbl">I'm ill<br><small style="opacity:.6">I've got a…</small></span>
+    </button>
+    <button class="mode" data-mode="illness_other">
+      <span class="em">🤕</span><span class="lbl">Someone ill<br><small style="opacity:.6">He/She has got…</small></span>
+    </button>
+    <button class="mode" data-mode="habit">
+      <span class="em">🔁</span><span class="lbl">Every day<br><small style="opacity:.6">Do you…?</small></span>
+    </button>
+    <button class="mode" data-mode="advice">
+      <span class="em">💡</span><span class="lbl">Advice<br><small style="opacity:.6">You need to…</small></span>
+    </button>
+  </div>
+
+  <div class="card">
+    <div class="tag-row">
+      <span id="tagLabel">Mode: I'm ill</span>
+      <span class="tag-chip" id="counter">#1</span>
+    </div>
+
+    <div class="stage" id="stage">
+      <div class="big-emoji">🎲</div>
+    </div>
+
+    <p class="question" id="question">
+      Kliknij <b>Generate</b>, aby zacząć!
+      <span class="pl">Press the dice to start.</span>
+    </p>
+
+    <div class="answer hidden" id="answer"></div>
+
+    <div class="controls">
+      <button class="btn primary" id="btnNext">🎲 Generate</button>
+      <button class="btn mint" id="btnShow">👀 Show</button>
+      <button class="btn ghost" id="btnSpeak">🔊 Speak</button>
+    </div>
+
+    <div class="settings">
+      <label class="toggle">
+        <input type="checkbox" id="autoSpeak" checked>
+        Auto-speak 🔊
+      </label>
+      <label class="toggle">
+        <input type="checkbox" id="showPL" checked>
+        PL 🇵🇱
+      </label>
+      <label class="toggle">
+        <input type="checkbox" id="autoShow">
+        Auto-show ✅
+      </label>
+    </div>
+
+    <p class="voice-status" id="voiceStatus">
+      <span class="dot"></span><span id="voiceText">Loading voices…</span>
+    </p>
+  </div>
+
+  <footer>Made with 🧡 for Tiger &amp; Friends 2 · Unit 5</footer>
+
+</div>
+
+<script>
+/* ===========================
+   DATA — Unit 5: What's the matter?
+   =========================== */
+const ILLNESSES = [
+  {en:'earache',      pl:'ból ucha',         emoji:'👂', article:'an'},
+  {en:'cut',          pl:'skaleczenie',      emoji:'🩹', article:'a'},
+  {en:'sore throat',  pl:'ból gardła',       emoji:'😷', article:'a'},
+  {en:'headache',     pl:'ból głowy',        emoji:'🤕', article:'a'},
+  {en:'tummy ache',   pl:'ból brzucha',      emoji:'🤢', article:'a'},
+  {en:'cough',        pl:'kaszel',           emoji:'😮‍💨', article:'a'},
+  {en:'toothache',    pl:'ból zęba',         emoji:'🦷', article:'a'},
+  {en:'cold',         pl:'przeziębienie',    emoji:'🤧', article:'a'},
+];
+
+/* Verbs for habit questions & advice */
+const VERBS = [
+  {en:'drink water',  pl:'pić wodę',            emoji:'💧'},
+  {en:'wash',         pl:'myć się',             emoji:'🚿'},
+  {en:'do exercise',  pl:'ćwiczyć',             emoji:'💪'},
+  {en:'eat well',     pl:'dobrze się odżywiać', emoji:'🥗'},
+  {en:'play',         pl:'bawić się',           emoji:'⚽'},
+  {en:'sleep well',   pl:'dobrze spać',         emoji:'😴'},
+];
+
+/* People — mix of characters & names from the unit */
+const PEOPLE = [
+  {name:'Tom',       pron:'he',  emoji:'👦'},
+  {name:'Sarah',     pron:'she', emoji:'👧'},
+  {name:'Kate',      pron:'she', emoji:'👩'},
+  {name:'Marcel',    pron:'he',  emoji:'🧑'},
+  {name:'Olek',      pron:'he',  emoji:'👨'},
+  {name:'Kaja',      pron:'she', emoji:'👩‍🦰'},
+  {name:'Simon',     pron:'he',  emoji:'🧒'},
+  {name:'Zuzia',     pron:'she', emoji:'👱‍♀️'},
+  {name:'Hanna',     pron:'she', emoji:'👩‍🦱'},
+  {name:'John',      pron:'he',  emoji:'👨‍🦰'},
+  {name:'Laura',     pron:'she', emoji:'👩‍🎓'},
+];
+
+/* Subjects for habit questions (you / plural) — we'll keep mostly "you" per unit pattern */
+const MODE_LABELS = {
+  illness_self : "Mode: I'm ill",
+  illness_other: "Mode: Someone else is ill",
+  habit        : "Mode: Every day / Habit",
+  advice       : "Mode: Giving advice",
+};
+
+/* ===========================
+   STATE
+   =========================== */
+let mode = 'illness_self';
+let counter = 0;
+let current = null; // {question, answer, pl, emoji}
+let voice = null;
+let voicesLoaded = false;
+
+/* ===========================
+   TTS — Dan's preferred pattern
+   =========================== */
+function getV(){
+  const voices = speechSynthesis.getVoices();
+  // 1) exact Google UK English Female
+  let v = voices.find(x => x.name === 'Google UK English Female');
+  if(v) return v;
+  // 2) any Google en-GB female-ish
+  v = voices.find(x => /google/i.test(x.name) && /en-GB/i.test(x.lang) && /female/i.test(x.name));
+  if(v) return v;
+  // 3) any en-GB with "female" in name
+  v = voices.find(x => /en-GB/i.test(x.lang) && /female/i.test(x.name));
+  if(v) return v;
+  // 4) any en-GB voice
+  v = voices.find(x => /en-GB/i.test(x.lang));
+  if(v) return v;
+  // 5) fallback: any English
+  v = voices.find(x => /^en/i.test(x.lang));
+  return v || null;
+}
+
+function spk(text, opts={}){
+  if(!text) return;
+  try{ speechSynthesis.cancel(); }catch(e){}
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'en-GB';
+  u.pitch = 1;           // fixed pitch per Dan's pattern
+  u.rate  = opts.rate || 0.95;
+  u.volume = 1;
+  const v = getV();
+  if(v){ u.voice = v; u.lang = v.lang; }
+  u.onstart = () => btnSpeak.classList.add('speaking');
+  u.onend   = () => btnSpeak.classList.remove('speaking');
+  u.onerror = () => btnSpeak.classList.remove('speaking');
+  speechSynthesis.speak(u);
+}
+
+function updateVoiceStatus(){
+  const voices = speechSynthesis.getVoices();
+  const el = document.getElementById('voiceStatus');
+  const txt = document.getElementById('voiceText');
+  if(voices.length === 0){
+    el.classList.remove('ready');
+    txt.textContent = 'Loading voices…';
+    return;
+  }
+  voicesLoaded = true;
+  const v = getV();
+  el.classList.add('ready');
+  if(v){
+    txt.textContent = `Voice: ${v.name} (${v.lang})`;
+  }else{
+    txt.textContent = 'No English voice found — install one in your OS.';
+  }
+}
+speechSynthesis.onvoiceschanged = updateVoiceStatus;
+updateVoiceStatus();
+
+/* ===========================
+   GENERATORS
+   =========================== */
+const rnd = arr => arr[Math.floor(Math.random()*arr.length)];
+
+function genIllnessSelf(){
+  const ill = rnd(ILLNESSES);
+  return {
+    emojis: ['🤒','➕', ill.emoji],
+    question: `What's the matter?`,
+    answer:   `I'm feeling ill. I've got ${ill.article} ${ill.en}.`,
+    pl:       `Co ci jest? — Źle się czuję. Mam ${ill.pl}.`,
+  };
+}
+
+function genIllnessOther(){
+  const ill = rnd(ILLNESSES);
+  const p   = rnd(PEOPLE);
+  const has = 'has got';
+  return {
+    emojis: [p.emoji,'➕', ill.emoji],
+    question: `What's the matter with ${p.name}?`,
+    answer:   `${p.name} ${has} ${ill.article} ${ill.en}. ${cap(p.pron)} ${has} ${ill.article} ${ill.en}.`,
+    pl:       `Co jest z ${p.name}? — ${p.name} ma ${ill.pl}.`,
+  };
+}
+
+function genHabit(){
+  const v = rnd(VERBS);
+  const yes = Math.random() < .5;
+  if(yes){
+    return {
+      emojis: ['❓','➕', v.emoji, '➡️','✅'],
+      question: `Do you ${v.en} every day?`,
+      answer:   `Yes, I do. I ${v.en} every day.`,
+      pl:       `Czy ${v.pl} codziennie? — Tak. ${cap(v.pl)} codziennie.`,
+    };
+  }else{
+    return {
+      emojis: ['❓','➕', v.emoji, '➡️','❌'],
+      question: `Do you ${v.en} every day?`,
+      answer:   `No, I don't. I don't ${v.en} every day.`,
+      pl:       `Czy ${v.pl} codziennie? — Nie. Nie ${v.pl} codziennie.`,
+    };
+  }
+}
+
+function genAdvice(){
+  const ill = rnd(ILLNESSES);
+  const advice = adviceFor(ill.en);
+  return {
+    emojis: [ill.emoji,'➡️', advice.emoji],
+    question: `I've got ${ill.article} ${ill.en}.`,
+    answer:   `You need to ${advice.en}.`,
+    pl:       `Mam ${ill.pl}. — Musisz ${advice.pl}.`,
+  };
+}
+
+/* Sensible advice mapping — not random, pedagogical */
+function adviceFor(illness){
+  const map = {
+    'earache':     {en:'see the doctor',   pl:'iść do lekarza',       emoji:'👨‍⚕️'},
+    'cut':         {en:'wash it',          pl:'przemyć je',           emoji:'🚿'},
+    'sore throat': {en:'drink water',      pl:'pić wodę',             emoji:'💧'},
+    'headache':    {en:'sleep well',       pl:'dobrze się wyspać',    emoji:'😴'},
+    'tummy ache':  {en:'eat well',         pl:'dobrze się odżywiać',  emoji:'🥗'},
+    'cough':       {en:'drink water',      pl:'pić wodę',             emoji:'💧'},
+    'toothache':   {en:'see the dentist',  pl:'iść do dentysty',      emoji:'🦷'},
+    'cold':        {en:'sleep well',       pl:'dobrze się wyspać',    emoji:'😴'},
+  };
+  return map[illness] || {en:'drink water', pl:'pić wodę', emoji:'💧'};
+}
+
+const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+
+/* ===========================
+   RENDER
+   =========================== */
+const stage     = document.getElementById('stage');
+const qEl       = document.getElementById('question');
+const aEl       = document.getElementById('answer');
+const tagLabel  = document.getElementById('tagLabel');
+const counterEl = document.getElementById('counter');
+const btnNext   = document.getElementById('btnNext');
+const btnShow   = document.getElementById('btnShow');
+const btnSpeak  = document.getElementById('btnSpeak');
+const autoSpeakEl = document.getElementById('autoSpeak');
+const showPLEl    = document.getElementById('showPL');
+const autoShowEl  = document.getElementById('autoShow');
+
+function render(item){
+  // stage emojis
+  stage.innerHTML = '';
+  item.emojis.forEach(e => {
+    const span = document.createElement('span');
+    span.className = /➕|➡️/.test(e) ? 'plus' : 'big-emoji';
+    span.textContent = e;
+    stage.appendChild(span);
+  });
+
+  // question with inline speak button
+  qEl.innerHTML = `
+    <span>${item.question}</span>
+    <button class="tts-mini" title="Speak question" aria-label="Speak question" data-speak="q">🔊</button>
+    ${showPLEl.checked ? `<span class="pl">${item.pl.split('—')[0].trim()}</span>` : ''}
+  `;
+
+  // answer
+  aEl.innerHTML = `
+    <span>${item.answer}</span>
+    <button class="tts-mini" title="Speak answer" aria-label="Speak answer" data-speak="a">🔊</button>
+    ${showPLEl.checked && item.pl.includes('—') ? `<span class="pl">${item.pl.split('—')[1].trim()}</span>` : ''}
+  `;
+  aEl.classList.toggle('hidden', !autoShowEl.checked);
+  btnShow.textContent = autoShowEl.checked ? '🙈 Hide' : '👀 Show';
+}
+
+function nextItem(){
+  let item;
+  switch(mode){
+    case 'illness_self':  item = genIllnessSelf();  break;
+    case 'illness_other': item = genIllnessOther(); break;
+    case 'habit':         item = genHabit();        break;
+    case 'advice':        item = genAdvice();       break;
+  }
+  current = item;
+  counter++;
+  counterEl.textContent = '#' + counter;
+  tagLabel.textContent = MODE_LABELS[mode];
+  render(item);
+  if(autoSpeakEl.checked) setTimeout(()=>spk(item.question), 260);
+}
+
+/* ===========================
+   EVENTS
+   =========================== */
+document.querySelectorAll('.mode').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    document.querySelectorAll('.mode').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    mode = btn.dataset.mode;
+    tagLabel.textContent = MODE_LABELS[mode];
+    nextItem();
+  });
+});
+
+btnNext.addEventListener('click', nextItem);
+
+btnShow.addEventListener('click', ()=>{
+  if(!current) return;
+  const hidden = aEl.classList.toggle('hidden');
+  btnShow.textContent = hidden ? '👀 Show' : '🙈 Hide';
+  if(!hidden && autoSpeakEl.checked) spk(current.answer);
+});
+
+btnSpeak.addEventListener('click', ()=>{
+  if(!current){ spk("Press Generate to start."); return; }
+  // speak question, then answer if visible
+  spk(current.question);
+  if(!aEl.classList.contains('hidden')){
+    setTimeout(()=>spk(current.answer), Math.max(1400, current.question.length*70));
+  }
+});
+
+/* Inline mini speak buttons (delegated) */
+document.addEventListener('click', e=>{
+  const b = e.target.closest('.tts-mini');
+  if(!b || !current) return;
+  if(b.dataset.speak === 'q') spk(current.question);
+  if(b.dataset.speak === 'a') spk(current.answer);
+});
+
+/* Re-render on PL toggle */
+showPLEl.addEventListener('change', ()=>{ if(current) render(current); });
+autoShowEl.addEventListener('change',()=>{
+  if(!current) return;
+  aEl.classList.toggle('hidden', !autoShowEl.checked);
+  btnShow.textContent = autoShowEl.checked ? '🙈 Hide' : '👀 Show';
+});
+
+/* Keyboard shortcuts */
+document.addEventListener('keydown', e=>{
+  if(e.target.tagName === 'INPUT') return;
+  if(e.code === 'Space'){ e.preventDefault(); nextItem(); }
+  if(e.key.toLowerCase() === 's'){ btnShow.click(); }
+  if(e.key.toLowerCase() === 'a'){ btnSpeak.click(); }
+});
+
+/* Nudge voice loading on some browsers */
+setTimeout(updateVoiceStatus, 400);
+setTimeout(updateVoiceStatus, 1200);
+
+</script>
+</body>
+</html>
