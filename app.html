@@ -1064,6 +1064,12 @@ body.guest-mode .progress-wrap{opacity:.4;}
         <div style="font-size:.6rem;color:var(--muted);font-weight:600;margin-top:2px">Dostęp do podręczników</div>
         <span id="accessReqBadge" style="display:none;position:absolute;top:6px;right:6px;background:var(--danger);color:#fff;border-radius:100px;padding:1px 7px;font-size:.58rem;font-weight:900"></span>
       </div>
+      <div id="wordErrorTile" onclick="openWordErrors()" style="display:none;position:relative;background:var(--surface);border:1.5px solid var(--border);border-radius:14px;padding:14px 10px;text-align:center;cursor:pointer;transition:all .2s" onmouseover="this.style.borderColor='var(--danger)'" onmouseout="this.style.borderColor='var(--border)'">
+        <div style="font-size:1.6rem;margin-bottom:4px">🐛</div>
+        <div style="font-size:.78rem;font-weight:800;color:var(--text)">Zgłoszone błędy</div>
+        <div style="font-size:.6rem;color:var(--muted);font-weight:600;margin-top:2px">Błędy w słówkach</div>
+        <span id="wordErrorBadge" style="display:none;position:absolute;top:6px;right:6px;background:var(--danger);color:#fff;border-radius:100px;padding:1px 7px;font-size:.58rem;font-weight:900"></span>
+      </div>
       <div id="adminTeacherSetsTile" onclick="openAdminTeacherSets()" style="display:none;background:var(--surface);border:1.5px solid var(--border);border-radius:14px;padding:14px 10px;text-align:center;cursor:pointer;transition:all .2s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
         <div style="font-size:1.6rem;margin-bottom:4px">📚</div>
         <div style="font-size:.78rem;font-weight:800;color:var(--text)">Podręczniki nauczycieli</div>
@@ -2552,6 +2558,29 @@ szkoła	school"></textarea>
       </div>
     </div>
     <div id="accessReqList" style="width:100%">
+      <div style="text-align:center;color:var(--muted);font-size:.8rem;padding:24px;font-weight:600">⏳ Ładowanie…</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ SCREEN: WORD ERROR REPORTS (admin) ══ -->
+<div class="screen" id="sWordErrors">
+  <div style="width:100%">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+      <div>
+        <div style="font-family:'Playfair Display',serif;font-size:1.4rem;color:var(--danger)">🐛 Zgłoszone błędy w słówkach</div>
+        <div style="font-size:.72rem;color:var(--muted);font-weight:600;margin-top:2px">Użytkownicy zgłaszają literówki, błędne tłumaczenia i zdania</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <select id="wordErrorFilter" onchange="refreshWordErrors()" style="padding:5px 10px;border-radius:100px;border:1.5px solid var(--border);background:var(--surface);color:var(--text);font-size:.72rem;font-weight:700;outline:none;font-family:inherit">
+          <option value="pending">Oczekujące</option>
+          <option value="resolved">Rozwiązane</option>
+          <option value="">Wszystkie</option>
+        </select>
+        <button class="btn-sm" onclick="showScreen('sBooks')">← Panel</button>
+      </div>
+    </div>
+    <div id="wordErrorList" style="width:100%">
       <div style="text-align:center;color:var(--muted);font-size:.8rem;padding:24px;font-weight:600">⏳ Ładowanie…</div>
     </div>
   </div>
@@ -4182,7 +4211,10 @@ function flipCard() {
   document.getElementById('cardScene').classList.add('flipped');
   playFlip(); showDiff();
   showCardSentence();
-  spkForeign(getA(curIdx));
+  // Odczyt zgodny z kierunkiem nauki:
+  //   pl_en → odwrócona karta to EN → głos angielski
+  //   en_pl → odwrócona karta to PL → głos polski
+  if (autoVoice) speakACurrDirect();
 }
 
 // ══════════════════════════════════════════════
@@ -5415,10 +5447,13 @@ function renderAdminPanel() {
   // Kafelki widoczne TYLKO dla administratora
   const reqTile = document.getElementById('accessReqTile');
   if (reqTile) reqTile.style.display = isCurrentUserAdmin() ? '' : 'none';
+  const wordErrTile = document.getElementById('wordErrorTile');
+  if (wordErrTile) wordErrTile.style.display = isCurrentUserAdmin() ? '' : 'none';
   const adminTsTile = document.getElementById('adminTeacherSetsTile');
   if (adminTsTile) adminTsTile.style.display = isCurrentUserAdmin() ? '' : 'none';
-  // Odśwież licznik próśb o dostęp w kafelku "Prośby"
+  // Odśwież liczniki w kafelkach "Prośby" i "Zgłoszone błędy"
   if (typeof window._refreshAccessReqBadge === 'function') window._refreshAccessReqBadge();
+  if (typeof window._refreshWordErrorBadge === 'function') window._refreshWordErrorBadge();
   const reqs = DB.getAdminRequests().filter(r => r.status === 'pending');
   const pending = document.getElementById('pendingBadge');
   const notifDot = document.getElementById('adminNotifDot');
@@ -11810,21 +11845,35 @@ if ('serviceWorker' in navigator) {
   };
   window.closeWordErrorModal = function(){ document.getElementById('wordErrorModal').style.display='none'; };
 
-  window.sendWordError = function(){
+  window.sendWordError = async function(){
     const text = document.getElementById('wordErrorText').value.trim();
-    const ctx = document.getElementById('wordErrorCtx').textContent;
     if (!text) { alert('Opisz krótko, co jest nie tak.'); return; }
-    const user = (typeof currentUser !== 'undefined' && currentUser) ? currentUser : '(niezalogowany)';
-    const subject = encodeURIComponent('[Sowie Fiszki] Zgłoszenie błędu w słówku');
-    const body = encodeURIComponent(
-      'Zgłaszający: ' + user + '\n' +
-      'Słówko / kontekst: ' + ctx + '\n\n' +
-      'Opis błędu:\n' + text + '\n\n' +
-      '— Zgłoszenie wygenerowane przez aplikację Sowie Fiszki.'
-    );
-    window.location.href = 'mailto:' + CONTACT_EMAIL + '?subject=' + subject + '&body=' + body;
-    closeWordErrorModal();
-    if (typeof toast === 'function') toast('📨 Otwarto klienta poczty. Wyślij wiadomość, aby zakończyć zgłoszenie.', 4000);
+    if (typeof isGuest !== 'undefined' && isGuest) {
+      alert('Zgłaszać błędy mogą tylko zalogowani użytkownicy.'); return;
+    }
+
+    // Kontekst ze stanu aplikacji
+    let bookId = null, unitKey = null, wordPl = null, wordTarget = null;
+    try {
+      if (typeof curIdx !== 'undefined' && curIdx !== null && typeof activeWords !== 'undefined' && activeWords[curIdx]) {
+        wordPl     = activeWords[curIdx][0] || null;
+        wordTarget = activeWords[curIdx][1] || null;
+      }
+      if (typeof currentBookId !== 'undefined' && currentBookId) bookId = currentBookId;
+      if (typeof currentUnitKey !== 'undefined' && currentUnitKey) unitKey = currentUnitKey;
+    } catch(e) {}
+
+    const saveBtn = document.querySelector('#wordErrorModal .btn-modal-save');
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Wysyłam…'; }
+    try {
+      await DB.createWordErrorReport({ bookId, unitKey, wordPl, wordTarget, description: text });
+      closeWordErrorModal();
+      if (typeof toast === 'function') toast('✅ Zgłoszenie wysłane do administratora. Dziękujemy!', 3500);
+    } catch(e) {
+      alert('Nie udało się wysłać zgłoszenia: ' + (e.message || e));
+    } finally {
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Wyślij zgłoszenie'; }
+    }
   };
 
   window.sendReport = function(){
@@ -12336,6 +12385,109 @@ if ('serviceWorker' in navigator) {
       if (typeof toast==='function') toast('❌ ' + e.message, 3200);
     }
   }
+
+  // ═══════════════════════════════════════════════
+  //  WORD ERROR REPORTS — ekran admina
+  // ═══════════════════════════════════════════════
+  window.openWordErrors = async function(){
+    if (!isCurrentUserAdmin()) {
+      if (typeof toast === 'function') toast('Zgłoszone błędy widzi tylko administrator.', 2800);
+      return;
+    }
+    showScreen('sWordErrors');
+    await refreshWordErrors();
+  };
+
+  window.refreshWordErrors = async function(){
+    const status = document.getElementById('wordErrorFilter').value;
+    const listEl = document.getElementById('wordErrorList');
+    listEl.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:.8rem;padding:24px;font-weight:600">⏳ Ładowanie…</div>';
+    try {
+      const reports = await DB.listWordErrorReports(status || null);
+      if (!reports.length) {
+        listEl.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:.85rem;padding:30px 14px;font-weight:600">Brak zgłoszeń w tym statusie.</div>';
+        refreshWordErrorBadge();
+        return;
+      }
+      listEl.innerHTML = '';
+      reports.forEach(r => {
+        const book = r.book_id && BOOKS[r.book_id] ? BOOKS[r.book_id] : null;
+        const bookLbl = book ? ((book.icon ? book.icon + ' ' : '') + book.name) : (r.book_id || '(brak podręcznika)');
+        const unitLbl = r.unit_key && book?.units?.[r.unit_key] ? book.units[r.unit_key].name : r.unit_key;
+        const wordLbl = (r.word_pl || '(?)') + '  →  ' + (r.word_target || '(?)');
+        const statusBadge = r.status === 'pending'
+          ? '<span style="background:rgba(255,209,102,.15);color:var(--accent);border:1px solid rgba(255,209,102,.3);border-radius:100px;padding:1px 8px;font-size:.6rem;font-weight:800">⏳ oczekuje</span>'
+          : '<span style="background:rgba(85,239,196,.15);color:var(--success);border:1px solid rgba(85,239,196,.3);border-radius:100px;padding:1px 8px;font-size:.6rem;font-weight:800">✓ rozwiązane</span>';
+        const when = r.created_at ? new Date(r.created_at).toLocaleString('pl-PL') : '';
+        const card = document.createElement('div');
+        card.style.cssText = 'background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:8px;display:flex;flex-direction:column;gap:6px';
+        card.innerHTML = `
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;flex-wrap:wrap">
+            <div style="min-width:0;flex:1">
+              <div style="font-size:.95rem;font-weight:800;color:var(--accent);word-break:break-word">${escHtml(wordLbl)}</div>
+              <div style="font-size:.72rem;color:var(--muted);font-weight:700">Zgłosił: <span style="color:var(--text)">${escHtml(r.reporter_username || '(nieznany)')}</span></div>
+              <div style="font-size:.7rem;color:var(--muted);font-weight:600;margin-top:2px">${escHtml(bookLbl)}${unitLbl ? ' / ' + escHtml(unitLbl) : ''}</div>
+              <div style="font-size:.62rem;color:var(--muted);font-weight:600">${escHtml(when)}</div>
+            </div>
+            <div>${statusBadge}</div>
+          </div>
+          <div style="font-size:.78rem;color:var(--text);font-weight:500;padding:8px 10px;background:var(--surface2);border-radius:8px;word-break:break-word;line-height:1.5">${escHtml(r.description)}</div>
+        `;
+        const actions = document.createElement('div');
+        actions.style.cssText = 'display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap';
+        if (r.status === 'pending') {
+          actions.innerHTML = `
+            <button class="btn-sm" data-act="delete" style="border-color:rgba(255,118,117,.4);color:var(--danger);padding:5px 13px;font-size:.72rem">🗑️ Usuń</button>
+            <button class="btn-sm accent" data-act="resolve" style="padding:5px 13px;font-size:.72rem">✓ Rozwiąż</button>
+          `;
+          actions.querySelector('[data-act="resolve"]').addEventListener('click', ()=>handleResolveWordError(r.id));
+          actions.querySelector('[data-act="delete"]').addEventListener('click', ()=>handleDeleteWordError(r.id));
+        } else {
+          actions.innerHTML = `
+            <button class="btn-sm" data-act="delete" style="border-color:rgba(255,118,117,.4);color:var(--danger);padding:5px 13px;font-size:.72rem">🗑️ Usuń</button>
+          `;
+          actions.querySelector('[data-act="delete"]').addEventListener('click', ()=>handleDeleteWordError(r.id));
+        }
+        card.appendChild(actions);
+        listEl.appendChild(card);
+      });
+      refreshWordErrorBadge();
+    } catch(e) {
+      console.error('[refreshWordErrors]', e);
+      listEl.innerHTML = `<div style="color:var(--danger);font-size:.8rem;padding:16px;font-weight:600">❌ ${escHtml(e.message)}</div>`;
+    }
+  };
+
+  async function handleResolveWordError(id){
+    try {
+      await DB.resolveWordErrorReport(id);
+      if (typeof toast==='function') toast('✓ Oznaczono jako rozwiązane.', 2400);
+      await refreshWordErrors();
+    } catch(e) {
+      if (typeof toast==='function') toast('❌ ' + e.message, 3200);
+    }
+  }
+  async function handleDeleteWordError(id){
+    if (!confirm('Usunąć to zgłoszenie? Tego nie można cofnąć.')) return;
+    try {
+      await DB.deleteWordErrorReport(id);
+      if (typeof toast==='function') toast('🗑️ Usunięto.', 2000);
+      await refreshWordErrors();
+    } catch(e) {
+      if (typeof toast==='function') toast('❌ ' + e.message, 3200);
+    }
+  }
+
+  async function refreshWordErrorBadge(){
+    try {
+      const n = await DB.countPendingWordErrorReports();
+      const badge = document.getElementById('wordErrorBadge');
+      if (!badge) return;
+      if (n > 0) { badge.textContent = String(n); badge.style.display = 'inline-block'; }
+      else       { badge.style.display = 'none'; }
+    } catch(e) {}
+  }
+  window._refreshWordErrorBadge = refreshWordErrorBadge;
 
   // ═══════════════════════════════════════════════
   //  MASOWE TWORZENIE KONT UCZNIÓW

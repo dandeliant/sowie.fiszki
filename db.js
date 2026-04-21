@@ -757,6 +757,73 @@ const DB = (() => {
   }
 
   // ═══════════════════════════════════════════════════════════════
+  // WORD ERROR REPORTS — zgłoszenia błędów w słówkach
+  // ═══════════════════════════════════════════════════════════════
+  async function createWordErrorReport({ bookId, unitKey, wordPl, wordTarget, description }) {
+    if (!_userId) throw new Error('Musisz być zalogowany, aby zgłosić błąd.');
+    if (!description || !description.trim()) throw new Error('Brak opisu błędu.');
+    const payload = {
+      reporter_id: _userId,
+      reporter_username: _profile?.username || null,
+      book_id: bookId || null,
+      unit_key: unitKey || null,
+      word_pl: wordPl || null,
+      word_target: wordTarget || null,
+      description: description.trim()
+    };
+    const { data, error } = await supabase
+      .from('word_error_reports')
+      .insert(payload)
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    return data;
+  }
+
+  async function listWordErrorReports(status) {
+    if (!_profile?.isAdmin) return [];
+    let q = supabase
+      .from('word_error_reports')
+      .select('id, reporter_id, reporter_username, book_id, unit_key, word_pl, word_target, description, status, created_at, resolved_at');
+    if (status) q = q.eq('status', status);
+    q = q.order('created_at', { ascending: false });
+    const { data, error } = await q;
+    if (error) throw new Error(error.message);
+    return data || [];
+  }
+
+  async function resolveWordErrorReport(reportId) {
+    if (!_profile?.isAdmin) throw new Error('Tylko administrator może oznaczać zgłoszenia.');
+    const { data, error } = await supabase
+      .from('word_error_reports')
+      .update({ status: 'resolved', resolved_by: _userId, resolved_at: new Date().toISOString() })
+      .eq('id', reportId)
+      .select('id, status');
+    if (error) throw new Error(error.message);
+    if (!data || !data.length) throw new Error('Brak uprawnień do aktualizacji (RLS).');
+    return data[0];
+  }
+
+  async function deleteWordErrorReport(reportId) {
+    if (!_profile?.isAdmin) throw new Error('Tylko administrator może usuwać zgłoszenia.');
+    const { error } = await supabase
+      .from('word_error_reports')
+      .delete()
+      .eq('id', reportId);
+    if (error) throw new Error(error.message);
+  }
+
+  async function countPendingWordErrorReports() {
+    if (!_profile?.isAdmin) return 0;
+    const { count, error } = await supabase
+      .from('word_error_reports')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'pending');
+    if (error) return 0;
+    return count || 0;
+  }
+
+  // ═══════════════════════════════════════════════════════════════
   //  RESET HASŁA UCZNIA — nie zapisujemy hasła, pokazujemy raz
   // ═══════════════════════════════════════════════════════════════
   //
@@ -1312,6 +1379,12 @@ const DB = (() => {
     approveBookAccessRequest,
     rejectBookAccessRequest,
     countPendingBookAccessRequests,
+    // word error reports
+    createWordErrorReport,
+    listWordErrorReports,
+    resolveWordErrorReport,
+    deleteWordErrorReport,
+    countPendingWordErrorReports,
     // bulk student creation
     bulkCreateStudentsForClass,
     adminResetUserPassword,

@@ -53,6 +53,7 @@ Kolejność uruchamiania w SQL Editor (każda jest idempotentna — można ponow
 12. `admin-reset-password.sql` — RPC admin_reset_user_password (pgcrypto)
 13. `fix-created-by.sql` — profiles.created_by + RPC set_profile_creator (nauczyciel widzi tylko swoich uczniów)
 14. `book-notes-schema.sql` — notatki admina na ekranach podręcznika/unitu
+15. `word-error-reports-schema.sql` — zgłoszenia błędów w słówkach (widoczne tylko dla admina)
 
 **Zawsze przypominaj użytkownikowi** o uruchomieniu nowej migracji w Supabase, kiedy tworzysz nową.
 
