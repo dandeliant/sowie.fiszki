@@ -192,6 +192,19 @@
   /* Voice badge */
   #voice-badge { text-align: center; font-size: .78rem; color: #999; margin: 10px auto 0; max-width: 760px; }
 
+  /* Worksheet (karta pracy — tryb "Jedna karta" → Drukuj) */
+  #worksheet-print { display: none; padding: 8px 12px; }
+  #worksheet-print .ws-title { text-align:center; font-family:'Fredoka One',cursive; color:#2d7a3a; font-size:1.8rem; margin-bottom:6px; }
+  #worksheet-print .ws-sub { text-align:center; color:#333; font-size:.95rem; margin-bottom:18px; font-weight:700; }
+  #worksheet-print .ws-block { margin-bottom:14px; padding:10px 10px 10px 36px; position:relative; break-inside: avoid; page-break-inside: avoid; }
+  #worksheet-print .ws-block-num { position:absolute; left:6px; top:30px; font-family:'Fredoka One',cursive; font-size:1.4rem; color:#2d7a3a; }
+  #worksheet-print .ws-pairs { display:flex; justify-content:center; gap:32px; margin-bottom:10px; flex-wrap:wrap; }
+  #worksheet-print .ws-pair { display:flex; gap:8px; }
+  #worksheet-print .ws-num-tile { font-family:'Fredoka One',cursive; font-size:2.2rem; padding:6px 18px; border:3px solid #333; border-radius:12px; min-width:76px; text-align:center; background:#e8f5e9; color:#2d7a3a; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  #worksheet-print .ws-emj-tile { font-size:2.6rem; padding:6px 12px; border:3px solid #333; border-radius:12px; background:#fff8e1; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  #worksheet-print .ws-lines { margin-top:6px; }
+  #worksheet-print .ws-line { border-bottom:1.5px solid #555; height:22px; margin:5px 0; }
+
   /* Print */
   @media print {
     body { background: white !important; padding: 10px; }
@@ -203,6 +216,10 @@
     .card-tile { border: 3px solid #333 !important; }
     .card-tile.num-tile { background: #e8f5e9 !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
     .card-tile.emj-tile { background: #fff8e1 !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+
+    /* Karta pracy — drukujemy tylko #worksheet-print */
+    body.printing-ws > *:not(#worksheet-print) { display: none !important; }
+    body.printing-ws #worksheet-print { display: block !important; }
   }
 
   @media (max-width: 540px) {
@@ -292,6 +309,9 @@
 </div>
 
 <div id="voice-badge">🔊 Kliknij emoji w tabeli, aby usłyszeć zdanie (głos brytyjski)</div>
+
+<!-- WORKSHEET (karta pracy — wypelniana przez JS tuz przed drukiem) -->
+<div id="worksheet-print"></div>
 
 <script>
 const ITEMS = [
@@ -472,7 +492,54 @@ function speakCard() {
 }
 
 // ── Export ────────────────────────────────────────────────────────────────
-function doPrint() { window.print(); }
+function doPrint() {
+  if (currentMode === 'card') { printCardWorksheet(); }
+  else { window.print(); }
+}
+
+function printCardWorksheet() {
+  const ws = document.getElementById('worksheet-print');
+  ws.innerHTML = buildCardWorksheetHTML();
+  document.body.classList.add('printing-ws');
+  const cleanup = () => {
+    document.body.classList.remove('printing-ws');
+    window.removeEventListener('afterprint', cleanup);
+  };
+  window.addEventListener('afterprint', cleanup);
+  setTimeout(() => window.print(), 60);
+}
+
+function buildCardWorksheetHTML() {
+  const N_BLOCKS = 5;
+  let html = `<h1 class="ws-title">How Many? — Karta pracy</h1>
+    <div class="ws-sub">Imię: _______________   Klasa: _______   Data: __________</div>`;
+  for (let i = 0; i < N_BLOCKS; i++) {
+    let a = randInt(0, ITEMS.length - 1);
+    let b; do { b = randInt(0, ITEMS.length - 1); } while (b === a);
+    const p1 = { item: ITEMS[a], qty: pickNumber() };
+    const p2 = { item: ITEMS[b], qty: pickNumber() };
+    html += `
+      <div class="ws-block">
+        <span class="ws-block-num">${i + 1}.</span>
+        <div class="ws-pairs">
+          <div class="ws-pair">
+            <div class="ws-num-tile">${p1.qty}</div>
+            <div class="ws-emj-tile">${p1.item.emoji}</div>
+          </div>
+          <div class="ws-pair">
+            <div class="ws-num-tile">${p2.qty}</div>
+            <div class="ws-emj-tile">${p2.item.emoji}</div>
+          </div>
+        </div>
+        <div class="ws-lines">
+          <div class="ws-line"></div>
+          <div class="ws-line"></div>
+          <div class="ws-line"></div>
+        </div>
+      </div>`;
+  }
+  return html;
+}
 
 async function doJpeg() {
   const btn = document.getElementById('jpeg-btn');
@@ -505,8 +572,8 @@ document.getElementById('random-headers').addEventListener('change', e =>
 document.getElementById('range-min').addEventListener('change', ()=>{ if(getMin()>=getMax()) document.getElementById('range-max').value=getMin()+10; });
 document.getElementById('range-max').addEventListener('change', ()=>{ if(getMax()<=getMin()) document.getElementById('range-min').value=Math.max(1,getMax()-10); });
 
-// Card pair click → regenerate + speak
-document.getElementById('card-pair').addEventListener('click', () => { generateCard(); setTimeout(speakCard, 300); });
+// Card pair click → tylko odczytaj (losowanie nowego zestawu jest pod przyciskiem "Generuj")
+document.getElementById('card-pair').addEventListener('click', speakCard);
 
 // ── Init ──────────────────────────────────────────────────────────────────
 generate();
