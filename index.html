@@ -492,9 +492,41 @@ document.addEventListener('keydown', e => {
   }
 })();
 
-// ─── SERVICE WORKER ──────────────────────────────────────────
+// ─── SERVICE WORKER + baner "Nowa wersja dostępna" ──────────
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js').catch(() => {});
+  let swRefreshing = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (swRefreshing) return;
+    swRefreshing = true;
+    window.location.reload();
+  });
+
+  navigator.serviceWorker.register('sw.js').then(reg => {
+    if (reg.waiting && navigator.serviceWorker.controller) {
+      showSwUpdateBanner(reg.waiting);
+    }
+    reg.addEventListener('updatefound', () => {
+      const sw = reg.installing;
+      if (!sw) return;
+      sw.addEventListener('statechange', () => {
+        if (sw.state === 'installed' && navigator.serviceWorker.controller) {
+          showSwUpdateBanner(sw);
+        }
+      });
+    });
+  }).catch(() => {});
+
+  function showSwUpdateBanner(waitingSW) {
+    if (document.getElementById('swUpdateBanner')) return;
+    const b = document.createElement('div');
+    b.id = 'swUpdateBanner';
+    b.style.cssText = 'position:fixed;left:16px;right:16px;bottom:16px;background:#2b7cff;color:#fff;padding:14px 18px;border-radius:12px;display:flex;align-items:center;justify-content:space-between;gap:12px;font-family:Nunito,system-ui,sans-serif;font-weight:700;font-size:.95rem;box-shadow:0 8px 32px rgba(0,0,0,.25);z-index:99999;max-width:520px;margin:0 auto';
+    b.innerHTML = '<span>🔄 Nowa wersja dostępna. Kliknij OK, aby odświeżyć.</span><button id="swUpdateOk" style="background:#fff;color:#2b7cff;border:none;padding:9px 18px;border-radius:8px;font-weight:800;cursor:pointer;font-family:inherit;font-size:.95rem">OK</button>';
+    document.body.appendChild(b);
+    document.getElementById('swUpdateOk').addEventListener('click', () => {
+      waitingSW.postMessage({ type: 'SKIP_WAITING' });
+    });
+  }
 }
 </script>
 <footer style="text-align:center;padding:18px 12px 24px;font-size:.62rem;color:rgba(155,142,196,.45);font-weight:600;letter-spacing:.03em">

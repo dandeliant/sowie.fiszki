@@ -103,9 +103,14 @@ System oparty o atrybut `data-theme` na `<html>`. Motywy: `owl` (domyślny), `fo
 - `app.html` jest GIGANTYCZNY — używaj `Grep` zamiast Read na całość. Szukaj po unikalnych fragmentach.
 - **Nie dziel** `app.html` na moduły — konwencja projektu: jeden duży plik.
 
+### Deploy — bump Service Worker
+- **Po każdej zauważalnej zmianie** w `app.html`, `data.js`, `db.js` lub `index.html` zbumpuj `CACHE_NAME` w `sw.js` (np. `v8` → `v9`).
+- Bez bumpa: przeglądarka nie wykryje nowej wersji SW → baner nie pojawi się u użytkowników.
+- Sam przebieg: user dostaje baner „Nowa wersja dostępna. Kliknij OK, aby odświeżyć." → klik → `postMessage SKIP_WAITING` → `controllerchange` → `location.reload()`.
+
 ## 🐛 Znane problemy / pułapki
 
-- **Service Worker cache** — zmiany nie są widoczne natychmiast. Użytkownik musi zrobić hard refresh (Ctrl+Shift+R) albo w DevTools → Application → Service Workers → Unregister. Jeśli to częsty problem, zbumpuj wersję cache w `sw.js`.
+- **Service Worker cache** — od v8 (kwiecień 2026) strategia jest network-first dla HTML/JS/JSON + cache-first dla fontów/CDN. Nowy SW NIE robi już `skipWaiting()` — czeka na zgodę klienta. Użytkownik dostaje baner „🔄 Nowa wersja dostępna. Kliknij OK, aby odświeżyć." (kod banera w `app.html` i `index.html` przy rejestracji SW). **Po każdym deploy'u bumpuj `CACHE_NAME` w `sw.js`** (v8 → v9 → v10…) — to trigger dla przeglądarki, żeby pobrała nowego SW i pokazała baner. Offline fallback nadal działa z cache.
 - **CRLF/LF warnings przy commicie na Windows** — są normalne, ignoruj.
 - **RLS zwraca pustą listę** — prawdopodobnie brak odpowiedniej polityki. Zawsze dodawaj `.select()` po UPDATE żeby wykryć ciche blokady.
 - **Email w `.claude/`** — katalog jest w `.gitignore`, ale upewnij się że nie committuje się `settings.local.json`.

@@ -1,9 +1,13 @@
 'use strict';
 // ═══════════════════════════════════════════════════════
 //  SOWIE FISZKI — Service Worker (PWA, offline support)
+//  Strategia: network-first dla kodu aplikacji (HTML/JS/JSON),
+//  cache-first dla fontow i CDN. Nowy SW czeka na zgode klienta
+//  (postMessage SKIP_WAITING) — pokaz banera "Nowa wersja dostepna".
 // ═══════════════════════════════════════════════════════
-const CACHE_NAME = 'sowie-fiszki-v7';
-const ASSETS = [
+const CACHE_NAME = 'sowie-fiszki-v8';
+
+const PRECACHE_ASSETS = [
   './',
   './index.html',
   './app.html',
@@ -15,48 +19,96 @@ const ASSETS = [
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2'
 ];
 
-// Instalacja — cache wszystkich plików
+// Instalacja — pre-cache zasobow. NIE robimy skipWaiting:
+// chcemy, zeby klient zobaczyl banner i kliknal OK.
 self.addEventListener('install', event => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => {
-      return cache.addAll(ASSETS).catch(err => {
-        console.warn('[SW] Nie można zakeszować wszystkich zasobów:', err);
-      });
-    })
-  );
-  self.skipWaiting();
-});
-
-// Aktywacja — usuń stare cache
-self.addEventListener('activate', event => {
-  event.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
+    caches.open(CACHE_NAME).then(cache =>
+      cache.addAll(PRECACHE_ASSETS).catch(err =>
+        console.warn('[SW] Nie mozna zakeszowac wszystkich zasobow:', err)
+      )
     )
   );
-  self.clients.claim();
 });
 
-// Fetch — Cache-first, fallback sieć
-self.addEventListener('fetch', event => {
-  if (event.request.method !== 'GET') return;
-  // Ignoruj żądania spoza http/https (np. chrome-extension://)
-  if (!event.request.url.startsWith('http')) return;
+// Aktywacja — usun stare cache, przejmij kontrole nad otwartymi kartami.
+self.addEventListener('activate', event => {
+  event.waitUntil(
+    caches.keys()
+      .then(keys => Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))))
+      .then(() => self.clients.claim())
+  );
+});
 
-  event.respondWith(
-    caches.match(event.request).then(cached => {
-      if (cached) return cached;
-      return fetch(event.request).then(response => {
-        if (!response || response.status !== 200 || response.type === 'opaque') return response;
-        const clone = response.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
-        return response;
-      }).catch(() => {
-        // Offline fallback
-        if (event.request.headers.get('accept')?.includes('text/html')) {
+// Wiadomosc od klienta: "kliknalem OK w banerze, aktywuj sie natychmiast"
+self.addEventListener('message', event => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
+
+// Czy to zasob kodu aplikacji (musi byc zawsze swiezy gdy online)?
+function isAppResource(url) {
+  try {
+    const u = new URL(url);
+    if (u.pathname.endsWith('/')) return true;
+    return /\.(html|js|json)$/i.test(u.pathname);
+  } catch { return false; }
+}
+
+// Czy to zewnetrzny statyczny zasob (fonty, CDN — rzadko sie zmienia)?
+function isStaticExternal(url) {
+  return url.startsWith('https://fonts.googleapis.com/') ||
+         url.startsWith('https://fonts.gstatic.com/') ||
+         url.startsWith('https://cdn.jsdelivr.net/');
+}
+
+self.addEventListener('fetch', event => {
+  const req = event.request;
+  if (req.method !== 'GET') return;
+  if (!req.url.startsWith('http')) return;
+
+  // Cache-first dla fontow i CDN
+  if (isStaticExternal(req.url)) {
+    event.respondWith(
+      caches.match(req).then(cached => cached || fetch(req).then(res => {
+        if (res && res.status === 200) {
+          const clone = res.clone();
+          caches.open(CACHE_NAME).then(c => c.put(req, clone));
+        }
+        return res;
+      }))
+    );
+    return;
+  }
+
+  // Network-first dla kodu aplikacji i nawigacji
+  if (isAppResource(req.url) || req.mode === 'navigate') {
+    event.respondWith(
+      fetch(req).then(res => {
+        if (res && res.status === 200 && res.type !== 'opaque') {
+          const clone = res.clone();
+          caches.open(CACHE_NAME).then(c => c.put(req, clone));
+        }
+        return res;
+      }).catch(() => caches.match(req).then(cached => {
+        if (cached) return cached;
+        if (req.headers.get('accept')?.includes('text/html')) {
           return caches.match('./index.html');
         }
-      });
-    })
+      }))
+    );
+    return;
+  }
+
+  // Reszta: cache-first, fallback network
+  event.respondWith(
+    caches.match(req).then(cached => cached || fetch(req).then(res => {
+      if (res && res.status === 200 && res.type !== 'opaque') {
+        const clone = res.clone();
+        caches.open(CACHE_NAME).then(c => c.put(req, clone));
+      }
+      return res;
+    }))
   );
 });
