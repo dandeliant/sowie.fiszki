@@ -83,7 +83,10 @@ System oparty o atrybut `data-theme` na `<html>`. Motywy: `owl` (domyślny), `fo
 ### Dodawanie nowej gry do INNE
 1. Stwórz plik `.html` w głównym folderze (np. `cp` z Downloads).
 2. Dodaj CSS `.back-link` (dopasuj do stylu gry) + `@media print { .back-link { display: none !important; } }`.
-3. Dodaj `<a href="app.html" class="back-link">← Powrót do Sowie Fiszki</a>` u góry `<body>` lub wewnątrz głównego kontenera.
+3. **Dwa linki powrotu** (konwencja): u GÓRY `<body>` i u DOŁU tuż przed `</body>`:
+   - Góra: `<a href="app.html" class="back-link">← Powrót do Sowie Fiszki</a>`
+   - Dół: `<div style="text-align:center;margin:20px 0 10px"><a href="app.html" class="back-link">← Wróć do Sowie Fiszki</a></div>`
+   - CSS `.back-link` stylizuje oba (wspólna klasa), `@media print` ukrywa oba przy druku.
 4. W `app.html` znajdź ekran `id="sApps"` (`<div class="screen" id="sApps">`) i dodaj kafelek:
    ```html
    <a href="nazwa.html" class="book-card" style="text-decoration:none;color:inherit;display:flex;flex-direction:column;align-items:center;gap:9px">
