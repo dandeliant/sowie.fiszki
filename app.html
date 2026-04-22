@@ -2238,7 +2238,10 @@ szkoła	school"></textarea>
 <div class="screen" id="sStats">
   <div class="stats-hdr">
     <h2>📊 Moje wyniki</h2>
-    <button class="btn-sm" onclick="showScreen('sBooks')">← Wróć</button>
+    <div style="display:flex;gap:6px">
+      <button class="btn-sm" onclick="exportMyStatsPdf()" title="Eksportuj PDF (Premium)">📄 PDF</button>
+      <button class="btn-sm" onclick="showScreen('sBooks')">← Wróć</button>
+    </div>
   </div>
   <div class="stat-grid" id="statGrid"></div>
   <div class="acc-row">
@@ -4770,17 +4773,67 @@ function spkForeign(txt) {
 function getBookLang() {
   return (BOOKS[currentBookId] && BOOKS[currentBookId].lang) || 'en-GB';
 }
+// Dostepne glosy lektora (Premium moze wybierac; Free — zawsze UK Female Google)
+const VOICE_OPTIONS = [
+  { key:'uk-female-google', label:'🇬🇧 UK Female (Google)', lang:'en-GB',
+    matchers:['Google UK English Female'], free:true },
+  { key:'uk-male',          label:'🇬🇧 UK Male',              lang:'en-GB',
+    matchers:['Google UK English Male','Microsoft George','Microsoft Ryan'], free:false },
+  { key:'us-female',        label:'🇺🇸 US Female',             lang:'en-US',
+    matchers:['Google US English','Microsoft Zira','Microsoft Jenny','Microsoft Aria'], free:false },
+  { key:'us-male',          label:'🇺🇸 US Male',               lang:'en-US',
+    matchers:['Microsoft David','Microsoft Guy','Microsoft Eric'], free:false }
+];
+const RATE_OPTIONS = [
+  { key:'slow',   label:'🐢 Wolno',      value:0.70 },
+  { key:'normal', label:'🚶 Normalnie', value:0.85 },
+  { key:'fast',   label:'🏃 Szybko',     value:1.00 }
+];
+
+function getUserVoicePref() {
+  try {
+    const raw = localStorage.getItem('fiszki_voice_pref');
+    if (raw) {
+      const p = JSON.parse(raw);
+      if (p && p.voice && p.rate) return p;
+    }
+  } catch(e) {}
+  return { voice:'uk-female-google', rate:'normal' };
+}
+function setUserVoicePref(pref) {
+  try { localStorage.setItem('fiszki_voice_pref', JSON.stringify(pref)); } catch(e) {}
+}
+// Dla Free wymuszamy domyslna konfiguracje
+function effectiveVoicePref() {
+  const pref = getUserVoicePref();
+  if (isCurrentUserAdmin() || isCurrentUserPremium()) return pref;
+  return { voice:'uk-female-google', rate:'normal' };
+}
+
 function getV(lang) {
   if (!voices.length) voices = speechSynthesis.getVoices();
-  if (lang === 'en-GB' || lang.startsWith('en'))
-    return voices.find(v => v.lang==='en-GB' && /google/i.test(v.name)) || voices.find(v => v.lang==='en-GB') || voices.find(v => v.lang.startsWith('en')) || null;
+  if (lang === 'en-GB' || lang.startsWith('en')) {
+    const pref = effectiveVoicePref();
+    const opt = VOICE_OPTIONS.find(o => o.key === pref.voice) || VOICE_OPTIONS[0];
+    for (const m of opt.matchers) {
+      const found = voices.find(v => v.name && v.name.includes(m));
+      if (found) return found;
+    }
+    return voices.find(v => v.lang === opt.lang) || voices.find(v => v.lang && v.lang.startsWith('en')) || null;
+  }
   if (lang === 'fr-FR' || lang.startsWith('fr'))
     return voices.find(v => v.lang==='fr-FR' && /google/i.test(v.name)) || voices.find(v => v.lang==='fr-FR') || voices.find(v => v.lang.startsWith('fr')) || null;
   return voices.find(v => v.lang==='pl-PL') || voices.find(v => v.lang.startsWith('pl')) || null;
 }
-function spk(txt, lang, rate=.85) {
+function spk(txt, lang, rate) {
   if (!('speechSynthesis' in window)) return;
   speechSynthesis.cancel();
+  if (rate === undefined) {
+    // Uzyj preferencji uzytkownika (Premium) albo domyslnej 0.85 (Free)
+    const pref = effectiveVoicePref();
+    const rateObj = RATE_OPTIONS.find(r => r.key === pref.rate);
+    rate = rateObj ? rateObj.value : 0.85;
+  }
   const u = new SpeechSynthesisUtterance(txt); u.lang = lang; u.rate = rate; u.pitch = 1;
   const v = getV(lang); if (v) u.voice = v;
   speechSynthesis.speak(u);
@@ -11494,8 +11547,11 @@ if ('serviceWorker' in navigator) {
   } else if (!isGuest && isCurrentUserParent()) {
     openParentPanel();
   }
-  // Banner o wygasajacym planie Premium (na miesiac przed + codziennie)
-  if (!isGuest) { setTimeout(maybeShowPremiumExpiryBanner, 600); }
+  // Banery Premium: welcome trial (raz) + wygasanie (codziennie w ciagu 30 dni)
+  if (!isGuest) {
+    setTimeout(maybeShowTrialWelcomeBanner, 400);
+    setTimeout(maybeShowPremiumExpiryBanner, 700);
+  }
   setTimeout(() => {
     const e = document.getElementById('owlMsg');
     if (e) { e.textContent = 'Cześć! Wybierz podręcznik! 📖'; e.classList.add('show'); setTimeout(() => e.classList.remove('show'), 4200); }
@@ -11727,6 +11783,24 @@ if ('serviceWorker' in navigator) {
       <div id="accountUsername" style="font-size:.95rem;font-weight:800;color:var(--text)">—</div>
       <div style="font-size:.65rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin:8px 0 3px">Plan</div>
       <div id="accountPlan" style="font-size:.82rem;font-weight:700;color:var(--accent)">—</div>
+    </div>
+
+    <!-- Glos lektora -->
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:12px 16px;margin-bottom:14px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:8px">
+        <div style="font-size:.82rem;font-weight:800;color:var(--text)">🎤 Głos lektora</div>
+        <span id="voicePrefLockBadge" style="display:none;font-size:.6rem;font-weight:800;color:var(--accent);background:rgba(255,209,102,.15);border:1px solid rgba(255,209,102,.35);border-radius:100px;padding:1px 8px">🔒 Premium</span>
+      </div>
+      <label style="font-size:.65rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px">Wybór głosu</label>
+      <select id="voicePrefSelect" onchange="onVoicePrefChange()" style="width:100%;padding:8px 10px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:.85rem;font-weight:600;outline:none;font-family:inherit;margin-bottom:10px"></select>
+      <label style="font-size:.65rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px">Tempo mówienia</label>
+      <select id="voicePrefRate" onchange="onVoicePrefChange()" style="width:100%;padding:8px 10px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:.85rem;font-weight:600;outline:none;font-family:inherit">
+        <option value="slow">🐢 Wolno</option>
+        <option value="normal" selected>🚶 Normalnie</option>
+        <option value="fast">🏃 Szybko</option>
+      </select>
+      <button class="btn-sm" style="width:100%;margin-top:8px;font-size:.72rem" onclick="previewVoicePref()">🔊 Odsłuchaj próbkę</button>
+      <div id="voicePrefHint" style="font-size:.68rem;color:var(--muted);font-weight:600;margin-top:8px;line-height:1.4"></div>
     </div>
 
     <!-- Strefa niebezpieczna: usuwanie konta -->
@@ -12043,9 +12117,180 @@ if ('serviceWorker' in navigator) {
     document.getElementById('btnDeleteAccountInit').style.display = '';
     document.getElementById('deleteConfirmInput').value = '';
     document.getElementById('deleteAccountMsg').textContent = '';
+    // Uzupelnij selektor glosow lektora
+    populateVoicePrefSelect();
     document.getElementById('accountModal').style.display = 'flex';
   };
   window.closeAccountModal = function(){ document.getElementById('accountModal').style.display='none'; };
+
+  // ── Glos lektora (Premium) ──
+  window.populateVoicePrefSelect = function(){
+    const sel   = document.getElementById('voicePrefSelect');
+    const selR  = document.getElementById('voicePrefRate');
+    const lock  = document.getElementById('voicePrefLockBadge');
+    const hint  = document.getElementById('voicePrefHint');
+    if (!sel) return;
+    const isPrem = isCurrentUserAdmin() || isCurrentUserPremium();
+    const pref   = effectiveVoicePref();
+    sel.innerHTML = '';
+    VOICE_OPTIONS.forEach(opt => {
+      const o = document.createElement('option');
+      o.value = opt.key;
+      o.textContent = opt.label + (!opt.free && !isPrem ? '  🔒 Premium' : '');
+      if (!opt.free && !isPrem) o.disabled = true;
+      if (opt.key === pref.voice) o.selected = true;
+      sel.appendChild(o);
+    });
+    selR.value = pref.rate;
+    if (!isPrem) {
+      sel.disabled = false;  // zostawiamy otwarte, ale tylko 1 opcja aktywna
+      selR.disabled = true;
+      lock.style.display = '';
+      hint.innerHTML = '🔒 Wybór głosu i tempa jest <b>funkcją Premium</b>. Free używa 🇬🇧 UK Female (Google) w tempie normalnym.';
+    } else {
+      sel.disabled = false;
+      selR.disabled = false;
+      lock.style.display = 'none';
+      hint.innerHTML = '✨ Zmiany działają we wszystkich trybach nauki — przetestuj przyciskiem odsłuchu.';
+    }
+  };
+
+  window.onVoicePrefChange = function(){
+    if (!(isCurrentUserAdmin() || isCurrentUserPremium())) {
+      // Free: jesli probowal zmienic, przywroc domyslne i pokaz modal klodki
+      populateVoicePrefSelect();
+      openPremiumLockModal({
+        title: '🔒 Głosy lektora',
+        text: 'Wybór głosu i tempa to funkcja Premium. Po aktywacji Premium możesz wybrać spośród 4 głosów (UK/US, kobieta/mężczyzna) i 3 temp.'
+      });
+      return;
+    }
+    const voice = document.getElementById('voicePrefSelect').value;
+    const rate  = document.getElementById('voicePrefRate').value;
+    setUserVoicePref({ voice, rate });
+  };
+
+  // ── Export PDF karty postepow (Premium) ──
+  window.exportMyStatsPdf = function(){
+    if (isGuest) {
+      openPremiumLockModal({ title:'🔒 Eksport PDF', text:'Eksport karty postępów wymaga konta.', showMessageBtn:false });
+      return;
+    }
+    if (!(isCurrentUserAdmin() || isCurrentUserPremium())) {
+      openPremiumLockModal({
+        title:'🔒 Eksport PDF — Premium',
+        text:'Eksport karty postępów do PDF to funkcja Premium. Po aktywacji Premium możesz pobrać dokument z Twoimi wynikami, ukończonymi unitami i odznakami.'
+      });
+      return;
+    }
+    try {
+      const jsPDFConstructor = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+      if (!jsPDFConstructor) { if (typeof toast==='function') toast('❌ Biblioteka PDF niedostępna.', 3200); return; }
+      const doc = new jsPDFConstructor({ unit:'pt', format:'a4' });
+
+      const uname = (typeof currentUser !== 'undefined' && currentUser) ? currentUser : '—';
+      const profile = DB.getUser(uname) || {};
+      const planInfo = DB.getPlanExpiryInfo && DB.getPlanExpiryInfo();
+      let planText = '🆓 Free';
+      if (isCurrentUserAdmin()) planText = 'Admin';
+      else if (planInfo) planText = (planInfo.isTrial?'Trial ':'Premium ') + 'do ' + planInfo.expiresAt.toLocaleDateString('pl-PL');
+      else if (isCurrentUserPremium()) planText = 'Premium';
+
+      // Naglowek
+      doc.setFont('helvetica','bold'); doc.setFontSize(18); doc.setTextColor(30,40,60);
+      doc.text('Sowie Fiszki — Karta postepow', 40, 52);
+      doc.setDrawColor(200); doc.line(40, 62, 555, 62);
+
+      doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(90);
+      doc.text('Wygenerowano: ' + new Date().toLocaleString('pl-PL'), 40, 78);
+      doc.text('Uzytkownik: ' + uname,          40, 94);
+      doc.text('Plan: ' + planText,              40, 110);
+
+      // Statystyki kluczowe — grid 2x2
+      doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(30,40,60);
+      doc.text('Kluczowe statystyki', 40, 142);
+      doc.setDrawColor(220); doc.line(40, 148, 555, 148);
+
+      const stats = [
+        ['Punkty XP',           String(profile.xp || 0)],
+        ['Poziom',               String(profile.level || 1)],
+        ['Seria (dni z rzedu)',  String(profile.streak || 0)],
+        ['Najdluzsza seria',     String(profile.longestStreak || profile.longest_streak || 0)],
+        ['Udzielone odpowiedzi', String(profile.totalAnswers || profile.total_answers || 0)],
+        ['Poprawne odpowiedzi',  String(profile.correctAnswers || profile.correct_answers || 0)],
+        ['Liczba sesji',         String(profile.totalSessions || profile.total_sessions || 0)],
+        ['Rekord Speed Challenge', String(profile.speedBest || profile.speed_best || 0) + ' pkt']
+      ];
+      let sy = 170;
+      doc.setFont('helvetica','normal'); doc.setFontSize(11); doc.setTextColor(30,40,60);
+      stats.forEach(([k,v]) => {
+        doc.setFont('helvetica','normal'); doc.text(k, 50, sy);
+        doc.setFont('helvetica','bold');   doc.text(v, 380, sy);
+        sy += 18;
+      });
+
+      // Postepy w podrecznikach
+      sy += 10;
+      doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.text('Ukonczone unity', 40, sy); sy += 6;
+      doc.setDrawColor(220); doc.line(40, sy, 555, sy); sy += 14;
+      doc.setFont('helvetica','normal'); doc.setFontSize(10);
+      try {
+        const books = (typeof currentUserAccessibleBooks === 'function') ? currentUserAccessibleBooks() : Object.values(BOOKS);
+        let anyBook = false;
+        for (const b of books) {
+          const bp = DB.getBookProgress ? DB.getBookProgress(b.id) : null;
+          const done = bp && bp.completedUnits || 0;
+          const total = bp && bp.totalUnits || Object.keys(b.units || {}).length;
+          if (total === 0) continue;
+          if (sy > 780) { doc.addPage(); sy = 50; }
+          const title = (b.icon ? b.icon + ' ' : '') + b.name;
+          doc.setFont('helvetica','normal'); doc.text(title.substring(0,64), 50, sy);
+          const progLbl = done + ' / ' + total + (done === total && total > 0 ? '  ✔ ukonczony' : '');
+          doc.setFont('helvetica','bold');   doc.text(progLbl, 400, sy);
+          sy += 14;
+          anyBook = true;
+        }
+        if (!anyBook) {
+          doc.setTextColor(140);
+          doc.text('(Brak ukonczonych unitow — zacznij nauke!)', 50, sy);
+          sy += 14;
+        }
+      } catch(e) { console.warn('[exportStats] books:', e); }
+
+      // Odznaki
+      sy += 8;
+      if (sy > 780) { doc.addPage(); sy = 50; }
+      doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(30,40,60); doc.text('Odznaki', 40, sy); sy += 6;
+      doc.setDrawColor(220); doc.line(40, sy, 555, sy); sy += 14;
+      const achieveCount = (profile.achievements || []).length;
+      doc.setFont('helvetica','normal'); doc.setFontSize(11);
+      doc.text('Zdobyte odznaki: ' + achieveCount, 50, sy); sy += 14;
+
+      // Stopka
+      doc.setFont('helvetica','italic'); doc.setFontSize(8); doc.setTextColor(140);
+      doc.text('Sowie Fiszki — karta postepow uzytkownika ' + uname, 40, 820);
+
+      const safeName = uname.replace(/[^a-z0-9_-]+/gi,'_');
+      doc.save('karta_postepow_' + safeName + '.pdf');
+      if (typeof toast==='function') toast('✓ Karta postępów zapisana jako PDF.', 2600);
+    } catch(e) {
+      console.error('[exportMyStatsPdf]', e);
+      if (typeof toast==='function') toast('❌ Błąd PDF: ' + e.message, 3200);
+    }
+  };
+
+  window.previewVoicePref = function(){
+    // Odczytaj aktualny wybor z UI (nawet niezapisany) — zapisz tymczasowo i zagrajmy
+    const isPrem = isCurrentUserAdmin() || isCurrentUserPremium();
+    if (isPrem) {
+      const voice = document.getElementById('voicePrefSelect').value;
+      const rate  = document.getElementById('voicePrefRate').value;
+      setUserVoicePref({ voice, rate });
+    }
+    // Odswiez liste voices
+    try { voices = speechSynthesis.getVoices(); } catch(e) {}
+    spk('Hello! This is a preview of your Sowie Fiszki voice.', 'en-GB');
+  };
 
   window.initDeleteAccount = function(){
     document.getElementById('btnDeleteAccountInit').style.display = 'none';
@@ -12840,6 +13085,30 @@ if ('serviceWorker' in navigator) {
     const body = 'Cześć, chciał(a)bym wykupić plan ' + p.label.replace(/^[^A-Za-z]+/, '').trim() +
       ' (' + p.price + '). Proszę o informacje dotyczące płatności.';
     openNewMessageModal(subject, body);
+  };
+
+  // Banner trialu Premium — pokazywany RAZ dla danego trialu (nie codziennie)
+  // Subtelny pasek na gorze informujacy o aktywnym trialu po rejestracji.
+  window.maybeShowTrialWelcomeBanner = function(){
+    if (isGuest) return;
+    if (!DB.getPlanExpiryInfo) return;
+    const info = DB.getPlanExpiryInfo();
+    if (!info || !info.isTrial) return;
+    // Klucz w localStorage oparty o date wygasania — dzieki temu pokazuje sie
+    // raz na trial (kolejny trial np. po admin_extend = nowy klucz)
+    const key = 'fiszki_trial_welcome_' + currentUser + '_' + info.expiresAt.toISOString().slice(0,10);
+    if (localStorage.getItem(key)) return;
+    const bar = document.createElement('div');
+    bar.id = 'trialWelcomeBanner';
+    const when = info.expiresAt.toLocaleDateString('pl-PL');
+    bar.style.cssText = 'position:fixed;top:0;left:0;right:0;background:linear-gradient(90deg,#06d6a0,#4d96ff);color:#fff;padding:9px 16px;display:flex;align-items:center;justify-content:center;gap:12px;font-family:Nunito,sans-serif;font-weight:700;font-size:.82rem;box-shadow:0 4px 14px rgba(0,0,0,.18);z-index:8500';
+    bar.innerHTML = `<span>🎁 Masz <b>7 dni Premium</b> za darmo — kończy się <b>${when}</b> (za ${info.daysLeft} ${info.daysLeft===1?'dzień':'dni'})</span>
+      <button id="tbCloseBtn" style="background:rgba(255,255,255,.2);color:#fff;border:1px solid rgba(255,255,255,.4);padding:3px 10px;border-radius:8px;cursor:pointer;font-family:inherit;font-size:.72rem;font-weight:800">OK, rozumiem</button>`;
+    document.body.appendChild(bar);
+    document.getElementById('tbCloseBtn').addEventListener('click', ()=>{
+      localStorage.setItem(key, '1');
+      bar.remove();
+    });
   };
 
   // Banner wygasania Premium — pokazywany codziennie w ciagu ostatnich 30 dni

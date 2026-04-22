@@ -164,6 +164,9 @@ System oparty o atrybut `data-theme` na `<html>`. Motywy: `owl` (domyślny), `fo
 - Notatki admina na ekranach podręcznika/unitu (book_notes)
 - Karty pracy (druk listy słówek)
 - Zgłaszanie błędów i naruszeń (mailto)
+- Premium: 7-dniowy trial automatyczny + cennik (klik → prośba do admina) + codzienny banner wygasania (30 dni) + welcome banner trialu (raz)
+- Premium: wybór głosu lektora (4 opcje UK/US + tempo) w modalu „Moje konto" — Free = UK Female Google
+- Premium: export PDF karty postępów (na ekranie 📊 Moje wyniki)
 - Usuwanie konta (RODO)
 - 7 gier w sekcji INNE
 
