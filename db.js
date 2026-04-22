@@ -70,6 +70,8 @@ const DB = (() => {
       isTeacher:     row.is_teacher      || false,
       isParent:      row.is_parent       || false,
       plan:          row.plan            || 'free',
+      planExpiresAt: row.plan_expires_at || null,
+      trialUsedAt:   row.trial_used_at   || null,
       unitProgress
     };
   }
@@ -828,7 +830,77 @@ const DB = (() => {
   // PARENT / OPIEKUN — relacja parent_children + zarzadzanie dziecmi
   // ═══════════════════════════════════════════════════════════
   function isParent() { return _profile?.isParent === true; }
-  function isPremium() { return _profile?.plan === 'premium'; }
+  function isPremium() {
+    if (!_profile) return false;
+    if (_profile.plan !== 'premium') return false;
+    // Bez daty wygasniecia = permanent premium (np. nadany recznie przez admina)
+    if (!_profile.planExpiresAt) return true;
+    return new Date(_profile.planExpiresAt) > new Date();
+  }
+
+  // Info o dacie wygasniecia planu: { daysLeft, expiresAt, isTrial } albo null
+  function getPlanExpiryInfo() {
+    if (!_profile || _profile.plan !== 'premium' || !_profile.planExpiresAt) return null;
+    const now = new Date();
+    const exp = new Date(_profile.planExpiresAt);
+    const diffMs = exp.getTime() - now.getTime();
+    const daysLeft = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+    // Trial: trial_used_at jest ustawiony i plan_expires_at = trial_used_at + ~7 dni (+/- 1h)
+    let isTrial = false;
+    if (_profile.trialUsedAt) {
+      const trialStart = new Date(_profile.trialUsedAt);
+      const diffFromTrial = exp.getTime() - trialStart.getTime();
+      const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+      isTrial = Math.abs(diffFromTrial - sevenDaysMs) < 60 * 60 * 1000;
+    }
+    return { daysLeft, expiresAt: exp, isTrial };
+  }
+
+  function hasUsedTrial() { return _profile?.trialUsedAt != null; }
+
+  // Aktywuje 7-dniowy trial (RPC). Zwraca nowa date wygasniecia lub null.
+  async function activateTrialIfEligible() {
+    if (!_userId || !_profile) return null;
+    if (_profile.trialUsedAt) return null;   // juz wykorzystany
+    if (_profile.plan === 'premium') return null;  // juz ma premium
+    try {
+      const { data, error } = await supabase.rpc('activate_trial');
+      if (error) { console.warn('[activate_trial]', error.message); return null; }
+      if (data) {
+        _profile.plan = 'premium';
+        _profile.planExpiresAt = data;
+        _profile.trialUsedAt = new Date().toISOString();
+      }
+      return data;
+    } catch (e) { console.warn('[activate_trial]', e.message); return null; }
+  }
+
+  // Client-side downgrade, jesli plan Premium wygasnal. Zwraca true jesli
+  // zmodyfikowal profil.
+  async function downgradePlanIfExpired() {
+    if (!_userId || !_profile) return false;
+    if (_profile.plan !== 'premium') return false;
+    if (!_profile.planExpiresAt) return false;  // permanent
+    const exp = new Date(_profile.planExpiresAt);
+    if (exp > new Date()) return false;  // jeszcze aktywny
+    const { error } = await supabase
+      .from('profiles')
+      .update({ plan: 'free', plan_expires_at: null })
+      .eq('id', _userId);
+    if (error) { console.warn('[downgrade]', error.message); return false; }
+    _profile.plan = 'free';
+    _profile.planExpiresAt = null;
+    return true;
+  }
+
+  // Admin: przedluz plan Premium uzytkownikowi o X miesiecy (RPC).
+  async function adminExtendPremium(userId, months) {
+    const { data, error } = await supabase.rpc('admin_extend_premium', {
+      p_user_id: userId, p_months: months
+    });
+    if (error) throw new Error(error.message);
+    return data;
+  }
 
   async function listMyChildren() {
     if (!_userId) return [];
@@ -1564,6 +1636,11 @@ const DB = (() => {
     // parent/opiekun
     isParent,
     isPremium,
+    getPlanExpiryInfo,
+    hasUsedTrial,
+    activateTrialIfEligible,
+    downgradePlanIfExpired,
+    adminExtendPremium,
     listMyChildren,
     findUserByUsername,
     addChild,

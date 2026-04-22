@@ -1099,6 +1099,11 @@ body.guest-mode .progress-wrap{opacity:.4;}
         <div style="font-size:.78rem;font-weight:800;color:var(--text)">Karty pracy</div>
         <div style="font-size:.6rem;color:var(--muted);font-weight:600;margin-top:2px">Wybierz unit → drukuj</div>
       </div>
+      <div onclick="openPremiumPricingModal()" style="background:linear-gradient(135deg,rgba(255,209,102,.18),rgba(255,133,195,.18));border:1.5px dashed rgba(255,209,102,.5);border-radius:14px;padding:14px 10px;text-align:center;cursor:pointer;transition:all .2s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='rgba(255,209,102,.5)'">
+        <div style="font-size:1.6rem;margin-bottom:4px">⭐</div>
+        <div style="font-size:.78rem;font-weight:800;color:var(--accent)">Premium</div>
+        <div style="font-size:.6rem;color:var(--muted);font-weight:600;margin-top:2px" id="premiumTileStatus">Kup / przedłuż</div>
+      </div>
     </div>
     <!-- Prośby admina -->
     <div id="adminRequestsList" style="font-size:.72rem;color:var(--muted);font-weight:600;padding:6px 0"></div>
@@ -2626,6 +2631,11 @@ szkoła	school"></textarea>
         <div style="font-size:1.6rem;margin-bottom:4px">📊 🔒</div>
         <div style="font-size:.78rem;font-weight:800;color:var(--text)">Raporty</div>
         <div style="font-size:.6rem;color:var(--muted);font-weight:600;margin-top:2px">Postępy dzieci · Premium</div>
+      </div>
+      <div onclick="openPremiumPricingModal()" style="background:linear-gradient(135deg,rgba(255,209,102,.18),rgba(255,133,195,.18));border:1.5px dashed rgba(255,209,102,.5);border-radius:14px;padding:14px 10px;text-align:center;cursor:pointer;transition:all .2s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='rgba(255,209,102,.5)'">
+        <div style="font-size:1.6rem;margin-bottom:4px">⭐</div>
+        <div style="font-size:.78rem;font-weight:800;color:var(--accent)">Premium</div>
+        <div style="font-size:.6rem;color:var(--muted);font-weight:600;margin-top:2px" id="premiumTileStatusParent">Kup / przedłuż</div>
       </div>
     </div>
   </div>
@@ -5599,6 +5609,8 @@ function renderAdminPanel() {
   if (typeof window._refreshAccessReqBadge === 'function') window._refreshAccessReqBadge();
   if (typeof window._refreshWordErrorBadge === 'function') window._refreshWordErrorBadge();
   if (typeof window._refreshMessagesBadge   === 'function') window._refreshMessagesBadge();
+  // Status Premium na kafelku "⭐ Premium"
+  updatePremiumTileStatus();
   const reqs = DB.getAdminRequests().filter(r => r.status === 'pending');
   const pending = document.getElementById('pendingBadge');
   const notifDot = document.getElementById('adminNotifDot');
@@ -11415,6 +11427,10 @@ if ('serviceWorker' in navigator) {
       window.location.replace('index.html?t=' + Date.now());
       return;
     }
+    // Sprawdz czy plan Premium nie wygasl → automatyczny downgrade
+    try { await DB.downgradePlanIfExpired(); } catch(e) { console.warn('[BOOT] downgrade:', e.message); }
+    // Aktywuj 7-dniowy darmowy trial Premium dla nowego konta (raz w zyciu)
+    try { await DB.activateTrialIfEligible(); } catch(e) { console.warn('[BOOT] trial:', e.message); }
   }
 
   // Wczytaj dane admina (nowe podręczniki, rozdziały, słówka) — dla wszystkich użytkowników
@@ -11436,6 +11452,8 @@ if ('serviceWorker' in navigator) {
   } else if (!isGuest && isCurrentUserParent()) {
     openParentPanel();
   }
+  // Banner o wygasajacym planie Premium (na miesiac przed + codziennie)
+  if (!isGuest) { setTimeout(maybeShowPremiumExpiryBanner, 600); }
   setTimeout(() => {
     const e = document.getElementById('owlMsg');
     if (e) { e.textContent = 'Cześć! Wybierz podręcznik! 📖'; e.classList.add('show'); setTimeout(() => e.classList.remove('show'), 4200); }
@@ -11483,6 +11501,21 @@ if ('serviceWorker' in navigator) {
     </div>
     <div style="font-size:.65rem;color:var(--muted);margin-bottom:12px">Skontaktuj się z administratorem aby uaktualnić konto.</div>
     <button class="btn-modal-cancel" onclick="closePremiumModal()">Zamknij</button>
+  </div>
+</div>
+
+<!-- Modal Cennik Premium -->
+<div class="modal-overlay" id="premiumPricingModal" style="display:none" onclick="if(event.target===this)closePremiumPricingModal()">
+  <div class="modal-box" style="max-width:460px">
+    <div style="font-family:'Playfair Display',serif;font-size:1.3rem;color:var(--accent);margin-bottom:4px;text-align:center">⭐ Premium</div>
+    <div id="premiumPricingCurrent" style="font-size:.85rem;margin:8px 0 14px;padding:10px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;font-weight:600;text-align:center">—</div>
+    <div id="premiumPricingList"></div>
+    <div style="background:rgba(255,209,102,.1);border:1px solid rgba(255,209,102,.3);border-radius:10px;padding:10px 12px;margin-top:12px;font-size:.72rem;color:var(--muted);font-weight:600;line-height:1.5">
+      💡 <b>Płatności wkrótce</b> — na razie kliknij „Wyślij prośbę", aby umówić się z administratorem.
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-top:12px">
+      <button class="btn-modal-cancel" onclick="closePremiumPricingModal()">Zamknij</button>
+    </div>
   </div>
 </div>
 
@@ -12697,6 +12730,103 @@ if ('serviceWorker' in navigator) {
   window._refreshWordErrorBadge = refreshWordErrorBadge;
 
   // ═══════════════════════════════════════════════
+  //  PREMIUM PRICING — cennik, trial, wygasanie
+  // ═══════════════════════════════════════════════
+  const PREMIUM_PRICING = {
+    student:  { label: '🎓 Uczeń Premium',     price: '25 zł / miesiąc',  months: 1,  color: 'var(--accent2)' },
+    teacher:  { label: '👩‍🏫 Nauczyciel Premium', price: '49 zł / 6 miesięcy', months: 6,  color: 'var(--accent)' },
+    parent:   { label: '👨‍👩‍👧 Opiekun Premium',    price: '25 zł / miesiąc',  months: 1,  color: 'var(--pink)' }
+  };
+
+  function getMyPricing() {
+    if (isCurrentUserTeacher()) return PREMIUM_PRICING.teacher;
+    if (isCurrentUserParent())  return PREMIUM_PRICING.parent;
+    return PREMIUM_PRICING.student;
+  }
+
+  window.openPremiumPricingModal = function(){
+    if (isGuest) {
+      openPremiumLockModal({
+        title: '⭐ Premium',
+        text: 'Aby korzystać z Premium, musisz najpierw założyć darmowe konto.',
+        showMessageBtn: false
+      });
+      return;
+    }
+    const expiryInfo = DB.getPlanExpiryInfo && DB.getPlanExpiryInfo();
+    const pricing    = getMyPricing();
+    const me         = document.getElementById('premiumPricingCurrent');
+    const list       = document.getElementById('premiumPricingList');
+    if (me) {
+      if (expiryInfo) {
+        const when = expiryInfo.expiresAt.toLocaleDateString('pl-PL');
+        me.innerHTML = expiryInfo.isTrial
+          ? `🎁 <b>Aktywny trial</b> — kończy się <b>${when}</b> (za ${expiryInfo.daysLeft} dni)`
+          : `⭐ <b>Plan Premium aktywny</b> — do <b>${when}</b> (za ${expiryInfo.daysLeft} dni)`;
+        me.style.color = 'var(--accent2)';
+      } else {
+        me.innerHTML = '🆓 Obecnie korzystasz z planu <b>Free</b>' + (DB.hasUsedTrial && DB.hasUsedTrial() ? ' (darmowy trial został już wykorzystany)' : '');
+        me.style.color = 'var(--muted)';
+      }
+    }
+    if (list) {
+      list.innerHTML = '';
+      // Pokazujemy tylko pakiet adekwatny do roli uzytkownika
+      const p = pricing;
+      list.innerHTML = `
+        <div style="background:var(--surface2);border:2px solid ${p.color};border-radius:14px;padding:14px 16px">
+          <div style="font-size:1rem;font-weight:800;color:${p.color};margin-bottom:4px">${p.label}</div>
+          <div style="font-size:1.4rem;font-weight:900;color:var(--text);font-family:'Playfair Display',serif;margin-bottom:6px">${p.price}</div>
+          <div style="font-size:.72rem;color:var(--muted);font-weight:600;line-height:1.5;margin-bottom:10px">Pełny dostęp do funkcji Premium adekwatnych do Twojej roli.</div>
+          <button class="btn-modal-save" style="width:100%" onclick="requestPremiumPurchase()">💬 Wyślij prośbę do administratora</button>
+        </div>
+      `;
+    }
+    document.getElementById('premiumPricingModal').style.display = 'flex';
+  };
+  window.closePremiumPricingModal = function(){ document.getElementById('premiumPricingModal').style.display = 'none'; };
+
+  window.requestPremiumPurchase = function(){
+    const p = getMyPricing();
+    closePremiumPricingModal();
+    const subject = 'Prośba o Premium — ' + p.label.replace(/^[^A-Za-z]+/, '').trim();
+    const body = 'Cześć, chciał(a)bym wykupić plan ' + p.label.replace(/^[^A-Za-z]+/, '').trim() +
+      ' (' + p.price + '). Proszę o informacje dotyczące płatności.';
+    openNewMessageModal(subject, body);
+  };
+
+  // Banner wygasania Premium — pokazywany codziennie w ciagu ostatnich 30 dni
+  window.maybeShowPremiumExpiryBanner = function(){
+    if (!DB.getPlanExpiryInfo) return;
+    const info = DB.getPlanExpiryInfo();
+    if (!info) return;
+    if (info.daysLeft > 30) return;
+    const storageKey = 'fiszki_premium_banner_dismissed_' + currentUser;
+    const today = new Date().toDateString();
+    if (localStorage.getItem(storageKey) === today) return;
+    // Pokaz toast lub modal banner
+    const bar = document.createElement('div');
+    bar.id = 'premiumExpiryBanner';
+    const bg = info.daysLeft <= 3 ? 'var(--danger)' : (info.isTrial ? 'var(--accent2)' : 'var(--accent)');
+    const emoji = info.daysLeft <= 3 ? '⏰' : (info.isTrial ? '🎁' : '⭐');
+    const label = info.isTrial
+      ? `Darmowy trial kończy się za <b>${info.daysLeft} ${info.daysLeft === 1 ? 'dzień' : 'dni'}</b>`
+      : `Plan Premium kończy się za <b>${info.daysLeft} ${info.daysLeft === 1 ? 'dzień' : 'dni'}</b>`;
+    bar.style.cssText = 'position:fixed;left:16px;right:16px;bottom:16px;background:' + bg + ';color:#fff;padding:12px 16px;border-radius:12px;display:flex;align-items:center;justify-content:space-between;gap:10px;font-family:Nunito,sans-serif;font-weight:700;font-size:.88rem;box-shadow:0 8px 28px rgba(0,0,0,.25);z-index:9000;max-width:560px;margin:0 auto';
+    bar.innerHTML = `<span>${emoji} ${label}</span>
+      <span style="display:flex;gap:6px">
+        <button id="peBtnBuy" style="background:#fff;color:${bg};border:none;padding:6px 12px;border-radius:8px;font-weight:800;cursor:pointer;font-family:inherit;font-size:.82rem">⭐ Przedłuż</button>
+        <button id="peBtnClose" style="background:transparent;color:#fff;border:1px solid rgba(255,255,255,.5);padding:6px 10px;border-radius:8px;cursor:pointer;font-family:inherit;font-size:.82rem">Dzisiaj nie</button>
+      </span>`;
+    document.body.appendChild(bar);
+    document.getElementById('peBtnBuy').addEventListener('click', ()=>{ bar.remove(); openPremiumPricingModal(); });
+    document.getElementById('peBtnClose').addEventListener('click', ()=>{
+      localStorage.setItem(storageKey, today);
+      bar.remove();
+    });
+  };
+
+  // ═══════════════════════════════════════════════
   //  PREMIUM LOCK — uniwersalny modal klodki
   // ═══════════════════════════════════════════════
   let _premiumLockCtx = null;
@@ -12951,7 +13081,27 @@ if ('serviceWorker' in navigator) {
     const planLbl = DB.isPremium && DB.isPremium() ? '⭐ Premium' : '🆓 Free';
     document.getElementById('parentPlanLabel').textContent = 'Plan: ' + planLbl;
     showScreen('sParentPanel');
+    updatePremiumTileStatus();
     await refreshMyChildren();
+  };
+
+  // Aktualizuje podpis kafelka "⭐ Premium" (panel nauczyciela i opiekuna)
+  window.updatePremiumTileStatus = function(){
+    const info = DB.getPlanExpiryInfo && DB.getPlanExpiryInfo();
+    let text;
+    if (info) {
+      text = info.isTrial
+        ? `Trial: ${info.daysLeft} ${info.daysLeft === 1 ? 'dzień' : 'dni'}`
+        : `Aktywny: ${info.daysLeft} ${info.daysLeft === 1 ? 'dzień' : 'dni'}`;
+    } else if (DB.isPremium && DB.isPremium()) {
+      text = '⭐ Aktywny (bezterminowo)';
+    } else {
+      text = 'Kup / przedłuż';
+    }
+    const el1 = document.getElementById('premiumTileStatus');       // panel nauczyciela/admina
+    const el2 = document.getElementById('premiumTileStatusParent'); // panel opiekuna
+    if (el1) el1.textContent = text;
+    if (el2) el2.textContent = text;
   };
 
   window.openMyChildren = async function(){
