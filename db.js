@@ -68,6 +68,7 @@ const DB = (() => {
       speedBest:     row.speed_best      || 0,
       isAdmin:       row.is_admin        || false,
       isTeacher:     row.is_teacher      || false,
+      isParent:      row.is_parent       || false,
       plan:          row.plan            || 'free',
       unitProgress
     };
@@ -823,6 +824,181 @@ const DB = (() => {
     return count || 0;
   }
 
+  // ═══════════════════════════════════════════════════════════
+  // PARENT / OPIEKUN — relacja parent_children + zarzadzanie dziecmi
+  // ═══════════════════════════════════════════════════════════
+  function isParent() { return _profile?.isParent === true; }
+  function isPremium() { return _profile?.plan === 'premium'; }
+
+  async function listMyChildren() {
+    if (!_userId) return [];
+    const { data: rels, error } = await supabase
+      .from('parent_children')
+      .select('id, child_id, created_at')
+      .eq('parent_id', _userId)
+      .order('created_at', { ascending: false });
+    if (error) throw new Error(error.message);
+    if (!rels || !rels.length) return [];
+    const childIds = rels.map(r => r.child_id);
+    const { data: profiles, error: pErr } = await supabase
+      .from('profiles')
+      .select('id, username, daily_xp, plan')
+      .in('id', childIds);
+    if (pErr) throw new Error(pErr.message);
+    const byId = Object.fromEntries((profiles || []).map(p => [p.id, p]));
+    return rels.map(r => ({
+      relationId: r.id,
+      childId: r.child_id,
+      createdAt: r.created_at,
+      profile: byId[r.child_id] || null
+    }));
+  }
+
+  async function findUserByUsername(username) {
+    const uname = (username || '').trim();
+    if (!uname) return null;
+    const { data, error } = await supabase.rpc('find_user_by_username', { p_username: uname });
+    if (error) throw new Error(error.message);
+    if (!data || !data.length) return null;
+    return data[0];
+  }
+
+  async function addChild(childUserId) {
+    if (!_userId) throw new Error('Nie zalogowany.');
+    if (!_profile?.isParent) throw new Error('Tylko opiekun moze dodawac dzieci.');
+    if (childUserId === _userId) throw new Error('Nie mozesz dodac siebie jako dziecka.');
+    const { error } = await supabase
+      .from('parent_children')
+      .insert({ parent_id: _userId, child_id: childUserId });
+    if (error) {
+      if (error.code === '23505') throw new Error('To dziecko juz jest przypisane.');
+      throw new Error(error.message);
+    }
+  }
+
+  async function removeChild(relationId) {
+    if (!_userId) throw new Error('Nie zalogowany.');
+    const { error } = await supabase
+      .from('parent_children')
+      .delete()
+      .eq('id', relationId)
+      .eq('parent_id', _userId);
+    if (error) throw new Error(error.message);
+  }
+
+  async function parentAssignBookToChild(childId, bookId) {
+    const { error } = await supabase.rpc('parent_assign_book_to_child', {
+      p_child_id: childId, p_book_id: bookId
+    });
+    if (error) throw new Error(error.message);
+  }
+
+  async function parentUnassignBookFromChild(childId, bookId) {
+    const { error } = await supabase.rpc('parent_unassign_book_from_child', {
+      p_child_id: childId, p_book_id: bookId
+    });
+    if (error) throw new Error(error.message);
+  }
+
+  async function getChildUserBooks(childId) {
+    if (!_userId) return [];
+    const { data, error } = await supabase
+      .from('user_books')
+      .select('book_id')
+      .eq('user_id', childId);
+    if (error) throw new Error(error.message);
+    return (data || []).map(r => r.book_id);
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // WIADOMOSCI: konwersacje user ↔ admin
+  // ═══════════════════════════════════════════════════════════
+  async function createConversation(subject, body) {
+    if (!_userId) throw new Error('Musisz byc zalogowany.');
+    if (!subject || !subject.trim()) throw new Error('Brak tematu.');
+    if (!body || !body.trim()) throw new Error('Brak tresci wiadomosci.');
+    const { data: conv, error } = await supabase
+      .from('conversations')
+      .insert({ user_id: _userId, username: _profile?.username || null, subject: subject.trim() })
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    const { error: mErr } = await supabase
+      .from('conversation_messages')
+      .insert({ conversation_id: conv.id, sender_id: _userId, sender_is_admin: false, body: body.trim() });
+    if (mErr) throw new Error(mErr.message);
+    return conv;
+  }
+
+  async function listMyConversations() {
+    if (!_userId) return [];
+    const { data, error } = await supabase
+      .from('conversations')
+      .select('id, subject, status, created_at, last_message_at')
+      .eq('user_id', _userId)
+      .order('last_message_at', { ascending: false });
+    if (error) throw new Error(error.message);
+    return data || [];
+  }
+
+  async function listAllConversations(status) {
+    if (!_profile?.isAdmin) return [];
+    let q = supabase
+      .from('conversations')
+      .select('id, user_id, username, subject, status, created_at, last_message_at');
+    if (status) q = q.eq('status', status);
+    q = q.order('last_message_at', { ascending: false });
+    const { data, error } = await q;
+    if (error) throw new Error(error.message);
+    return data || [];
+  }
+
+  async function getConversationMessages(convId) {
+    const { data, error } = await supabase
+      .from('conversation_messages')
+      .select('id, sender_id, sender_is_admin, body, created_at')
+      .eq('conversation_id', convId)
+      .order('created_at', { ascending: true });
+    if (error) throw new Error(error.message);
+    return data || [];
+  }
+
+  async function replyToConversation(convId, body) {
+    if (!_userId) throw new Error('Nie zalogowany.');
+    if (!body || !body.trim()) throw new Error('Pusta wiadomosc.');
+    const isAdminSender = !!_profile?.isAdmin;
+    const { error } = await supabase
+      .from('conversation_messages')
+      .insert({
+        conversation_id: convId,
+        sender_id: _userId,
+        sender_is_admin: isAdminSender,
+        body: body.trim()
+      });
+    if (error) throw new Error(error.message);
+    // Zaktualizuj last_message_at (RLS pozwoli userowi/adminowi na wlasna konwersacje)
+    await supabase
+      .from('conversations')
+      .update({ last_message_at: new Date().toISOString() })
+      .eq('id', convId);
+  }
+
+  async function closeConversation(convId) {
+    if (!_profile?.isAdmin) throw new Error('Tylko admin moze zamykac konwersacje.');
+    const { error } = await supabase
+      .from('conversations')
+      .update({ status: 'closed' })
+      .eq('id', convId);
+    if (error) throw new Error(error.message);
+  }
+
+  async function countOpenConversations() {
+    if (!_profile?.isAdmin) return 0;
+    const { data, error } = await supabase.rpc('count_open_conversations');
+    if (error) return 0;
+    return Number(data) || 0;
+  }
+
   // ═══════════════════════════════════════════════════════════════
   //  RESET HASŁA UCZNIA — nie zapisujemy hasła, pokazujemy raz
   // ═══════════════════════════════════════════════════════════════
@@ -1385,6 +1561,24 @@ const DB = (() => {
     resolveWordErrorReport,
     deleteWordErrorReport,
     countPendingWordErrorReports,
+    // parent/opiekun
+    isParent,
+    isPremium,
+    listMyChildren,
+    findUserByUsername,
+    addChild,
+    removeChild,
+    parentAssignBookToChild,
+    parentUnassignBookFromChild,
+    getChildUserBooks,
+    // messages/konwersacje
+    createConversation,
+    listMyConversations,
+    listAllConversations,
+    getConversationMessages,
+    replyToConversation,
+    closeConversation,
+    countOpenConversations,
     // bulk student creation
     bulkCreateStudentsForClass,
     adminResetUserPassword,

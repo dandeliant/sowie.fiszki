@@ -55,6 +55,9 @@ Kolejność uruchamiania w SQL Editor (każda jest idempotentna — można ponow
 14. `book-notes-schema.sql` — notatki admina na ekranach podręcznika/unitu
 15. `word-error-reports-schema.sql` — zgłoszenia błędów w słówkach (widoczne tylko dla admina)
 16. `fix-admin-create-user.sql` — naprawa `admin_create_user` (puste stringi zamiast NULL dla kolumn tokenów — bez tego gotrue odrzucał `signInWithPassword`); dodatkowo zezwala nauczycielowi tworzyć konta uczniów
+17. `add-parent-role.sql` — rola Rodzic/Opiekun (`profiles.is_parent`) + tabela `parent_children` + RPC `find_user_by_username`, `parent_assign_book_to_child`, `parent_unassign_book_from_child`
+18. `admin-messages-schema.sql` — konwersacje user ↔ admin (`conversations`, `conversation_messages`) + RPC `count_open_conversations`
+16. `fix-admin-create-user.sql` — naprawa `admin_create_user` (puste stringi zamiast NULL dla kolumn tokenów — bez tego gotrue odrzucał `signInWithPassword`); dodatkowo zezwala nauczycielowi tworzyć konta uczniów
 
 **Zawsze przypominaj użytkownikowi** o uruchomieniu nowej migracji w Supabase, kiedy tworzysz nową.
 
@@ -62,10 +65,12 @@ Kolejność uruchamiania w SQL Editor (każda jest idempotentna — można ponow
 
 | Rola | Co widzi | Co może robić |
 |---|---|---|
-| **Gość** (`isGuest`) | tylko `defaultAccess: true` (klasa1–8) | uczyć się; nic nie jest zapisywane |
-| **Uczeń** | defaultAccess + user_books | uczyć się, wysłać prośbę o dostęp do podręcznika, usunąć konto |
-| **Nauczyciel** (`is_teacher`) | defaultAccess + user_books (tak samo jak uczeń) + panel | zarządzać klasami, tworzyć konta uczniów, resetować hasła, tworzyć zestawy (teacher_sets), przydzielać podręczniki tylko z własnej puli; **widzi tylko uczniów utworzonych przez siebie** (filtr `created_by`) |
-| **Admin** (`is_admin`) | wszystko (także `adminOnly` np. stepsplus5) | rozpatrywać prośby o dostęp, zarządzać wszystkimi zestawami nauczycieli, dodawać notatki (book_notes), zmieniać plany, nadawać dostęp do dowolnych podręczników |
+| **Gość** (`isGuest`) | tylko `defaultAccess: true` (klasa1–8); **brak motywów, brak gier INNE** (🔒) | uczyć się podstawami; nic nie jest zapisywane |
+| **Uczeń** (Free) | defaultAccess + user_books; gry INNE zablokowane (🔒 Premium) | uczyć się, prosić o dostęp, pisać do admina, usunąć konto |
+| **Uczeń-Premium** | jw. + gry INNE odblokowane | pełny dostęp do gier i funkcji rozszerzonych |
+| **Nauczyciel** (`is_teacher`) | defaultAccess + user_books + panel nauczyciela + gry INNE | zarządzać klasami, tworzyć konta uczniów, resetować hasła, teacher_sets; **widzi tylko uczniów utworzonych przez siebie** (filtr `created_by`); **notatki na podręczniku/unicie — tylko z planem Premium** |
+| **Rodzic / Opiekun** (`is_parent`) | defaultAccess + gry INNE + panel opiekuna | dodawać dzieci po loginie (sprawdza `find_user_by_username`); widzieć postępy dzieci; **Premium**: przydzielać podręczniki dzieciom (`parent_assign_book_to_child`), widzieć notatki |
+| **Admin** (`is_admin`) | wszystko (także `adminOnly`, notatki bez ograniczeń) | rozpatrywać prośby o dostęp, zarządzać wszystkimi zestawami nauczycieli, zmieniać plany, moderować zgłoszone błędy, odpowiadać na wiadomości w inboxie |
 
 **Panel nauczyciela** pokazuje się po zalogowaniu (admin + nauczyciel). Kafelki:
 - Klasy · Dostęp · Zestawy · Prośby (admin-only) · Podręczniki nauczycieli (admin-only) · Raporty · Karty pracy
@@ -164,7 +169,6 @@ System oparty o atrybut `data-theme` na `<html>`. Motywy: `owl` (domyślny), `fo
 - Import zestawów słówek przez nauczyciela (wklejka + CSV) — istnieje infrastruktura `teacher_words`, brak UI do importu
 - Widok ucznia dla `teacher_sets` — nauczyciel tworzy, uczeń jeszcze nie widzi
 - Plan Premium — struktura jest, ale płatności nieaktywne (regulamin §10)
-- AI do generowania treści — mentioned w regulaminie, nie zaimplementowane
 
 ## 🆘 Gdy coś się zepsuje
 

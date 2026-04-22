@@ -142,7 +142,7 @@ input.err{border-color:rgba(255,118,117,.6);}
   <div class="owl-hero">
     <div class="owl-emoji">🦉</div>
     <h1>Sowie Fiszki</h1>
-    <p style="letter-spacing:.06em;margin-top:8px;font-size:.78rem;color:var(--muted)">Ucz się słówek szybciej dzięki grom i&nbsp;AI</p>
+    <p style="letter-spacing:.06em;margin-top:8px;font-size:.78rem;color:var(--muted)">Ucz się słówek szybciej dzięki grom i&nbsp;zabawie</p>
   </div>
 
   <div style="display:flex;flex-direction:column;gap:10px;margin-top:20px">
@@ -223,14 +223,18 @@ input.err{border-color:rgba(255,118,117,.6);}
     <!-- Wybór roli -->
     <div class="form-group">
       <label>Kim jesteś?</label>
-      <div style="display:flex;gap:8px">
-        <div id="roleStudent" onclick="selectRole('student')" style="flex:1;padding:12px;text-align:center;border:2px solid var(--accent2);border-radius:12px;cursor:pointer;background:rgba(6,214,160,.1);transition:all .2s">
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <div id="roleStudent" onclick="selectRole('student')" style="flex:1;min-width:90px;padding:10px 6px;text-align:center;border:2px solid var(--accent2);border-radius:12px;cursor:pointer;background:rgba(6,214,160,.1);transition:all .2s">
           <div style="font-size:1.4rem">🎓</div>
-          <div style="font-size:.78rem;font-weight:800;color:var(--accent2)">Uczeń</div>
+          <div style="font-size:.74rem;font-weight:800;color:var(--accent2)">Uczeń</div>
         </div>
-        <div id="roleTeacher" onclick="selectRole('teacher')" style="flex:1;padding:12px;text-align:center;border:2px solid var(--border);border-radius:12px;cursor:pointer;background:transparent;transition:all .2s">
+        <div id="roleTeacher" onclick="selectRole('teacher')" style="flex:1;min-width:90px;padding:10px 6px;text-align:center;border:2px solid var(--border);border-radius:12px;cursor:pointer;background:transparent;transition:all .2s">
           <div style="font-size:1.4rem">👩‍🏫</div>
-          <div style="font-size:.78rem;font-weight:800;color:var(--muted)">Nauczyciel</div>
+          <div style="font-size:.74rem;font-weight:800;color:var(--muted)">Nauczyciel</div>
+        </div>
+        <div id="roleParent" onclick="selectRole('parent')" style="flex:1;min-width:90px;padding:10px 6px;text-align:center;border:2px solid var(--border);border-radius:12px;cursor:pointer;background:transparent;transition:all .2s">
+          <div style="font-size:1.4rem">👨‍👩‍👧</div>
+          <div style="font-size:.74rem;font-weight:800;color:var(--muted)">Rodzic / Opiekun</div>
         </div>
       </div>
       <input type="hidden" id="regRole" value="student">
@@ -349,19 +353,19 @@ async function doLogin() {
 
 function selectRole(role) {
   document.getElementById('regRole').value = role;
-  const s = document.getElementById('roleStudent');
-  const t = document.getElementById('roleTeacher');
-  if (role === 'student') {
-    s.style.borderColor = 'var(--accent2)'; s.style.background = 'rgba(6,214,160,.1)';
-    s.querySelector('div:last-child').style.color = 'var(--accent2)';
-    t.style.borderColor = 'var(--border)'; t.style.background = 'transparent';
-    t.querySelector('div:last-child').style.color = 'var(--muted)';
-  } else {
-    t.style.borderColor = 'var(--accent)'; t.style.background = 'rgba(255,209,102,.1)';
-    t.querySelector('div:last-child').style.color = 'var(--accent)';
-    s.style.borderColor = 'var(--border)'; s.style.background = 'transparent';
-    s.querySelector('div:last-child').style.color = 'var(--muted)';
-  }
+  const tiles = {
+    student: { el: document.getElementById('roleStudent'), color: 'var(--accent2)', bg: 'rgba(6,214,160,.1)' },
+    teacher: { el: document.getElementById('roleTeacher'), color: 'var(--accent)',  bg: 'rgba(255,209,102,.1)' },
+    parent:  { el: document.getElementById('roleParent'),  color: 'var(--pink)',    bg: 'rgba(255,133,195,.12)' }
+  };
+  Object.entries(tiles).forEach(([key, t]) => {
+    if (!t.el) return;
+    const active = key === role;
+    t.el.style.borderColor = active ? t.color : 'var(--border)';
+    t.el.style.background  = active ? t.bg : 'transparent';
+    const lbl = t.el.querySelector('div:last-child');
+    if (lbl) lbl.style.color = active ? t.color : 'var(--muted)';
+  });
 }
 
 // ─── REGISTER ────────────────────────────────────────────────
@@ -385,11 +389,12 @@ async function doRegister() {
   try {
     const role = document.getElementById('regRole').value;
     await DB.register(user, pass);
-    // Ustaw rolę nauczyciela jeśli wybrana
-    if (role === 'teacher') {
+    // Ustaw rolę nauczyciela/opiekuna jeśli wybrana
+    if (role === 'teacher' || role === 'parent') {
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
-        await supabase.from('profiles').update({ is_teacher: true }).eq('id', session.user.id);
+        const patch = role === 'teacher' ? { is_teacher: true } : { is_parent: true };
+        await supabase.from('profiles').update(patch).eq('id', session.user.id);
         await supabase.auth.signOut(); // wyloguj po rejestracji
       }
     }
@@ -567,8 +572,7 @@ if ('serviceWorker' in navigator) {
         <li>Użytkownik może:
           <ul style="margin:3px 0 3px 18px">
             <li>tworzyć własne zestawy słówek (w ramach udostępnionych funkcjonalności),</li>
-            <li>korzystać z gotowych zestawów udostępnionych przez Platformę,</li>
-            <li>korzystać z funkcji generowania treści przy użyciu narzędzi AI (jeżeli zostaną udostępnione).</li>
+            <li>korzystać z gotowych zestawów udostępnionych przez Platformę.</li>
           </ul>
         </li>
         <li>Użytkownik zobowiązuje się do korzystania z Platformy zgodnie z prawem, dobrymi obyczajami i niniejszym Regulaminem.</li>
@@ -611,7 +615,6 @@ if ('serviceWorker' in navigator) {
       <ol style="margin:4px 0 10px 20px;padding:0">
         <li>Operator nie ponosi odpowiedzialności za treści dodane przez Użytkowników.</li>
         <li>Operator dokłada należytej staranności, aby Platforma działała prawidłowo, nie gwarantuje jednak jej nieprzerwanej dostępności (przerwy techniczne, awarie dostawców infrastruktury).</li>
-        <li>Operator nie ponosi odpowiedzialności za szkody wynikające z błędów w treściach wygenerowanych automatycznie (AI) — Użytkownik korzysta z nich na własną odpowiedzialność.</li>
       </ol>
 
       <h3 style="font-family:'Playfair Display',serif;font-size:.92rem;color:#ffd166">§9 Zgłaszanie naruszeń (notice &amp; takedown)</h3>
