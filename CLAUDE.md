@@ -68,6 +68,7 @@ Kolejność uruchamiania w SQL Editor (każda jest idempotentna — można ponow
 |---|---|---|
 | **Gość** (`isGuest`) | tylko `defaultAccess: true` (klasa1–8); **brak motywów, brak gier INNE** (🔒) | uczyć się podstawami; nic nie jest zapisywane |
 | **Uczeń** (Free) | defaultAccess + user_books; gry INNE zablokowane (🔒 Premium) | uczyć się, prosić o dostęp, pisać do admina, usunąć konto |
+| — | Limity Free (Nauczyciel/Opiekun — admin i Premium bez limitów) | max 8 klas · max 30 uczniów/klasa · max 10 teacher_sets |
 | **Uczeń-Premium** | jw. + gry INNE odblokowane | pełny dostęp do gier i funkcji rozszerzonych |
 | **Nauczyciel** (`is_teacher`) | defaultAccess + user_books + panel nauczyciela + gry INNE | zarządzać klasami, tworzyć konta uczniów, resetować hasła, teacher_sets; **widzi tylko uczniów utworzonych przez siebie** (filtr `created_by`); **notatki na podręczniku/unicie — tylko z planem Premium** |
 | **Rodzic / Opiekun** (`is_parent`) | defaultAccess + gry INNE + panel opiekuna | dodawać dzieci po loginie (sprawdza `find_user_by_username`); widzieć postępy dzieci; **Premium**: przydzielać podręczniki dzieciom (`parent_assign_book_to_child`), widzieć notatki |

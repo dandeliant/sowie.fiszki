@@ -2447,6 +2447,7 @@ szkoła	school"></textarea>
         <button class="btn-sm" onclick="showScreen('sBooks')">← Wróć</button>
       </div>
     </div>
+    <div id="classesLimitBadge" style="display:none;font-size:.72rem;color:var(--muted);font-weight:700;margin-bottom:8px;padding:6px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;text-align:center"></div>
     <div id="classesList" style="width:100%">
       <div style="text-align:center;color:var(--muted);font-size:.8rem;padding:24px;font-weight:600">⏳ Ładowanie klas…</div>
     </div>
@@ -2519,6 +2520,7 @@ szkoła	school"></textarea>
         <button class="btn-sm" onclick="showScreen('sBooks')">← Panel</button>
       </div>
     </div>
+    <div id="teacherSetsLimitBadge" style="display:none;font-size:.72rem;color:var(--muted);font-weight:700;margin-bottom:8px;padding:6px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;text-align:center"></div>
     <div id="teacherSetsList" style="width:100%">
       <div style="text-align:center;color:var(--muted);font-size:.8rem;padding:24px;font-weight:600">⏳ Ładowanie…</div>
     </div>
@@ -10874,9 +10876,44 @@ async function openAdminClasses() {
   try {
     const classes = await DB.loadClasses();
     renderClassesList(classes);
+    updateClassesLimitBadge(classes.length);
   } catch(e) {
     listEl.innerHTML = `<div style="color:var(--danger);font-size:.8rem;padding:16px;font-weight:600">❌ Błąd: ${esc(e.message)}</div>`;
   }
+}
+
+// Badge "X / 8 (Free)" albo "♾️ Premium" nad lista klas
+function updateClassesLimitBadge(count) {
+  const badge = document.getElementById('classesLimitBadge');
+  if (!badge) return;
+  if (isCurrentUserAdmin()) { badge.style.display = 'none'; return; }
+  const limits = DB.getFreeLimits ? DB.getFreeLimits() : { MAX_CLASSES: 8 };
+  if (isCurrentUserPremium()) {
+    badge.textContent = `♾️ Klasy: ${count} · Plan Premium (bez limitu)`;
+    badge.style.borderColor = 'rgba(255,209,102,.35)';
+  } else {
+    const atLimit = count >= limits.MAX_CLASSES;
+    badge.textContent = `📚 Klasy: ${count} / ${limits.MAX_CLASSES} (Free)` + (atLimit ? ' — osiągnięto limit' : '');
+    badge.style.borderColor = atLimit ? 'var(--danger)' : 'var(--border)';
+  }
+  badge.style.display = '';
+}
+
+// Badge "X / 10 (Free)" albo "♾️ Premium" nad lista zestawow nauczyciela/opiekuna
+function updateTeacherSetsLimitBadge(count) {
+  const badge = document.getElementById('teacherSetsLimitBadge');
+  if (!badge) return;
+  if (isCurrentUserAdmin()) { badge.style.display = 'none'; return; }
+  const limits = DB.getFreeLimits ? DB.getFreeLimits() : { MAX_TEACHER_SETS: 10 };
+  if (isCurrentUserPremium()) {
+    badge.textContent = `♾️ Zestawy: ${count} · Plan Premium (bez limitu)`;
+    badge.style.borderColor = 'rgba(255,209,102,.35)';
+  } else {
+    const atLimit = count >= limits.MAX_TEACHER_SETS;
+    badge.textContent = `📚 Zestawy: ${count} / ${limits.MAX_TEACHER_SETS} (Free)` + (atLimit ? ' — osiągnięto limit' : '');
+    badge.style.borderColor = atLimit ? 'var(--danger)' : 'var(--border)';
+  }
+  badge.style.display = '';
 }
 
 function renderClassesList(classes) {
@@ -10947,7 +10984,11 @@ async function submitClass() {
       await openAdminClasses();
     }
   } catch(e) {
-    toast('❌ Błąd: ' + e.message, 3000);
+    if (window.handleLimitError && window.handleLimitError(e)) {
+      closeModal('classModal');
+    } else {
+      toast('❌ Błąd: ' + e.message, 3000);
+    }
   } finally {
     btn.disabled = false;
     btn.textContent = _curClassEditId ? '💾 Zapisz' : '💾 Utwórz';
@@ -11117,6 +11158,7 @@ function renderStudentSearchList(query) {
           renderStudentSearchList(document.getElementById('studentSearchInp').value.toLowerCase());
           renderClassStudents(_curClassMembers, _allProfiles);
         } catch(e) {
+          if (window.handleLimitError && window.handleLimitError(e)) return;
           toast('❌ Błąd: ' + e.message, 3000);
         }
       });
@@ -12155,6 +12197,7 @@ if ('serviceWorker' in navigator) {
     listEl.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:.8rem;padding:24px;font-weight:600">⏳ Ładowanie…</div>';
     try {
       const sets = await DB.teacherLoadMySets();
+      updateTeacherSetsLimitBadge(sets.length);
       if (!sets.length) {
         listEl.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:.82rem;padding:30px 14px;font-weight:600;line-height:1.5">Nie masz jeszcze żadnych zestawów.<br><span style="font-size:.72rem">Kliknij „➕ Nowy zestaw", aby utworzyć pierwszy.</span></div>';
         return;
@@ -12379,8 +12422,12 @@ if ('serviceWorker' in navigator) {
         await openTeacherSetEdit(_currentSetId);
       }
     } catch(e) {
-      msgEl.style.color = 'var(--danger)';
-      msgEl.textContent = '❌ ' + e.message;
+      if (window.handleLimitError && window.handleLimitError(e)) {
+        closeSetMetaModal();
+      } else {
+        msgEl.style.color = 'var(--danger)';
+        msgEl.textContent = '❌ ' + e.message;
+      }
     } finally {
       btn.disabled = false;
     }
@@ -13085,6 +13132,45 @@ if ('serviceWorker' in navigator) {
     await refreshMyChildren();
   };
 
+  // Obsluguje bledy LIMIT_* rzucane przez funkcje DB — pokazuje modal Premium.
+  // Zwraca true jesli byl to blad limitu (caller moze nie robic nic wiecej).
+  window.handleLimitError = function(err){
+    const msg = (err && err.message) || String(err || '');
+    if (msg.startsWith('LIMIT_CLASSES:')) {
+      const lim = msg.split(':')[1];
+      openPremiumLockModal({
+        title: '🔒 Limit klas (Free)',
+        text: 'Konto Free nauczyciela pozwala utworzyć maksymalnie ' + lim + ' klas. Aby tworzyć więcej, przejdź na plan Nauczyciel Premium.'
+      });
+      return true;
+    }
+    if (msg.startsWith('LIMIT_STUDENTS_BULK:')) {
+      const parts = msg.split(':'); const lim = parts[1]; const rem = parts[2];
+      openPremiumLockModal({
+        title: '🔒 Limit uczniów w klasie (Free)',
+        text: 'Konto Free pozwala mieć maksymalnie ' + lim + ' uczniów w jednej klasie. W tej klasie pozostało już tylko ' + rem + ' miejsc. Aby zwiększyć limit, przejdź na Premium.'
+      });
+      return true;
+    }
+    if (msg.startsWith('LIMIT_STUDENTS:')) {
+      const lim = msg.split(':')[1];
+      openPremiumLockModal({
+        title: '🔒 Limit uczniów w klasie (Free)',
+        text: 'Konto Free pozwala mieć maksymalnie ' + lim + ' uczniów w jednej klasie. Aby dodawać więcej, przejdź na Premium.'
+      });
+      return true;
+    }
+    if (msg.startsWith('LIMIT_SETS:')) {
+      const lim = msg.split(':')[1];
+      openPremiumLockModal({
+        title: '🔒 Limit zestawów słówek (Free)',
+        text: 'Konto Free pozwala utworzyć maksymalnie ' + lim + ' własnych zestawów słówek. Aby tworzyć więcej (i dodać import CSV/Excel), przejdź na Premium.'
+      });
+      return true;
+    }
+    return false;
+  };
+
   // Aktualizuje podpis kafelka "⭐ Premium" (panel nauczyciela i opiekuna)
   window.updatePremiumTileStatus = function(){
     const info = DB.getPlanExpiryInfo && DB.getPlanExpiryInfo();
@@ -13286,8 +13372,12 @@ if ('serviceWorker' in navigator) {
       renderBulkCredentials();
     } catch(e) {
       console.error('[handleBulkCreate]', e);
-      msg.style.color = 'var(--danger)';
-      msg.textContent = '❌ ' + e.message;
+      if (window.handleLimitError && window.handleLimitError(e)) {
+        msg.textContent = '';
+      } else {
+        msg.style.color = 'var(--danger)';
+        msg.textContent = '❌ ' + e.message;
+      }
     } finally {
       btn.disabled = false; btn.textContent = '✓ Dodaj';
     }

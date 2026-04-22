@@ -829,6 +829,19 @@ const DB = (() => {
   // ═══════════════════════════════════════════════════════════
   // PARENT / OPIEKUN — relacja parent_children + zarzadzanie dziecmi
   // ═══════════════════════════════════════════════════════════
+  // Limity planu Free (Nauczyciel/Opiekun). Admin + Premium nie podlegają.
+  const FREE_LIMITS = Object.freeze({
+    MAX_CLASSES: 8,
+    MAX_STUDENTS_PER_CLASS: 30,
+    MAX_TEACHER_SETS: 10
+  });
+  function _isFreeCreator() {
+    if (_profile?.isAdmin) return false;
+    if (isPremium()) return false;
+    return !!(_profile?.isTeacher || _profile?.isParent);
+  }
+  function getFreeLimits() { return FREE_LIMITS; }
+
   function isParent() { return _profile?.isParent === true; }
   function isPremium() {
     if (!_profile) return false;
@@ -1112,6 +1125,18 @@ const DB = (() => {
     if (!_profile?.isAdmin && !_profile?.isTeacher) throw new Error('Brak uprawnień');
     if (!classId) throw new Error('Brak ID klasy.');
     if (!count || count < 1 || count > 50) throw new Error('Podaj liczbę uczniów od 1 do 50.');
+    // Limit Free: max 30 uczniow/klasa — sprawdzamy czy masowe dodanie miesci sie w limicie
+    if (_isFreeCreator()) {
+      const { count: currentMembers } = await supabase
+        .from('class_members')
+        .select('user_id', { count: 'exact', head: true })
+        .eq('class_id', classId);
+      const cur = currentMembers || 0;
+      if (cur + count > FREE_LIMITS.MAX_STUDENTS_PER_CLASS) {
+        const remaining = Math.max(0, FREE_LIMITS.MAX_STUDENTS_PER_CLASS - cur);
+        throw new Error('LIMIT_STUDENTS_BULK:' + FREE_LIMITS.MAX_STUDENTS_PER_CLASS + ':' + remaining);
+      }
+    }
 
     const slug = _slugifyClassName(className);
     const created = [];
@@ -1212,6 +1237,16 @@ const DB = (() => {
 
   async function teacherCreateSet(fields) {
     if (!_userId) throw new Error('Nie jesteś zalogowany.');
+    // Limit Free: max 10 zestawow dla nauczyciela/opiekuna Free
+    if (_isFreeCreator()) {
+      const { count } = await supabase
+        .from('teacher_sets')
+        .select('id', { count: 'exact', head: true })
+        .eq('owner_id', _userId);
+      if ((count || 0) >= FREE_LIMITS.MAX_TEACHER_SETS) {
+        throw new Error('LIMIT_SETS:' + FREE_LIMITS.MAX_TEACHER_SETS);
+      }
+    }
     const payload = {
       owner_id: _userId,
       name: fields.name,
@@ -1480,6 +1515,16 @@ const DB = (() => {
       if (error) throw new Error(error.message);
       return data;
     } else {
+      // Limit Free: max 8 klas dla nauczyciela Free
+      if (_isFreeCreator()) {
+        const { count } = await supabase
+          .from('classes')
+          .select('id', { count: 'exact', head: true })
+          .eq('admin_id', _userId);
+        if ((count || 0) >= FREE_LIMITS.MAX_CLASSES) {
+          throw new Error('LIMIT_CLASSES:' + FREE_LIMITS.MAX_CLASSES);
+        }
+      }
       const { data, error } = await supabase.from('classes')
         .insert({ name, admin_id: _userId }).select().single();
       if (error) throw new Error(error.message);
@@ -1495,6 +1540,16 @@ const DB = (() => {
 
   async function addClassMember(classId, userId) {
     if (!_profile?.isAdmin && !_profile?.isTeacher) throw new Error('Brak uprawnień');
+    // Limit Free: max 30 uczniow na klase
+    if (_isFreeCreator()) {
+      const { count } = await supabase
+        .from('class_members')
+        .select('user_id', { count: 'exact', head: true })
+        .eq('class_id', classId);
+      if ((count || 0) >= FREE_LIMITS.MAX_STUDENTS_PER_CLASS) {
+        throw new Error('LIMIT_STUDENTS:' + FREE_LIMITS.MAX_STUDENTS_PER_CLASS);
+      }
+    }
     const { error } = await supabase.from('class_members')
       .upsert({ class_id: classId, user_id: userId });
     if (error) throw new Error(error.message);
@@ -1641,6 +1696,7 @@ const DB = (() => {
     activateTrialIfEligible,
     downgradePlanIfExpired,
     adminExtendPremium,
+    getFreeLimits,
     listMyChildren,
     findUserByUsername,
     addChild,
