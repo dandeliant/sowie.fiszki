@@ -12575,23 +12575,33 @@ if ('serviceWorker' in navigator) {
     if (!_bulkLastCredentials.length) return;
     const w = window.open('', '_blank');
     if (!w) { if (typeof toast==='function') toast('⚠️ Popup zablokowany przez przeglądarkę.', 3200); return; }
-    const rows = _bulkLastCredentials.map((c,i)=>`<tr><td>${i+1}</td><td>${escHtml(c.username)}</td><td>${escHtml(c.password)}</td></tr>`).join('');
+    const instructionHtml = `
+      <ol style="margin:0;padding-left:18px;font-size:11px;line-height:1.45;color:#222">
+        <li>Otwórz w przeglądarce: <b style="font-family:'Courier New',monospace">dandeliant.github.io/sowie.fiszki</b></li>
+        <li>Wpisz <b>Login</b> (z kolumny obok ⬅️)</li>
+        <li>Wpisz <b>Hasło</b> (z kolumny obok ⬅️)</li>
+        <li>Kliknij przycisk <b>„Zaloguj się"</b></li>
+        <li>Wybierz podręcznik i ucz się 🦉</li>
+      </ol>`;
+    const rows = _bulkLastCredentials.map((c,i)=>`<tr><td>${i+1}</td><td>${escHtml(c.username)}</td><td>${escHtml(c.password)}</td><td>${instructionHtml}</td></tr>`).join('');
     w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Konta — ${escHtml(_bulkClassName)}</title>
       <style>
         body{font-family:Arial,sans-serif;padding:24px;color:#111}
         h1{font-size:18px;margin:0 0 4px}
         h2{font-size:13px;color:#555;margin:0 0 16px;font-weight:normal}
         table{border-collapse:collapse;width:100%;font-size:13px}
-        th,td{border:1px solid #aaa;padding:8px 10px;text-align:left}
+        th,td{border:1px solid #aaa;padding:8px 10px;text-align:left;vertical-align:top}
         th{background:#eee}
-        td:nth-child(1){width:40px;text-align:center}
-        td:nth-child(2),td:nth-child(3){font-family:'Courier New',monospace;font-weight:700}
+        tr{page-break-inside:avoid}
+        td:nth-child(1){width:34px;text-align:center}
+        td:nth-child(2),td:nth-child(3){font-family:'Courier New',monospace;font-weight:700;width:120px}
+        td:nth-child(4){font-size:11px}
         @media print{body{padding:12px}}
       </style></head><body>
       <h1>Sowie Fiszki — konta uczniów</h1>
       <h2>Klasa: ${escHtml(_bulkClassName)} · utworzono ${_bulkLastCredentials.length} kont · ${new Date().toLocaleString('pl-PL')}</h2>
-      <table><thead><tr><th>#</th><th>Login</th><th>Hasło</th></tr></thead><tbody>${rows}</tbody></table>
-      <p style="font-size:11px;color:#666;margin-top:14px">⚠ Hasła są pokazywane tylko raz — zachowaj ten dokument w bezpiecznym miejscu.</p>
+      <table><thead><tr><th>#</th><th>Login</th><th>Hasło</th><th>Instrukcja logowania (dla rodzica i dziecka)</th></tr></thead><tbody>${rows}</tbody></table>
+      <p style="font-size:11px;color:#666;margin-top:14px">⚠ Hasła są pokazywane tylko raz — zachowaj ten dokument w bezpiecznym miejscu. Możesz wyciąć poszczególne wiersze i przekazać każdemu dziecku jego własny pasek.</p>
       <script>window.onload=function(){window.print();};<\/script>
       </body></html>`);
     w.document.close();
@@ -12814,30 +12824,65 @@ if ('serviceWorker' in navigator) {
       const jsPDFConstructor = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
       if (!jsPDFConstructor) { if (typeof toast==='function') toast('❌ Biblioteka PDF niedostępna.', 3200); return; }
       const doc = new jsPDFConstructor({ unit:'pt', format:'a4' });
-      doc.setFont('helvetica','bold'); doc.setFontSize(16);
-      doc.text('Sowie Fiszki — konta uczniów', 40, 50);
-      doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(90);
-      doc.text('Klasa: ' + _bulkClassName + '  ·  utworzono ' + _bulkLastCredentials.length + ' kont  ·  ' + new Date().toLocaleString('pl-PL'), 40, 68);
-      // tabela
-      const startY = 96;
-      const rowH = 22;
-      doc.setFontSize(11); doc.setTextColor(0);
-      doc.setFont('helvetica','bold');
-      doc.text('#',     50, startY);
-      doc.text('Login', 90, startY);
-      doc.text('Hasło', 300, startY);
-      doc.setDrawColor(120);
-      doc.line(40, startY+5, 555, startY+5);
-      doc.setFont('helvetica','normal');
+      // Helvetica w jsPDF nie ma polskich znakow — uzywamy uproszczonych form ASCII
+      // Instrukcja powtarzana w kazdym wierszu (do wyciecia dla kazdego dziecka)
+      const instrLines = [
+        '1. Otworz w przegladarce:',
+        '   dandeliant.github.io/sowie.fiszki',
+        '2. Wpisz Login (z lewej tabeli)',
+        '3. Wpisz Haslo (z lewej tabeli)',
+        '4. Kliknij przycisk "Zaloguj sie"',
+        '5. Wybierz podrecznik i ucz sie'
+      ];
+
+      // Naglowek strony — wywolywany na poczatku i przy nowej stronie
+      function drawHeader() {
+        doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.setTextColor(0);
+        doc.text('Sowie Fiszki — konta uczniow', 40, 50);
+        doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(90);
+        doc.text('Klasa: ' + _bulkClassName + '  ·  utworzono ' + _bulkLastCredentials.length + ' kont  ·  ' + new Date().toLocaleString('pl-PL'), 40, 68);
+        doc.setFontSize(11); doc.setTextColor(0);
+        doc.setFont('helvetica','bold');
+        doc.text('#',         48, 96);
+        doc.text('Login',     78, 96);
+        doc.text('Haslo',    180, 96);
+        doc.text('Instrukcja logowania', 290, 96);
+        doc.setDrawColor(120);
+        doc.line(40, 101, 555, 101);
+      }
+
+      drawHeader();
+      const startY = 118;     // pierwszy wiersz body
+      const rowH   = 78;       // wysokosc wiersza (6 linii instrukcji + padding)
+      const pageBottom = 800;
+      let y = startY;
+
       _bulkLastCredentials.forEach((c, i) => {
-        const y = startY + rowH * (i+1);
-        doc.text(String(i+1), 50, y);
-        doc.text(c.username,  90, y);
-        doc.text(c.password, 300, y);
+        // Pageblock — czy zmiesci sie w aktualnej stronie?
+        if (y + rowH > pageBottom) {
+          doc.addPage();
+          drawHeader();
+          y = startY;
+        }
+        doc.setFont('helvetica','normal'); doc.setFontSize(11); doc.setTextColor(0);
+        doc.text(String(i+1),  48, y);
+        doc.setFont('courier','bold');
+        doc.text(c.username,   78, y);
+        doc.text(c.password,  180, y);
+        // Instrukcja: 6 linii
+        doc.setFont('helvetica','normal'); doc.setFontSize(9.5);
+        instrLines.forEach((line, li) => {
+          doc.text(line, 290, y + li * 11);
+        });
+        // separator wiersza
+        doc.setDrawColor(220);
+        doc.line(40, y + rowH - 12, 555, y + rowH - 12);
+        y += rowH;
       });
-      doc.setFontSize(9); doc.setTextColor(120);
-      const bottomY = startY + rowH * (_bulkLastCredentials.length + 2);
-      doc.text('Hasła sa pokazywane tylko raz — zachowaj ten dokument.', 40, Math.min(bottomY, 810));
+
+      doc.setFont('helvetica','italic'); doc.setFontSize(9); doc.setTextColor(120);
+      const footerY = Math.min(y + 8, pageBottom + 20);
+      doc.text('Hasla sa pokazywane tylko raz — zachowaj ten dokument. Wiersze mozna wyciac i przekazac kazdemu dziecku osobno.', 40, footerY);
       doc.save(('konta_' + _bulkClassName + '.pdf').replace(/\s+/g,'_'));
     } catch(e) {
       console.error('[downloadBulkCredentialsPdf]', e);
