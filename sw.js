@@ -5,7 +5,7 @@
 //  cache-first dla fontow i CDN. Nowy SW czeka na zgode klienta
 //  (postMessage SKIP_WAITING) — pokaz banera "Nowa wersja dostepna".
 // ═══════════════════════════════════════════════════════
-const CACHE_NAME = 'sowie-fiszki-v10';
+const CACHE_NAME = 'sowie-fiszki-v11';
 
 const PRECACHE_ASSETS = [
   './',
@@ -63,10 +63,22 @@ function isStaticExternal(url) {
          url.startsWith('https://cdn.jsdelivr.net/');
 }
 
+// Czy to zapytanie do API Supabase? (REST, Auth, Realtime, Storage)
+// Te zapytania MUSZA isc zawsze bezposrednio przez siec — inaczej stare
+// dane (np. user_books po zatwierdzeniu prosby przez admina) zostana
+// zaserwowane z cache i uzytkownik nie zobaczy aktualizacji.
+function isSupabaseApi(url) {
+  return url.includes('.supabase.co/') || url.includes('.supabase.in/');
+}
+
 self.addEventListener('fetch', event => {
   const req = event.request;
   if (req.method !== 'GET') return;
   if (!req.url.startsWith('http')) return;
+
+  // BYPASS: zapytania do Supabase — zawsze bezposrednio przez siec, bez cache.
+  // SW nie wtraca sie w te zapytania (return pozwala przegladarce obsluzyc je normalnie).
+  if (isSupabaseApi(req.url)) return;
 
   // Cache-first dla fontow i CDN
   if (isStaticExternal(req.url)) {

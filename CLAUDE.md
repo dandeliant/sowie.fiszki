@@ -54,6 +54,7 @@ Kolejność uruchamiania w SQL Editor (każda jest idempotentna — można ponow
 13. `fix-created-by.sql` — profiles.created_by + RPC set_profile_creator (nauczyciel widzi tylko swoich uczniów)
 14. `book-notes-schema.sql` — notatki admina na ekranach podręcznika/unitu
 15. `word-error-reports-schema.sql` — zgłoszenia błędów w słówkach (widoczne tylko dla admina)
+16. `fix-admin-create-user.sql` — naprawa `admin_create_user` (puste stringi zamiast NULL dla kolumn tokenów — bez tego gotrue odrzucał `signInWithPassword`); dodatkowo zezwala nauczycielowi tworzyć konta uczniów
 
 **Zawsze przypominaj użytkownikowi** o uruchomieniu nowej migracji w Supabase, kiedy tworzysz nową.
 
