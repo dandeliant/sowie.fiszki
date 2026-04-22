@@ -311,7 +311,76 @@ const DB = (() => {
     const prev     = _profile.dailyXP || 0;
     _profile.dailyXP = prev + amount;
     _save();
+    // Log do historii (Premium chart) — fire-and-forget
+    if (amount > 0 && _userId) {
+      supabase.rpc('log_daily_xp', { p_delta: amount }).then(() => {}).catch(e => {
+        console.warn('[log_daily_xp]', e.message || e);
+      });
+    }
     return { prev, now: _profile.dailyXP };
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // HISTORIA XP (Premium — wykres 12 miesiecy)
+  // ═══════════════════════════════════════════════════════════════
+  async function getDailyXpHistory(userId, days) {
+    const uid = userId || _userId;
+    if (!uid) return [];
+    const d = Math.max(1, Math.min(400, days || 365));
+    const from = new Date(); from.setDate(from.getDate() - d);
+    const fromStr = from.toISOString().slice(0, 10);
+    const { data, error } = await supabase
+      .from('daily_xp_log')
+      .select('day, xp')
+      .eq('user_id', uid)
+      .gte('day', fromStr)
+      .order('day', { ascending: true });
+    if (error) throw new Error(error.message);
+    return data || [];
+  }
+
+  // Uczniowie nieaktywni (dla nauczyciela — created_by = self)
+  async function getInactiveStudents(days) {
+    if (!_userId) return [];
+    if (!_profile?.isTeacher && !_profile?.isAdmin) return [];
+    const threshold = new Date();
+    threshold.setDate(threshold.getDate() - Math.max(1, days || 5));
+    const thrStr = threshold.toISOString();
+    let q = supabase
+      .from('profiles')
+      .select('id, username, last_study_date, daily_xp, created_by')
+      .eq('is_admin', false)
+      .eq('is_teacher', false)
+      .eq('is_parent', false);
+    if (!_profile.isAdmin) q = q.eq('created_by', _userId);
+    const { data, error } = await q;
+    if (error) throw new Error(error.message);
+    return (data || []).filter(p => {
+      if (!p.last_study_date) return true;   // nigdy sie nie uczyl
+      return new Date(p.last_study_date) < threshold;
+    });
+  }
+
+  // Dzieci nieaktywne (dla opiekuna)
+  async function getInactiveChildren(days) {
+    if (!_userId || !_profile?.isParent) return [];
+    const threshold = new Date();
+    threshold.setDate(threshold.getDate() - Math.max(1, days || 5));
+    const { data: rels } = await supabase
+      .from('parent_children')
+      .select('child_id')
+      .eq('parent_id', _userId);
+    const ids = (rels || []).map(r => r.child_id);
+    if (!ids.length) return [];
+    const { data: profiles, error } = await supabase
+      .from('profiles')
+      .select('id, username, last_study_date, daily_xp')
+      .in('id', ids);
+    if (error) throw new Error(error.message);
+    return (profiles || []).filter(p => {
+      if (!p.last_study_date) return true;
+      return new Date(p.last_study_date) < threshold;
+    });
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -1697,6 +1766,9 @@ const DB = (() => {
     downgradePlanIfExpired,
     adminExtendPremium,
     getFreeLimits,
+    getDailyXpHistory,
+    getInactiveStudents,
+    getInactiveChildren,
     listMyChildren,
     findUserByUsername,
     addChild,

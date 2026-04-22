@@ -1105,6 +1105,8 @@ body.guest-mode .progress-wrap{opacity:.4;}
         <div style="font-size:.6rem;color:var(--muted);font-weight:600;margin-top:2px" id="premiumTileStatus">Kup / przedłuż</div>
       </div>
     </div>
+    <!-- Alerty nieaktywnosci (Premium) — uczniowie/dzieci bez logowania -->
+    <div id="inactivityAlertsAdmin" style="display:none;margin-top:8px"></div>
     <!-- Prośby admina -->
     <div id="adminRequestsList" style="font-size:.72rem;color:var(--muted);font-weight:600;padding:6px 0"></div>
   </div>
@@ -2238,7 +2240,8 @@ szkoła	school"></textarea>
 <div class="screen" id="sStats">
   <div class="stats-hdr">
     <h2>📊 Moje wyniki</h2>
-    <div style="display:flex;gap:6px">
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button class="btn-sm" onclick="exportMyDiplomaPdf()" title="Dyplom PDF (Premium)">🏆 Dyplom</button>
       <button class="btn-sm" onclick="exportMyStatsPdf()" title="Eksportuj PDF (Premium)">📄 PDF</button>
       <button class="btn-sm" onclick="showScreen('sBooks')">← Wróć</button>
     </div>
@@ -2255,6 +2258,18 @@ szkoła	school"></textarea>
   <div class="book-prog-section" style="margin-top:14px;">
     <h3>Postęp w podręcznikach</h3>
     <div id="booksProgressList"></div>
+  </div>
+  <div class="book-prog-section" style="margin-top:14px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:6px">
+      <h3 style="margin:0">📈 Historia nauki</h3>
+      <div id="xpHistoryRange" style="display:flex;gap:4px;flex-wrap:wrap">
+        <button class="btn-sm" data-range="7"  onclick="renderXpHistoryChart(7)">7 dni</button>
+        <button class="btn-sm" data-range="30" onclick="renderXpHistoryChart(30)">30 dni</button>
+        <button class="btn-sm" data-range="365" onclick="renderXpHistoryChart(365)">12 mies.</button>
+      </div>
+    </div>
+    <canvas id="xpHistoryCanvas" width="560" height="160" style="width:100%;max-width:560px;height:160px;background:var(--surface2);border:1px solid var(--border);border-radius:12px;display:block"></canvas>
+    <div id="xpHistoryHint" style="font-size:.7rem;color:var(--muted);margin-top:6px;font-weight:600;line-height:1.4"></div>
   </div>
   <div class="achieve-section">
     <h3>🏆 Odznaki (<span id="achieveStatCount">0</span>/<span id="achieveTotal">0</span>)</h3>
@@ -2643,6 +2658,8 @@ szkoła	school"></textarea>
         <div style="font-size:.6rem;color:var(--muted);font-weight:600;margin-top:2px" id="premiumTileStatusParent">Kup / przedłuż</div>
       </div>
     </div>
+    <!-- Alerty nieaktywnosci dzieci (Premium) -->
+    <div id="inactivityAlertsParent" style="display:none;margin-top:8px"></div>
   </div>
 
   <div style="width:100%">
@@ -5024,6 +5041,11 @@ function renderStats() {
   const unlocked = DB.getAchievements(currentUser);
   document.getElementById('achieveStatCount').textContent = unlocked.length;
   document.getElementById('achieveTotal').textContent = ACHIEVES.length;
+
+  // Wykres historii (Premium — 12 miesiecy; Free — 7 dni z komunikatem)
+  const isPrem = isCurrentUserAdmin() || isCurrentUserPremium();
+  const defaultDays = isPrem ? 30 : 7;
+  renderXpHistoryChart(defaultDays);
 }
 
 function showAchievements() {
@@ -5666,6 +5688,10 @@ function renderAdminPanel() {
   if (typeof window._refreshMessagesBadge   === 'function') window._refreshMessagesBadge();
   // Status Premium na kafelku "⭐ Premium"
   updatePremiumTileStatus();
+  // Alerty nieaktywnosci dla nauczyciela/admina
+  if (typeof window.refreshInactivityAlerts === 'function' && (isCurrentUserAdmin() || isCurrentUserTeacher())) {
+    window.refreshInactivityAlerts('admin');
+  }
   const reqs = DB.getAdminRequests().filter(r => r.status === 'pending');
   const pending = document.getElementById('pendingBadge');
   const notifDot = document.getElementById('adminNotifDot');
@@ -12279,6 +12305,223 @@ if ('serviceWorker' in navigator) {
     }
   };
 
+  // ── Wykres historii XP (Canvas 2D) ──
+  window.renderXpHistoryChart = async function(days){
+    const canvas = document.getElementById('xpHistoryCanvas');
+    const hint   = document.getElementById('xpHistoryHint');
+    if (!canvas) return;
+    const isPrem = isCurrentUserAdmin() || isCurrentUserPremium();
+    // Free: force 7 dni
+    const effDays = isPrem ? (days || 30) : 7;
+    // Zaznacz aktywny przycisk zakresu
+    document.querySelectorAll('#xpHistoryRange [data-range]').forEach(b => {
+      const r = parseInt(b.dataset.range, 10);
+      b.style.background = (r === effDays) ? 'var(--accent)' : '';
+      b.style.color      = (r === effDays) ? '#1b1b1b'      : '';
+      // Premium only: 30 i 365 — dla Free pokaz klodke
+      if (!isPrem && (r === 30 || r === 365)) {
+        b.onclick = () => openPremiumLockModal({
+          title: '🔒 Historia 12 miesięcy',
+          text: 'Pełna historia (30 dni / 12 miesięcy) z wykresem to funkcja Premium. Free pokazuje ostatnie 7 dni.'
+        });
+      } else {
+        b.onclick = () => renderXpHistoryChart(r);
+      }
+    });
+    hint.textContent = isPrem
+      ? `📈 XP zdobyte w ostatnich ${effDays} ${effDays===1?'dniu':'dniach'}.`
+      : '🔒 Free: ostatnie 7 dni. Premium odblokowuje 12 miesięcy z wykresem.';
+    let rows = [];
+    try { rows = await DB.getDailyXpHistory(null, effDays); } catch(e) { console.warn('[xpHistory]', e); }
+    drawXpBarChart(canvas, rows, effDays);
+  };
+
+  function drawXpBarChart(canvas, rows, days) {
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    // Uzupelnij brakujace dni zerami — zrob mape data → xp
+    const byDay = {};
+    (rows || []).forEach(r => { byDay[r.day] = r.xp; });
+    const today = new Date(); today.setHours(0,0,0,0);
+    const bars = [];
+    // Jesli >60 dni — grupujemy po tygodniach
+    const groupWeekly = days > 60;
+    if (groupWeekly) {
+      const weeks = Math.ceil(days / 7);
+      for (let w2 = weeks - 1; w2 >= 0; w2--) {
+        let sum = 0;
+        for (let d = 0; d < 7; d++) {
+          const dt = new Date(today); dt.setDate(today.getDate() - (w2 * 7 + d));
+          const key = dt.toISOString().slice(0,10);
+          sum += byDay[key] || 0;
+        }
+        const dt = new Date(today); dt.setDate(today.getDate() - w2 * 7);
+        bars.push({ label: dt.toLocaleDateString('pl-PL',{day:'2-digit',month:'2-digit'}), xp: sum });
+      }
+    } else {
+      for (let i = days - 1; i >= 0; i--) {
+        const dt = new Date(today); dt.setDate(today.getDate() - i);
+        const key = dt.toISOString().slice(0,10);
+        bars.push({ label: dt.toLocaleDateString('pl-PL',{day:'2-digit',month:'2-digit'}), xp: byDay[key] || 0 });
+      }
+    }
+    // Styl
+    const padL = 32, padR = 10, padT = 14, padB = 22;
+    const chartW = w - padL - padR;
+    const chartH = h - padT - padB;
+    const maxXp = Math.max(10, ...bars.map(b => b.xp));
+    // Os Y
+    ctx.strokeStyle = 'rgba(120,120,120,.3)';
+    ctx.fillStyle   = 'rgba(120,120,120,.6)';
+    ctx.font = '9px Nunito, sans-serif';
+    ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+    for (let g = 0; g <= 4; g++) {
+      const y = padT + chartH - (chartH * g / 4);
+      ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
+      ctx.fillText(Math.round(maxXp * g / 4), padL - 4, y);
+    }
+    // Slupki
+    const barW = Math.max(2, chartW / bars.length - 1);
+    bars.forEach((b, i) => {
+      const x = padL + i * (chartW / bars.length);
+      const bh = b.xp > 0 ? Math.max(2, chartH * (b.xp / maxXp)) : 0;
+      const y = padT + chartH - bh;
+      // Gradient
+      const grad = ctx.createLinearGradient(0, y, 0, padT + chartH);
+      grad.addColorStop(0, '#06d6a0'); grad.addColorStop(1, '#4d96ff');
+      ctx.fillStyle = grad;
+      ctx.fillRect(x + 1, y, barW, bh);
+    });
+    // Etykieta pierwsza/srodkowa/ostatnia
+    ctx.fillStyle = 'rgba(120,120,120,.8)';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    if (bars.length > 0) {
+      const midIdx = Math.floor(bars.length / 2);
+      [0, midIdx, bars.length - 1].forEach(idx => {
+        if (idx < 0 || idx >= bars.length) return;
+        const x = padL + idx * (chartW / bars.length) + barW / 2 + 1;
+        ctx.fillText(bars[idx].label, x, padT + chartH + 4);
+      });
+    }
+  }
+
+  // ── Dyplom PDF (Premium) — ozdobny certyfikat ──
+  window.exportMyDiplomaPdf = function(){
+    if (isGuest) {
+      openPremiumLockModal({ title:'🔒 Dyplom PDF', text:'Dyplomy są dostępne dla zalogowanych użytkowników.', showMessageBtn:false });
+      return;
+    }
+    if (!(isCurrentUserAdmin() || isCurrentUserPremium())) {
+      openPremiumLockModal({
+        title:'🔒 Dyplom PDF — Premium',
+        text:'Drukowalne dyplomy są funkcją Premium. Po aktywacji Premium możesz pobrać ozdobny dyplom ukończenia.'
+      });
+      return;
+    }
+    try {
+      const jsPDFConstructor = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+      if (!jsPDFConstructor) { if (typeof toast==='function') toast('❌ Biblioteka PDF niedostępna.', 3200); return; }
+      const doc = new jsPDFConstructor({ unit:'pt', format:'a4', orientation:'landscape' });
+
+      const uname = currentUser || '—';
+      const profile = DB.getUser(uname) || {};
+      const pageW = 842, pageH = 595;
+
+      // Ramka ozdobna (3 obramowania)
+      doc.setDrawColor(255, 209, 102); doc.setLineWidth(6);  doc.rect(24, 24, pageW - 48, pageH - 48);
+      doc.setDrawColor(199, 125, 255); doc.setLineWidth(2);  doc.rect(32, 32, pageW - 64, pageH - 64);
+      doc.setDrawColor(255, 133, 195); doc.setLineWidth(1);  doc.rect(40, 40, pageW - 80, pageH - 80);
+
+      // Ikony w rogach
+      doc.setFont('helvetica','bold'); doc.setFontSize(40); doc.setTextColor(255, 133, 195);
+      doc.text('*',  60, 90); doc.text('*', pageW - 80, 90);
+      doc.text('*',  60, pageH - 54); doc.text('*', pageW - 80, pageH - 54);
+
+      // Naglowek
+      doc.setFont('helvetica','bold'); doc.setFontSize(34); doc.setTextColor(30, 40, 60);
+      doc.text('DYPLOM UKONCZENIA', pageW / 2, 130, { align:'center' });
+      doc.setFont('helvetica','italic'); doc.setFontSize(14); doc.setTextColor(140, 140, 160);
+      doc.text('Sowie Fiszki — platforma nauki slownictwa', pageW / 2, 156, { align:'center' });
+
+      doc.setDrawColor(255, 209, 102); doc.setLineWidth(1);
+      doc.line(pageW / 2 - 120, 172, pageW / 2 + 120, 172);
+
+      // Tresc
+      doc.setFont('helvetica','normal'); doc.setFontSize(13); doc.setTextColor(70, 70, 90);
+      doc.text('Niniejszym zaswiadcza sie, ze uzytkownik', pageW / 2, 210, { align:'center' });
+
+      doc.setFont('helvetica','bold'); doc.setFontSize(36); doc.setTextColor(198, 55, 42);
+      doc.text(uname.toUpperCase(), pageW / 2, 260, { align:'center' });
+
+      doc.setFont('helvetica','normal'); doc.setFontSize(13); doc.setTextColor(70, 70, 90);
+      doc.text('osiagnal wybitne wyniki w nauce jezyka, zdobywajac:', pageW / 2, 295, { align:'center' });
+
+      // Statystyki wyroznione
+      const statsY = 330;
+      const stats = [
+        { icon:'',  label:'Punkty XP',            value:String(profile.xp || 0) },
+        { icon:'',  label:'Poziom',                value:String(profile.level || 1) },
+        { icon:'',  label:'Najdluzsza seria',     value:String(profile.longestStreak || profile.longest_streak || 0) + ' dni' }
+      ];
+      const colW = 240;
+      stats.forEach((s, i) => {
+        const x = pageW / 2 + (i - 1) * colW;
+        doc.setFont('helvetica','bold'); doc.setFontSize(28); doc.setTextColor(77, 150, 255);
+        doc.text(s.value, x, statsY, { align:'center' });
+        doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(120, 120, 140);
+        doc.text(s.label, x, statsY + 20, { align:'center' });
+      });
+
+      // Lista podrecznikow (max 4)
+      let curY = 400;
+      doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(30, 40, 60);
+      doc.text('Ukonczone podreczniki:', pageW / 2, curY, { align:'center' });
+      curY += 18;
+      doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(80, 80, 100);
+      try {
+        const books = (typeof currentUserAccessibleBooks === 'function') ? currentUserAccessibleBooks() : Object.values(BOOKS);
+        const completed = books.map(b => {
+          const bp = DB.getBookProgress ? DB.getBookProgress(uname, b) : null;
+          if (!bp) return null;
+          const totalUnits = Object.keys(b.units || {}).length;
+          const done = Object.keys(bp).filter(k => bp[k] && bp[k].known === b.units[k].words.length).length;
+          return (done > 0) ? { name: b.name, done, total: totalUnits } : null;
+        }).filter(Boolean).sort((a,b)=>b.done - a.done).slice(0, 4);
+        if (completed.length) {
+          const line = completed.map(c => `${c.name} (${c.done}/${c.total})`).join('   *   ');
+          doc.text(line, pageW / 2, curY, { align:'center' });
+        } else {
+          doc.setTextColor(160);
+          doc.text('(Kontynuuj nauke, aby zdobyc wiecej ukonczen!)', pageW / 2, curY, { align:'center' });
+        }
+      } catch(e) { console.warn('[diploma] books:', e); }
+
+      // Stopka
+      doc.setDrawColor(255, 209, 102); doc.setLineWidth(1);
+      doc.line(80, pageH - 120, pageW - 80, pageH - 120);
+
+      doc.setFont('helvetica','italic'); doc.setFontSize(10); doc.setTextColor(120, 120, 140);
+      doc.text('Data wydania:  ' + new Date().toLocaleDateString('pl-PL'), 80, pageH - 95);
+      doc.text('Sowie Fiszki  (sowa)', pageW - 80, pageH - 95, { align:'right' });
+
+      doc.setFont('helvetica','bold'); doc.setFontSize(20); doc.setTextColor(30, 40, 60);
+      doc.text('Sowie Fiszki', pageW / 2, pageH - 70, { align:'center' });
+      doc.setFont('helvetica','italic'); doc.setFontSize(10); doc.setTextColor(140);
+      doc.text('platforma edukacyjna do nauki slownictwa', pageW / 2, pageH - 54, { align:'center' });
+
+      const safeName = uname.replace(/[^a-z0-9_-]+/gi,'_');
+      doc.save('dyplom_' + safeName + '.pdf');
+      if (typeof toast==='function') toast('✓ Dyplom zapisany jako PDF.', 2600);
+    } catch(e) {
+      console.error('[exportMyDiplomaPdf]', e);
+      if (typeof toast==='function') toast('❌ Błąd PDF: ' + e.message, 3200);
+    }
+  };
+
   window.previewVoicePref = function(){
     // Odczytaj aktualny wybor z UI (nawet niezapisany) — zapisz tymczasowo i zagrajmy
     const isPrem = isCurrentUserAdmin() || isCurrentUserPremium();
@@ -13398,6 +13641,7 @@ if ('serviceWorker' in navigator) {
     document.getElementById('parentPlanLabel').textContent = 'Plan: ' + planLbl;
     showScreen('sParentPanel');
     updatePremiumTileStatus();
+    refreshInactivityAlerts('parent');
     await refreshMyChildren();
   };
 
@@ -13438,6 +13682,50 @@ if ('serviceWorker' in navigator) {
       return true;
     }
     return false;
+  };
+
+  // ── Alerty nieaktywnosci (Premium) — na panelach nauczyciela/opiekuna ──
+  window.refreshInactivityAlerts = async function(who){
+    // who: 'admin' (nauczyciel/admin panel) albo 'parent' (opiekun panel)
+    const elId = who === 'parent' ? 'inactivityAlertsParent' : 'inactivityAlertsAdmin';
+    const box = document.getElementById(elId);
+    if (!box) return;
+    const isPrem = isCurrentUserAdmin() || isCurrentUserPremium();
+    if (!isPrem) {
+      // Pokaz klodke zamiast listy
+      box.style.display = '';
+      box.innerHTML = '<div onclick="openPremiumLockModal({title:\'🔒 Powiadomienia\',text:\'Powiadomienia o nieaktywnych uczniach/dzieciach są funkcją Premium. Po aktywacji zobaczysz, kto nie logował się od 5+ dni.\'})" style="background:var(--surface);border:1.5px dashed rgba(255,209,102,.5);border-radius:12px;padding:10px 14px;font-size:.76rem;color:var(--muted);font-weight:700;cursor:pointer;text-align:center">🔒 <b>Powiadomienia Premium</b> — zobacz, kto nie logował się od 5+ dni</div>';
+      return;
+    }
+    box.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:.72rem;padding:8px">⏳ Sprawdzanie aktywności…</div>';
+    box.style.display = '';
+    try {
+      const inactive = who === 'parent'
+        ? await DB.getInactiveChildren(5)
+        : await DB.getInactiveStudents(5);
+      if (!inactive.length) {
+        box.innerHTML = '<div style="background:rgba(6,214,160,.1);border:1px solid rgba(6,214,160,.25);border-radius:10px;padding:8px 12px;font-size:.75rem;color:var(--accent2);font-weight:700">✅ Wszyscy ' + (who === 'parent' ? 'podopieczni' : 'uczniowie') + ' są aktywni (logowali się w ciągu ostatnich 5 dni).</div>';
+        return;
+      }
+      const hdrLbl = who === 'parent' ? 'dzieci' : 'uczniów';
+      let html = '<div style="font-size:.78rem;font-weight:800;color:var(--danger);margin-bottom:6px">🔔 ' + inactive.length + ' ' + hdrLbl + ' bez logowania ≥5 dni:</div>';
+      inactive.forEach(p => {
+        const lastStr = p.last_study_date
+          ? 'ostatnio ' + new Date(p.last_study_date).toLocaleDateString('pl-PL')
+          : 'jeszcze nigdy';
+        html += `<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:8px 12px;margin-bottom:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:.85rem;font-weight:800;color:var(--text);word-break:break-word">${escHtml(p.username || '(nieznany)')}</div>
+            <div style="font-size:.66rem;color:var(--muted);font-weight:600;margin-top:1px">${escHtml(lastStr)}</div>
+          </div>
+          <button class="btn-sm accent" style="padding:4px 11px;font-size:.68rem" onclick="openNewMessageModal('Przypomnienie o nauce', 'Cześć ${escHtml(p.username)}! Nie widziałem/am Cię na Sowich Fiszkach od kilku dni — wróć na chwilkę 🦉')">📧 Przypomnij</button>
+        </div>`;
+      });
+      box.innerHTML = html;
+    } catch(e) {
+      console.warn('[inactivity]', e);
+      box.innerHTML = '<div style="color:var(--muted);font-size:.7rem;padding:6px">Nie udało się sprawdzić aktywności.</div>';
+    }
   };
 
   // Aktualizuje podpis kafelka "⭐ Premium" (panel nauczyciela i opiekuna)
