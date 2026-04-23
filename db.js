@@ -341,46 +341,58 @@ const DB = (() => {
 
   // Uczniowie nieaktywni (dla nauczyciela — created_by = self)
   async function getInactiveStudents(days) {
-    if (!_userId) return [];
-    if (!_profile?.isTeacher && !_profile?.isAdmin) return [];
-    const threshold = new Date();
-    threshold.setDate(threshold.getDate() - Math.max(1, days || 5));
-    const thrStr = threshold.toISOString();
-    let q = supabase
-      .from('profiles')
-      .select('id, username, last_study_date, daily_xp, created_by')
-      .eq('is_admin', false)
-      .eq('is_teacher', false)
-      .eq('is_parent', false);
-    if (!_profile.isAdmin) q = q.eq('created_by', _userId);
-    const { data, error } = await q;
-    if (error) throw new Error(error.message);
-    return (data || []).filter(p => {
-      if (!p.last_study_date) return true;   // nigdy sie nie uczyl
-      return new Date(p.last_study_date) < threshold;
-    });
+    try {
+      if (!_userId) return [];
+      if (!_profile?.isTeacher && !_profile?.isAdmin) return [];
+      const threshold = new Date();
+      threshold.setDate(threshold.getDate() - Math.max(1, days || 5));
+      let q = supabase
+        .from('profiles')
+        .select('id, username, last_study_date, daily_xp, created_by')
+        .eq('is_admin', false)
+        .eq('is_teacher', false);
+      // is_parent istnieje tylko po migracji add-parent-role.sql — jesli brak kolumny,
+      // filtr rzuci blad. Lapiemy i filtrujemy klient-side.
+      try { q = q.eq('is_parent', false); } catch(e) {}
+      if (!_profile.isAdmin) q = q.eq('created_by', _userId);
+      const { data, error } = await q;
+      if (error) { console.warn('[getInactiveStudents]', error.message); return []; }
+      return (data || []).filter(p => {
+        if (!p.last_study_date) return true;   // nigdy sie nie uczyl
+        return new Date(p.last_study_date) < threshold;
+      });
+    } catch(e) {
+      console.warn('[getInactiveStudents]', e.message || e);
+      return [];
+    }
   }
 
   // Dzieci nieaktywne (dla opiekuna)
   async function getInactiveChildren(days) {
-    if (!_userId || !_profile?.isParent) return [];
-    const threshold = new Date();
-    threshold.setDate(threshold.getDate() - Math.max(1, days || 5));
-    const { data: rels } = await supabase
-      .from('parent_children')
-      .select('child_id')
-      .eq('parent_id', _userId);
-    const ids = (rels || []).map(r => r.child_id);
-    if (!ids.length) return [];
-    const { data: profiles, error } = await supabase
-      .from('profiles')
-      .select('id, username, last_study_date, daily_xp')
-      .in('id', ids);
-    if (error) throw new Error(error.message);
-    return (profiles || []).filter(p => {
-      if (!p.last_study_date) return true;
-      return new Date(p.last_study_date) < threshold;
-    });
+    try {
+      if (!_userId || !_profile?.isParent) return [];
+      const threshold = new Date();
+      threshold.setDate(threshold.getDate() - Math.max(1, days || 5));
+      const { data: rels, error: rErr } = await supabase
+        .from('parent_children')
+        .select('child_id')
+        .eq('parent_id', _userId);
+      if (rErr) { console.warn('[getInactiveChildren]', rErr.message); return []; }
+      const ids = (rels || []).map(r => r.child_id);
+      if (!ids.length) return [];
+      const { data: profiles, error } = await supabase
+        .from('profiles')
+        .select('id, username, last_study_date, daily_xp')
+        .in('id', ids);
+      if (error) { console.warn('[getInactiveChildren]', error.message); return []; }
+      return (profiles || []).filter(p => {
+        if (!p.last_study_date) return true;
+        return new Date(p.last_study_date) < threshold;
+      });
+    } catch(e) {
+      console.warn('[getInactiveChildren]', e.message || e);
+      return [];
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════
