@@ -1595,6 +1595,16 @@ body.guest-mode .progress-wrap{opacity:.4;}
         <button class="btn-sm" onclick="boardSelNone()" style="font-size:.7rem;padding:5px 11px">☐ Żadne</button>
         <button class="btn-sm accent" onclick="boardGenerate()" style="font-size:.7rem;padding:5px 11px">🎲 Generuj planszę</button>
       </div>
+      <!-- Duplikat akcji z naglowka — licznik + przyciski -->
+      <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-top:8px;padding-top:8px;border-top:1px dashed var(--border);align-items:center">
+        <span style="font-size:.78rem;font-weight:800;color:var(--success)" id="boardFoundDup">0 słów</span>
+        <button class="btn-sm" onclick="boardGenerate()">🔄 Nowa</button>
+        <button class="btn-sm" onclick="boardPrint()">🖨️ Drukuj</button>
+        <button class="btn-sm" onclick="boardDownloadPDF()" id="boardBtnPdf">📄 PDF</button>
+        <button class="btn-sm" onclick="boardDownloadJPEG()">🖼️ JPEG</button>
+        <button class="btn-sm" onclick="showScreen('sUnits')">← Wróć</button>
+      </div>
+      <div style="font-size:.65rem;color:var(--muted);text-align:center;margin-top:6px;font-style:italic">💡 Możesz kliknąć dwa pola słów żeby zamienić je miejscami — potem wydrukować zmienioną planszę.</div>
     </div>
     <div id="boardWrap" style="overflow-x:auto;width:100%"></div>
   </div>
@@ -9091,8 +9101,11 @@ function boardBuildWordPanel(unit) {
   if (!container) return;
   container.innerHTML = '';
   unit.words.forEach(([pl, en]) => {
+    // Pojedyncze slowo = brak spacji ani w EN ani w PL. Tylko takie sa
+    // zaznaczane automatycznie; wyrazenia wieloczlonowe user klika recznie.
+    const isSingleWord = !/\s/.test(en.trim()) && !/\s/.test(pl.trim());
     const chip = document.createElement('div');
-    chip.className = 'cw-word-chip eligible selected';
+    chip.className = 'cw-word-chip eligible' + (isSingleWord ? ' selected' : '');
     chip.dataset.pl = pl;
     chip.dataset.en = en;
     chip.innerHTML = '<span>' + esc(en) + '</span>';
@@ -9154,8 +9167,33 @@ function boardGenerate() {
   }
 
   document.getElementById('boardStatus').textContent = boardCells.length + ' pól · ' + wordIdx + ' słów · rzuć kostką i graj!';
+  const boardFoundDup = document.getElementById('boardFoundDup');
+  if (boardFoundDup) boardFoundDup.textContent = wordIdx + ' słów';
+  boardSwapIdx = null; // zresetuj wybor do zamiany przy nowej planszy
   boardRender();
 }
+
+// Indeks aktualnie wybranego pola do zamiany (w boardCells). null = nic niewybrane.
+let boardSwapIdx = null;
+
+window.boardTileClick = function(cellIdx) {
+  const c = boardCells[cellIdx];
+  if (!c || c.type !== 'word') return; // tylko slowa mozna zamieniac
+  if (boardSwapIdx === null) {
+    boardSwapIdx = cellIdx;
+    boardRender();
+  } else if (boardSwapIdx === cellIdx) {
+    boardSwapIdx = null; // odklikniecie
+    boardRender();
+  } else {
+    // Zamien miejscami (tylko jesli drugie tez jest slowem — to juz sprawdza c.type)
+    const tmp = boardCells[boardSwapIdx];
+    boardCells[boardSwapIdx] = boardCells[cellIdx];
+    boardCells[cellIdx] = tmp;
+    boardSwapIdx = null;
+    boardRender();
+  }
+};
 
 function boardRender() {
   const wrap = document.getElementById('boardWrap');
@@ -9186,6 +9224,9 @@ function boardRender() {
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       const cell = grid[r][c];
+      // Odtwarzamy cellIdx w boardCells (serpentyna: parzyste L→R, nieparzyste R→L)
+      const idx = r * cols + c;
+      const cellIdx = r % 2 === 0 ? idx : r * cols + (cols - 1 - c);
       if (!cell) {
         html += '<div class="board-cell" style="opacity:.2"></div>';
         continue;
@@ -9224,7 +9265,14 @@ function boardRender() {
         content += '<div class="cell-word">' + esc(cell.en) + '</div>';
       }
 
-      html += '<div class="' + cls + '">' + content + arrowHtml + '</div>';
+      // Klik = zamiana pol (tylko dla typu 'word'). Podswietlenie wybranego.
+      const isClickable = cell.type === 'word';
+      const isSelectedSwap = isClickable && boardSwapIdx === cellIdx;
+      const clickAttr = isClickable ? ' onclick="boardTileClick(' + cellIdx + ')"' : '';
+      const swapStyle = isSelectedSwap
+        ? ';outline:3px dashed var(--accent);outline-offset:-3px;background:rgba(255,209,102,.18)'
+        : (isClickable ? ';cursor:pointer' : '');
+      html += '<div class="' + cls + '" style="' + swapStyle + '"' + clickAttr + '>' + content + arrowHtml + '</div>';
     }
   }
   html += '</div>';
@@ -9286,6 +9334,30 @@ async function boardDownloadJPEG() {
   } catch(e) { toast('Błąd JPEG: ' + e.message); }
   finally { btn.disabled = false; btn.textContent = '🖼️ JPEG'; }
 }
+
+async function boardDownloadPDF() {
+  const btn = document.getElementById('boardBtnPdf');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳…'; }
+  try {
+    const wrap = document.getElementById('boardWrap');
+    if (!wrap) return;
+    const canvas = await html2canvas(wrap, { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false });
+    const { jsPDF } = window.jspdf;
+    // A4 landscape — plansza szersza niz wysoka
+    const a4w = 297, a4h = 210, margin = 10;
+    const usableW = a4w - 2*margin, usableH = a4h - 2*margin;
+    const ratio = canvas.width / canvas.height;
+    let imgW, imgH;
+    if (ratio > usableW/usableH) { imgW = usableW; imgH = usableW/ratio; }
+    else { imgH = usableH; imgW = usableH*ratio; }
+    const pdf = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
+    pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', (a4w-imgW)/2, (a4h-imgH)/2, imgW, imgH);
+    const units = getUnitsWithCustom(currentBookId);
+    pdf.save((units[boardUnitKey]?.name || 'board').replace(/\s+/g,'_') + '_boardgame.pdf');
+  } catch(e) { toast('Błąd PDF: ' + e.message); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = '📄 PDF'; } }
+}
+window.boardDownloadPDF = boardDownloadPDF;
 
 // ══════════════════════════════════════════════
 //  DOBBLE — generator kart
