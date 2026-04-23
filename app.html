@@ -2447,6 +2447,14 @@ szkoła	school"></textarea>
         <button class="btn-sm" onclick="cwSelNone()" style="font-size:.7rem;padding:5px 11px">☐ Żadne</button>
         <button class="btn-sm accent" onclick="cwGenerate()" style="font-size:.7rem;padding:5px 11px">🔤 Generuj z wybranych</button>
       </div>
+      <div class="cw-sel-btns" style="margin-top:6px;flex-wrap:wrap;align-items:center">
+        <span style="font-size:.68rem;font-weight:700;color:var(--muted);margin-right:4px">Ilość słów w krzyżówce:</span>
+        <button class="btn-sm accent" id="cwLimAuto" onclick="cwSetWordLimit('auto')" style="font-size:.7rem;padding:5px 11px">Auto</button>
+        <button class="btn-sm" id="cwLim10" onclick="cwSetWordLimit(10)" style="font-size:.7rem;padding:5px 11px">10</button>
+        <button class="btn-sm" id="cwLim20" onclick="cwSetWordLimit(20)" style="font-size:.7rem;padding:5px 11px">20</button>
+        <button class="btn-sm" id="cwLim30" onclick="cwSetWordLimit(30)" style="font-size:.7rem;padding:5px 11px">30</button>
+        <button class="btn-sm" id="cwLim40" onclick="cwSetWordLimit(40)" style="font-size:.7rem;padding:5px 11px">40</button>
+      </div>
       <div style="font-size:.74rem;color:var(--accent2);font-weight:700;min-height:16px;margin-top:8px;text-align:center" id="cwStatus"></div>
       <!-- Duplikat przyciskow akcji (takie same jak w naglowku) — pod panelem selekcji -->
       <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-top:8px;padding-top:8px;border-top:1px dashed var(--border)">
@@ -6016,6 +6024,18 @@ function cwGetSelectedPool(allEligible) {
   return allEligible.filter(item => selected.has(item.word));
 }
 
+// ─── Word-limit preference ────────────────────
+let cwWordLimit = 'auto'; // 'auto' | 10 | 20 | 30 | 40
+function cwSetWordLimit(n) {
+  cwWordLimit = n;
+  ['Auto','10','20','30','40'].forEach(key => {
+    const btn = document.getElementById('cwLim' + key);
+    if (btn) btn.classList.toggle('accent', String(n) === (key === 'Auto' ? 'auto' : key));
+  });
+  cwGenerate();
+}
+window.cwSetWordLimit = cwSetWordLimit;
+
 function cwGenerate() {
   if (!cwCurUnit) return;
   const units = getUnitsWithCustom(currentBookId);
@@ -6042,8 +6062,10 @@ function cwGenerate() {
   document.getElementById('cwGrid').innerHTML = '';
   document.getElementById('cwClues').innerHTML = '';
 
-  // Take up to 24 candidates — more words → better crossword
-  const candidates = shuffle([...pool]).slice(0, 24);
+  // Liczba slow w krzyzowce — sterowana selektorem "Ilosc slow: Auto/10/20/30/40".
+  // Auto = wszystkie zaznaczone (bez limitu). Dla liczb: cap do min(N, dostepne).
+  const limit = (cwWordLimit === 'auto') ? pool.length : Math.min(cwWordLimit, pool.length);
+  const candidates = shuffle([...pool]).slice(0, limit);
 
   setTimeout(() => {
     // Run multiple attempts, pick the one with most placed words
