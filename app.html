@@ -1142,7 +1142,7 @@ body.guest-mode .progress-wrap{opacity:.4;}
       <div id="inactiveTileAdmin" onclick="openInactiveScreen('admin')" style="display:none;position:relative;background:var(--surface);border:1.5px solid var(--border);border-radius:14px;padding:14px 10px;text-align:center;cursor:pointer;transition:all .2s" onmouseover="this.style.borderColor='var(--danger)'" onmouseout="this.style.borderColor='var(--border)'">
         <div style="font-size:1.6rem;margin-bottom:4px">🔔</div>
         <div style="font-size:.78rem;font-weight:800;color:var(--text)">Przypomnij o nieaktywnym koncie</div>
-        <div style="font-size:.6rem;color:var(--muted);font-weight:600;margin-top:2px">Uczniowie bez logowania ≥5 dni</div>
+        <div style="font-size:.6rem;color:var(--muted);font-weight:600;margin-top:2px">Uczniowie bez logowania ≥30 dni (miesiąc)</div>
         <span id="inactiveBadgeAdmin" style="display:none;position:absolute;top:6px;right:6px;background:var(--danger);color:#fff;border-radius:100px;padding:1px 7px;font-size:.58rem;font-weight:900"></span>
       </div>
       <div id="adminTeacherSetsTile" onclick="openAdminTeacherSets()" style="display:none;background:var(--surface);border:1.5px solid var(--border);border-radius:14px;padding:14px 10px;text-align:center;cursor:pointer;transition:all .2s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
@@ -2722,7 +2722,7 @@ szkoła	school"></textarea>
     <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">
       <div>
         <div style="font-family:'Playfair Display',serif;font-size:1.4rem;color:var(--danger)" id="sInactiveTitle">🔔 Przypomnij o nieaktywnym koncie</div>
-        <div style="font-size:.72rem;color:var(--muted);font-weight:600;margin-top:2px" id="sInactiveSub">Uczniowie / dzieci bez logowania ≥5 dni</div>
+        <div style="font-size:.72rem;color:var(--muted);font-weight:600;margin-top:2px" id="sInactiveSub">Uczniowie / dzieci bez logowania ≥30 dni (miesiąc)</div>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
         <button class="btn-sm" id="sInactiveResetBtn" onclick="resetInactiveDismissed()" style="font-size:.68rem">↺ Przywróć ukryte</button>
@@ -2783,7 +2783,7 @@ szkoła	school"></textarea>
       <div id="inactiveTileParent" onclick="openInactiveScreen('parent')" style="position:relative;background:var(--surface);border:1.5px solid var(--border);border-radius:14px;padding:14px 10px;text-align:center;cursor:pointer;transition:all .2s" onmouseover="this.style.borderColor='var(--danger)'" onmouseout="this.style.borderColor='var(--border)'">
         <div style="font-size:1.6rem;margin-bottom:4px">🔔</div>
         <div style="font-size:.78rem;font-weight:800;color:var(--text)">Przypomnij o nieaktywnym koncie</div>
-        <div style="font-size:.6rem;color:var(--muted);font-weight:600;margin-top:2px">Dzieci bez logowania ≥5 dni</div>
+        <div style="font-size:.6rem;color:var(--muted);font-weight:600;margin-top:2px">Dzieci bez logowania ≥30 dni (miesiąc)</div>
         <span id="inactiveBadgeParent" style="display:none;position:absolute;top:6px;right:6px;background:var(--danger);color:#fff;border-radius:100px;padding:1px 7px;font-size:.58rem;font-weight:900"></span>
       </div>
       <div onclick="openPremiumLockModal({title:'🔒 Raporty Premium',text:'Szczegółowe raporty postępów dzieci są dostępne po aktywacji planu Premium. Napisz do administratora, aby omówić przydzielenie pakietu.'})" style="background:var(--surface);border:1.5px solid var(--border);border-radius:14px;padding:14px 10px;text-align:center;cursor:pointer;transition:all .2s;opacity:.75" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
@@ -12251,6 +12251,20 @@ if ('serviceWorker' in navigator) {
     try { await DB.downgradePlanIfExpired(); } catch(e) { console.warn('[BOOT] downgrade:', e.message); }
     // Aktywuj 7-dniowy darmowy trial Premium dla nowego konta (raz w zyciu)
     try { await DB.activateTrialIfEligible(); } catch(e) { console.warn('[BOOT] trial:', e.message); }
+    // Admin: auto-usun konta uczniow nieaktywnych >= 1 rok (raz dziennie)
+    try {
+      if (DB.isAdmin && DB.isAdmin(currentUser)) {
+        const lastKey = 'fiszki_auto_delete_last_' + currentUser;
+        const today = new Date().toDateString();
+        if (localStorage.getItem(lastKey) !== today) {
+          const n = await DB.autoDeleteInactiveUsers();
+          localStorage.setItem(lastKey, today);
+          if (n > 0 && typeof toast === 'function') {
+            setTimeout(() => toast('🧹 Auto-usunięto ' + n + ' nieaktywnych kont (≥1 rok).', 4200), 1200);
+          }
+        }
+      }
+    } catch(e) { console.warn('[BOOT] auto-delete inactive:', e.message); }
   }
 
   // Wczytaj dane admina (nowe podręczniki, rozdziały, słówka) — dla wszystkich użytkowników
@@ -14649,8 +14663,8 @@ if ('serviceWorker' in navigator) {
   }
 
   async function _fetchInactive(who) {
-    if (who === 'parent') return (await DB.getInactiveChildren(5)) || [];
-    return (await DB.getInactiveStudents(5)) || [];
+    if (who === 'parent') return (await DB.getInactiveChildren(30)) || [];
+    return (await DB.getInactiveStudents(30)) || [];
   }
 
   // Legacy wrapper — pozostawiony dla wstecznej kompatybilności;
@@ -14702,8 +14716,8 @@ if ('serviceWorker' in navigator) {
       return;
     }
     document.getElementById('sInactiveTitle').textContent = who === 'parent'
-      ? '🔔 Dzieci bez logowania ≥5 dni'
-      : '🔔 Uczniowie bez logowania ≥5 dni';
+      ? '🔔 Dzieci bez logowania ≥30 dni (miesiąc)'
+      : '🔔 Uczniowie bez logowania ≥30 dni (miesiąc)';
     document.getElementById('sInactiveSub').textContent = who === 'parent'
       ? 'Kliknij „Przypomnij", aby wysłać wiadomość i ukryć wpis'
       : 'Kliknij „Przypomnij", aby wysłać wiadomość i ukryć wpis';

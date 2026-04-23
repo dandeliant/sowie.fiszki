@@ -345,7 +345,7 @@ const DB = (() => {
       if (!_userId) return [];
       if (!_profile?.isTeacher && !_profile?.isAdmin) return [];
       const threshold = new Date();
-      threshold.setDate(threshold.getDate() - Math.max(1, days || 5));
+      threshold.setDate(threshold.getDate() - Math.max(1, days || 30));
       let q = supabase
         .from('profiles')
         .select('id, username, last_study_date, daily_xp, created_by')
@@ -367,12 +367,23 @@ const DB = (() => {
     }
   }
 
+  // Auto-usun konta uczniow nieaktywnych >= 1 rok (admin-only RPC).
+  // Zwraca liczbe usunietych kont. Nie wywala sie przy braku uprawnien — warn + 0.
+  async function autoDeleteInactiveUsers() {
+    if (!_profile?.isAdmin) return 0;
+    try {
+      const { data, error } = await supabase.rpc('auto_delete_inactive_users');
+      if (error) { console.warn('[auto_delete_inactive_users]', error.message); return 0; }
+      return Number(data) || 0;
+    } catch(e) { console.warn('[auto_delete_inactive_users]', e.message || e); return 0; }
+  }
+
   // Dzieci nieaktywne (dla opiekuna)
   async function getInactiveChildren(days) {
     try {
       if (!_userId || !_profile?.isParent) return [];
       const threshold = new Date();
-      threshold.setDate(threshold.getDate() - Math.max(1, days || 5));
+      threshold.setDate(threshold.getDate() - Math.max(1, days || 30));
       const { data: rels, error: rErr } = await supabase
         .from('parent_children')
         .select('child_id')
@@ -926,6 +937,8 @@ const DB = (() => {
   function isParent() { return _profile?.isParent === true; }
   function isPremium() {
     if (!_profile) return false;
+    // Admin ma pelny dostep z racji roli — traktujemy jak permanentne premium
+    if (_profile.isAdmin) return true;
     if (_profile.plan !== 'premium') return false;
     // Bez daty wygasniecia = permanent premium (np. nadany recznie przez admina)
     if (!_profile.planExpiresAt) return true;
@@ -934,7 +947,10 @@ const DB = (() => {
 
   // Info o dacie wygasniecia planu: { daysLeft, expiresAt, isTrial } albo null
   function getPlanExpiryInfo() {
-    if (!_profile || _profile.plan !== 'premium' || !_profile.planExpiresAt) return null;
+    if (!_profile) return null;
+    // Admin nie ma wygasania — rola daje pelny dostep
+    if (_profile.isAdmin) return null;
+    if (_profile.plan !== 'premium' || !_profile.planExpiresAt) return null;
     const now = new Date();
     const exp = new Date(_profile.planExpiresAt);
     const diffMs = exp.getTime() - now.getTime();
@@ -955,6 +971,7 @@ const DB = (() => {
   // Aktywuje 7-dniowy trial (RPC). Zwraca nowa date wygasniecia lub null.
   async function activateTrialIfEligible() {
     if (!_userId || !_profile) return null;
+    if (_profile.isAdmin) return null;       // admin ma pelny dostep z racji roli
     if (_profile.trialUsedAt) return null;   // juz wykorzystany
     if (_profile.plan === 'premium') return null;  // juz ma premium
     try {
@@ -1781,6 +1798,7 @@ const DB = (() => {
     getDailyXpHistory,
     getInactiveStudents,
     getInactiveChildren,
+    autoDeleteInactiveUsers,
     listMyChildren,
     findUserByUsername,
     addChild,

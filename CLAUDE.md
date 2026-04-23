@@ -60,6 +60,7 @@ Kolejność uruchamiania w SQL Editor (każda jest idempotentna — można ponow
 19. `add-premium-expiry.sql` — `profiles.plan_expires_at` + `trial_used_at` + RPC `activate_trial()` (7-dniowy trial) + RPC `admin_extend_premium(user_id, months)`
 20. `fix-rls-recursion.sql` — **KRYTYCZNE**: naprawia infinite recursion w politykach RLS (profiles ↔ parent_children ↔ profiles). Tworzy helpery `_is_admin()`, `_is_teacher()`, `_is_parent_of(uuid)` z `SECURITY DEFINER` (omijają RLS) i przebudowuje polityki. Bez tego: HTTP 500 przy każdym SELECT profiles → „Nieprawidłowa nazwa użytkownika lub hasło" przy logowaniu.
 20. `add-daily-xp-history.sql` — tabela `daily_xp_log (user_id, day, xp)` z RLS (user/parent/teacher/admin) + RPC `log_daily_xp(delta)` (upsert). Używane do wykresu „Historia nauki 12 miesięcy" (Premium).
+21. `auto-delete-inactive-users.sql` — RPC `auto_delete_inactive_users()` usuwa konta uczniów (nie admin/nauczyciel/opiekun) z `last_study_date` >1 rok temu (lub `created_at` >1 rok bez logowań). Wywoływane client-side raz dziennie przy logowaniu admina.
 16. `fix-admin-create-user.sql` — naprawa `admin_create_user` (puste stringi zamiast NULL dla kolumn tokenów — bez tego gotrue odrzucał `signInWithPassword`); dodatkowo zezwala nauczycielowi tworzyć konta uczniów
 
 **Zawsze przypominaj użytkownikowi** o uruchomieniu nowej migracji w Supabase, kiedy tworzysz nową.
