@@ -9987,7 +9987,8 @@ function snakeUpdateSelCount() {
 function snakeSelAll() { document.querySelectorAll('#snakeWordChips .cw-word-chip.eligible').forEach(c => c.classList.add('selected')); snakeUpdateSelCount(); }
 function snakeSelNone() { document.querySelectorAll('#snakeWordChips .cw-word-chip.eligible').forEach(c => c.classList.remove('selected')); snakeUpdateSelCount(); }
 
-const SNAKE_MAX = 7; // max słów na węża
+const SNAKE_MAX = 7;             // legacy cap (nie uzywany — patrz SNAKE_MAX_CHARS)
+const SNAKE_MAX_CHARS = 55;      // max bezpieczna liczba liter na jednego weza (SVG 620px @ font 13)
 
 function snakeNewGame() {
   if (!snakeUnitKey) return;
@@ -10010,11 +10011,26 @@ function snakeNewGame() {
 
   snakePairs = shuffle([...pairs]);
 
-  // Podziel na grupy po max 7
+  // Adaptacyjne grupowanie — pakuj slowa w rzad dopoki suma liter
+  // (+ bufor na losowe litery miedzy nimi) nie przekroczy SNAKE_MAX_CHARS.
+  // Dzieki temu dlugie slowa nie sa przycinane po prawej stronie —
+  // jesli kolejne slowo by sie nie zmiescilo, idzie do nowego rzedu.
+  const isEnSnakeForGrouping = snakeDir === 'en';
   const groups = [];
-  for (let i = 0; i < snakePairs.length; i += SNAKE_MAX) {
-    groups.push(snakePairs.slice(i, i + SNAKE_MAX));
+  let cur = [];
+  let curLen = 0;
+  for (const p of snakePairs) {
+    const wLen = (isEnSnakeForGrouping ? p.enUp : p.plUp).length;
+    const addLen = wLen + (cur.length > 0 ? 2 : 0); // +2 filler letters miedzy slowami
+    if (cur.length > 0 && curLen + addLen > SNAKE_MAX_CHARS) {
+      groups.push(cur);
+      cur = [];
+      curLen = 0;
+    }
+    cur.push(p);
+    curLen += addLen;
   }
+  if (cur.length > 0) groups.push(cur);
 
   // Render wszystko do wrapperów
   const svgWrap = document.getElementById('snakeSvgWrap');
