@@ -171,6 +171,10 @@ System oparty o atrybut `data-theme` na `<html>`. Motywy: `owl` (domyślny), `fo
 - Premium: drukowalny dyplom PDF A4 landscape (ozdobny certyfikat)
 - Premium: wykres historii XP (Canvas) na ekranie statystyk — 7/30/365 dni; Free tylko 7 dni
 - Premium: powiadomienia na panelu nauczyciela/opiekuna o uczniach/dzieciach nieaktywnych ≥5 dni, z przyciskiem "📧 Przypomnij"
+- Premium: masowy import słówek (CSV/TSV/wklejka) do zestawu nauczyciela — modal z parserem i podglądem (na ekranie edycji zestawu)
+- Premium: wariant „📝 Zdania z lukami" w Kartach pracy — generator luk na bazie zdań przykładowych word[2]/word[3]
+- Premium: export postępów do CSV (na ekranie 📊 Moje wyniki)
+- Premium: branding w Moje konto — logo szkoły (URL lub upload <400 KB, base64 w localStorage) + nazwa — pojawia się w nagłówku PDF kart pracy i listy kont uczniów
 - Usuwanie konta (RODO)
 - 7 gier w sekcji INNE
 

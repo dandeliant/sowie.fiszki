@@ -2243,6 +2243,7 @@ szkoła	school"></textarea>
     <div style="display:flex;gap:6px;flex-wrap:wrap">
       <button class="btn-sm" onclick="exportMyDiplomaPdf()" title="Dyplom PDF (Premium)">🏆 Dyplom</button>
       <button class="btn-sm" onclick="exportMyStatsPdf()" title="Eksportuj PDF (Premium)">📄 PDF</button>
+      <button class="btn-sm" onclick="exportMyProgressCsv()" title="Eksportuj CSV (Premium)">📥 CSV</button>
       <button class="btn-sm" onclick="showScreen('sBooks')">← Wróć</button>
     </div>
   </div>
@@ -2563,7 +2564,10 @@ szkoła	school"></textarea>
 
     <!-- Dodawanie słowa -->
     <div style="background:var(--surface);border:1.5px solid var(--border);border-radius:14px;padding:12px 14px;margin-bottom:12px">
-      <div style="font-size:.68rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">➕ Dodaj słowo ręcznie</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">
+        <div style="font-size:.68rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">➕ Dodaj słowo ręcznie</div>
+        <button class="btn-sm" onclick="openBulkImportModal()" style="padding:4px 10px;font-size:.7rem">📥 Import CSV / wklejka</button>
+      </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
         <input type="text" id="newWordWord" placeholder="słowo (np. apple)" autocomplete="off" style="padding:9px 11px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.85rem;font-weight:600;outline:none">
         <input type="text" id="newWordTrans" placeholder="tłumaczenie (np. jabłko)" autocomplete="off" style="padding:9px 11px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.85rem;font-weight:600;outline:none">
@@ -2918,6 +2922,35 @@ szkoła	school"></textarea>
   </div>
 </div>
 
+<!-- Modal: Masowy import slowek (Premium) -->
+<div class="modal-overlay" id="bulkImportModal" style="display:none" onclick="if(event.target===this)closeBulkImportModal()">
+  <div class="modal-box" style="max-width:560px;max-height:88vh;overflow-y:auto">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px">
+      <div style="font-family:'Playfair Display',serif;font-size:1.15rem;color:var(--accent)">📥 Import słówek</div>
+      <button class="btn-modal-cancel" onclick="closeBulkImportModal()" style="padding:5px 11px;font-size:.72rem">✕</button>
+    </div>
+    <div style="font-size:.72rem;color:var(--muted);margin-bottom:10px;font-weight:600;line-height:1.5">
+      Wklej listę słówek (każde w nowej linii). Format: <code style="background:var(--surface2);padding:1px 5px;border-radius:4px">słowo, tłumaczenie, przykład (opcj.)</code>.
+      Separator: przecinek, tabulator albo średnik.
+    </div>
+    <label style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px">Separator</label>
+    <select id="bulkImportSep" onchange="bulkImportPreview()" style="width:100%;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.85rem;font-weight:600;outline:none;margin-bottom:8px;font-family:inherit">
+      <option value="auto">🔍 Wykryj automatycznie</option>
+      <option value=",">Przecinek (,)</option>
+      <option value="\t">Tabulator</option>
+      <option value=";">Średnik (;)</option>
+    </select>
+    <label style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px">Słówka (wklej tutaj)</label>
+    <textarea id="bulkImportText" rows="9" placeholder="apple, jabłko, I ate an apple.&#10;cat, kot, The cat is sleeping.&#10;..." oninput="bulkImportPreview()" style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:.82rem;font-weight:500;outline:none;font-family:'Courier New',monospace;resize:vertical;line-height:1.5"></textarea>
+    <div id="bulkImportStats" style="font-size:.72rem;color:var(--muted);font-weight:700;margin-top:6px;min-height:16px"></div>
+    <div id="bulkImportPreview" style="margin-top:8px;max-height:200px;overflow-y:auto;border:1px dashed var(--border);border-radius:8px;padding:6px;display:none"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+      <button class="btn-modal-cancel" onclick="closeBulkImportModal()">Anuluj</button>
+      <button class="btn-modal-save" id="btnBulkImport" onclick="confirmBulkImport()">📥 Importuj</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: Karty pracy -->
 <div class="modal-overlay" id="worksheetModal" style="display:none" onclick="if(event.target===this)closeWorksheetModal()">
   <div class="modal-box" style="max-width:460px">
@@ -2938,6 +2971,7 @@ szkoła	school"></textarea>
       <option value="blank_en">✏️ Pusta — wpisz angielski (uczeń widzi PL)</option>
       <option value="blank_pl">✏️ Pusta — wpisz polski (uczeń widzi EN)</option>
       <option value="mixed">🎲 Pomieszana (losowo PL lub EN do uzupełnienia)</option>
+      <option value="gap_sentences">📝 Zdania z lukami (Premium) 🔒</option>
     </select>
 
     <div id="wsMsg" style="font-size:.72rem;color:var(--muted);margin-bottom:6px;min-height:16px;font-weight:600"></div>
@@ -11829,6 +11863,27 @@ if ('serviceWorker' in navigator) {
       <div id="voicePrefHint" style="font-size:.68rem;color:var(--muted);font-weight:600;margin-top:8px;line-height:1.4"></div>
     </div>
 
+    <!-- Branding szkoly (Premium — nauczyciel/opiekun) -->
+    <div id="brandingSection" style="display:none;background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:12px 16px;margin-bottom:14px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:8px">
+        <div style="font-size:.82rem;font-weight:800;color:var(--text)">🏫 Logo / nagłówek szkoły</div>
+        <span id="brandingLockBadge" style="display:none;font-size:.6rem;font-weight:800;color:var(--accent);background:rgba(255,209,102,.15);border:1px solid rgba(255,209,102,.35);border-radius:100px;padding:1px 8px">🔒 Premium</span>
+      </div>
+      <label style="font-size:.65rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px">Nazwa szkoły/klasy</label>
+      <input type="text" id="brandingSchoolName" placeholder="np. SP nr 5 w Krakowie" autocomplete="off" maxlength="80" style="width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:.85rem;font-weight:600;outline:none;margin-bottom:8px;font-family:inherit">
+      <label style="font-size:.65rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px">Logo (URL lub upload PNG/JPG)</label>
+      <div style="display:flex;gap:6px;align-items:stretch;margin-bottom:6px">
+        <input type="text" id="brandingLogoUrl" placeholder="https://…" autocomplete="off" style="flex:1;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:.82rem;font-weight:500;outline:none;font-family:inherit">
+        <label class="btn-sm" style="cursor:pointer;padding:8px 10px;font-size:.72rem">📁 Plik<input type="file" id="brandingLogoFile" accept="image/png,image/jpeg" style="display:none" onchange="onBrandingFileUpload(event)"></label>
+      </div>
+      <div id="brandingPreview" style="text-align:center;min-height:48px;padding:6px;background:var(--surface);border:1px dashed var(--border);border-radius:8px;margin-bottom:8px"></div>
+      <div style="display:flex;gap:6px;justify-content:flex-end">
+        <button class="btn-sm" onclick="clearBranding()" style="padding:5px 11px;font-size:.72rem">🗑 Wyczyść</button>
+        <button class="btn-sm accent" onclick="saveBranding()" style="padding:5px 11px;font-size:.72rem">💾 Zapisz</button>
+      </div>
+      <div id="brandingHint" style="font-size:.68rem;color:var(--muted);font-weight:600;margin-top:8px;line-height:1.4">💡 Logo i nazwa pojawią się w nagłówku PDF kart pracy i listy loginów uczniów.</div>
+    </div>
+
     <!-- Strefa niebezpieczna: usuwanie konta -->
     <div style="border:1.5px solid rgba(255,118,117,.3);border-radius:12px;padding:12px 14px;background:rgba(255,118,117,.05)">
       <div style="font-size:.78rem;font-weight:800;color:var(--danger);margin-bottom:5px">⚠️ Strefa niebezpieczna</div>
@@ -12145,6 +12200,8 @@ if ('serviceWorker' in navigator) {
     document.getElementById('deleteAccountMsg').textContent = '';
     // Uzupelnij selektor glosow lektora
     populateVoicePrefSelect();
+    // Uzupelnij sekcje brandingu (Premium: nauczyciel/opiekun)
+    if (typeof renderBrandingSection === 'function') renderBrandingSection();
     document.getElementById('accountModal').style.display = 'flex';
   };
   window.closeAccountModal = function(){ document.getElementById('accountModal').style.display='none'; };
@@ -12519,6 +12576,233 @@ if ('serviceWorker' in navigator) {
     } catch(e) {
       console.error('[exportMyDiplomaPdf]', e);
       if (typeof toast==='function') toast('❌ Błąd PDF: ' + e.message, 3200);
+    }
+  };
+
+  // ═══════════════════════════════════════════════
+  //  E1: IMPORT CSV/WKLEJKA ZESTAWU (Premium)
+  // ═══════════════════════════════════════════════
+  let _bulkImportParsed = [];
+
+  window.openBulkImportModal = function(){
+    if (!(isCurrentUserAdmin() || isCurrentUserPremium())) {
+      openPremiumLockModal({
+        title: '🔒 Import CSV — Premium',
+        text: 'Masowy import słówek (CSV / Excel / wklejka) to funkcja Premium. Po aktywacji możesz wkleić setki słówek naraz, zamiast wpisywać pojedynczo.'
+      });
+      return;
+    }
+    _bulkImportParsed = [];
+    document.getElementById('bulkImportText').value = '';
+    document.getElementById('bulkImportStats').textContent = '';
+    document.getElementById('bulkImportPreview').style.display = 'none';
+    document.getElementById('bulkImportSep').value = 'auto';
+    document.getElementById('bulkImportModal').style.display = 'flex';
+    setTimeout(()=>document.getElementById('bulkImportText').focus(), 60);
+  };
+  window.closeBulkImportModal = function(){ document.getElementById('bulkImportModal').style.display='none'; };
+
+  function _detectSep(line) {
+    if (line.includes('\t')) return '\t';
+    if (line.includes(';'))  return ';';
+    if (line.includes(','))  return ',';
+    return '\t';
+  }
+
+  window.bulkImportPreview = function(){
+    const raw = document.getElementById('bulkImportText').value;
+    const sepChoice = document.getElementById('bulkImportSep').value;
+    const stats = document.getElementById('bulkImportStats');
+    const prev = document.getElementById('bulkImportPreview');
+    _bulkImportParsed = [];
+    if (!raw || !raw.trim()) { stats.textContent = ''; prev.style.display = 'none'; return; }
+    const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    lines.forEach((line, i) => {
+      const sep = sepChoice === 'auto' ? _detectSep(line) : (sepChoice === '\\t' ? '\t' : sepChoice);
+      const cells = line.split(sep).map(c => c.trim());
+      if (cells.length >= 2 && cells[0] && cells[1]) {
+        _bulkImportParsed.push({
+          word: cells[0],
+          translation: cells[1],
+          example: cells[2] || null,
+          line: i + 1
+        });
+      }
+    });
+    stats.innerHTML = _bulkImportParsed.length > 0
+      ? `✓ Rozpoznano <b>${_bulkImportParsed.length}</b> słówek do importu (z ${lines.length} linii).`
+      : `<span style="color:var(--danger)">⚠️ Nie znaleziono poprawnych słówek. Sprawdź separator.</span>`;
+    if (_bulkImportParsed.length > 0) {
+      prev.style.display = 'block';
+      prev.innerHTML = _bulkImportParsed.slice(0, 20).map(w =>
+        `<div style="padding:4px 6px;border-bottom:1px solid var(--border);font-size:.76rem"><b>${escHtml(w.word)}</b> → ${escHtml(w.translation)}${w.example?'<span style="color:var(--muted);font-style:italic"> · '+escHtml(w.example)+'</span>':''}</div>`
+      ).join('') + (_bulkImportParsed.length > 20 ? `<div style="padding:4px 6px;font-size:.7rem;color:var(--muted);text-align:center">…i ${_bulkImportParsed.length - 20} więcej</div>` : '');
+    } else {
+      prev.style.display = 'none';
+    }
+  };
+
+  window.confirmBulkImport = async function(){
+    if (!_bulkImportParsed.length) { alert('Wpisz słówka do importu.'); return; }
+    if (!_currentSetId) { alert('Brak aktywnego zestawu.'); return; }
+    const btn = document.getElementById('btnBulkImport');
+    btn.disabled = true; btn.textContent = '⏳ Importuję…';
+    try {
+      await DB.teacherAddWordsBulk(_currentSetId, _bulkImportParsed);
+      closeBulkImportModal();
+      if (typeof toast === 'function') toast(`✅ Zaimportowano ${_bulkImportParsed.length} słówek.`, 2800);
+      await openTeacherSetEdit(_currentSetId);
+    } catch(e) {
+      alert('Błąd importu: ' + e.message);
+    } finally {
+      btn.disabled = false; btn.textContent = '📥 Importuj';
+    }
+  };
+
+  // ═══════════════════════════════════════════════
+  //  E4: BRANDING (logo + nazwa szkoly) — Premium
+  // ═══════════════════════════════════════════════
+  window.getSchoolBranding = function(){
+    try {
+      const name = localStorage.getItem('fiszki_school_name') || '';
+      const logo = localStorage.getItem('fiszki_school_logo') || '';
+      return { name, logo };
+    } catch(e) { return { name:'', logo:'' }; }
+  };
+
+  window.renderBrandingSection = function(){
+    const section = document.getElementById('brandingSection');
+    if (!section) return;
+    // Widoczne tylko dla nauczyciela/opiekuna/admina
+    if (!(isCurrentUserTeacher() || isCurrentUserParent() || isCurrentUserAdmin())) {
+      section.style.display = 'none'; return;
+    }
+    section.style.display = '';
+    const b = getSchoolBranding();
+    document.getElementById('brandingSchoolName').value = b.name;
+    document.getElementById('brandingLogoUrl').value = b.logo.startsWith('data:') ? '' : b.logo;
+    updateBrandingPreview(b.logo);
+    const isPrem = isCurrentUserAdmin() || isCurrentUserPremium();
+    const lock = document.getElementById('brandingLockBadge');
+    document.getElementById('brandingSchoolName').disabled = !isPrem;
+    document.getElementById('brandingLogoUrl').disabled = !isPrem;
+    document.getElementById('brandingLogoFile').disabled = !isPrem;
+    if (lock) lock.style.display = isPrem ? 'none' : '';
+    if (!isPrem) {
+      document.getElementById('brandingHint').innerHTML = '🔒 Edycja brandingu to funkcja Premium. Zapisz logo, a pojawi się w nagłówku PDF.';
+    }
+  };
+
+  function updateBrandingPreview(logoUrl){
+    const prev = document.getElementById('brandingPreview');
+    if (!prev) return;
+    if (logoUrl) {
+      prev.innerHTML = `<img src="${escHtml(logoUrl)}" style="max-height:64px;max-width:100%;object-fit:contain" onerror="this.parentNode.innerHTML='<span style=\\'color:var(--danger);font-size:.72rem;font-weight:600\\'>❌ Nie można wczytać logo</span>'">`;
+    } else {
+      prev.innerHTML = '<span style="color:var(--muted);font-size:.72rem;font-weight:600">Brak logo</span>';
+    }
+  }
+
+  window.onBrandingFileUpload = function(ev){
+    if (!(isCurrentUserAdmin() || isCurrentUserPremium())) {
+      openPremiumLockModal({ title:'🔒 Logo szkoły — Premium', text:'Upload logo to funkcja Premium.' });
+      return;
+    }
+    const file = ev.target.files && ev.target.files[0];
+    if (!file) return;
+    if (file.size > 400 * 1024) { alert('Plik za duży — maks 400 KB.'); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      document.getElementById('brandingLogoUrl').value = '';  // URL anulowany
+      updateBrandingPreview(reader.result);
+      document.getElementById('brandingPreview').dataset.dataUrl = reader.result;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  window.saveBranding = function(){
+    if (!(isCurrentUserAdmin() || isCurrentUserPremium())) {
+      openPremiumLockModal({ title:'🔒 Branding — Premium', text:'Zapisanie logo i nazwy szkoły to funkcja Premium.' });
+      return;
+    }
+    try {
+      const name = document.getElementById('brandingSchoolName').value.trim();
+      const url  = document.getElementById('brandingLogoUrl').value.trim();
+      const prev = document.getElementById('brandingPreview');
+      const dataUrl = prev && prev.dataset.dataUrl;
+      const logo = url || dataUrl || '';
+      localStorage.setItem('fiszki_school_name', name);
+      localStorage.setItem('fiszki_school_logo', logo);
+      if (typeof toast==='function') toast('✅ Zapisano branding.', 2200);
+      updateBrandingPreview(logo);
+    } catch(e) { alert('Błąd zapisu: ' + e.message); }
+  };
+
+  window.clearBranding = function(){
+    if (!confirm('Usunąć logo i nazwę szkoły?')) return;
+    try {
+      localStorage.removeItem('fiszki_school_name');
+      localStorage.removeItem('fiszki_school_logo');
+    } catch(e) {}
+    document.getElementById('brandingSchoolName').value = '';
+    document.getElementById('brandingLogoUrl').value = '';
+    delete document.getElementById('brandingPreview').dataset.dataUrl;
+    updateBrandingPreview('');
+    if (typeof toast==='function') toast('🗑️ Wyczyszczono.', 1800);
+  };
+
+  // ═══════════════════════════════════════════════
+  //  E2: EXPORT CSV postepow ucznia (Premium)
+  // ═══════════════════════════════════════════════
+  window.exportMyProgressCsv = function(){
+    if (!(isCurrentUserAdmin() || isCurrentUserPremium())) {
+      openPremiumLockModal({
+        title: '🔒 Export CSV — Premium',
+        text: 'Export postępów do CSV to funkcja Premium. Przydatne do importu w Excelu, Numbers lub Google Sheets.'
+      });
+      return;
+    }
+    try {
+      const uname = currentUser || '—';
+      const profile = DB.getUser(uname) || {};
+      const rows = [
+        ['Pole', 'Wartość'],
+        ['Login', uname],
+        ['Poziom', profile.level || 1],
+        ['XP', profile.xp || 0],
+        ['Seria (dni z rzędu)', profile.streak || 0],
+        ['Najdłuższa seria', profile.longestStreak || profile.longest_streak || 0],
+        ['Sesje', profile.totalSessions || profile.total_sessions || 0],
+        ['Odpowiedzi łącznie', profile.totalAnswers || profile.total_answers || 0],
+        ['Poprawne odpowiedzi', profile.correctAnswers || profile.correct_answers || 0]
+      ];
+      // Postepy podrecznikow
+      rows.push(['', '']);
+      rows.push(['Podręcznik', 'Ukończone / Wszystkie unitów']);
+      try {
+        const books = (typeof currentUserAccessibleBooks === 'function') ? currentUserAccessibleBooks() : Object.values(BOOKS);
+        for (const b of books) {
+          const bp = DB.getBookProgress ? DB.getBookProgress(b.id) : null;
+          const done  = (bp && bp.completedUnits) || 0;
+          const total = (bp && bp.totalUnits)     || Object.keys(b.units || {}).length;
+          if (total > 0) rows.push([b.name, done + ' / ' + total]);
+        }
+      } catch(e) {}
+      const csv = rows.map(r => r.map(c => {
+        const s = String(c);
+        return s.includes(',') || s.includes('"') || s.includes('\n')
+          ? '"' + s.replace(/"/g,'""') + '"'
+          : s;
+      }).join(',')).join('\n');
+      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'postepy_' + uname.replace(/[^a-z0-9_-]+/gi,'_') + '.csv';
+      a.click();
+      URL.revokeObjectURL(a.href);
+      if (typeof toast==='function') toast('✓ Zapisano CSV.', 2200);
+    } catch(e) {
+      alert('Błąd CSV: ' + e.message);
     }
   };
 
@@ -13975,11 +14259,20 @@ if ('serviceWorker' in navigator) {
         <li>Wybierz podręcznik i ucz się 🦉</li>
       </ol>`;
     const rows = _bulkLastCredentials.map((c,i)=>`<tr><td>${i+1}</td><td>${escHtml(c.username)}</td><td>${escHtml(c.password)}</td><td>${instructionHtml}</td></tr>`).join('');
+    const branding = (typeof getSchoolBranding === 'function') ? getSchoolBranding() : { name:'', logo:'' };
+    const brandingHtml = (branding.logo || branding.name) ? `
+      <div class="branding">
+        ${branding.logo ? `<img src="${escHtml(branding.logo)}" onerror="this.style.display='none'">` : ''}
+        ${branding.name ? `<div class="branding-name">${escHtml(branding.name)}</div>` : ''}
+      </div>` : '';
     w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Konta — ${escHtml(_bulkClassName)}</title>
       <style>
         body{font-family:Arial,sans-serif;padding:24px;color:#111}
         h1{font-size:18px;margin:0 0 4px}
         h2{font-size:13px;color:#555;margin:0 0 16px;font-weight:normal}
+        .branding{display:flex;align-items:center;gap:12px;margin-bottom:12px;padding-bottom:10px;border-bottom:1px dashed #ccc}
+        .branding img{max-height:48px;max-width:140px;object-fit:contain}
+        .branding-name{font-weight:700;color:#333;font-size:.95rem}
         table{border-collapse:collapse;width:100%;font-size:13px}
         th,td{border:1px solid #aaa;padding:8px 10px;text-align:left;vertical-align:top}
         th{background:#eee}
@@ -13989,6 +14282,7 @@ if ('serviceWorker' in navigator) {
         td:nth-child(4){font-size:11px}
         @media print{body{padding:12px}}
       </style></head><body>
+      ${brandingHtml}
       <h1>Sowie Fiszki — konta uczniów</h1>
       <h2>Klasa: ${escHtml(_bulkClassName)} · utworzono ${_bulkLastCredentials.length} kont · ${new Date().toLocaleString('pl-PL')}</h2>
       <table><thead><tr><th>#</th><th>Login</th><th>Hasło</th><th>Instrukcja logowania (dla rodzica i dziecka)</th></tr></thead><tbody>${rows}</tbody></table>
@@ -14079,6 +14373,15 @@ if ('serviceWorker' in navigator) {
     if (!bookId) { msg.style.color='var(--danger)'; msg.textContent='⚠️ Wybierz podręcznik.'; return; }
     const book = BOOKS[bookId];
     if (!book) { msg.style.color='var(--danger)'; msg.textContent='❌ Nie znaleziono podręcznika.'; return; }
+    // Gate Premium dla wariantu "gap_sentences"
+    if (variant === 'gap_sentences' && !(isCurrentUserAdmin() || isCurrentUserPremium())) {
+      closeWorksheetModal();
+      openPremiumLockModal({
+        title: '🔒 Zdania z lukami — Premium',
+        text: 'Generator zdań z lukami (na bazie zdań przykładowych ze słówek) jest dostępny w pakiecie Premium Nauczyciel.'
+      });
+      return;
+    }
 
     // Zbierz słowa
     let words = [];
@@ -14095,8 +14398,44 @@ if ('serviceWorker' in navigator) {
 
     if (!words.length) { msg.style.color='var(--danger)'; msg.textContent='⚠️ Unit nie zawiera słów.'; return; }
 
-    // Wygeneruj wiersze wg wariantu
-    const rows = words.map((w, i) => {
+    // Wariant "Zdania z lukami" — zastepuje slowo anglojezyczne w zdaniu przykladowym ______
+    // Zbiera wiersze do osobnej listy, a nie tabeli. Dalej renderujemy dedykowany HTML.
+    let gapRowsHtml = '';
+    if (variant === 'gap_sentences') {
+      const items = [];
+      words.forEach(w => {
+        const pl = w[0] || '';
+        const en = w[1] || '';
+        const sentPl = w[2] || '';
+        const sentEn = w[3] || '';
+        // Skip slowek bez zdania angielskiego
+        if (!sentEn) return;
+        // Podmien slowo anglojezyczne na ______ (case-insensitive, cale slowo)
+        let masked = sentEn;
+        try {
+          const escaped = en.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const rx = new RegExp('\\b' + escaped + '\\b', 'i');
+          masked = sentEn.replace(rx, '_______________');
+        } catch(e) { masked = sentEn.replace(en, '_______________'); }
+        items.push({ pl, en, sentPl, masked });
+      });
+      if (!items.length) {
+        msg.style.color='var(--danger)';
+        msg.textContent='⚠️ Unit nie ma zdań przykładowych — nie można wygenerować kart z lukami.';
+        return;
+      }
+      gapRowsHtml = items.map((it, i) => `
+        <div class="gap-item">
+          <div class="gap-n">${i+1}.</div>
+          <div class="gap-body">
+            <div class="gap-sent">${escHtmlWs(it.masked)}</div>
+            <div class="gap-hint">🇵🇱 <i>${escHtmlWs(it.sentPl || it.pl)}</i></div>
+          </div>
+        </div>`).join('');
+    }
+
+    // Wygeneruj wiersze wg wariantu (nie dotyczy gap_sentences)
+    const rows = (variant === 'gap_sentences') ? '' : words.map((w, i) => {
       const pl = w[0] || '';
       const en = w[1] || '';
       let col1 = '', col2 = '';
@@ -14120,15 +14459,31 @@ if ('serviceWorker' in navigator) {
       full: 'Z odpowiedziami',
       blank_en: 'Wpisz tłumaczenie angielskie',
       blank_pl: 'Wpisz tłumaczenie polskie',
-      mixed: 'Pomieszana — uzupełnij brakujące'
+      mixed: 'Pomieszana — uzupełnij brakujące',
+      gap_sentences: 'Zdania z lukami — uzupełnij'
     }[variant] || '';
 
     const title = escHtmlWs((book.icon ? book.icon + ' ' : '') + book.name + ' — ' + unitLabel);
+    const branding = (typeof getSchoolBranding === 'function') ? getSchoolBranding() : { name:'', logo:'' };
+    const brandingHtml = (branding.logo || branding.name) ? `
+      <div class="branding">
+        ${branding.logo ? `<img src="${escHtmlWs(branding.logo)}" onerror="this.style.display='none'">` : ''}
+        ${branding.name ? `<div class="branding-name">${escHtmlWs(branding.name)}</div>` : ''}
+      </div>` : '';
+    const bodyHtml = (variant === 'gap_sentences')
+      ? `<div class="gap-list">${gapRowsHtml}</div>`
+      : `<table>
+           <thead><tr><th>#</th><th>Polski</th><th>Angielski</th></tr></thead>
+           <tbody>${rows}</tbody>
+         </table>`;
     const html = `<!DOCTYPE html><html lang="pl"><head><meta charset="UTF-8"><title>Karta pracy — ${title}</title>
 <style>
   body{font-family:Arial,sans-serif;padding:24px;color:#111;max-width:720px;margin:0 auto}
   h1{font-size:1.2rem;margin:0 0 4px}
   h2{font-size:.85rem;color:#666;margin:0 0 16px;font-weight:normal}
+  .branding{display:flex;align-items:center;gap:12px;margin-bottom:12px;padding-bottom:10px;border-bottom:1px dashed #ccc}
+  .branding img{max-height:48px;max-width:140px;object-fit:contain}
+  .branding-name{font-weight:700;color:#333;font-size:.95rem}
   .meta{display:flex;gap:14px;font-size:.75rem;color:#555;margin-bottom:14px;flex-wrap:wrap}
   .meta span{background:#f5f5f5;border:1px solid #e0e0e0;border-radius:100px;padding:3px 10px}
   .fields{display:flex;gap:10px;margin-bottom:18px;font-size:.8rem}
@@ -14140,6 +14495,12 @@ if ('serviceWorker' in navigator) {
   td.nr{width:38px;text-align:center;color:#888;font-weight:600}
   td.pl,td.en{min-height:24px;height:30px}
   tr:nth-child(even){background:#fafafa}
+  .gap-list{display:flex;flex-direction:column;gap:14px}
+  .gap-item{display:flex;gap:10px;padding:10px;border:1px solid #ddd;border-radius:8px;break-inside:avoid}
+  .gap-n{font-weight:700;color:#666;min-width:24px}
+  .gap-body{flex:1}
+  .gap-sent{font-size:1.05rem;line-height:1.6;margin-bottom:4px}
+  .gap-hint{font-size:.78rem;color:#888;font-style:italic}
   .footer{margin-top:18px;padding-top:10px;border-top:1px solid #ddd;font-size:.7rem;color:#888;text-align:center}
   @media print{body{padding:12px} .noprint{display:none}}
   .noprint{position:fixed;top:14px;right:14px;display:flex;gap:8px}
@@ -14150,19 +14511,17 @@ if ('serviceWorker' in navigator) {
   <button onclick="window.print()">🖨️ Drukuj</button>
   <button class="alt" onclick="window.close()">Zamknij</button>
 </div>
+${brandingHtml}
 <h1>${title}</h1>
 <h2>Karta pracy · ${escHtmlWs(variantLabel)} · ${new Date().toLocaleDateString('pl-PL')}</h2>
-<div class="meta"><span>Słów: ${words.length}</span><span>Podręcznik: ${escHtmlWs(book.name)}</span></div>
+<div class="meta"><span>Słów: ${variant === 'gap_sentences' ? gapRowsHtml.match(/gap-item/g)?.length || 0 : words.length}</span><span>Podręcznik: ${escHtmlWs(book.name)}</span></div>
 <div class="fields">
   <div class="field"><label>Imię i nazwisko</label>&nbsp;</div>
   <div class="field"><label>Klasa</label>&nbsp;</div>
   <div class="field"><label>Data</label>&nbsp;</div>
 </div>
-<table>
-  <thead><tr><th>#</th><th>Polski</th><th>Angielski</th></tr></thead>
-  <tbody>${rows}</tbody>
-</table>
-<div class="footer">Sowie Fiszki — karta pracy</div>
+${bodyHtml}
+<div class="footer">Sowie Fiszki — karta pracy${branding.name ? ' · ' + escHtmlWs(branding.name) : ''}</div>
 <script>window.onload=function(){setTimeout(function(){window.print();},200);};<\/script>
 </body></html>`;
 
