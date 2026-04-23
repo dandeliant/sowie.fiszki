@@ -2496,6 +2496,14 @@ szkoła	school"></textarea>
         <button class="btn-sm" onclick="wsSelNone()" style="font-size:.7rem;padding:5px 11px">☐ Żadne</button>
         <button class="btn-sm accent" onclick="wsGenerate()" style="font-size:.7rem;padding:5px 11px">🔍 Generuj z wybranych</button>
       </div>
+      <div class="cw-sel-btns" style="margin-top:6px;flex-wrap:wrap;align-items:center">
+        <span style="font-size:.68rem;font-weight:700;color:var(--muted);margin-right:4px">Ilość ukrytych słów:</span>
+        <button class="btn-sm accent" id="wsLimAuto" onclick="wsSetWordLimit('auto')" style="font-size:.7rem;padding:5px 11px">Auto</button>
+        <button class="btn-sm" id="wsLim10" onclick="wsSetWordLimit(10)" style="font-size:.7rem;padding:5px 11px">Ukryj 10</button>
+        <button class="btn-sm" id="wsLim20" onclick="wsSetWordLimit(20)" style="font-size:.7rem;padding:5px 11px">Ukryj 20</button>
+        <button class="btn-sm" id="wsLim30" onclick="wsSetWordLimit(30)" style="font-size:.7rem;padding:5px 11px">Ukryj 30</button>
+        <button class="btn-sm" id="wsLim40" onclick="wsSetWordLimit(40)" style="font-size:.7rem;padding:5px 11px">Ukryj 40</button>
+      </div>
       <div style="font-size:.74rem;color:var(--accent2);font-weight:700;min-height:16px;margin-top:8px;text-align:center" id="wsStatus"></div>
       <!-- Duplikat przyciskow akcji (takie same jak w naglowku) -->
       <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-top:8px;padding-top:8px;border-top:1px dashed var(--border)">
@@ -11008,6 +11016,18 @@ function wsGetActiveDirs() {
   return dirs.length ? dirs : [{dr:0,dc:1},{dr:1,dc:0}];
 }
 
+// ─── Word-limit preference ────────────────────
+let wsWordLimit = 'auto'; // 'auto' | 10 | 20 | 30 | 40
+function wsSetWordLimit(n) {
+  wsWordLimit = n;
+  ['Auto','10','20','30','40'].forEach(key => {
+    const btn = document.getElementById('wsLim' + key);
+    if (btn) btn.classList.toggle('accent', String(n) === (key === 'Auto' ? 'auto' : key));
+  });
+  wsGenerate();
+}
+window.wsSetWordLimit = wsSetWordLimit;
+
 // ─── Main generate ────────────────────────────
 function wsGenerate() {
   if (!wsCurUnit) return;
@@ -11032,21 +11052,27 @@ function wsGenerate() {
   document.getElementById('wsGrid').innerHTML = '';
   document.getElementById('wsWordList').innerHTML = '';
 
-  const candidates = shuffle([...pool]).slice(0, 20);
+  // Liczba slow do ukrycia — sterowana selektorem "Ukryj Auto/10/20/30/40".
+  // Auto = wszystkie zaznaczone (bez limitu). Dla liczb: cap do min(N, dostepne).
+  const limit = (wsWordLimit === 'auto') ? pool.length : Math.min(wsWordLimit, pool.length);
+  const candidates = shuffle([...pool]).slice(0, limit);
   const dirs = wsGetActiveDirs();
 
   setTimeout(() => {
     const maxLen = Math.max(...candidates.map(w => w.word.length));
+    // Start rozmiar: wystarczy dla najdluzszego slowa + bufor, lub sqrt(slow × 9).
     let size = Math.max(13, maxLen + 3, Math.ceil(Math.sqrt(candidates.length * 9)));
+    // Maksymalny rozmiar siatki — skaluje sie dla wiekszej liczby slow (40 slow → do 30x30).
+    const maxSize = Math.max(24, Math.ceil(Math.sqrt(candidates.length * 14)));
 
     let bestResult = null;
-    for (let attempt = 0; attempt < 8; attempt++) {
+    for (let attempt = 0; attempt < 10; attempt++) {
       const result = wsBuildGrid([...candidates], dirs, size);
       if (!bestResult || result.placed.length > bestResult.placed.length) {
         bestResult = result;
         if (bestResult.placed.length >= candidates.length) break;
       }
-      size = Math.min(size + 2, 24);
+      size = Math.min(size + 2, maxSize);
     }
 
     // Fill empty cells with random letters
