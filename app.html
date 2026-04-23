@@ -1387,8 +1387,9 @@ body.guest-mode .progress-wrap{opacity:.4;}
         <div style="font-family:'Playfair Display',serif;font-size:1.4rem;color:var(--accent)" id="cubesTitle">🎲 Speaking Cubes</div>
         <div style="font-size:.72rem;color:var(--muted);font-weight:600" id="cubesStatus">Wylosuj 9 pól i mów!</div>
       </div>
-      <div style="display:flex;gap:6px;align-items:center">
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
         <button class="btn-sm" onclick="cubesGenerate()">🔄 Losuj</button>
+        <button class="btn-sm" onclick="cubesToggleEdit()" id="cubesEditBtn">✏️ Edytuj</button>
         <button class="btn-sm" onclick="cubesPrint()">🖨️ Drukuj</button>
         <button class="btn-sm" onclick="showScreen('sUnits')">← Wróć</button>
       </div>
@@ -1399,6 +1400,24 @@ body.guest-mode .progress-wrap{opacity:.4;}
       <div class="snake-dir-btn" id="cubesModeEmoji" onclick="cubesSetMode('emoji')">😀 Emoji</div>
       <div class="snake-dir-btn" id="cubesModeImg" onclick="cubesSetMode('img')">🖼️ Obrazki</div>
       <div class="snake-dir-btn" id="cubesModeMix" onclick="cubesSetMode('mix')">🎨 Mix</div>
+    </div>
+    <!-- Panel edycji (hidden domyslnie) -->
+    <div class="cw-sel-panel" id="cubesSelPanel" style="display:none;margin-bottom:10px">
+      <div class="cw-sel-title">
+        <span>✏️ Wybierz słówka do kostek <span id="cubesSelCount" style="color:var(--accent2);margin-left:4px"></span></span>
+        <span style="font-size:.65rem;color:var(--muted);font-style:italic">Domyślnie zaznaczone tylko pojedyncze słowa</span>
+      </div>
+      <div class="cw-sel-btns" style="margin-bottom:6px">
+        <button class="btn-sm" onclick="cubesSetSource('unit')" id="cubesSrcUnit" style="font-size:.7rem;padding:5px 11px">📖 Ten unit</button>
+        <button class="btn-sm" onclick="cubesSetSource('book')" id="cubesSrcBook" style="font-size:.7rem;padding:5px 11px">🌍 Cały podręcznik</button>
+      </div>
+      <div class="cw-word-chips" id="cubesWordChips"></div>
+      <div class="cw-sel-btns">
+        <button class="btn-sm" onclick="cubesSelAll()" style="font-size:.7rem;padding:5px 11px">☑️ Wszystkie</button>
+        <button class="btn-sm" onclick="cubesSelNone()" style="font-size:.7rem;padding:5px 11px">☐ Żadne</button>
+        <button class="btn-sm" onclick="cubesSelSingle()" style="font-size:.7rem;padding:5px 11px">1️⃣ Tylko pojedyncze</button>
+        <button class="btn-sm accent" onclick="cubesGenerate()" style="font-size:.7rem;padding:5px 11px">🎲 Losuj 9 z wybranych</button>
+      </div>
     </div>
     <!-- Siatka 3x3 -->
     <div id="cubesGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:360px;margin:0 auto"></div>
@@ -6875,6 +6894,14 @@ function openCubes(unitKey) {
   const units = getUnitsWithCustom(currentBookId);
   const u = units[unitKey];
   document.getElementById('cubesTitle').textContent = '🎲 ' + u.name + ' — Speaking Cubes';
+  // Reset stanu edycji — nowy unit startuje z auto-selekcja (tylko pojedyncze)
+  cubesSource = 'unit';
+  cubesSelectedKeys = null;
+  // Schowaj panel edycji jesli byl otwarty z poprzedniej sesji
+  const panel = document.getElementById('cubesSelPanel');
+  const btn = document.getElementById('cubesEditBtn');
+  if (panel) panel.style.display = 'none';
+  if (btn) btn.textContent = '✏️ Edytuj';
   showScreen('sCubes');
   cubesGenerate();
 }
@@ -6888,27 +6915,122 @@ function cubesSetMode(m) {
   cubesRender();
 }
 
-function cubesGenerate() {
-  if (!cubesUnitKey) return;
-  const units = getUnitsWithCustom(currentBookId);
-  const u = units[cubesUnitKey];
+let cubesSource = 'unit';      // 'unit' | 'book'
+let cubesSelectedKeys = null;  // Set<pl> albo null = uzyj auto (pojedyncze slowa)
 
-  const all = u.words.map(([pl, en]) => {
+function cubesGetWordPool() {
+  const units = getUnitsWithCustom(currentBookId);
+  const book = BOOKS[currentBookId];
+  let raw = [];
+  if (cubesSource === 'book' && book && book.units) {
+    Object.keys(book.units).forEach(uk => {
+      const u = units[uk];
+      if (u && u.words) raw = raw.concat(u.words);
+    });
+  } else {
+    const u = units[cubesUnitKey];
+    if (u && u.words) raw = [...u.words];
+  }
+  return raw.map(([pl, en]) => {
     const s = DB.getSentence(currentBookId, pl);
     const emoji = getEmojiStore()[pl] || '';
     const imgUrl = s?.image_url || '';
-    return {pl, en, emoji, imgUrl};
+    const isSingle = !/\s/.test(en.trim()) && !/\s/.test(pl.trim());
+    return {pl, en, emoji, imgUrl, isSingle};
   });
+}
 
-  cubesItems = shuffle([...all]).slice(0, 9);
-  // Jeśli mniej niż 9 — uzupełnij losowymi duplikatami
-  while (cubesItems.length < 9 && all.length > 0) {
-    cubesItems.push(all[Math.floor(Math.random() * all.length)]);
+function cubesGenerate() {
+  if (!cubesUnitKey) return;
+  const all = cubesGetWordPool();
+
+  // Gdy user niczego nie edytowal (cubesSelectedKeys == null) — bierzemy tylko pojedyncze
+  // slowa. Inaczej — uzywamy recznie wybranych.
+  let pool;
+  if (cubesSelectedKeys && cubesSelectedKeys.size > 0) {
+    pool = all.filter(w => cubesSelectedKeys.has(w.pl));
+  } else {
+    pool = all.filter(w => w.isSingle);
+  }
+  if (pool.length === 0) {
+    // Fallback: ostatecznie wszystkie (zeby nie zostawic pustej siatki)
+    pool = all;
+  }
+
+  cubesItems = shuffle([...pool]).slice(0, 9);
+  // Jesli mniej niz 9 — uzupelnij losowymi duplikatami
+  while (cubesItems.length < 9 && pool.length > 0) {
+    cubesItems.push(pool[Math.floor(Math.random() * pool.length)]);
   }
 
   document.getElementById('cubesStatus').textContent = '9 pól · dotknij aby usłyszeć wymowę!';
   cubesRender();
 }
+
+// ─── Edycja wyboru slow ────────────────────────
+window.cubesToggleEdit = function(){
+  const panel = document.getElementById('cubesSelPanel');
+  const btn = document.getElementById('cubesEditBtn');
+  if (!panel) return;
+  const open = panel.style.display === 'none';
+  panel.style.display = open ? '' : 'none';
+  if (btn) btn.textContent = open ? '✕ Zamknij edycję' : '✏️ Edytuj';
+  if (open) {
+    if (!cubesSource) cubesSource = 'unit';
+    cubesRenderSelPanel();
+  }
+};
+window.cubesSetSource = function(src){
+  cubesSource = src;
+  document.getElementById('cubesSrcUnit').classList.toggle('accent', src === 'unit');
+  document.getElementById('cubesSrcBook').classList.toggle('accent', src === 'book');
+  cubesRenderSelPanel();
+};
+function cubesRenderSelPanel(){
+  // Synchronizuj aktywne klasy na przyciskach zrodla
+  document.getElementById('cubesSrcUnit').classList.toggle('accent', cubesSource === 'unit');
+  document.getElementById('cubesSrcBook').classList.toggle('accent', cubesSource === 'book');
+  const all = cubesGetWordPool();
+  // Jesli user jeszcze nie edytowal — preselect: tylko pojedyncze slowa
+  if (cubesSelectedKeys === null) {
+    cubesSelectedKeys = new Set(all.filter(w => w.isSingle).map(w => w.pl));
+  }
+  const container = document.getElementById('cubesWordChips');
+  container.innerHTML = '';
+  all.forEach(w => {
+    const chip = document.createElement('div');
+    const sel = cubesSelectedKeys.has(w.pl);
+    chip.className = 'cw-word-chip eligible' + (sel ? ' selected' : '');
+    chip.dataset.pl = w.pl;
+    chip.title = w.pl + ' → ' + w.en;
+    chip.innerHTML = '<span>' + esc(w.en) + '</span>';
+    chip.addEventListener('click', () => {
+      if (cubesSelectedKeys.has(w.pl)) { cubesSelectedKeys.delete(w.pl); chip.classList.remove('selected'); }
+      else { cubesSelectedKeys.add(w.pl); chip.classList.add('selected'); }
+      cubesUpdateSelCount();
+    });
+    container.appendChild(chip);
+  });
+  cubesUpdateSelCount();
+}
+function cubesUpdateSelCount(){
+  const el = document.getElementById('cubesSelCount');
+  if (el) el.textContent = '(' + (cubesSelectedKeys ? cubesSelectedKeys.size : 0) + ' zaznaczonych)';
+}
+window.cubesSelAll = function(){
+  const all = cubesGetWordPool();
+  cubesSelectedKeys = new Set(all.map(w => w.pl));
+  cubesRenderSelPanel();
+};
+window.cubesSelNone = function(){
+  cubesSelectedKeys = new Set();
+  cubesRenderSelPanel();
+};
+window.cubesSelSingle = function(){
+  const all = cubesGetWordPool();
+  cubesSelectedKeys = new Set(all.filter(w => w.isSingle).map(w => w.pl));
+  cubesRenderSelPanel();
+};
 
 function cubesRender() {
   const grid = document.getElementById('cubesGrid');
