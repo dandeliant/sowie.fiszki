@@ -1722,6 +1722,14 @@ body.guest-mode .progress-wrap{opacity:.4;}
         <button class="btn-sm" onclick="snakeSelNone()" style="font-size:.7rem;padding:5px 11px">☐ Żadne</button>
         <button class="btn-sm accent" onclick="snakeNewGame()" style="font-size:.7rem;padding:5px 11px">🐍 Generuj</button>
       </div>
+      <div class="cw-sel-btns" style="margin-top:6px;flex-wrap:wrap;align-items:center">
+        <span style="font-size:.68rem;font-weight:700;color:var(--muted);margin-right:4px">Maks. słów w wężu:</span>
+        <button class="btn-sm accent" id="snakeLimAuto" onclick="snakeSetWordLimit('auto')" style="font-size:.7rem;padding:5px 11px">Auto</button>
+        <button class="btn-sm" id="snakeLim10" onclick="snakeSetWordLimit(10)" style="font-size:.7rem;padding:5px 11px">10</button>
+        <button class="btn-sm" id="snakeLim20" onclick="snakeSetWordLimit(20)" style="font-size:.7rem;padding:5px 11px">20</button>
+        <button class="btn-sm" id="snakeLim30" onclick="snakeSetWordLimit(30)" style="font-size:.7rem;padding:5px 11px">30</button>
+        <button class="btn-sm" id="snakeLim40" onclick="snakeSetWordLimit(40)" style="font-size:.7rem;padding:5px 11px">40</button>
+      </div>
     </div>
     <!-- Kierunek -->
     <div class="snake-dir-toggle">
@@ -9990,6 +9998,18 @@ function snakeSelNone() { document.querySelectorAll('#snakeWordChips .cw-word-ch
 const SNAKE_MAX = 7;             // legacy cap (nie uzywany — patrz SNAKE_MAX_CHARS)
 const SNAKE_MAX_CHARS = 55;      // max bezpieczna liczba liter na jednego weza (SVG 620px @ font 13)
 
+// ─── Word-limit preference ────────────────────
+let snakeWordLimit = 'auto';     // 'auto' | 10 | 20 | 30 | 40
+function snakeSetWordLimit(n) {
+  snakeWordLimit = n;
+  ['Auto','10','20','30','40'].forEach(key => {
+    const btn = document.getElementById('snakeLim' + key);
+    if (btn) btn.classList.toggle('accent', String(n) === (key === 'Auto' ? 'auto' : key));
+  });
+  snakeNewGame();
+}
+window.snakeSetWordLimit = snakeSetWordLimit;
+
 function snakeNewGame() {
   if (!snakeUnitKey) return;
 
@@ -10010,6 +10030,10 @@ function snakeNewGame() {
   if (pairs.length < 2) { toast('Za mało słów!'); return; }
 
   snakePairs = shuffle([...pairs]);
+  // Limit slow w wezu — sterowany selektorem "Maks. slow: Auto/10/20/30/40".
+  // Auto = wszystkie zaznaczone. Dla liczb: cap do min(N, dostepne).
+  const snakeLimit = (snakeWordLimit === 'auto') ? snakePairs.length : Math.min(snakeWordLimit, snakePairs.length);
+  snakePairs = snakePairs.slice(0, snakeLimit);
 
   // Adaptacyjne grupowanie — pakuj slowa w rzad dopoki suma liter
   // (+ bufor na losowe litery miedzy nimi) nie przekroczy SNAKE_MAX_CHARS.
