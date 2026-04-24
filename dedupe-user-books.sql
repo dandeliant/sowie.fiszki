@@ -17,13 +17,15 @@
 
 BEGIN;
 
--- 1) Usun duplikaty: zostaw najstarszy wiersz per (user_id, book_id).
--- Dzialanie: dla kazdej grupy (user_id, book_id) oznacz wiersze numerem
--- wg created_at rosnaco (1 = najstarszy), usun wiersze z numerem > 1.
+-- 1) Usun duplikaty: zostaw jeden wiersz per (user_id, book_id).
+-- Tabela user_books nie ma kolumny created_at, wiec sortujemy wg ctid
+-- (fizyczna lokalizacja wiersza — deterministyczne). Wybor "ktorego
+-- duplikatu zachowac" nie ma znaczenia funkcjonalnego: wiersze roznia
+-- sie tylko wartoscia user_id+book_id (reszta identyczna).
 DELETE FROM public.user_books ub
 USING (
   SELECT ctid,
-         ROW_NUMBER() OVER (PARTITION BY user_id, book_id ORDER BY created_at ASC NULLS LAST, ctid) AS rn
+         ROW_NUMBER() OVER (PARTITION BY user_id, book_id ORDER BY ctid) AS rn
   FROM public.user_books
 ) d
 WHERE ub.ctid = d.ctid AND d.rn > 1;
