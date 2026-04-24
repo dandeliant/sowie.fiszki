@@ -322,6 +322,9 @@ const DB = (() => {
 
   // ═══════════════════════════════════════════════════════════════
   // HISTORIA XP (Premium — wykres 12 miesiecy)
+  // Zwraca rowniez minutes + first_active_at (kolumny dodane migracja
+  // add-study-minutes.sql). Jesli migracja nie zostala uruchomiona,
+  // kolumny nie istnieja — lapiemy blad i fallback do samego XP.
   // ═══════════════════════════════════════════════════════════════
   async function getDailyXpHistory(userId, days) {
     const uid = userId || _userId;
@@ -329,14 +332,36 @@ const DB = (() => {
     const d = Math.max(1, Math.min(400, days || 365));
     const from = new Date(); from.setDate(from.getDate() - d);
     const fromStr = from.toISOString().slice(0, 10);
-    const { data, error } = await supabase
+    let res = await supabase
       .from('daily_xp_log')
-      .select('day, xp')
+      .select('day, xp, minutes, first_active_at')
       .eq('user_id', uid)
       .gte('day', fromStr)
       .order('day', { ascending: true });
-    if (error) throw new Error(error.message);
-    return data || [];
+    if (res.error) {
+      // Fallback: stary schemat bez minutes/first_active_at
+      res = await supabase
+        .from('daily_xp_log')
+        .select('day, xp')
+        .eq('user_id', uid)
+        .gte('day', fromStr)
+        .order('day', { ascending: true });
+      if (res.error) throw new Error(res.error.message);
+    }
+    return res.data || [];
+  }
+
+  // Loguje N minut nauki w dzisiejszym dniu (heartbeat co 60 s).
+  // Fire-and-forget — nie blokuje UI jesli brak polaczenia.
+  async function logStudyMinutes(minutes) {
+    if (!_userId) return;
+    const n = Math.max(1, Math.min(10, minutes || 1));
+    try {
+      const { error } = await supabase.rpc('log_study_minutes', { p_minutes: n });
+      if (error) console.warn('[logStudyMinutes]', error.message);
+    } catch(e) {
+      console.warn('[logStudyMinutes]', e.message || e);
+    }
   }
 
   // Uczniowie nieaktywni (dla nauczyciela — created_by = self)
@@ -1796,6 +1821,7 @@ const DB = (() => {
     adminExtendPremium,
     getFreeLimits,
     getDailyXpHistory,
+    logStudyMinutes,
     getInactiveStudents,
     getInactiveChildren,
     autoDeleteInactiveUsers,

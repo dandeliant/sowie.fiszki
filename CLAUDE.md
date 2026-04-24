@@ -70,6 +70,7 @@ Kolejność uruchamiania w SQL Editor (każda jest idempotentna — można ponow
 21. `add-daily-xp-history.sql` — tabela `daily_xp_log (user_id, day, xp)` z RLS + RPC `log_daily_xp(delta)` (upsert). Używane do wykresu „Historia nauki 12 miesięcy" (Premium).
 22. `auto-delete-inactive-users.sql` — RPC `auto_delete_inactive_users()` usuwa konta uczniów (nie admin/nauczyciel/opiekun) z `last_study_date` >1 rok temu. Wywoływane client-side raz dziennie przy logowaniu admina.
 23. `fix-admin-no-trial.sql` — admin nie dostaje triala (czyści `plan_expires_at` + `trial_used_at` dla wszystkich adminów, RPC `activate_trial()` zwraca NULL dla admina).
+24. `add-study-minutes.sql` — kolumny `minutes` + `first_active_at` w `daily_xp_log` + RPC `log_study_minutes(p_minutes)`. Klient wysyła heartbeat co 1 min aktywnej widoczności strony (`DB.logStudyMinutes(1)`). Używane w widoku nauczyciela/opiekuna: postęp ucznia → sekcja „📅 Aktywność nauki" (ostatnie 90 dni: data / pierwsze wejście / czas nauki / XP).
 
 **Zawsze przypominaj użytkownikowi** o uruchomieniu nowej migracji w Supabase, kiedy tworzysz nową.
 

@@ -10780,6 +10780,41 @@ document.addEventListener('DOMContentLoaded', () => {
   if (gapInp) gapInp.addEventListener('keydown', e => { if (e.key === 'Enter') checkGap(); });
 });
 
+// ═══════════════════════════════════════════════════════════════
+//  HEARTBEAT CZASU NAUKI
+//  Co 60 s aktywnej widocznosci strony loguje 1 minute do
+//  daily_xp_log (kolumna `minutes`). Pozwala nauczycielowi/opiekunowi
+//  widziec jak dlugo uczen sie uczyl danego dnia. Nie dziala dla
+//  niezalogowanych (Gosc) ani gdy karta ukryta (visibilitychange).
+// ═══════════════════════════════════════════════════════════════
+(function(){
+  let accumSec = 0;
+  let lastTick = null;
+  function isActive() {
+    return !isGuest
+        && typeof DB !== 'undefined'
+        && typeof DB.logStudyMinutes === 'function'
+        && typeof DB.getUserId === 'function'
+        && DB.getUserId()
+        && document.visibilityState === 'visible';
+  }
+  setInterval(() => {
+    if (!isActive()) { lastTick = null; return; }
+    const now = Date.now();
+    if (lastTick !== null) {
+      const delta = Math.min(2, (now - lastTick) / 1000); // max 2s na tick (zapobiega skokom po uspieniu)
+      accumSec += delta;
+    }
+    lastTick = now;
+    if (accumSec >= 60) {
+      const minutes = Math.floor(accumSec / 60);
+      accumSec -= minutes * 60;
+      try { DB.logStudyMinutes(minutes); } catch(e) {}
+    }
+  }, 1000);
+  document.addEventListener('visibilitychange', () => { lastTick = null; });
+})();
+
 // ══════════════════════════════════════════════
 //  WORD SCRAMBLE (rozsypanka literowa)
 // ══════════════════════════════════════════════
@@ -12308,9 +12343,10 @@ async function openStudentProgress(userId, username) {
   document.getElementById('studProgUnits').innerHTML = '';
 
   try {
-    const [profile, unitRows] = await Promise.all([
+    const [profile, unitRows, activityRows] = await Promise.all([
       Promise.resolve(_allProfiles.find(p => p.id === userId) || {}),
-      DB.loadUserProgress(userId)
+      DB.loadUserProgress(userId),
+      DB.getDailyXpHistory ? DB.getDailyXpHistory(userId, 90).catch(() => []) : Promise.resolve([])
     ]);
 
     // Stats summary
@@ -12328,10 +12364,68 @@ async function openStudentProgress(userId, username) {
       <div class="ac-stat-box"><div class="ac-stat-val">${totalKnown}</div><div class="ac-stat-lbl">Opanowane</div></div>
       <div class="ac-stat-box"><div class="ac-stat-val">${accuracy}%</div><div class="ac-stat-lbl">Celność</div></div>`;
 
-    // Unit breakdown
+    // Unit breakdown + sekcja Aktywnosc
     const unitsEl = document.getElementById('studProgUnits');
+    unitsEl.innerHTML = '';
+
+    // ═══ SEKCJA: AKTYWNOSC (kiedy uczen wchodzil i jak dlugo sie uczyl) ═══
+    if (Array.isArray(activityRows) && activityRows.length) {
+      const actHeader = document.createElement('div');
+      actHeader.style.cssText = 'font-size:.78rem;font-weight:800;color:var(--accent2);margin:6px 0 8px;text-transform:uppercase;letter-spacing:.06em;';
+      actHeader.textContent = '📅 Aktywność nauki (ostatnie 90 dni)';
+      unitsEl.appendChild(actHeader);
+
+      // Suma dni + suma minut
+      const totalDays = activityRows.length;
+      const totalMin = activityRows.reduce((s,r) => s + (r.minutes || 0), 0);
+      const totalXpAct = activityRows.reduce((s,r) => s + (r.xp || 0), 0);
+      const avgMin = totalDays > 0 ? Math.round(totalMin / totalDays) : 0;
+
+      const sumBox = document.createElement('div');
+      sumBox.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px';
+      sumBox.innerHTML = `
+        <div class="ac-stat-box" style="min-width:90px"><div class="ac-stat-val">${totalDays}</div><div class="ac-stat-lbl">Dni nauki</div></div>
+        <div class="ac-stat-box" style="min-width:90px"><div class="ac-stat-val">${totalMin}</div><div class="ac-stat-lbl">Łącznie min.</div></div>
+        <div class="ac-stat-box" style="min-width:90px"><div class="ac-stat-val">${avgMin}</div><div class="ac-stat-lbl">Średnio min./dzień</div></div>
+        <div class="ac-stat-box" style="min-width:90px"><div class="ac-stat-val">${totalXpAct}</div><div class="ac-stat-lbl">XP z 90 dni</div></div>`;
+      unitsEl.appendChild(sumBox);
+
+      // Tabela szczegolowa (najnowsze na gorze)
+      const tbl = document.createElement('div');
+      tbl.style.cssText = 'background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:18px';
+      const sorted = [...activityRows].sort((a,b) => String(b.day).localeCompare(String(a.day)));
+      const hasMinutes = activityRows.some(r => 'minutes' in r);
+      const hasFirstAt = activityRows.some(r => r.first_active_at);
+      // Naglowek
+      let headerHtml = `<div style="display:grid;grid-template-columns:1.2fr ${hasFirstAt ? '1.1fr' : ''} ${hasMinutes ? '.9fr' : ''} .7fr;gap:6px;padding:8px 10px;background:rgba(0,0,0,.04);font-size:.68rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">
+        <div>📆 Data</div>${hasFirstAt ? '<div>🕒 Pierwsze wejście</div>' : ''}${hasMinutes ? '<div>⏱️ Czas nauki</div>' : ''}<div>💎 XP</div>
+      </div>`;
+      tbl.innerHTML = headerHtml;
+      sorted.forEach(r => {
+        const dayStr = r.day ? new Date(r.day + 'T00:00:00').toLocaleDateString('pl-PL', {weekday:'short', day:'2-digit', month:'2-digit', year:'numeric'}) : '—';
+        const firstStr = r.first_active_at
+          ? new Date(r.first_active_at).toLocaleTimeString('pl-PL', {hour:'2-digit', minute:'2-digit'})
+          : '—';
+        const min = r.minutes || 0;
+        const minStr = min >= 60 ? `${Math.floor(min/60)} h ${min%60} min` : `${min} min`;
+        const row = document.createElement('div');
+        row.style.cssText = `display:grid;grid-template-columns:1.2fr ${hasFirstAt ? '1.1fr' : ''} ${hasMinutes ? '.9fr' : ''} .7fr;gap:6px;padding:8px 10px;font-size:.78rem;font-weight:600;color:var(--text);border-top:1px solid var(--border)`;
+        row.innerHTML = `<div>${esc(dayStr)}</div>${hasFirstAt ? `<div style="color:var(--muted)">${esc(firstStr)}</div>` : ''}${hasMinutes ? `<div>${esc(minStr)}</div>` : ''}<div style="color:var(--accent2);font-weight:800">+${r.xp || 0}</div>`;
+        tbl.appendChild(row);
+      });
+      unitsEl.appendChild(tbl);
+    } else {
+      const noAct = document.createElement('div');
+      noAct.style.cssText = 'font-size:.78rem;color:var(--muted);padding:12px;background:var(--surface);border:1px dashed var(--border);border-radius:10px;margin-bottom:14px;text-align:center;font-weight:600';
+      noAct.textContent = '📅 Brak danych o aktywności — uczeń jeszcze się nie uczył.';
+      unitsEl.appendChild(noAct);
+    }
+
     if (!unitRows.length) {
-      unitsEl.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:.8rem;padding:24px;font-weight:600">Ten uczeń jeszcze nie ćwiczył żadnych słówek.</div>';
+      const emp = document.createElement('div');
+      emp.style.cssText = 'text-align:center;color:var(--muted);font-size:.8rem;padding:24px;font-weight:600';
+      emp.textContent = 'Ten uczeń jeszcze nie ćwiczył żadnych słówek.';
+      unitsEl.appendChild(emp);
       return;
     }
 
@@ -12342,7 +12436,12 @@ async function openStudentProgress(userId, username) {
       byBook[r.book_key].push(r);
     });
 
-    unitsEl.innerHTML = '';
+    // Naglowek sekcji "Postepy w slowkach" (nad unitami)
+    const progHeader = document.createElement('div');
+    progHeader.style.cssText = 'font-size:.78rem;font-weight:800;color:var(--accent2);margin:6px 0 8px;text-transform:uppercase;letter-spacing:.06em;';
+    progHeader.textContent = '📚 Postępy w słówkach';
+    unitsEl.appendChild(progHeader);
+
     Object.entries(byBook).forEach(([bookKey, rows]) => {
       const book = BOOKS[bookKey] || {name: bookKey, icon: '📖'};
       const bookHeader = document.createElement('div');
