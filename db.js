@@ -129,11 +129,17 @@ const DB = (() => {
 
     _profile = _rowToProfile(profRes.data, unitRes.data || []);
 
-    // Załaduj przypisane podręczniki (user_books)
+    // Załaduj przypisane podręczniki (user_books) — z deduplikacja
+    // (chroni przed duplikatami w bazie, gdyby UNIQUE constraint jeszcze
+    // nie zostal dodany lub gdyby kilka razy dodano to samo przypisanie).
     if (!_profile.isAdmin) {
       const { data: ubData } = await supabase
         .from('user_books').select('book_id').eq('user_id', _userId);
-      _myBooks = (ubData && ubData.length > 0) ? ubData.map(r => r.book_id) : null;
+      if (ubData && ubData.length > 0) {
+        _myBooks = Array.from(new Set(ubData.map(r => r.book_id)));
+      } else {
+        _myBooks = null;
+      }
     } else {
       _myBooks = null; // admin widzi wszystko
     }
