@@ -5648,12 +5648,36 @@ function fuzzy(u,c){const un=norm(u),cn=norm(c);if(un===cn)return true;return le
 //  KEYBOARD
 // ══════════════════════════════════════════════
 document.addEventListener('keydown', e => {
+  // Jesli uzytkownik pisze w polu tekstowym (modal "Zglos blad", "Wiadomosci",
+  // textarea, input type=text/email/search itp.) — nie przechwytuj Space/Enter/Arrow.
+  // Bez tego spacja w zgloszeniach byla pozerana przez flipCard().
+  const ae = document.activeElement;
+  if (ae) {
+    const tag = ae.tagName;
+    const isEditable = ae.isContentEditable === true;
+    const isTextarea = tag === 'TEXTAREA';
+    const isTextInput = tag === 'INPUT'
+      && !/^(button|submit|reset|checkbox|radio|range|color|file|image)$/i.test(ae.type || 'text');
+    if (isEditable || isTextarea || isTextInput) {
+      // Wyjatek: na ekranie sStudy pola typu tInp/missingInp/... maja obsluge Enter
+      const studyActive = document.getElementById('sStudy').classList.contains('active');
+      const typeIDs = ['tInp','missingInp','dictInp','gapInp','scrambleInp','tsInp','dsInp'];
+      if (studyActive && typeIDs.includes(ae.id) && e.key === 'Enter') {
+        e.preventDefault();
+        if (ae.id==='tInp') checkType();
+        else if (ae.id==='missingInp') checkMissing();
+        else if (ae.id==='gapInp') checkGap();
+        else if (ae.id==='scrambleInp') checkScramble();
+        else if (ae.id==='tsInp') checkTypeSent();
+        else if (ae.id==='dsInp') checkDictSent();
+        else checkDictation();
+      }
+      return; // zawsze wychodzimy gdy piszemy w polu tekstowym
+    }
+  }
+
   const studyActive = document.getElementById('sStudy').classList.contains('active');
   if (!studyActive) return;
-
-  const typeIDs = ['tInp','missingInp','dictInp','gapInp','scrambleInp','tsInp','dsInp'];
-  const onInput = typeIDs.includes(document.activeElement?.id);
-  if (onInput) { if (e.key === 'Enter') { e.preventDefault(); if (document.activeElement.id==='tInp') checkType(); else if (document.activeElement.id==='missingInp') checkMissing(); else if (document.activeElement.id==='gapInp') checkGap(); else if (document.activeElement.id==='scrambleInp') checkScramble(); else if (document.activeElement.id==='tsInp') checkTypeSent(); else if (document.activeElement.id==='dsInp') checkDictSent(); else checkDictation(); } return; }
   if (!active) return;
   if (e.code === 'Space') { e.preventDefault(); if (mode==='card'&&!revealed) flipCard(); }
   if (revealed) {
