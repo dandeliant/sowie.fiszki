@@ -72,6 +72,7 @@ Kolejność uruchamiania w SQL Editor (każda jest idempotentna — można ponow
 23. `fix-admin-no-trial.sql` — admin nie dostaje triala (czyści `plan_expires_at` + `trial_used_at` dla wszystkich adminów, RPC `activate_trial()` zwraca NULL dla admina).
 24. `add-study-minutes.sql` — kolumny `minutes` + `first_active_at` w `daily_xp_log` + RPC `log_study_minutes(p_minutes)`. Klient wysyła heartbeat co 1 min aktywnej widoczności strony (`DB.logStudyMinutes(1)`). Używane w widoku nauczyciela/opiekuna: postęp ucznia → sekcja „📅 Aktywność nauki" (ostatnie 90 dni: data / pierwsze wejście / czas nauki / XP).
 25. `dedupe-user-books.sql` — usuwa duplikaty wierszy z `user_books` (zostawia najstarszy per para `user_id`+`book_id`) + dodaje `UNIQUE(user_id, book_id)`. Naprawia: uczeń widział dwa identyczne kafelki tego samego podręcznika w sekcji „Twoje podręczniki".
+26. `add-user-labels.sql` — tabela `user_labels(labeler_id, target_user_id, label)` + RLS (widzi tylko autor). Admin/nauczyciel/opiekun mogą podpisywać prywatnymi etykietami uczniów/dzieci (np. „Jan Kowa"). Etykieta widoczna jest tylko u autora — inni widzą tylko login. API: `DB.getUserLabel(id)`, `DB.setUserLabel(id, txt)`, `DB.deleteUserLabel(id)`; helper `fmtNameWithLabel(id, username)` w app.html renderuje login + etykietę w każdym widoku (klasy, postęp ucznia, dzieci opiekuna, panel admina).
 
 **Zawsze przypominaj użytkownikowi** o uruchomieniu nowej migracji w Supabase, kiedy tworzysz nową.
 

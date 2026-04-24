@@ -24,6 +24,7 @@ const DB = (() => {
   let _adminBooks     = [];     // podręczniki dodane przez admina
   let _adminUnits     = [];     // rozdziały dodane przez admina
   let _myBooks        = null;   // null=brak ograniczeń, [bookId,...]=dozwolone podręczniki
+  let _myLabels       = {};     // prywatne etykiety: targetUserId -> label (tylko moje — admin/teacher/parent)
 
   // ─── Domyślny profil ─────────────────────────────────────────
   function emptyProfile(username) {
@@ -142,6 +143,22 @@ const DB = (() => {
       }
     } else {
       _myBooks = null; // admin widzi wszystko
+    }
+
+    // Załaduj moje prywatne etykiety uzytkownikow (user_labels).
+    // Tylko admin/nauczyciel/opiekun moga miec etykiety — dla ucznia
+    // fetch zwroci pusta liste (RLS przepuszcza SELECT own, ale uczen
+    // nie ma zadnych wpisow jako labeler). Graceful degradation gdy
+    // migracja add-user-labels.sql nie zostala uruchomiona.
+    _myLabels = {};
+    try {
+      const { data: lblData, error: lblErr } = await supabase
+        .from('user_labels').select('target_user_id, label').eq('labeler_id', _userId);
+      if (!lblErr && lblData) {
+        lblData.forEach(r => { _myLabels[r.target_user_id] = r.label; });
+      }
+    } catch(e) {
+      // tabela jeszcze nie istnieje — OK, pusta mapa
     }
 
     // Jeśli admin — załaduj też prośby
@@ -1691,6 +1708,33 @@ const DB = (() => {
     if (error) throw new Error(error.message);
   }
 
+  // ─── PRYWATNE ETYKIETY UZYTKOWNIKOW (user_labels) ──────────
+  // Tylko admin/nauczyciel/opiekun. Widoczne tylko dla autora.
+  function getMyUserLabels() { return _myLabels || {}; }
+  function getUserLabel(targetUserId) { return (_myLabels || {})[targetUserId] || null; }
+
+  async function setUserLabel(targetUserId, label) {
+    if (!_userId || !targetUserId) throw new Error('Brak ID uzytkownika');
+    const txt = (label || '').trim();
+    if (!txt) throw new Error('Etykieta nie moze byc pusta');
+    if (txt.length > 80) throw new Error('Etykieta moze miec max 80 znakow');
+    const { error } = await supabase
+      .from('user_labels')
+      .upsert({ labeler_id: _userId, target_user_id: targetUserId, label: txt, updated_at: new Date().toISOString() });
+    if (error) throw new Error(error.message);
+    _myLabels[targetUserId] = txt;
+    return txt;
+  }
+
+  async function deleteUserLabel(targetUserId) {
+    if (!_userId || !targetUserId) return;
+    const { error } = await supabase
+      .from('user_labels')
+      .delete().eq('labeler_id', _userId).eq('target_user_id', targetUserId);
+    if (error) throw new Error(error.message);
+    delete _myLabels[targetUserId];
+  }
+
   // ── Admin: Zarządzanie dostępem do podręczników ──────────────
 
   function getUserBooks() { return _myBooks; }
@@ -1828,6 +1872,10 @@ const DB = (() => {
     getFreeLimits,
     getDailyXpHistory,
     logStudyMinutes,
+    getMyUserLabels,
+    getUserLabel,
+    setUserLabel,
+    deleteUserLabel,
     getInactiveStudents,
     getInactiveChildren,
     autoDeleteInactiveUsers,
