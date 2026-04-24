@@ -12,28 +12,36 @@
 - **Hosting:** GitHub Pages → https://dandeliant.github.io/sowie.fiszki/
 - **Backend:** Supabase (auth + Postgres + RLS), projekt `kofenaaeleyhwhbkytcz`
 - **Charakter:** projekt niekomercyjny (osoba fizyczna)
+- **Service Worker:** aktualnie `v50` (stan na 23 kwietnia 2026)
 
 ## 📂 Architektura
 
 ### Pliki główne
-- `index.html` (~520 linii) — ekran logowania/rejestracji. Import regulaminu + polityki prywatności, checkboxy zgody.
-- `app.html` (~12 700 linii) — główna aplikacja SPA. Wszystkie ekrany (`sLang`, `sSchool`, `sClass`, `sBooks`, `sUnits`, `sWordList`, `sStudy`, `sAdminAccess`, `sAdminClasses`, `sClassDetail`, `sStudentProgress`, `sTeacherSets`, `sAdminTeacherSets`, `sAccessRequests`, `sBulkStudents`, `sApps`, `sDone`, …). Logika w IIFE + globalnych funkcjach. Nie dziel na moduły — jeden plik pozostaje konwencją.
-- `data.js` — obiekt `BOOKS` z 17 podręcznikami (klasa1–8, brainy6/7, tiger1/2/3, together4/5/6, bugsteam2/3, stepsplus4, stepsplus5, englishA1, beHappy2, newpassword, czasowniki, francais). Każda ksiazka ma: `id`, `language`, `schoolType`, `grade`, `defaultAccess`/`adminOnly`, `units: { unitN: { name, icon, color, words: [[pl, en, zdaniePl, zdanieEn], …] } }`.
+- `index.html` (~550 linii) — ekran logowania/rejestracji. 3 role rejestracji (Uczeń / Nauczyciel / Rodzic-Opiekun), regulamin + polityka prywatności, checkboxy zgody.
+- `app.html` (~15 600 linii) — główna aplikacja SPA. Wszystkie ekrany (patrz niżej). Logika w IIFE + globalnych funkcjach. **Nie dziel na moduły — jeden plik pozostaje konwencją.**
+- `data.js` — obiekt `BOOKS` z 17 podręcznikami (klasa1–8, brainy6/7, tiger1/2/3, together4/5/6, bugsteam2/3, stepsplus4, stepsplus5, englishA1, beHappy2, newpassword, czasowniki, francais). Każda ksiazka ma: `id`, `language`, `schoolType`, `grade`, `defaultAccess`/`adminOnly`, `units: { unitN: { name, icon, color, words: [[pl, en, zdaniePl, zdanieEn], …] } }`. Funkcja `getBookUnitsWithAll(bId)` dodaje virtualny unit `all` (ikona 🌍, nazwa „Wszystkie", zawiera wszystkie słowa z podręcznika) — używany przez gry z opcją „cały podręcznik".
 - `db.js` — warstwa Supabase (sesja, auth, profile, postępy, klasy, user_books, RLS helpers). Funkcje eksportowane przez globalny obiekt `DB`.
 - `supabase-config.js` — URL + anon key.
-- `sw.js` — Service Worker (cache PWA).
+- `sw.js` — Service Worker (network-first dla HTML/JS + cache-first dla fontów/CDN). Bypass dla Supabase REST API.
 - `manifest.json` — PWA manifest.
 
+### Kluczowe ekrany w `app.html`
+`sLang`, `sSchool`, `sClass`, `sBooks` (panel staff), `sUnits`, `sWordList`, `sStudy`, `sCrossword`, `sWordsearch`, `sSnake`, `sMemory`, `sHangman`, `sScrGame`, `sSentScrGame`, `sBoardGame`, `sDobble`, `sImageCard`, `sCubes`, `sDuel` (Rywalizacja), `sSpeed`, `sStats`, `sApps`, `sDone`, `sAdminAccess`, `sAdminClasses`, `sClassDetail`, `sStudentProgress`, `sTeacherSets`, `sTeacherSetEdit`, `sAdminTeacherSets`, `sAccessRequests`, `sWordErrors`, `sMessages`, `sParentPanel`, `sAddChild`, `sChildBooks`, `sInactive`, `sBulkStudents`.
+
 ### Pliki gier w sekcji INNE (samodzielne HTML)
-- `how-many.html` — „Ile? — How many?" (nauka mówienia o ilości)
+10 gier — wszystkie mają TOP i BOTTOM link „Powrót do Sowie Fiszki" + `@media print` ukrywający je:
+- `how-many.html` — „Ile? — How many?" (there is/are + liczebniki)
 - `birthday.html` — „Urodziny" (liczebniki + miesiące, SVG awatary)
 - `generator-cyfr.html` — „Generator cyfr" (losowa liczba + brytyjski TTS)
-- `speaking_cards_together5.html` — Together 5 Present Simple (czynności + zegar + przysłówki)
+- `speaking_cards_together5.html` — Together 5 Present Simple (czas + przysłówki)
 - `speaking_cards_animals.html` — Animals & Food (likes/doesn't like/eats)
-- `whats_the_matter.html` — Tiger & Friends 2 Unit 5 (choroby, porady)
-- `shops_speaking_generator.html` — Bugs Team 3 Unit 5 (I'm looking for / There is-are)
+- `whats_the_matter.html` — Tiger & Friends 2 U5 (choroby, porady)
+- `shops_speaking_generator.html` — Bugs Team 3 U5 (I'm looking for / There is-are)
+- `have_you_ever.html` — Have you ever…? (Present Perfect, 2-osobowy)
+- `speaking_game_present_simple.html` — Yes/no questions + pełne odpowiedzi
+- `citylife_speaking.html` — CityLife „paszport" generator + speaking practice
 
-Każdy z nich ma link powrotny `<a href="app.html" class="back-link">← Powrót do Sowie Fiszki</a>` u góry oraz `@media print { .back-link { display: none !important; } }` w CSS.
+Każda z gier ma też modal **„ℹ️ Jak grać?"** (fixed top-right) z 5-8 krokami instrukcji.
 
 ## 🗄️ Migracje SQL do Supabase
 
@@ -54,82 +62,92 @@ Kolejność uruchamiania w SQL Editor (każda jest idempotentna — można ponow
 13. `fix-created-by.sql` — profiles.created_by + RPC set_profile_creator (nauczyciel widzi tylko swoich uczniów)
 14. `book-notes-schema.sql` — notatki admina na ekranach podręcznika/unitu
 15. `word-error-reports-schema.sql` — zgłoszenia błędów w słówkach (widoczne tylko dla admina)
-16. `fix-admin-create-user.sql` — naprawa `admin_create_user` (puste stringi zamiast NULL dla kolumn tokenów — bez tego gotrue odrzucał `signInWithPassword`); dodatkowo zezwala nauczycielowi tworzyć konta uczniów
+16. `fix-admin-create-user.sql` — naprawa `admin_create_user` (puste stringi zamiast NULL dla kolumn tokenów — bez tego gotrue odrzucał `signInWithPassword`); zezwala nauczycielowi tworzyć konta uczniów
 17. `add-parent-role.sql` — rola Rodzic/Opiekun (`profiles.is_parent`) + tabela `parent_children` + RPC `find_user_by_username`, `parent_assign_book_to_child`, `parent_unassign_book_from_child`
 18. `admin-messages-schema.sql` — konwersacje user ↔ admin (`conversations`, `conversation_messages`) + RPC `count_open_conversations`
 19. `add-premium-expiry.sql` — `profiles.plan_expires_at` + `trial_used_at` + RPC `activate_trial()` (7-dniowy trial) + RPC `admin_extend_premium(user_id, months)`
-20. `fix-rls-recursion.sql` — **KRYTYCZNE**: naprawia infinite recursion w politykach RLS (profiles ↔ parent_children ↔ profiles). Tworzy helpery `_is_admin()`, `_is_teacher()`, `_is_parent_of(uuid)` z `SECURITY DEFINER` (omijają RLS) i przebudowuje polityki. Bez tego: HTTP 500 przy każdym SELECT profiles → „Nieprawidłowa nazwa użytkownika lub hasło" przy logowaniu.
-20. `add-daily-xp-history.sql` — tabela `daily_xp_log (user_id, day, xp)` z RLS (user/parent/teacher/admin) + RPC `log_daily_xp(delta)` (upsert). Używane do wykresu „Historia nauki 12 miesięcy" (Premium).
-21. `auto-delete-inactive-users.sql` — RPC `auto_delete_inactive_users()` usuwa konta uczniów (nie admin/nauczyciel/opiekun) z `last_study_date` >1 rok temu (lub `created_at` >1 rok bez logowań). Wywoływane client-side raz dziennie przy logowaniu admina.
-16. `fix-admin-create-user.sql` — naprawa `admin_create_user` (puste stringi zamiast NULL dla kolumn tokenów — bez tego gotrue odrzucał `signInWithPassword`); dodatkowo zezwala nauczycielowi tworzyć konta uczniów
+20. `fix-rls-recursion.sql` — **KRYTYCZNE**: naprawia infinite recursion w politykach RLS (profiles ↔ parent_children ↔ profiles). Tworzy helpery `_is_admin()`, `_is_teacher()`, `_is_parent_of(uuid)` z `SECURITY DEFINER` (omijają RLS). Bez tego: HTTP 500 przy SELECT profiles → „Nieprawidłowa nazwa użytkownika lub hasło" przy logowaniu.
+21. `add-daily-xp-history.sql` — tabela `daily_xp_log (user_id, day, xp)` z RLS + RPC `log_daily_xp(delta)` (upsert). Używane do wykresu „Historia nauki 12 miesięcy" (Premium).
+22. `auto-delete-inactive-users.sql` — RPC `auto_delete_inactive_users()` usuwa konta uczniów (nie admin/nauczyciel/opiekun) z `last_study_date` >1 rok temu. Wywoływane client-side raz dziennie przy logowaniu admina.
+23. `fix-admin-no-trial.sql` — admin nie dostaje triala (czyści `plan_expires_at` + `trial_used_at` dla wszystkich adminów, RPC `activate_trial()` zwraca NULL dla admina).
 
 **Zawsze przypominaj użytkownikowi** o uruchomieniu nowej migracji w Supabase, kiedy tworzysz nową.
 
 ## 🎭 Role i uprawnienia
 
+**Rola** (`is_admin` / `is_teacher` / `is_parent`) × **Plan** (`free` / `premium` + `plan_expires_at`). Admin automatycznie traktowany jak Premium (pełny dostęp). Trial Premium 7 dni nadawany automatycznie nowemu kontu przy pierwszym logowaniu.
+
 | Rola | Co widzi | Co może robić |
 |---|---|---|
-| **Gość** (`isGuest`) | tylko `defaultAccess: true` (klasa1–8); **brak motywów, brak gier INNE** (🔒) | uczyć się podstawami; nic nie jest zapisywane |
+| **Gość** (`isGuest`) | tylko `defaultAccess: true`; **brak motywów, brak gier INNE** (🔒) | uczyć się podstawami; nic nie jest zapisywane |
 | **Uczeń** (Free) | defaultAccess + user_books; gry INNE zablokowane (🔒 Premium) | uczyć się, prosić o dostęp, pisać do admina, usunąć konto |
-| — | Limity Free (Nauczyciel/Opiekun — admin i Premium bez limitów) | max 8 klas · max 30 uczniów/klasa · max 10 teacher_sets |
-| **Uczeń-Premium** | jw. + gry INNE odblokowane | pełny dostęp do gier i funkcji rozszerzonych |
-| **Nauczyciel** (`is_teacher`) | defaultAccess + user_books + panel nauczyciela + gry INNE | zarządzać klasami, tworzyć konta uczniów, resetować hasła, teacher_sets; **widzi tylko uczniów utworzonych przez siebie** (filtr `created_by`); **notatki na podręczniku/unicie — tylko z planem Premium** |
-| **Rodzic / Opiekun** (`is_parent`) | defaultAccess + gry INNE + panel opiekuna | dodawać dzieci po loginie (sprawdza `find_user_by_username`); widzieć postępy dzieci; **Premium**: przydzielać podręczniki dzieciom (`parent_assign_book_to_child`), widzieć notatki |
-| **Admin** (`is_admin`) | wszystko (także `adminOnly`, notatki bez ograniczeń) | rozpatrywać prośby o dostęp, zarządzać wszystkimi zestawami nauczycieli, zmieniać plany, moderować zgłoszone błędy, odpowiadać na wiadomości w inboxie |
+| **Uczeń-Premium** | jw. + gry INNE odblokowane | pełny dostęp |
+| **Nauczyciel** (`is_teacher`) | defaultAccess + user_books + panel | zarządzać klasami, tworzyć konta uczniów, resetować hasła, teacher_sets; **widzi tylko uczniów z `created_by = self`**; **notatki na podręczniku — tylko z Premium**; limity Free: **max 8 klas · 30 uczniów/klasa · 10 teacher_sets** |
+| **Rodzic/Opiekun** (`is_parent`) | defaultAccess + gry INNE + panel opiekuna | dodawać dzieci po loginie (`find_user_by_username`); widzieć postępy dzieci; **Premium**: przydzielać podręczniki dzieciom, widzieć notatki, 10 teacher_sets (Free: 10, Premium: ∞) |
+| **Admin** (`is_admin`) | wszystko (także `adminOnly`) | rozpatrywać prośby, zarządzać wszystkimi zestawami, zmieniać plany, moderować błędy, odpowiadać na wiadomości |
 
-**Panel nauczyciela** pokazuje się po zalogowaniu (admin + nauczyciel). Kafelki:
-- Klasy · Dostęp · Zestawy · Prośby (admin-only) · Podręczniki nauczycieli (admin-only) · Raporty · Karty pracy
+**Panel admina/nauczyciela** (na `sBooks` gdy `isCurrentUserAdmin || isCurrentUserTeacher`): Klasy · Dostęp · Zestawy · Prośby (admin) · Podręczniki nauczycieli (admin) · 🐛 Zgłoszone błędy (admin) · 💬 Wiadomości (admin) · 🔔 Nieaktywni (Premium, próg 30 dni) · Raporty · Karty pracy · ⭐ Premium.
+
+**Panel opiekuna** (`sParentPanel`): Moje dzieci · 💬 Wiadomości · 🔔 Nieaktywni · 📊 Raporty (Premium) · ⭐ Premium.
 
 ## 🎨 Motywy
 
-System oparty o atrybut `data-theme` na `<html>`. Motywy: `owl` (domyślny), `forest`, `night`, `sunset`, `paper` (jasny). Przechowywane w `localStorage['fiszki_theme']`. Zmiana przez modal dostępny z ikony 🎨 w nagłówku.
+5 motywów: `owl` (domyślny), `forest`, `night`, `sunset`, `paper` (jasny). `localStorage['fiszki_theme']`. Gość — brak wyboru (kłódka).
+
+## 🎮 Tryby nauki / gry z listy unitów
+
+W `sWordList` każdy unit ma rzędy gier (wszystkie z opcją **🌍 Wszystkie** = cały podręcznik):
+Krzyżówka · Wordsearch · Memory · Snake (Wąż wyrazowy) · Hangman · Rozsypanka literowa · Rozsypanka zdaniowa · Gra planszowa · Dobble · Speaking Cubes · Sentence Builder · Spell Card · Image Card · Rywalizacja.
+
+**Konwencja per gra z panelem selekcji słów** (Krzyżówka, Wordsearch, Snake, Dobble, Board, Speaking Cubes):
+- **Auto-select tylko pojedynczych słów** (`!/\s/.test(en.trim()) && !/\s/.test(pl.trim())`)
+- Wyrażenia wieloczłonowe są klikalne (klasa `eligible`), ale niezaznaczone
+- **Selektor liczby słów** (gdzie zaimplementowany): Auto/10/20/30/40
+- **Duplikat akcji** pod panelem selekcji (Nowa/Drukuj/PDF/JPEG/Wróć)
+- Query selektora chipsów **zawsze scope'owany** do swojego `#xxxWordChips` (nie document-wide) — inaczej łapią się chipsy z innych paneli (bug fix w krzyżówce).
+
+**Rywalizacja** (`sDuel`) — całkowicie przepisana, 2-4 graczy, 5 trybów gry (Klasyczny, Race to 50/100/200, Eliminacja, Drużynowy 2v2). Klasyczny ma limit 2 min. Setup modal z wyborem graczy/awatarów/koloru/trybu/źródła słów. 20 awatarów + 8 kolorów. Power-upy (⚡/🛡️/👁️/🔄) losowane co 3 rundy. FIRE STREAK (3+) = +50%. Podium + statystyki końcowe.
 
 ## 📝 Konwencje
 
 ### Commity (WAŻNE)
-- **Po polsku** w treści, ale **bez polskich znaków w tytule pierwszej linijki** — HEREDOC w bashu nie escape'uje `\u0119` itp., więc polskie znaki w tytule się rozjeżdżają. Używaj `ś → s`, `ż → z` itd. w tytule. W treści commit-message polskie znaki działają OK.
-- Co-author: `Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>`
-- Używaj HEREDOC-a: `git commit -F - <<'COMMITMSG'\n...\nCOMMITMSG`
-- **Nigdy nie używaj `--amend`** ani `git push --force` bez wyraźnej zgody użytkownika.
+- **Po polsku** w treści, ale **bez polskich znaków w tytule pierwszej linijki** — HEREDOC w bashu nie escape'uje `\u0119`. Używaj `ś → s`, `ż → z` itd. w tytule. W treści commit-message polskie znaki działają OK.
+- Co-author: `Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>`
+- Używaj HEREDOC: `git commit -F - <<'COMMITMSG'\n...\nCOMMITMSG`
+- **Nigdy nie używaj `--amend`** ani `git push --force` bez wyraźnej zgody.
+
+### Deploy — bump Service Worker
+- **Po każdej zauważalnej zmianie** w `app.html`, `data.js`, `db.js`, `index.html` zbumpuj `CACHE_NAME` w `sw.js` (np. `v50` → `v51`).
+- Bez bumpa: przeglądarka nie wykryje nowej wersji → baner nie pojawi się u użytkowników.
+- Mechanizm: user dostaje baner „Nowa wersja dostępna. Kliknij OK, aby odświeżyć." → klik → `postMessage SKIP_WAITING` → `controllerchange` → `location.reload()`.
 
 ### Dodawanie nowej gry do INNE
-1. Stwórz plik `.html` w głównym folderze (np. `cp` z Downloads).
-2. Dodaj CSS `.back-link` (dopasuj do stylu gry) + `@media print { .back-link { display: none !important; } }`.
-3. **Dwa linki powrotu** (konwencja): u GÓRY `<body>` i u DOŁU tuż przed `</body>`:
+1. Stwórz plik `.html` w głównym folderze.
+2. Dodaj CSS `.back-link` + `@media print { .back-link, .htp-btn, .htp-modal { display: none !important; } }`.
+3. **Dwa linki powrotu** (góra + dół):
    - Góra: `<a href="app.html" class="back-link">← Powrót do Sowie Fiszki</a>`
    - Dół: `<div style="text-align:center;margin:20px 0 10px"><a href="app.html" class="back-link">← Wróć do Sowie Fiszki</a></div>`
-   - CSS `.back-link` stylizuje oba (wspólna klasa), `@media print` ukrywa oba przy druku.
-4. W `app.html` znajdź ekran `id="sApps"` (`<div class="screen" id="sApps">`) i dodaj kafelek:
-   ```html
-   <a href="nazwa.html" class="book-card" style="text-decoration:none;color:inherit;display:flex;flex-direction:column;align-items:center;gap:9px">
-     <div class="book-icon">🎮</div>
-     <div class="book-name">Nazwa</div>
-     <div class="book-desc">Opis</div>
-   </a>
-   ```
-5. Commit + push.
-
-### Dodawanie słówek do podręcznika
-- Format 4-elementowy: `['polskie', 'english', 'zdanie PL.', 'sentence EN.']`
-- Zdania przykładowe w indeksie `[2]` i `[3]` wyświetlają się automatycznie w trybie Fiszki (funkcja `showCardSentence`).
-- Najprostsze: dodać nowy `unitN` do `units: {}` wewnątrz istniejącego podręcznika w `data.js`.
+4. Dodaj modal „ℹ️ Jak grać?" (klasy `.htp-btn`, `.htp-modal`, `.htp-box`) z instrukcją krok-po-kroku.
+5. W `app.html` znajdź ekran `id="sApps"` i dodaj kafelek (`<a href="nazwa.html" class="book-card">`).
+6. Bump `CACHE_NAME` (jeśli edytowany app.html), commit + push.
 
 ### Edit istniejących plików
 - `app.html` jest GIGANTYCZNY — używaj `Grep` zamiast Read na całość. Szukaj po unikalnych fragmentach.
 - **Nie dziel** `app.html` na moduły — konwencja projektu: jeden duży plik.
+- `escHtml` jest globalny (linia ~5532) — używać w kodzie głównego scriptu dla bezpiecznego HTML; `esc` to krótsza wersja bez escape `"`.
 
-### Deploy — bump Service Worker
-- **Po każdej zauważalnej zmianie** w `app.html`, `data.js`, `db.js` lub `index.html` zbumpuj `CACHE_NAME` w `sw.js` (np. `v8` → `v9`).
-- Bez bumpa: przeglądarka nie wykryje nowej wersji SW → baner nie pojawi się u użytkowników.
-- Sam przebieg: user dostaje baner „Nowa wersja dostępna. Kliknij OK, aby odświeżyć." → klik → `postMessage SKIP_WAITING` → `controllerchange` → `location.reload()`.
+### Stopka w druku/PDF/generowanych plikach
+- Główna stopka: dwa spany — `.site-footer-full` (widoczna na stronie) i `.site-footer-print` (widoczna tylko `@media print` = „© 2026 Sowie Fiszki")
+- W custom generatorach (karta pracy, raport postępów, bulk credentials) — stopka „© 2026 Sowie Fiszki" (bez Daniel Ostrowski / Regulamin / Polityka)
 
 ## 🐛 Znane problemy / pułapki
 
-- **Service Worker cache** — od v8 (kwiecień 2026) strategia jest network-first dla HTML/JS/JSON + cache-first dla fontów/CDN. Nowy SW NIE robi już `skipWaiting()` — czeka na zgodę klienta. Użytkownik dostaje baner „🔄 Nowa wersja dostępna. Kliknij OK, aby odświeżyć." (kod banera w `app.html` i `index.html` przy rejestracji SW). **Po każdym deploy'u bumpuj `CACHE_NAME` w `sw.js`** (v8 → v9 → v10…) — to trigger dla przeglądarki, żeby pobrała nowego SW i pokazała baner. Offline fallback nadal działa z cache.
-- **CRLF/LF warnings przy commicie na Windows** — są normalne, ignoruj.
-- **RLS zwraca pustą listę** — prawdopodobnie brak odpowiedniej polityki. Zawsze dodawaj `.select()` po UPDATE żeby wykryć ciche blokady.
-- **Email w `.claude/`** — katalog jest w `.gitignore`, ale upewnij się że nie committuje się `settings.local.json`.
-- **Polskie znaki w tytule commita** — HEREDOC ich nie escape'uje. Używaj podstawowych liter w tytule (patrz: Commity).
+- **Service Worker cache** — od v8 strategia network-first dla HTML/JS/JSON + cache-first dla fontów/CDN + bypass dla Supabase REST API. Nowy SW NIE robi `skipWaiting()` — czeka na baner. Po każdym deploy'u bumpuj `CACHE_NAME`.
+- **RLS rekurencja** — nowe polityki odwołujące się do `profiles` z innej tabeli MUSZĄ używać helperów `_is_admin()`, `_is_teacher()`, `_is_parent_of(uuid)` z `SECURITY DEFINER` (patrz migracja #20). Bez tego PostgreSQL zwraca 500.
+- **CRLF/LF warnings przy commicie na Windows** — normalne, ignoruj.
+- **RLS zwraca pustą listę** — brak polityki. Zawsze dodawaj `.select()` po UPDATE żeby wykryć ciche blokady.
+- **Polskie znaki w tytule commita** — HEREDOC ich nie escape'uje. Używaj ASCII w tytule.
+- **`escHtml` vs `esc`** — IIFE ma własne lokalne `escHtml`. Funkcje w głównym scripcie używają globalnego `escHtml` z linii ~5532.
 
 ## ⚖️ Compliance
 
@@ -137,57 +155,65 @@ System oparty o atrybut `data-theme` na `<html>`. Motywy: `owl` (domyślny), `fo
 - **RODO:** obowiązkowa zgoda przy rejestracji, wymóg zgody opiekuna <16 lat, prawo do bycia zapomnianym (funkcja „Usuń konto" w modalu „Moje konto" w nagłówku).
 - **Wiek użytkownika:** bez ograniczeń, ale dzieci <16 lat wymagają zgody rodzica (checkbox przy rejestracji).
 - **Dane:** login + hasło (bcrypt w Supabase Auth) + postępy nauki. Przy prośbie o dostęp — dobrowolne imię i nazwisko (dla admina).
+- **AI** — nie planowane, nie wspominaj w regulaminie ani marketingu.
 
 ## 🔧 Typowe zadania
 
 ### Poprawa funkcji lub dodanie nowej
 1. Przeczytaj tylko relevantne fragmenty (`Grep`, nie cały `app.html`).
-2. Jeśli zadanie duże — zaproponuj etapy przez `AskUserQuestion`.
+2. Jeśli zadanie duże — zaproponuj etapy.
 3. Wprowadź zmiany, pokaż co się zmieniło.
-4. Commit + push (tylko na wyraźną prośbę użytkownika).
-5. Wspomnij o potrzebie uruchomienia migracji SQL, jeśli ją dodałeś.
+4. **Bump `CACHE_NAME`** gdy zmiany w app.html/data.js/db.js/index.html.
+5. Commit + push (tylko na wyraźną prośbę użytkownika).
+6. Wspomnij o potrzebie uruchomienia migracji SQL, jeśli ją dodałeś.
 
 ### Styl odpowiedzi
 - Użytkownik preferuje **polski**.
 - Konkretne kroki, nie długie elaboraty.
-- Przy zmianach w `app.html` (w preview): informuj że „`app.html` jest widoczny w panelu Launch preview" — użytkownik wtedy sam widzi.
+- Przy zmianach w `app.html` (widocznych w preview): informuj że „`app.html` jest widoczny w panelu Launch preview".
 - Przy niejasnościach pytaj przez `AskUserQuestion` zamiast zgadywać.
 
-## 📋 Status funkcji (stan na kwiecień 2026)
+## 📋 Status funkcji (stan na 23 kwietnia 2026, SW v50)
 
 ✅ Działa:
-- Logowanie/rejestracja z Supabase Auth
-- Motywy + przyciski w nagłówku (🎨 motyw, 👤 moje konto)
+- Logowanie/rejestracja z Supabase Auth (3 role: Uczeń / Nauczyciel / Rodzic-Opiekun)
+- Motywy + przyciski w nagłówku (🎨 motyw, 👤 moje konto) — Gość ma kłódkę na motywach
 - Hierarchiczna nawigacja Język → Szkoła → Klasa → Podręcznik → Unit
-- Tryby nauki (Fiszki, Quiz, Type, Spelling, Gry planszowe, Snake, Memory, Hangman, Dobble, Duel, …)
-- Masowe tworzenie kont uczniów + PDF/druk
+- Wszystkie tryby nauki (Fiszki, Quiz, Type, Spelling, Dyktando, Mów, 14 gier z listy unitów + virtualny „🌍 Wszystkie")
+- Masowe tworzenie kont uczniów + PDF/druk + 4. kolumna „Instrukcja logowania"
 - Reset hasła uczniów przez admin/nauczyciela
-- Zestawy nauczycielskie (teacher_sets) + admin overview
+- Zestawy nauczycielskie (teacher_sets) + admin overview + import CSV/TSV/wklejka (Premium)
 - Prośby o dostęp do podręczników (admin-only)
-- Notatki admina na ekranach podręcznika/unitu (book_notes)
-- Karty pracy (druk listy słówek)
-- Zgłaszanie błędów i naruszeń (mailto)
-- Premium: 7-dniowy trial automatyczny + cennik (klik → prośba do admina) + codzienny banner wygasania (30 dni) + welcome banner trialu (raz)
-- Premium: wybór głosu lektora (4 opcje UK/US + tempo) w modalu „Moje konto" — Free = UK Female Google
-- Premium: export PDF karty postępów (na ekranie 📊 Moje wyniki)
-- Premium: drukowalny dyplom PDF A4 landscape (ozdobny certyfikat)
-- Premium: wykres historii XP (Canvas) na ekranie statystyk — 7/30/365 dni; Free tylko 7 dni
-- Premium: powiadomienia na panelu nauczyciela/opiekuna o uczniach/dzieciach nieaktywnych ≥5 dni, z przyciskiem "📧 Przypomnij"
-- Premium: masowy import słówek (CSV/TSV/wklejka) do zestawu nauczyciela — modal z parserem i podglądem (na ekranie edycji zestawu)
-- Premium: wariant „📝 Zdania z lukami" w Kartach pracy — generator luk na bazie zdań przykładowych word[2]/word[3]
-- Premium: export postępów do CSV (na ekranie 📊 Moje wyniki)
-- Premium: branding w Moje konto — logo szkoły (URL lub upload <400 KB, base64 w localStorage) + nazwa — pojawia się w nagłówku PDF kart pracy i listy kont uczniów
+- Notatki admina na podręczniku/unicie (book_notes) — Nauczyciel/Opiekun z Premium też widzą
+- Karty pracy (druk listy słówek + wariant „📝 Zdania z lukami" Premium + logo szkoły Premium)
+- Zgłaszanie błędów w słówkach → admin inbox (RLS) + ekran sWordErrors (filtr status, resolve/delete)
+- System wiadomości user ↔ admin (`conversations` / `conversation_messages`) + sMessages + modal wątku
+- Rola Rodzic/Opiekun: panel, dodaj dziecko po loginie, przydzielanie podręczników (Premium)
+- **Premium features:**
+  - 7-dniowy trial automatyczny (raz w życiu konta) + cennik (klik → prośba do admina)
+  - Banner wygasania 30 dni przed końcem (codziennie, dismiss-per-day) + welcome trial banner (raz)
+  - Wybór głosu lektora (4 głosy UK/US × tempo) w modalu „Moje konto"
+  - Export PDF karty postępów + dyplom PDF A4 landscape
+  - Wykres historii XP (Canvas, 7/30/365 dni) — Free tylko 7 dni
+  - Powiadomienia nieaktywnych (próg 30 dni — miesiąc) — kafelek „🔔 Nieaktywni" z badge + sInactive z dismiss per-user
+  - Export postępów do CSV
+  - Branding szkoły (logo + nazwa, base64 w localStorage)
+- Auto-delete kont uczniów >1 rok nieaktywnych (admin-only RPC, raz dziennie)
+- Limity Free nauczyciela/opiekuna (8 klas / 30 uczniów / 10 teacher_sets)
 - Usuwanie konta (RODO)
-- 7 gier w sekcji INNE
+- 10 gier w sekcji INNE + modal „ℹ️ Jak grać?" w każdej
+- **Stopka w druku/PDF**: skrócona do „© 2026 Sowie Fiszki" (bez pełnego copyrightu)
 
 🚧 Zaplanowane / odłożone:
-- Import zestawów słówek przez nauczyciela (wklejka + CSV) — istnieje infrastruktura `teacher_words`, brak UI do importu
 - Widok ucznia dla `teacher_sets` — nauczyciel tworzy, uczeń jeszcze nie widzi
-- Plan Premium — struktura jest, ale płatności nieaktywne (regulamin §10)
+- Płatności Premium — struktura jest, ale integracja (Stripe/PayU) nieaktywna (regulamin §10)
+- Turniej 4/8 graczy w Rywalizacji (single elimination bracket) — osobny commit
+- Heatmapa raportów (mamy tylko CSV export postępów)
 
 ## 🆘 Gdy coś się zepsuje
 
-- Zobacz `git log --oneline -10` — ostatnie commity.
+- `git log --oneline -10` — ostatnie commity.
 - `git diff HEAD~1` — co ostatnio się zmieniło.
-- `git revert <sha>` — bezpieczne cofnięcie commita (nie psuje historii).
+- `git revert <sha>` — bezpieczne cofnięcie commita.
 - Jeśli migracja SQL wywraca bazę — napisz kolejną migrację z `IF NOT EXISTS` / `DROP IF EXISTS` zamiast edytować starą.
+- Jeśli po zmianach RLS wywala HTTP 500 — sprawdź czy polityki odwołujące się do `profiles` używają helperów `_is_admin()/_is_parent_of()` (migracja #20).
