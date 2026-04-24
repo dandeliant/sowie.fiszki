@@ -5,12 +5,14 @@
 //  cache-first dla fontow i CDN. Nowy SW czeka na zgode klienta
 //  (postMessage SKIP_WAITING) — pokaz banera "Nowa wersja dostepna".
 // ═══════════════════════════════════════════════════════
-const CACHE_NAME = 'sowie-fiszki-v58';
+const CACHE_NAME = 'sowie-fiszki-v59';
 
 const PRECACHE_ASSETS = [
   './',
   './index.html',
   './app.html',
+  './teacher.html',
+  './words.html',
   './data.js',
   './db.js',
   './supabase-config.js',

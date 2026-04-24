@@ -18,7 +18,9 @@
 
 ### Pliki główne
 - `index.html` (~550 linii) — ekran logowania/rejestracji. 3 role rejestracji (Uczeń / Nauczyciel / Rodzic-Opiekun), regulamin + polityka prywatności, checkboxy zgody.
-- `app.html` (~15 600 linii) — główna aplikacja SPA. Wszystkie ekrany (patrz niżej). Logika w IIFE + globalnych funkcjach. **Nie dziel na moduły — jeden plik pozostaje konwencją.**
+- `app.html` (~15 800 linii) — główna aplikacja SPA. Wszystkie ekrany (patrz niżej). Logika w IIFE + globalnych funkcjach. **Nie dziel na moduły — jeden plik pozostaje konwencją.**
+- `teacher.html` (~150 linii) — osobna strona „Panel nauczyciela" (hub kafelków: Klasy / Dostęp / Zestawy / Prośby / Błędy / Wiadomości / Nieaktywni / Podręczniki nauczycieli / Raporty / Karty pracy / Premium). Każdy kafelek to `<a href="app.html?go=xxx">` — `app.html` ma handler `?go=` parameter, który wywołuje odpowiednią funkcję `openAdminClasses()` / `openTeacherSets()` itp. Statyczna strona, nie ładuje DB.
+- `words.html` (~280 linii) — osobna strona „Słówka" (podgląd wszystkich słówek z wszystkich podręczników, ładuje `data.js`). Filtr podręcznika/unitu + wyszukiwarka. Tabela 5 kolumn: Podręcznik/Unit · Polski · Angielski · Zdanie PL · Zdanie EN. Limit 1000 wierszy. Kafelek „🔤 Słówka" w panelu admina kieruje tutaj.
 - `data.js` — obiekt `BOOKS` z 17 podręcznikami (klasa1–8, brainy6/7, tiger1/2/3, together4/5/6, bugsteam2/3, stepsplus4, stepsplus5, englishA1, beHappy2, newpassword, czasowniki, francais). Każda ksiazka ma: `id`, `language`, `schoolType`, `grade`, `defaultAccess`/`adminOnly`, `units: { unitN: { name, icon, color, words: [[pl, en, zdaniePl, zdanieEn], …] } }`. Funkcja `getBookUnitsWithAll(bId)` dodaje virtualny unit `all` (ikona 🌍, nazwa „Wszystkie", zawiera wszystkie słowa z podręcznika) — używany przez gry z opcją „cały podręcznik".
 - `db.js` — warstwa Supabase (sesja, auth, profile, postępy, klasy, user_books, RLS helpers). Funkcje eksportowane przez globalny obiekt `DB`.
 - `supabase-config.js` — URL + anon key.
@@ -89,7 +91,7 @@ Kolejność uruchamiania w SQL Editor (każda jest idempotentna — można ponow
 | **Rodzic/Opiekun** (`is_parent`) | defaultAccess + gry INNE + panel opiekuna | dodawać dzieci po loginie (`find_user_by_username`); widzieć postępy dzieci; **Premium**: przydzielać podręczniki dzieciom, widzieć notatki, 10 teacher_sets (Free: 10, Premium: ∞) |
 | **Admin** (`is_admin`) | wszystko (także `adminOnly`) | rozpatrywać prośby, zarządzać wszystkimi zestawami, zmieniać plany, moderować błędy, odpowiadać na wiadomości |
 
-**Panel admina/nauczyciela** (na `sBooks` gdy `isCurrentUserAdmin || isCurrentUserTeacher`): Klasy · Dostęp · Zestawy · Prośby (admin) · Podręczniki nauczycieli (admin) · 🐛 Zgłoszone błędy (admin) · 💬 Wiadomości (admin) · 🔔 Nieaktywni (Premium, próg 30 dni) · Raporty · Karty pracy · ⭐ Premium.
+**Panel admina/nauczyciela** — od SW v59 zredukowany do **2 dużych kafelków** w `sBooks`: „👩‍🏫 Panel nauczyciela" (link do `teacher.html`) + „🔤 Słówka" (admin only, link do `words.html`). Pełny zestaw funkcji (Klasy · Dostęp · Zestawy · Prośby (admin) · Podręczniki nauczycieli (admin) · 🐛 Zgłoszone błędy (admin) · 💬 Wiadomości (admin) · 🔔 Nieaktywni · Raporty · Karty pracy · ⭐ Premium) jest dostępny w `teacher.html` i wraca do `app.html?go=xxx`.
 
 **Panel opiekuna** (`sParentPanel`): Moje dzieci · 💬 Wiadomości · 🔔 Nieaktywni · 📊 Raporty (Premium) · ⭐ Premium.
 
@@ -185,7 +187,7 @@ Krzyżówka · Wordsearch · Memory · Snake (Wąż wyrazowy) · Hangman · Rozs
 - Wszystkie tryby nauki (Fiszki, Quiz, Type, Spelling, Dyktando, Mów, 14 gier z listy unitów + virtualny „🌍 Wszystkie")
 - Masowe tworzenie kont uczniów + PDF/druk + 4. kolumna „Instrukcja logowania"
 - Reset hasła uczniów przez admin/nauczyciela
-- Zestawy nauczycielskie (teacher_sets) + admin overview + import CSV/TSV/wklejka (Premium)
+- Zestawy nauczycielskie (teacher_sets) + admin overview + import CSV/TSV/wklejka (Premium) + **import słówek z istniejących podręczników** (modal `#importBookWordsModal` w `sTeacherSetEdit`: wybór podręcznika → unitu → checkboxy → „Dodaj zaznaczone", używa `DB.teacherAddWordsBulk`)
 - Prośby o dostęp do podręczników (admin-only)
 - Notatki admina na podręczniku/unicie (book_notes) — Nauczyciel/Opiekun z Premium też widzą
 - Karty pracy (druk listy słówek + wariant „📝 Zdania z lukami" Premium + logo szkoły Premium)
