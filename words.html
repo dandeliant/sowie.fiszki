@@ -10,6 +10,11 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
 <script src="data.js"></script>
+<!-- Supabase + DB warstwy — pozwala nalozyc overrides admina (admin_words) na BOOKS.
+     Bez tego widac tylko bazowe slowka z data.js, bez edycji admina. -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase-config.js"></script>
+<script src="db.js"></script>
 <style>
   * { box-sizing: border-box; }
   body {
@@ -185,7 +190,10 @@
       <h1 class="title">🔤 Słówka</h1>
       <div class="sub">Podgląd słówek ze wszystkich podręczników</div>
     </div>
-    <a href="app.html" class="back">← Sowie Fiszki</a>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="back" id="refreshBtn" title="Pobierz najnowsze edycje admina z Supabase" style="border:1.5px solid rgba(255,255,255,.15);background:rgba(6,214,160,.12);color:#06D6A0;cursor:pointer;font-family:inherit">🔄 Odśwież</button>
+      <a href="app.html" class="back">← Sowie Fiszki</a>
+    </div>
   </div>
 
   <div class="filters">
@@ -221,10 +229,26 @@
 
 <script>
 'use strict';
-(function () {
+(async function () {
   if (typeof BOOKS === 'undefined') {
     document.getElementById('rows').innerHTML = '<div class="empty">⚠️ Nie udało się załadować data.js.</div>';
     return;
+  }
+
+  // Naloz overrides admina (admin_words / admin_books / admin_units) na BOOKS.
+  // Bez tego widac tylko bazowe slowka z data.js. Po DB.loadAdminData()
+  // BOOKS jest zmutowany i odzwierciedla aktualny stan w Supabase
+  // (wpisy admina, nowe podreczniki, edycje slowek, soft-delete).
+  // loadAdminData nie wymaga DB.init — to tylko 3 SELECT-y (RLS public).
+  // Best-effort: jesli sie nie powiedzie, pokazujemy bazowy data.js.
+  const statsEl0 = document.getElementById('stats');
+  if (statsEl0) statsEl0.textContent = '⏳ Ładuję overrides admina…';
+  try {
+    if (typeof DB !== 'undefined' && typeof DB.loadAdminData === 'function') {
+      await DB.loadAdminData();
+    }
+  } catch(e) {
+    console.warn('[words.html] loadAdminData:', e.message || e);
   }
 
   const bookSel = document.getElementById('bookFilter');
@@ -233,13 +257,19 @@
   const rowsEl = document.getElementById('rows');
   const statsEl = document.getElementById('stats');
 
-  // Wypelnij select podrecznikow
-  Object.values(BOOKS).forEach(b => {
-    const o = document.createElement('option');
-    o.value = b.id;
-    o.textContent = (b.icon || '📖') + ' ' + b.name + (b.adminOnly ? ' (admin)' : '');
-    bookSel.appendChild(o);
-  });
+  // Wypelnij select podrecznikow (rebuild — moga sie pojawic nowe podreczniki admina)
+  function rebuildBookSelect() {
+    const cur = bookSel.value;
+    bookSel.innerHTML = '<option value="">📚 Wszystkie podręczniki</option>';
+    Object.values(BOOKS).forEach(b => {
+      const o = document.createElement('option');
+      o.value = b.id;
+      o.textContent = (b.icon || '📖') + ' ' + b.name + (b.adminOnly ? ' (admin)' : '');
+      bookSel.appendChild(o);
+    });
+    if (cur && BOOKS[cur]) bookSel.value = cur;
+  }
+  rebuildBookSelect();
 
   // Zbuduj plaska liste wszystkich slowek
   function buildAll() {
@@ -265,7 +295,34 @@
     return all;
   }
 
-  const ALL = buildAll();
+  let ALL = buildAll();
+
+  // Funkcja przeladowania danych z Supabase + odswiezenia widoku
+  async function reloadFromServer() {
+    if (typeof DB === 'undefined' || typeof DB.loadAdminData !== 'function') return;
+    const btn = document.getElementById('refreshBtn');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Ładuję…'; }
+    try {
+      await DB.loadAdminData();
+      ALL = buildAll();
+      rebuildBookSelect();
+      // Jesli wybrany unit nie istnieje juz po odswiezeniu — wyczysc
+      const cur = unitSel.value;
+      const bId = bookSel.value;
+      if (cur && bId && !(BOOKS[bId]?.units?.[cur])) unitSel.value = '';
+      render();
+    } catch(e) {
+      console.warn('[reload]', e.message || e);
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '🔄 Odśwież'; }
+    }
+  }
+  // Auto-odswiezenie gdy uzytkownik wraca na karte (np. po edycji w sasiedniej karcie)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') reloadFromServer();
+  });
+  // Przycisk Odswiez
+  document.getElementById('refreshBtn')?.addEventListener('click', reloadFromServer);
 
   function refreshUnitOptions() {
     const bookId = bookSel.value;
