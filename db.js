@@ -292,6 +292,52 @@ const DB = (() => {
   }
 
   // ═══════════════════════════════════════════════════════════════
+  //  KOLEJKA POWTOREK — slowa z nextReview <= now
+  // ═══════════════════════════════════════════════════════════════
+  // Zwraca obiekt:
+  //   {
+  //     totalDue: liczba slow do powtorki teraz,
+  //     unitsDue: [{ bookId, unitKey, count }, ...] (posortowane malejaco po count),
+  //     nextDueDays: ile dni do najblizszej powtorki (gdy totalDue=0)
+  //   }
+  // Iteruje po wszystkich zapisanych unit_progress dla zalogowanego usera.
+  function getReviewQueue() {
+    if (!_profile || !_profile.unitProgress) return { totalDue: 0, unitsDue: [], nextDueDays: null };
+    const now = Date.now();
+    let totalDue = 0;
+    let nextReviewMin = null;
+    const perUnit = [];
+    Object.entries(_profile.unitProgress).forEach(([key, prog]) => {
+      const ws = prog && prog.wordStates;
+      if (!ws) return;
+      const [bookId, unitKey] = key.split('__');
+      // Tylko slowa, ktore juz byly cwiczone (reps>0) i nadeszly do powtorki.
+      // Slowa z reps=0 sa "nowe" — nie liczymy ich do kolejki, bo nigdy nie
+      // mialy wlasciwego nextReview (lub byly pomylone i lecza sie od zera).
+      let count = 0;
+      Object.values(ws).forEach(s => {
+        if (!s || typeof s !== 'object') return;
+        if ((s.reps || 0) < 1) return; // pomijamy nowe i pomylone
+        if (s.nextReview && s.nextReview <= now) {
+          count++;
+        } else if (s.nextReview && (nextReviewMin === null || s.nextReview < nextReviewMin)) {
+          nextReviewMin = s.nextReview;
+        }
+      });
+      if (count > 0) {
+        totalDue += count;
+        perUnit.push({ bookId, unitKey, count });
+      }
+    });
+    perUnit.sort((a, b) => b.count - a.count);
+    let nextDueDays = null;
+    if (totalDue === 0 && nextReviewMin !== null) {
+      nextDueDays = Math.max(0, Math.ceil((nextReviewMin - now) / 86400000));
+    }
+    return { totalDue, unitsDue: perUnit, nextDueDays };
+  }
+
+  // ═══════════════════════════════════════════════════════════════
   //  SERIA DNI
   // ═══════════════════════════════════════════════════════════════
   function updateStreak(username) {
@@ -1799,6 +1845,7 @@ const DB = (() => {
     // postęp
     saveUnitProgress,
     getUnitProgress,
+    getReviewQueue,
     getBookProgress,
     // seria
     updateStreak,

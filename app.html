@@ -960,6 +960,17 @@ body.guest-mode .progress-wrap{opacity:.4;}
 <!-- ══ SCREEN: BOOK SELECT ══ -->
 <!-- ══ SCREEN: LANGUAGE PICK ══ -->
 <div class="screen active" id="sLang">
+  <!-- Baner powtorek SM-2: slowa, ktorych nextReview juz nadszedl. -->
+  <div id="reviewQueueBanner" style="display:none;width:100%;background:linear-gradient(135deg,rgba(6,214,160,.16),rgba(124,77,255,.12));border:2px solid rgba(6,214,160,.45);border-radius:16px;padding:14px 18px;margin-bottom:14px;cursor:pointer" onclick="openReviewQueue()">
+    <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+      <div style="font-size:2rem">📅</div>
+      <div style="flex:1;min-width:180px">
+        <div style="font-size:.92rem;font-weight:800;color:var(--text)" id="reviewQueueTitle">Masz słowa do powtórki!</div>
+        <div style="font-size:.72rem;color:var(--muted);font-weight:600;margin-top:2px" id="reviewQueueSub">Kliknij, żeby zobaczyć listę unitów.</div>
+      </div>
+      <div style="font-size:.78rem;font-weight:800;color:var(--accent2)">→</div>
+    </div>
+  </div>
   <!-- Sekcja "Twoje podręczniki" — widoczna dla ucznia/nauczyciela, gdy admin przydzielił jakieś książki -->
   <div id="myAssignedBooks" style="display:none;width:100%">
     <div class="unit-title">Twoje podręczniki 📚</div>
@@ -987,6 +998,20 @@ body.guest-mode .progress-wrap{opacity:.4;}
       <div class="book-name">Inne</div>
       <div class="book-desc">Wybierz gry i inne przydatne aplikacje</div>
     </div>
+  </div>
+</div>
+
+<!-- ══ SCREEN: KOLEJKA POWTOREK (SM-2) ══ -->
+<div class="screen" id="sReviewQueue">
+  <div style="width:100%">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+      <div>
+        <div style="font-family:'Playfair Display',serif;font-size:1.5rem;color:var(--accent2)">📅 Powtórki dzisiaj</div>
+        <div style="font-size:.74rem;color:var(--muted);font-weight:600;margin-top:2px" id="rqSub">Słówka, których nadszedł czas powtórki</div>
+      </div>
+      <button class="btn-sm" onclick="showScreen('sLang')">← Wróć</button>
+    </div>
+    <div id="rqList" style="width:100%"></div>
   </div>
 </div>
 
@@ -3479,6 +3504,9 @@ function navBackFromApps() {
 // pokazuje książki, które admin przydzielił w user_books. Admin ma i tak
 // wszystko, więc u niego sekcja jest ukryta.
 function renderAssignedBooksOnLang() {
+  // Aktualizuj baner powtorek (na ten sam ekran sLang)
+  refreshReviewQueueBanner();
+
   const section = document.getElementById('myAssignedBooks');
   const grid = document.getElementById('myAssignedBooksGrid');
   if (!section || !grid) return;
@@ -3508,6 +3536,84 @@ function renderAssignedBooksOnLang() {
   });
   section.style.display = 'block';
 }
+
+// ══════════════════════════════════════════════
+//  KOLEJKA POWTOREK SM-2
+// ══════════════════════════════════════════════
+function refreshReviewQueueBanner() {
+  const banner = document.getElementById('reviewQueueBanner');
+  if (!banner) return;
+  if (isGuest || !DB || typeof DB.getReviewQueue !== 'function') {
+    banner.style.display = 'none';
+    return;
+  }
+  const q = DB.getReviewQueue();
+  if (!q || q.totalDue <= 0) {
+    banner.style.display = 'none';
+    return;
+  }
+  banner.style.display = 'block';
+  const t = document.getElementById('reviewQueueTitle');
+  const s = document.getElementById('reviewQueueSub');
+  if (t) t.textContent = '📅 Masz ' + q.totalDue + ' ' + plural(q.totalDue, 'słowo', 'słowa', 'słów') + ' do powtórki dziś!';
+  if (s) {
+    const parts = q.unitsDue.slice(0, 3).map(u => {
+      const book = BOOKS[u.bookId];
+      const unit = book?.units?.[u.unitKey];
+      const bn = book ? (book.shortName || book.name) : u.bookId;
+      const un = unit ? (unit.name || u.unitKey) : u.unitKey;
+      return bn + ' · ' + un + ' (' + u.count + ')';
+    });
+    if (q.unitsDue.length > 3) parts.push('… +' + (q.unitsDue.length - 3) + ' więcej');
+    s.textContent = 'Kliknij, aby zobaczyć: ' + parts.join('  ·  ');
+  }
+}
+
+function plural(n, one, few, many) {
+  const a = Math.abs(n) % 100, b = a % 10;
+  if (a === 1) return one;
+  if (b >= 2 && b <= 4 && (a < 12 || a > 14)) return few;
+  return many;
+}
+
+window.openReviewQueue = function() {
+  if (!DB || typeof DB.getReviewQueue !== 'function') return;
+  const q = DB.getReviewQueue();
+  showScreen('sReviewQueue');
+  const list = document.getElementById('rqList');
+  const sub = document.getElementById('rqSub');
+  if (q.totalDue === 0) {
+    sub.textContent = q.nextDueDays !== null
+      ? '🎉 Brak słów do powtórki dziś. Następna za ' + q.nextDueDays + ' ' + plural(q.nextDueDays, 'dzień', 'dni', 'dni') + '.'
+      : '🎉 Brak słów do powtórki. Zacznij naukę!';
+    list.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:.85rem;padding:24px;font-weight:600">Wszystkie słówka zaplanowane na późniejszy termin lub jeszcze nie miałeś żadnych powtórek.<br><br>Otwórz dowolny unit, aby zacząć naukę.</div>';
+    return;
+  }
+  sub.textContent = q.totalDue + ' ' + plural(q.totalDue, 'słowo', 'słowa', 'słów') + ' czeka na powtórkę. Wybierz unit, żeby kontynuować.';
+  list.innerHTML = '';
+  q.unitsDue.forEach(u => {
+    const book = BOOKS[u.bookId];
+    const unit = book?.units?.[u.unitKey];
+    if (!book || !unit) return;
+    const card = document.createElement('div');
+    card.style.cssText = 'background:var(--surface);border:1.5px solid var(--border);border-radius:14px;padding:14px 16px;margin-bottom:8px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:12px;transition:border-color .2s';
+    card.onmouseover = () => { card.style.borderColor = 'var(--accent2)'; };
+    card.onmouseout = () => { card.style.borderColor = 'var(--border)'; };
+    card.innerHTML = `
+      <div style="min-width:0;flex:1">
+        <div style="font-size:.92rem;font-weight:800;color:var(--text);word-break:break-word">${esc(book.icon || '📖')} ${esc(book.shortName || book.name)} · ${esc(unit.icon || '📖')} ${esc(unit.name || u.unitKey)}</div>
+        <div style="font-size:.68rem;color:var(--muted);font-weight:600;margin-top:3px">📅 ${u.count} ${esc(plural(u.count, 'słowo', 'słowa', 'słów'))} do powtórki</div>
+      </div>
+      <div style="font-size:1.4rem;font-weight:800;color:var(--accent2);background:rgba(6,214,160,.12);border-radius:100px;min-width:46px;height:46px;display:flex;align-items:center;justify-content:center">${u.count}</div>`;
+    card.addEventListener('click', () => {
+      currentBookId = u.bookId;
+      // Wejdz do listy slow danego unitu — uczen wybiera tryb
+      if (typeof openWordList === 'function') openWordList(u.unitKey);
+      else if (typeof selectUnit === 'function') selectUnit(u.unitKey);
+    });
+    list.appendChild(card);
+  });
+};
 
 // ══════════════════════════════════════════════
 //  BOOK GRID
@@ -3887,13 +3993,19 @@ function refreshGrid() {
 function getDiffDot(bId, uKey, wordIdx) {
   if (uKey === 'all') return '';
   const saved = DB.getUnitProgress(currentUser, bId, uKey);
-  if (!saved || !saved.wordStates) return '⬜';
+  if (!saved || !saved.wordStates) return '<span title="Nowe słowo">🌱</span>';
   const s = saved.wordStates[wordIdx];
-  if (!s) return '⬜';
-  if (s.known || (s.reps || 0) >= 3) return '🟢';
-  if ((s.errCount || 0) > 2) return '🔴';
-  if ((s.reps || 0) >= 1) return '🟡';
-  return '⬜';
+  if (!s) return '<span title="Nowe słowo">🌱</span>';
+  const stg = (typeof wordStage === 'function') ? wordStage(s) : null;
+  if (stg) {
+    const ttl = stg.label + ' · pewność ' + stg.confidence + (s.reps ? ' (×' + s.reps + ')' : '');
+    return '<span title="' + ttl + '">' + stg.icon + '</span>';
+  }
+  // Fallback (gdyby helper nie byl dostepny)
+  if (s.reps >= 4 && s.interval >= 30) return '🏆';
+  if (s.reps >= 3) return '🌳';
+  if (s.reps >= 1) return '🌿';
+  return '🌱';
 }
 
 let wlSelectedIndices = new Set(); // globalny zestaw zaznaczonych indeksów
@@ -3963,7 +4075,7 @@ function openWordList(key) {
   // Nagłówek tabeli — z kolumną akcji dla admina
   const thead = document.getElementById('wlHead');
   const adminTh = isAdmin ? '<th></th>' : '';
-  thead.innerHTML = `<th class="th-cb"><input type="checkbox" class="wl-cb" id="cbAll" title="Zaznacz/odznacz wszystkie" onchange="wlToggleAll(this.checked)"></th><th>#</th><th>Polski</th><th>🔊</th><th>Angielski</th><th>🔊</th><th>★</th>${adminTh}`;
+  thead.innerHTML = `<th class="th-cb"><input type="checkbox" class="wl-cb" id="cbAll" title="Zaznacz/odznacz wszystkie" onchange="wlToggleAll(this.checked)"></th><th>#</th><th>Polski</th><th>🔊</th><th>Angielski</th><th>🔊</th><th title="🌱 Nowe · 🌿 Uczę się · 🌳 Opanowane · 🏆 Mistrzostwo">Stan</th>${adminTh}`;
 
   const body = document.getElementById('wlBody');
   body.innerHTML = '';
@@ -4397,10 +4509,46 @@ function sm2Update(s, r) {
 
   return {...s, ef, reps, interval, errCount,
     nextReview: Date.now() + interval * 86400000,
-    known: reps >= 2,
+    // Slowo "opanowane" (known = wlicza sie do % unitu) wymaga teraz
+    // 3 poprawnych odpowiedzi pod rzad. Mistrzostwo (mastered) — 4 poprawne
+    // odpowiedzi i dlugi interval (>=30 dni).
+    known: reps >= 3,
+    mastered: reps >= 4 && interval >= 30,
     dueIn: {hard:1, medium:2, easy:3}[r]
   };
 }
+
+// ══════════════════════════════════════════════
+//  STAGE / CONFIDENCE — wizualny stan slowa
+// ══════════════════════════════════════════════
+// Zwraca {stage, icon, label, confidence} dla danego stanu SM-2.
+// Confidence = reps + bonus za interval (im rzadziej trzeba przypominac, tym pewniej).
+//   🌱 Sapling   — confidence 0-1   (nowe / pomylone)
+//   🌿 Rosnaca   — confidence 2-4   (uczone, jeszcze nie opanowane)
+//   🌳 Opanowane — confidence 5-10  (znane, reps >= 3)
+//   🏆 Mistrzostwo — confidence >= 11 (dlugoterminowo, reps >= 4 + odstep >=30 dni)
+function wordStage(state) {
+  if (!state || typeof state !== 'object') {
+    return { stage: 'new', icon: '🌱', label: 'Nowe', confidence: 0 };
+  }
+  const reps = state.reps || 0;
+  const interval = state.interval || 0;
+  const conf = reps + Math.floor(interval / 7);
+  if (state.mastered || (reps >= 4 && interval >= 30)) {
+    return { stage: 'mastered', icon: '🏆', label: 'Mistrzostwo', confidence: conf };
+  }
+  if (reps >= 3) {
+    return { stage: 'known', icon: '🌳', label: 'Opanowane', confidence: conf };
+  }
+  if (reps >= 1) {
+    return { stage: 'growing', icon: '🌿', label: 'Uczę się', confidence: conf };
+  }
+  return { stage: state.lastError ? 'error' : 'new',
+           icon: state.lastError ? '🌱' : '🌱',
+           label: state.lastError ? 'Pomyłka' : 'Nowe',
+           confidence: conf };
+}
+window.wordStage = wordStage;
 
 // ══════════════════════════════════════════════
 //  PICK NEXT
@@ -12766,6 +12914,8 @@ if ('serviceWorker' in navigator) {
   if (!isGuest) updateDailyBar();
   document.getElementById('achieveCount').textContent = (profile.achievements||[]).length;
   refreshBooks();
+  // Pokaz baner powtorek (jesli sa slowa do powtorki)
+  if (typeof refreshReviewQueueBanner === 'function') refreshReviewQueueBanner();
   initGuestMode();
   initAdminUI();
   // Admin i nauczyciel od razu lądują na ekranie z panelem zarządzania.
