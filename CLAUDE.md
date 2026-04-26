@@ -31,7 +31,7 @@
 `sLang`, `sSchool`, `sClass`, `sBooks` (panel staff), `sUnits`, `sWordList`, `sStudy`, `sCrossword`, `sWordsearch`, `sSnake`, `sMemory`, `sHangman`, `sScrGame`, `sSentScrGame`, `sBoardGame`, `sDobble`, `sImageCard`, `sCubes`, `sDuel` (Rywalizacja), `sSpeed`, `sStats`, `sApps`, `sDone`, `sAdminAccess`, `sAdminClasses`, `sClassDetail`, `sStudentProgress`, `sTeacherSets`, `sTeacherSetEdit`, `sAdminTeacherSets`, `sAccessRequests`, `sWordErrors`, `sMessages`, `sParentPanel`, `sAddChild`, `sChildBooks`, `sInactive`, `sBulkStudents`.
 
 ### Pliki gier w sekcji INNE (samodzielne HTML)
-10 gier — wszystkie mają TOP i BOTTOM link „Powrót do Sowie Fiszki" + `@media print` ukrywający je:
+11 gier — wszystkie mają TOP i BOTTOM link „Powrót do Sowie Fiszki" + `@media print` ukrywający je:
 - `how-many.html` — „Ile? — How many?" (there is/are + liczebniki)
 - `birthday.html` — „Urodziny" (liczebniki + miesiące, SVG awatary)
 - `generator-cyfr.html` — „Generator cyfr" (losowa liczba + brytyjski TTS)
@@ -42,6 +42,7 @@
 - `have_you_ever.html` — Have you ever…? (Present Perfect, 2-osobowy)
 - `speaking_game_present_simple.html` — Yes/no questions + pełne odpowiedzi
 - `citylife_speaking.html` — CityLife „paszport" generator + speaking practice
+- `has_he_got_a_pet.html` — „Has he/she got a pet?" generator (Steps Plus, has got + zwierzaki, postać + mystery box + animacja)
 
 Każda z gier ma też modal **„ℹ️ Jak grać?"** (fixed top-right) z 5-8 krokami instrukcji.
 
@@ -206,7 +207,7 @@ Krzyżówka · Wordsearch · Memory · Snake (Wąż wyrazowy) · Hangman · Rozs
 - Auto-delete kont uczniów >1 rok nieaktywnych (admin-only RPC, raz dziennie)
 - Limity Free nauczyciela/opiekuna (8 klas / 30 uczniów / 10 teacher_sets)
 - Usuwanie konta (RODO)
-- 10 gier w sekcji INNE + modal „ℹ️ Jak grać?" w każdej
+- 11 gier w sekcji INNE + modal „ℹ️ Jak grać?" w każdej
 - **Stopka w druku/PDF**: skrócona do „© 2026 Sowie Fiszki" (bez pełnego copyrightu)
 
 🚧 Zaplanowane / odłożone:
