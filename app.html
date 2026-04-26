@@ -1098,6 +1098,16 @@ body.guest-mode .progress-wrap{opacity:.4;}
       <div class="book-name">Motyle</div>
       <div class="book-desc">Łap motyle z dobrym tłumaczeniem · 30 s</div>
     </a>
+    <a href="memory.html" class="book-card" style="text-decoration:none;color:inherit;display:flex;flex-direction:column;align-items:center;gap:9px">
+      <div class="book-icon">🎴</div>
+      <div class="book-name">Memory</div>
+      <div class="book-desc">Dopasuj pary PL ↔ EN · pamięć i koncentracja</div>
+    </a>
+    <a href="wisielec.html" class="book-card" style="text-decoration:none;color:inherit;display:flex;flex-direction:column;align-items:center;gap:9px">
+      <div class="book-icon">🚀</div>
+      <div class="book-name">Wisielec</div>
+      <div class="book-desc">Zgadnij angielskie słowo litera po literze</div>
+    </a>
   </div>
   <div style="margin-top:12px"><button class="btn-sm" onclick="navBackFromApps()">← Wróć</button></div>
 </div>
@@ -13093,38 +13103,55 @@ if ('serviceWorker' in navigator) {
     const game = p2.get('game');
     const bookP = p2.get('book');
     const unitP = p2.get('unit');
-    if (game && ['jump','bridge','butterfly'].includes(game) && bookP && BOOKS[bookP] && unitP) {
+    if (game && ['jump','bridge','butterfly','memory','hangman'].includes(game) && bookP && BOOKS[bookP] && unitP) {
       // Wyczysc URL
       window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
       const targetUnit = (unitP === '__all__') ? 'all' : unitP;
-      // Lancuch nawigacji z opoznieniami (musimy poczekac na render)
-      setTimeout(() => {
-        try {
-          if (typeof selectBook === 'function') selectBook(bookP);
-          setTimeout(() => {
-            try {
-              if (typeof openWordList === 'function') openWordList(targetUnit);
-              setTimeout(() => {
-                try {
-                  if (typeof startStudy === 'function') startStudy(targetUnit);
-                  setTimeout(() => {
-                    try {
-                      if (typeof setMode === 'function') setMode(game);
-                      setTimeout(() => {
-                        try {
-                          if (game === 'jump' && typeof jumpStart === 'function') jumpStart();
-                          else if (game === 'bridge' && typeof brStart === 'function') brStart();
-                          else if (game === 'butterfly' && typeof bfStartGame === 'function') bfStartGame();
-                        } catch(e) { console.warn('[autostart game]', e.message||e); }
-                      }, 250);
-                    } catch(e) { console.warn('[autostart setMode]', e.message||e); }
-                  }, 200);
-                } catch(e) { console.warn('[autostart startStudy]', e.message||e); }
-              }, 150);
-            } catch(e) { console.warn('[autostart openWordList]', e.message||e); }
-          }, 150);
-        } catch(e) { console.warn('[autostart selectBook]', e.message||e); }
-      }, 200);
+      // Memory i Hangman maja wlasne ekrany (sMemory/sHangman) i nie
+      // wymagaja chain selectBook->openWordList->startStudy->setMode.
+      // Wystarczy selectBook i wywolanie openMemory/openHangman.
+      if (game === 'memory' || game === 'hangman') {
+        setTimeout(() => {
+          try {
+            if (typeof selectBook === 'function') selectBook(bookP);
+            setTimeout(() => {
+              try {
+                if (game === 'memory' && typeof openMemory === 'function') openMemory(targetUnit);
+                else if (game === 'hangman' && typeof openHangman === 'function') openHangman(targetUnit);
+              } catch(e) { console.warn('[autostart ' + game + ']', e.message||e); }
+            }, 200);
+          } catch(e) { console.warn('[autostart selectBook]', e.message||e); }
+        }, 200);
+      } else {
+        // Jump/Bridge/Butterfly — sa modami w sStudy, potrzebny pelny chain
+        setTimeout(() => {
+          try {
+            if (typeof selectBook === 'function') selectBook(bookP);
+            setTimeout(() => {
+              try {
+                if (typeof openWordList === 'function') openWordList(targetUnit);
+                setTimeout(() => {
+                  try {
+                    if (typeof startStudy === 'function') startStudy(targetUnit);
+                    setTimeout(() => {
+                      try {
+                        if (typeof setMode === 'function') setMode(game);
+                        setTimeout(() => {
+                          try {
+                            if (game === 'jump' && typeof jumpStart === 'function') jumpStart();
+                            else if (game === 'bridge' && typeof brStart === 'function') brStart();
+                            else if (game === 'butterfly' && typeof bfStartGame === 'function') bfStartGame();
+                          } catch(e) { console.warn('[autostart game]', e.message||e); }
+                        }, 250);
+                      } catch(e) { console.warn('[autostart setMode]', e.message||e); }
+                    }, 200);
+                  } catch(e) { console.warn('[autostart startStudy]', e.message||e); }
+                }, 150);
+              } catch(e) { console.warn('[autostart openWordList]', e.message||e); }
+            }, 150);
+          } catch(e) { console.warn('[autostart selectBook]', e.message||e); }
+        }, 200);
+      }
     }
   } catch(e) { console.warn('[?game handler]', e.message||e); }
 
