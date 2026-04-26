@@ -519,6 +519,42 @@ function speak(text, lang){
   } catch(e) {}
 }
 
+// speakThen — czyta tekst i wywoluje callback PO zakonczeniu wypowiedzi
+// (zeby nie ucinac TTS przy nastepnym pytaniu). Gdy dzwiek wyciszony lub
+// brak speechSynthesis — fallback do stalego opoznienia (na ogladanie
+// wizualnego feedbacku).
+function speakThen(text, lang, callback, mutedFallbackMs){
+  const fbMs = (typeof mutedFallbackMs === 'number') ? mutedFallbackMs : 800;
+  if (!soundOn || !text || !('speechSynthesis' in window)) {
+    setTimeout(callback, fbMs);
+    return;
+  }
+  try {
+    speechSynthesis.cancel();
+    setTimeout(() => {
+      try {
+        if (!soundOn) { setTimeout(callback, fbMs); return; }
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = lang || 'en-GB';
+        u.rate = 0.9; u.pitch = 1; u.volume = 1;
+        const v = pickVoice(u.lang);
+        if (v) u.voice = v;
+        let done = false;
+        const advance = () => {
+          if (done) return;
+          done = true;
+          setTimeout(callback, 250); // krotka przerwa po wypowiedzi
+        };
+        u.onend = advance;
+        u.onerror = advance;
+        // Safety net — niektore przegladarki nie zawsze odpalaja onend
+        setTimeout(advance, 6000);
+        speechSynthesis.speak(u);
+      } catch(e) { setTimeout(callback, fbMs); }
+    }, 60);
+  } catch(e) { setTimeout(callback, fbMs); }
+}
+
 /* ============================================================
    GENERATE STARS BACKGROUND
 ============================================================ */
@@ -820,22 +856,19 @@ function handleAnswer(btn, opt){
     asteroidHit();
   }
   updateHud();
-  // TTS: odczytaj prawidlowa odpowiedz w jezyku docelowym
-  // (dla 'pl_en' odpowiedz to EN; dla 'en_pl' odpowiedz to PL)
+  // TTS: odczytaj prawidlowa odpowiedz w jezyku docelowym, a po
+  // zakonczeniu wypowiedzi advansuj. Dzieki temu lektor nie zostaje
+  // ucięty przez kolejne pytanie. Gdy dzwiek wyciszony — fallback 800ms.
   const ansLang = direction === 'pl_en' ? 'en-GB' : 'pl-PL';
-  setTimeout(() => speak(currentWord.answer, ansLang), 350);
-
-  // Sprawdz koniec
-  if (altitude >= 100) {
-    setTimeout(() => endGame(true, 'moon'), 1100);
-    return;
-  }
-  if (fuel <= 0) {
-    setTimeout(() => endGame(false, 'fuel'), 1100);
-    return;
-  }
-  // Następne pytanie
-  setTimeout(nextQuestion, 1100);
+  const advance = () => {
+    if (altitude >= 100) endGame(true, 'moon');
+    else if (fuel <= 0) endGame(false, 'fuel');
+    else nextQuestion();
+  };
+  // 350ms wstepu — widac flash/asteroide zanim TTS startuje
+  setTimeout(() => {
+    speakThen(currentWord.answer, ansLang, advance, 800);
+  }, 350);
 }
 
 /* ============================================================
