@@ -1083,6 +1083,21 @@ body.guest-mode .progress-wrap{opacity:.4;}
       <div class="book-name">Word Rocket</div>
       <div class="book-desc">Lot na księżyc · ćwicz słówka · 90 s</div>
     </a>
+    <a href="skoczek.html" class="book-card" style="text-decoration:none;color:inherit;display:flex;flex-direction:column;align-items:center;gap:9px">
+      <div class="book-icon">🏝️</div>
+      <div class="book-name">Skoczek</div>
+      <div class="book-desc">Skacz na właściwy kwadrat · 5 s na rundę</div>
+    </a>
+    <a href="most.html" class="book-card" style="text-decoration:none;color:inherit;display:flex;flex-direction:column;align-items:center;gap:9px">
+      <div class="book-icon">🌉</div>
+      <div class="book-name">Przejdź przez most</div>
+      <div class="book-desc">20 słówek · jeden błąd = wpadasz!</div>
+    </a>
+    <a href="motyle.html" class="book-card" style="text-decoration:none;color:inherit;display:flex;flex-direction:column;align-items:center;gap:9px">
+      <div class="book-icon">🦋</div>
+      <div class="book-name">Motyle</div>
+      <div class="book-desc">Łap motyle z dobrym tłumaczeniem · 30 s</div>
+    </a>
   </div>
   <div style="margin-top:12px"><button class="btn-sm" onclick="navBackFromApps()">← Wróć</button></div>
 </div>
@@ -7771,6 +7786,9 @@ function brNextQuestion() {
   const [pl, en] = brWords[brIdx];
   document.getElementById('brWord').textContent = '🇵🇱 ' + pl;
   document.getElementById('brProgress').textContent = (brIdx + 1) + ' / ' + BR_TOTAL;
+  // Czytaj polskie slowo (z opoznieniem, by lektor mial spokoj po
+  // poprzedniej rundzie spkForeign).
+  if (autoVoice) setTimeout(() => spkPl(pl), 100);
 
   // 3 opcje
   const others = activeAllWords.filter(w => w[1] !== en);
@@ -7891,6 +7909,9 @@ function jpNextRound() {
 
   const [pl, en] = jpWords[jpIdx];
   document.getElementById('jumpWord').textContent = '🇵🇱 ' + pl;
+  // Czytaj polskie slowo na glos (po krotkim opoznieniu, by uniknac
+  // konfliktu z poprzednim spkForeign przy szybkich rundach).
+  if (autoVoice) setTimeout(() => spkPl(pl), 100);
 
   // Reset ludzik na podest
   const guyWrap = document.getElementById('jumpGuyWrap');
@@ -8119,6 +8140,8 @@ function bfNewWord() {
   const wrong = shuffle(others).slice(0, 3).map(w => w[1]);
   bfCurrent = {pl, en, wrong};
   document.getElementById('bfWord').textContent = pl;
+  // Czytaj polskie slowo na glos (jesli autoVoice wlaczone)
+  if (autoVoice) setTimeout(() => spkPl(pl), 100);
 }
 
 function bfSpawn() {
@@ -13035,6 +13058,50 @@ if ('serviceWorker' in navigator) {
       }
     }
   } catch(e) { console.warn('[?go handler]', e.message||e); }
+
+  // ═══ Auto-launch gier z poziomu Inne (?game=jump|bridge|butterfly) ═══
+  // Wywoluje selectBook -> openWordList -> startStudy -> setMode -> *Start.
+  // Po stronie wrappera (skoczek.html / most.html / motyle.html) user
+  // wybiera podrecznik+unit, klika Start, zostaje przekierowany tutaj.
+  try {
+    const p2 = new URLSearchParams(window.location.search);
+    const game = p2.get('game');
+    const bookP = p2.get('book');
+    const unitP = p2.get('unit');
+    if (game && ['jump','bridge','butterfly'].includes(game) && bookP && BOOKS[bookP] && unitP) {
+      // Wyczysc URL
+      window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
+      const targetUnit = (unitP === '__all__') ? 'all' : unitP;
+      // Lancuch nawigacji z opoznieniami (musimy poczekac na render)
+      setTimeout(() => {
+        try {
+          if (typeof selectBook === 'function') selectBook(bookP);
+          setTimeout(() => {
+            try {
+              if (typeof openWordList === 'function') openWordList(targetUnit);
+              setTimeout(() => {
+                try {
+                  if (typeof startStudy === 'function') startStudy(targetUnit);
+                  setTimeout(() => {
+                    try {
+                      if (typeof setMode === 'function') setMode(game);
+                      setTimeout(() => {
+                        try {
+                          if (game === 'jump' && typeof jumpStart === 'function') jumpStart();
+                          else if (game === 'bridge' && typeof brStart === 'function') brStart();
+                          else if (game === 'butterfly' && typeof bfStartGame === 'function') bfStartGame();
+                        } catch(e) { console.warn('[autostart game]', e.message||e); }
+                      }, 250);
+                    } catch(e) { console.warn('[autostart setMode]', e.message||e); }
+                  }, 200);
+                } catch(e) { console.warn('[autostart startStudy]', e.message||e); }
+              }, 150);
+            } catch(e) { console.warn('[autostart openWordList]', e.message||e); }
+          }, 150);
+        } catch(e) { console.warn('[autostart selectBook]', e.message||e); }
+      }, 200);
+    }
+  } catch(e) { console.warn('[?game handler]', e.message||e); }
 
   // ═══════════════════════════════════════════════════════════════
   //  HASH ROUTER — pozwala na deep-linking i otwieranie ekranow w
