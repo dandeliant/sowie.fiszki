@@ -7,7 +7,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;700&family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
-<script src="data.js"></script>
 <script src="distractors.js"></script>
 <style>
 :root{
@@ -415,12 +414,36 @@ body{
   <div class="setup" id="setup">
     <h1>🍕 PIZZA CHEF</h1>
     <div class="subtitle">Mistrz pizzy · 2 minuty · ile klientów obsłużysz?</div>
-    <label for="bookSel">📚 Podręcznik</label>
-    <select id="bookSel" onchange="onBookChange()"><option value="">— Wybierz —</option></select>
-    <label for="unitSel">📑 Unit</label>
-    <select id="unitSel" disabled><option value="">— Najpierw wybierz podręcznik —</option></select>
-    <button class="btn-launch" id="launchBtn" onclick="startGame()" disabled>🍕 OTWÓRZ PIZZERIĘ</button>
+    <label>🍽️ Wybierz menu pizzerii</label>
+    <div class="dino-pick" style="grid-template-columns:1fr 1fr;gap:8px;margin-top:6px">
+      <div class="cat-card active" data-cat="all" onclick="pickCat(this,'all')">
+        <div class="ico">🍕</div><div class="nm">Wszystko</div><div class="sub">~40 składników</div>
+      </div>
+      <div class="cat-card" data-cat="vegetables" onclick="pickCat(this,'vegetables')">
+        <div class="ico">🥦</div><div class="nm">Warzywa</div><div class="sub">15 składników</div>
+      </div>
+      <div class="cat-card" data-cat="fruits" onclick="pickCat(this,'fruits')">
+        <div class="ico">🍎</div><div class="nm">Owoce</div><div class="sub">12 składników</div>
+      </div>
+      <div class="cat-card" data-cat="meat" onclick="pickCat(this,'meat')">
+        <div class="ico">🥩</div><div class="nm">Mięso i nabiał</div><div class="sub">12 składników</div>
+      </div>
+    </div>
+    <button class="btn-launch" id="launchBtn" onclick="startGame()">🍕 OTWÓRZ PIZZERIĘ</button>
   </div>
+
+<style>
+  .cat-card{
+    padding:14px 10px;background:#fff;border:2px solid var(--border);
+    border-radius:14px;text-align:center;cursor:pointer;transition:all .2s;
+    font-family:'Fredoka',sans-serif;
+  }
+  .cat-card:hover{border-color:var(--tomato);transform:translateY(-2px);}
+  .cat-card.active{border-color:var(--tomato);background:rgba(220,38,38,.1);box-shadow:0 0 0 3px rgba(220,38,38,.15);}
+  .cat-card .ico{font-size:2rem;line-height:1;}
+  .cat-card .nm{font-size:.85rem;font-weight:700;margin-top:4px;}
+  .cat-card .sub{font-size:.65rem;font-weight:600;color:var(--muted);margin-top:2px;}
+</style>
 
   <!-- ========== GAME ========== -->
   <div class="game" id="game">
@@ -631,8 +654,34 @@ function pickEmojiFor(word){
 /* === CUSTOMER EMOJIS === */
 const CUSTOMER_EMOJIS = ['👨','👩','🧒','👵','👴','🧑‍🦱','👨‍🦰','👩‍🦱','🧑','👶','👨‍🦲','🧓'];
 
+/* === FOOD VOCABULARY (hardcoded) ===
+   Curated lista skladnikow pizzerii — warzywa, owoce, mieso/nabial.
+   Format: [pl, en]. Pasuje do tematu jedzenia bez zaleznosci od unitow. */
+const FOOD_VOCAB = {
+  vegetables: [
+    ['pomidor','tomato'], ['pieczarka','mushroom'], ['cebula','onion'],
+    ['papryka','pepper'], ['ogórek','cucumber'], ['kukurydza','corn'],
+    ['marchew','carrot'], ['ziemniak','potato'], ['sałata','lettuce'],
+    ['brokuł','broccoli'], ['czosnek','garlic'], ['bakłażan','eggplant'],
+    ['cukinia','zucchini'], ['szpinak','spinach'], ['por','leek']
+  ],
+  fruits: [
+    ['jabłko','apple'], ['banan','banana'], ['pomarańcza','orange'],
+    ['truskawka','strawberry'], ['winogrona','grapes'], ['ananas','pineapple'],
+    ['cytryna','lemon'], ['arbuz','watermelon'], ['gruszka','pear'],
+    ['malina','raspberry'], ['borówka','blueberry'], ['mango','mango']
+  ],
+  meat: [
+    ['szynka','ham'], ['kurczak','chicken'], ['bekon','bacon'],
+    ['kiełbasa','sausage'], ['ser','cheese'], ['mozzarella','mozzarella'],
+    ['parmezan','parmesan'], ['jajko','egg'], ['mleko','milk'],
+    ['masło','butter'], ['ryba','fish'], ['krewetki','shrimp']
+  ]
+};
+
 /* === STATE === */
 let pool = [];
+let category = 'all';
 let menuItems = [];     // [{pl, en, emoji}, ...] - 8 dostepnych skladnikow
 let currentOrder = [];  // [{pl, en, emoji}, ...] - to co klient chce
 let pizzaItems = [];    // [{pl, en, emoji}, ...] - co dotychczas dodano
@@ -647,83 +696,24 @@ let busy = false;       // animacja w toku — block clicks
 let currentCustomerEmoji = '👨';
 
 /* === SETUP === */
-(function(){
-  if (typeof BOOKS === 'undefined') return;
-  const bs = document.getElementById('bookSel');
-  Object.values(BOOKS)
-    .filter(b => !b.adminOnly)
-    .sort((a,b) => (a.name||'').localeCompare(b.name||'', 'pl'))
-    .forEach(b => {
-      const o = document.createElement('option');
-      o.value = b.id;
-      o.textContent = (b.icon||'📖') + ' ' + b.name;
-      bs.appendChild(o);
-    });
-  Object.values(BOOKS)
-    .filter(b => b.adminOnly)
-    .forEach(b => {
-      const o = document.createElement('option');
-      o.value = b.id;
-      o.textContent = (b.icon||'📖') + ' ' + b.name + ' (admin)';
-      bs.appendChild(o);
-    });
+function pickCat(card, cat){
+  document.querySelectorAll('.cat-card').forEach(c => c.classList.remove('active'));
+  card.classList.add('active');
+  category = cat;
+}
 
-  // Auto-start z URL params
-  try {
-    const params = new URLSearchParams(window.location.search);
-    const bookParam = params.get('book');
-    const unitParam = params.get('unit');
-    if (bookParam && BOOKS[bookParam]) {
-      const backUrl = unitParam
-        ? 'app.html#/book/' + encodeURIComponent(bookParam) + '/' + encodeURIComponent(unitParam)
-        : 'app.html#/book/' + encodeURIComponent(bookParam);
-      document.querySelectorAll('a[href="app.html"]').forEach(a => { a.href = backUrl; });
-      bs.value = bookParam;
-      onBookChange();
-      const us = document.getElementById('unitSel');
-      const targetUnit = (unitParam === 'all' || !unitParam) ? '__all__' : unitParam;
-      if (BOOKS[bookParam].units?.[targetUnit] || targetUnit === '__all__') us.value = targetUnit;
-      setTimeout(() => { try { startGame(); } catch(e) {} }, 350);
-    }
-  } catch(e) {}
-})();
-
-function onBookChange(){
-  const bId = document.getElementById('bookSel').value;
-  const us = document.getElementById('unitSel');
-  const lb = document.getElementById('launchBtn');
-  us.innerHTML = '';
-  if (!bId || !BOOKS[bId]) {
-    us.innerHTML = '<option value="">— Najpierw wybierz podręcznik —</option>';
-    us.disabled = true; lb.disabled = true; return;
-  }
-  const all = document.createElement('option');
-  all.value = '__all__'; all.textContent = '🌍 Wszystkie słowa z podręcznika';
-  us.appendChild(all);
-  Object.entries(BOOKS[bId].units || {}).forEach(([key, u]) => {
-    const o = document.createElement('option');
-    o.value = key; o.textContent = (u.icon||'📖') + ' ' + (u.name||key);
-    us.appendChild(o);
-  });
-  us.disabled = false; us.value = '__all__'; lb.disabled = false;
+function buildPool(){
+  if (category === 'vegetables') return FOOD_VOCAB.vegetables.slice();
+  if (category === 'fruits') return FOOD_VOCAB.fruits.slice();
+  if (category === 'meat') return FOOD_VOCAB.meat.slice();
+  // 'all'
+  return [...FOOD_VOCAB.vegetables, ...FOOD_VOCAB.fruits, ...FOOD_VOCAB.meat];
 }
 
 /* === START GAME === */
 function startGame(){
-  const bId = document.getElementById('bookSel').value;
-  const uKey = document.getElementById('unitSel').value;
-  if (!bId || !BOOKS[bId]) { alert('Wybierz podręcznik.'); return; }
-
-  pool = [];
-  if (uKey === '__all__' || uKey === 'all') {
-    Object.values(BOOKS[bId].units || {}).forEach(u => {
-      (u.words || []).forEach(w => pool.push([w[0]||'', w[1]||'']));
-    });
-  } else if (BOOKS[bId].units?.[uKey]) {
-    (BOOKS[bId].units[uKey].words || []).forEach(w => pool.push([w[0]||'', w[1]||'']));
-  }
-  pool = pool.filter(w => w[0] && w[1]);
-  if (pool.length < 8) { alert('Ten unit ma za mało słówek (min. 8 — palet 8 składników).'); return; }
+  pool = buildPool();
+  if (pool.length < 8) { alert('Za mało składników w wybranej kategorii (min. 8).'); return; }
 
   tips = 0; timeLeft = 120; custCount = 0; perfectCount = 0; totalScores = [];
   pizzaItems = []; currentOrder = [];
