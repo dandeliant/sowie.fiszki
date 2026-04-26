@@ -1,0 +1,880 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🎈 Balloon Pop — Łapacz balonów</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;700&family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
+<script src="data.js"></script>
+<style>
+:root{
+  --sky-1:#87ceeb; --sky-2:#bde0fe; --sky-3:#fef9c3;
+  --pink:#f472b6; --violet:#a78bfa; --gold:#fde047;
+  --green:#10b981; --danger:#ef4444; --text:#0c1e35;
+  --muted:rgba(12,30,53,.6); --border:rgba(12,30,53,.18);
+  --panel:rgba(255,255,255,.92);
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;}
+body{
+  font-family:'Nunito',system-ui,sans-serif;
+  color:var(--text);
+  background:linear-gradient(180deg,#fef9c3 0%,#bde0fe 30%,#87ceeb 100%);
+  background-attachment:fixed;
+  min-height:100vh;overflow-x:hidden;position:relative;
+}
+
+/* === BACK LINK === */
+.back-link{
+  position:fixed;top:14px;left:14px;z-index:1000;
+  display:inline-flex;align-items:center;gap:6px;
+  padding:9px 16px;background:rgba(255,255,255,.85);
+  border:1.5px solid rgba(12,30,53,.18);border-radius:100px;
+  color:var(--text);font-weight:700;font-size:.85rem;
+  text-decoration:none;backdrop-filter:blur(10px);transition:all .2s;
+}
+.back-link:hover{background:#fff;transform:translateX(-2px);}
+
+/* === SOUND TOGGLE === */
+.snd-btn{
+  position:fixed;top:14px;right:148px;z-index:1000;
+  width:42px;height:42px;display:inline-flex;align-items:center;justify-content:center;
+  background:rgba(255,255,255,.85);border:1.5px solid var(--border);
+  border-radius:50%;color:var(--text);font-size:1rem;cursor:pointer;
+  font-family:inherit;backdrop-filter:blur(10px);transition:all .2s;
+}
+.snd-btn:hover{background:#fff;transform:scale(1.05);}
+.snd-btn.muted{background:rgba(150,150,150,.5);color:#666;}
+@media(max-width:600px){.snd-btn{right:auto;left:14px;top:62px;}}
+
+/* === HOW TO PLAY === */
+.htp-btn{
+  position:fixed;top:14px;right:14px;z-index:1000;
+  padding:9px 16px;background:rgba(244,114,182,.15);
+  border:1.5px solid var(--pink);border-radius:100px;
+  color:var(--pink);font-weight:800;font-size:.85rem;cursor:pointer;
+  font-family:inherit;backdrop-filter:blur(10px);
+}
+.htp-btn:hover{background:rgba(244,114,182,.3);}
+.htp-modal{
+  position:fixed;inset:0;background:rgba(12,30,53,.7);backdrop-filter:blur(8px);
+  z-index:2000;display:none;align-items:center;justify-content:center;padding:20px;
+}
+.htp-modal.show{display:flex;}
+.htp-box{
+  background:#fff;border:2px solid var(--violet);border-radius:24px;
+  padding:28px 32px;max-width:520px;max-height:85vh;overflow-y:auto;
+  box-shadow:0 20px 60px rgba(0,0,0,.3);
+}
+.htp-box h2{font-family:'Fredoka',sans-serif;color:var(--violet);font-size:1.4rem;margin-bottom:14px;}
+.htp-box ol{padding-left:22px;}
+.htp-box li{margin-bottom:9px;font-size:.95rem;line-height:1.5;}
+.htp-box li strong{color:var(--violet);}
+.htp-box button{
+  margin-top:16px;width:100%;padding:11px;background:var(--violet);
+  border:none;border-radius:100px;font-weight:800;color:#fff;cursor:pointer;
+  font-size:.95rem;font-family:inherit;
+}
+
+/* === MAIN === */
+.wrap{max-width:920px;margin:0 auto;padding:60px 16px 50px;position:relative;z-index:1;}
+
+/* === SETUP === */
+.setup{
+  background:var(--panel);backdrop-filter:blur(12px);
+  border:2px solid var(--border);border-radius:28px;
+  padding:36px 32px;max-width:520px;margin:30px auto;
+  box-shadow:0 20px 60px rgba(12,30,53,.2);
+}
+.setup h1{
+  font-family:'Fredoka',sans-serif;
+  font-size:clamp(1.7rem,4vw,2.4rem);font-weight:700;
+  text-align:center;margin-bottom:6px;color:var(--violet);
+}
+.setup .subtitle{text-align:center;color:var(--muted);font-size:.95rem;margin-bottom:24px;}
+.setup label{display:block;font-size:.72rem;text-transform:uppercase;letter-spacing:.1em;color:var(--violet);font-weight:800;margin:14px 0 5px;}
+.setup select{
+  width:100%;padding:12px 14px;font-size:.95rem;font-family:inherit;font-weight:600;
+  background:#fff;border:1.5px solid var(--border);border-radius:12px;
+  color:var(--text);outline:none;
+}
+.setup select:focus{border-color:var(--violet);box-shadow:0 0 0 3px rgba(167,139,250,.25);}
+.btn-launch{
+  width:100%;margin-top:24px;padding:16px;font-size:1.15rem;font-weight:900;
+  font-family:'Fredoka',sans-serif;letter-spacing:.06em;cursor:pointer;
+  background:linear-gradient(135deg,var(--pink),var(--violet));
+  border:none;border-radius:100px;color:#fff;
+  box-shadow:0 8px 30px rgba(167,139,250,.5);transition:all .2s;
+}
+.btn-launch:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 14px 40px rgba(167,139,250,.7);}
+.btn-launch:disabled{opacity:.5;cursor:not-allowed;}
+
+/* === GAME === */
+.game{display:none;}
+.game.active{display:block;}
+
+/* HUD */
+.hud{
+  display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;
+  background:var(--panel);backdrop-filter:blur(8px);
+  border:1.5px solid var(--border);border-radius:16px;
+  padding:10px 14px;margin-bottom:12px;
+}
+.hud-cell{text-align:center;}
+.hud-label{font-size:.6rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:800;}
+.hud-val{font-family:'Fredoka',sans-serif;font-weight:700;font-size:1.05rem;color:var(--violet);}
+.hud-val.warning{color:var(--danger);}
+
+/* PROMPT BAR */
+.prompt-bar{
+  background:linear-gradient(135deg,var(--pink),var(--violet));
+  border-radius:18px;padding:14px 20px;margin-bottom:10px;
+  text-align:center;color:#fff;
+  box-shadow:0 6px 20px rgba(167,139,250,.4);
+}
+.prompt-label{font-size:.66rem;text-transform:uppercase;letter-spacing:.12em;font-weight:800;opacity:.9;}
+.prompt-word{
+  font-family:'Fredoka',sans-serif;font-weight:700;
+  font-size:clamp(1.6rem,4vw,2.3rem);
+  text-shadow:0 2px 6px rgba(0,0,0,.25);margin-top:2px;
+  word-break:break-word;
+}
+
+/* SCENE */
+.scene{
+  position:relative;height:420px;border-radius:18px;overflow:hidden;
+  background:linear-gradient(180deg,#fef9c3 0%,#bde0fe 40%,#87ceeb 100%);
+  border:2px solid var(--border);box-shadow:inset 0 0 60px rgba(0,0,0,.08);
+  user-select:none;cursor:crosshair;
+}
+.cloud{position:absolute;font-size:2.6rem;top:8%;opacity:.7;animation:cloud-drift 50s linear infinite;}
+.cloud.c2{top:18%;font-size:2rem;animation-duration:65s;animation-delay:-30s;}
+.cloud.c3{top:5%;font-size:1.6rem;animation-duration:40s;animation-delay:-15s;}
+.cloud.c4{top:30%;font-size:1.8rem;animation-duration:55s;animation-delay:-22s;}
+@keyframes cloud-drift{from{left:-12%;}to{left:112%;}}
+
+.balloon{
+  position:absolute;
+  display:flex;flex-direction:column;align-items:center;
+  cursor:pointer;user-select:none;
+  filter:drop-shadow(0 6px 8px rgba(0,0,0,.25));
+  animation:balloon-sway 2.5s ease-in-out infinite;
+  z-index:5;
+}
+@keyframes balloon-sway{0%,100%{transform:rotate(-3deg);}50%{transform:rotate(3deg);}}
+.balloon-icon{
+  font-size:3.2rem;line-height:1;pointer-events:none;
+}
+.balloon-string{
+  width:1.5px;height:18px;background:rgba(0,0,0,.4);
+  pointer-events:none;
+}
+.balloon-label{
+  margin-top:4px;background:rgba(255,255,255,.95);
+  padding:3px 10px;border-radius:100px;
+  font-weight:800;font-size:.78rem;color:var(--text);
+  box-shadow:0 2px 6px rgba(0,0,0,.2);
+  pointer-events:none;
+  white-space:nowrap;max-width:140px;overflow:hidden;text-overflow:ellipsis;
+}
+.balloon.gold .balloon-label{background:linear-gradient(135deg,#fef9c3,#fde047);color:#7c2d12;}
+.balloon.crow .balloon-label{background:#1f2937;color:#fde047;}
+
+/* Pop animation */
+.balloon.popping{animation:pop .35s ease-out forwards;}
+@keyframes pop{
+  0%{transform:scale(1);}
+  50%{transform:scale(1.5);opacity:.8;}
+  100%{transform:scale(0);opacity:0;}
+}
+
+/* Particle burst */
+.particle{
+  position:absolute;font-size:1.4rem;pointer-events:none;
+  animation:particle-fly .8s ease-out forwards;z-index:6;
+}
+@keyframes particle-fly{
+  0%{transform:translate(-50%,-50%) scale(.4);opacity:1;}
+  100%{transform:translate(calc(-50% + var(--dx,0px)),calc(-50% + var(--dy,0px))) scale(1.2);opacity:0;}
+}
+
+/* Score float */
+.score-float{
+  position:absolute;font-family:'Fredoka',sans-serif;font-weight:700;font-size:1.3rem;
+  pointer-events:none;animation:score-up 1.2s ease-out forwards;z-index:10;
+  text-shadow:0 2px 8px rgba(0,0,0,.5);
+}
+.score-float.good{color:var(--green);}
+.score-float.bad{color:var(--danger);}
+.score-float.gold{color:#f59e0b;}
+.score-float.crow{color:#1f2937;}
+@keyframes score-up{0%{transform:translateY(0);opacity:0;}20%{opacity:1;}100%{transform:translateY(-50px);opacity:0;}}
+
+.start-overlay{
+  position:absolute;inset:0;background:rgba(255,255,255,.85);
+  backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;
+  z-index:50;
+}
+.start-overlay.hidden{display:none;}
+.countdown{
+  font-family:'Fredoka',sans-serif;font-size:6rem;font-weight:700;
+  color:var(--violet);text-shadow:0 4px 16px rgba(0,0,0,.2);
+  animation:countdown-pulse .9s ease-out;
+}
+@keyframes countdown-pulse{0%{transform:scale(.5);opacity:0;}30%{transform:scale(1.2);opacity:1;}100%{transform:scale(1);opacity:1;}}
+
+/* === END === */
+.end{display:none;}
+.end.active{display:block;}
+.end-box{
+  background:var(--panel);backdrop-filter:blur(12px);
+  border:2px solid var(--border);border-radius:28px;
+  padding:32px 28px;max-width:520px;margin:30px auto;text-align:center;
+  box-shadow:0 20px 60px rgba(12,30,53,.3);
+}
+.end-icon{font-size:5rem;margin-bottom:8px;animation:end-bob 2s ease-in-out infinite;display:inline-block;}
+@keyframes end-bob{0%,100%{transform:translateY(0) rotate(-3deg);}50%{transform:translateY(-8px) rotate(3deg);}}
+.end-title{
+  font-family:'Fredoka',sans-serif;font-size:clamp(1.5rem,4vw,2.2rem);font-weight:700;
+  margin-bottom:10px;color:var(--violet);
+}
+.end-stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:20px 0;}
+.end-stat{background:rgba(167,139,250,.08);border:1.5px solid var(--border);border-radius:12px;padding:12px 8px;}
+.end-stat-val{font-family:'Fredoka',sans-serif;font-weight:700;font-size:1.4rem;color:var(--violet);}
+.end-stat-lbl{font-size:.65rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:700;margin-top:4px;}
+.end-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:8px;}
+.btn-action{
+  padding:11px 22px;font-weight:800;font-size:.9rem;cursor:pointer;
+  border-radius:100px;font-family:inherit;border:none;transition:all .2s;text-decoration:none;display:inline-block;
+}
+.btn-action.primary{background:linear-gradient(135deg,var(--pink),var(--violet));color:#fff;}
+.btn-action.secondary{background:#fff;border:1.5px solid var(--border);color:var(--text);}
+.btn-action:hover{transform:translateY(-2px);}
+
+.bottom-back{text-align:center;margin:30px 0 16px;}
+.footer{text-align:center;font-size:.7rem;color:rgba(12,30,53,.5);font-weight:600;padding:12px;}
+
+@media print{.back-link,.htp-btn,.snd-btn,.bottom-back{display:none!important;}body{background:#fff;}}
+</style>
+</head>
+<body>
+
+<a href="app.html" class="back-link">← Powrót do Sowie Fiszki</a>
+<button class="snd-btn" id="sndBtn" title="Włącz / wyłącz dźwięk" onclick="toggleSound()">🔊</button>
+<button class="htp-btn" onclick="document.getElementById('htpModal').classList.add('show')">ℹ️ Jak grać?</button>
+
+<div class="htp-modal" id="htpModal" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="htp-box">
+    <h2>🎈 Jak grać w Balloon Pop?</h2>
+    <ol>
+      <li>Wybierz <strong>podręcznik</strong> i <strong>unit</strong>, z którego chcesz ćwiczyć słówka.</li>
+      <li>Na górze pojawia się <strong>polskie słowo</strong> (jest też czytane na głos).</li>
+      <li>Z dołu lecą do góry <strong>balony 🎈 z angielskimi słowami</strong>. <strong>Pęknij</strong> balon z prawidłowym tłumaczeniem klikiem.</li>
+      <li>Trafione = <strong>+10 pkt</strong>, błąd = <strong>-5 pkt</strong>.</li>
+      <li><strong>Złoty balon 🎈✨</strong> = +20 pkt + <strong>+5 sekund</strong> do zegara!</li>
+      <li><strong>Kruk 🐦‍⬛</strong> = przebija wszystkie sąsiednie balony (uważaj na prawidłowy!).</li>
+      <li>Trudność rośnie co 15 sekund: balony szybsze, więcej ich.</li>
+      <li>Limit czasu: <strong>60 sekund</strong>. Im więcej trafień, tym lepiej!</li>
+      <li>🔊 Dźwięk można wyciszyć przyciskiem 🔊/🔇.</li>
+    </ol>
+    <button onclick="document.getElementById('htpModal').classList.remove('show')">Łapię balony!</button>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <!-- ========== SETUP ========== -->
+  <div class="setup" id="setup">
+    <h1>🎈 Balloon Pop</h1>
+    <div class="subtitle">Łapacz balonów · klasyka arkadowa · 60 sekund</div>
+    <label for="bookSel">📚 Podręcznik</label>
+    <select id="bookSel" onchange="onBookChange()"><option value="">— Wybierz —</option></select>
+    <label for="unitSel">📑 Unit</label>
+    <select id="unitSel" disabled><option value="">— Najpierw wybierz podręcznik —</option></select>
+    <label for="dirSel">🔄 Kierunek</label>
+    <select id="dirSel">
+      <option value="pl_en">🇵🇱 PL na górze · 🇬🇧 EN na balonach (rekomendowane)</option>
+      <option value="en_pl">🇬🇧 EN na górze · 🇵🇱 PL na balonach</option>
+    </select>
+    <button class="btn-launch" id="launchBtn" onclick="startGame()" disabled>🎈 START</button>
+  </div>
+
+  <!-- ========== GAME ========== -->
+  <div class="game" id="game">
+    <div class="hud">
+      <div class="hud-cell"><div class="hud-label">⭐ Wynik</div><div class="hud-val" id="scoreVal">0</div></div>
+      <div class="hud-cell"><div class="hud-label">⏱ Czas</div><div class="hud-val" id="timeVal">60</div></div>
+      <div class="hud-cell"><div class="hud-label">🎯 Trafione</div><div class="hud-val" id="hitVal">0</div></div>
+      <div class="hud-cell"><div class="hud-label">📊 Poziom</div><div class="hud-val" id="lvlVal">1</div></div>
+    </div>
+
+    <div class="prompt-bar">
+      <div class="prompt-label" id="pPrompt">Pęknij balon ze słowem:</div>
+      <div class="prompt-word" id="pWord">—</div>
+    </div>
+
+    <div class="scene" id="scene">
+      <div class="cloud c1">☁️</div>
+      <div class="cloud c2">☁️</div>
+      <div class="cloud c3">☁️</div>
+      <div class="cloud c4">☁️</div>
+      <div class="start-overlay" id="startOverlay">
+        <div class="countdown" id="countdownEl">3</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== END ========== -->
+  <div class="end" id="end">
+    <div class="end-box">
+      <div class="end-icon" id="endIcon">🎈</div>
+      <div class="end-title" id="endTitle">—</div>
+      <div id="endSub" style="color:var(--muted);font-size:.95rem;margin-bottom:6px"></div>
+      <div class="end-stats">
+        <div class="end-stat"><div class="end-stat-val" id="esScore">0</div><div class="end-stat-lbl">⭐ Wynik</div></div>
+        <div class="end-stat"><div class="end-stat-val" id="esHit">0</div><div class="end-stat-lbl">✅ Trafione</div></div>
+        <div class="end-stat"><div class="end-stat-val" id="esGold">0</div><div class="end-stat-lbl">🎈✨ Złote</div></div>
+        <div class="end-stat"><div class="end-stat-val" id="esMiss">0</div><div class="end-stat-lbl">❌ Pomyłki</div></div>
+      </div>
+      <div class="end-actions">
+        <button class="btn-action primary" onclick="restart()">🎈 Zagraj ponownie</button>
+        <button class="btn-action secondary" onclick="backToSetup()">📚 Inny unit</button>
+        <a href="app.html" class="btn-action secondary">← Sowie Fiszki</a>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="bottom-back"><a href="app.html" class="back-link" style="position:static;background:rgba(255,255,255,.85)">← Wróć do Sowie Fiszki</a></div>
+<div class="footer">© 2026 Sowie Fiszki</div>
+
+<script>
+'use strict';
+
+/* === SOUND CONTROL + TTS === */
+let soundOn = true;
+try { if (localStorage.getItem('bp_sound') === 'off') soundOn = false; } catch(e) {}
+function toggleSound(){
+  soundOn = !soundOn;
+  try { localStorage.setItem('bp_sound', soundOn ? 'on' : 'off'); } catch(e) {}
+  const btn = document.getElementById('sndBtn');
+  if (btn) {
+    btn.textContent = soundOn ? '🔊' : '🔇';
+    btn.classList.toggle('muted', !soundOn);
+  }
+  if (!soundOn && 'speechSynthesis' in window) { try { speechSynthesis.cancel(); } catch(e) {} }
+}
+(function(){
+  const btn = document.getElementById('sndBtn');
+  if (btn) { btn.textContent = soundOn ? '🔊' : '🔇'; btn.classList.toggle('muted', !soundOn); }
+})();
+
+let _voices = [];
+function loadVoices(){ try { _voices = speechSynthesis.getVoices() || []; } catch(e) { _voices = []; } }
+if ('speechSynthesis' in window) { loadVoices(); speechSynthesis.onvoiceschanged = loadVoices; }
+function pickVoice(lang){
+  if (!_voices.length) loadVoices();
+  if (!_voices.length) return null;
+  if (lang === 'pl-PL' || lang.startsWith('pl')) {
+    return _voices.find(v => /Online.*Natural/i.test(v.name) && /pl/i.test(v.lang)) ||
+           _voices.find(v => v.name === 'Google polski') ||
+           _voices.find(v => v.lang === 'pl-PL') ||
+           _voices.find(v => v.lang && v.lang.startsWith('pl')) || null;
+  }
+  return _voices.find(v => /Online.*Natural/i.test(v.name) && /en-GB/i.test(v.lang)) ||
+         _voices.find(v => v.name === 'Google UK English Female') ||
+         _voices.find(v => v.lang === 'en-GB') ||
+         _voices.find(v => v.lang && v.lang.startsWith('en')) || null;
+}
+function speak(text, lang){
+  if (!soundOn || !text || !('speechSynthesis' in window)) return;
+  try {
+    speechSynthesis.cancel();
+    setTimeout(() => {
+      try {
+        if (!soundOn) return;
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = lang || 'en-GB';
+        u.rate = 0.95; u.pitch = 1; u.volume = 1;
+        const v = pickVoice(u.lang);
+        if (v) u.voice = v;
+        speechSynthesis.speak(u);
+      } catch(e) {}
+    }, 60);
+  } catch(e) {}
+}
+
+/* === SOUND EFFECTS === */
+let aC = null;
+function gAC(){ try { if (!aC) aC = new (window.AudioContext||window.webkitAudioContext)(); } catch(e){} return aC; }
+function tone(f, d, type='sine', vol=.1){
+  if (!soundOn) return;
+  try {
+    const c = gAC(); if (!c) return;
+    const o = c.createOscillator(), g = c.createGain();
+    o.connect(g); g.connect(c.destination);
+    o.frequency.value = f; o.type = type;
+    g.gain.setValueAtTime(vol, c.currentTime);
+    g.gain.exponentialRampToValueAtTime(.001, c.currentTime + d);
+    o.start(c.currentTime); o.stop(c.currentTime + d);
+  } catch(e){}
+}
+function sndPop(){ tone(800,.04,'sine',.08); setTimeout(()=>tone(1200,.05,'sine',.06),30); }
+function sndCorrect(){ tone(523,.06); setTimeout(()=>tone(784,.1),60); }
+function sndWrong(){ tone(180,.18,'sawtooth',.07); }
+function sndGold(){ [523,784,1046,1318,1568].forEach((f,i)=>setTimeout(()=>tone(f,.12,'sine',.09),i*60)); }
+function sndCrow(){ tone(220,.25,'square',.07); setTimeout(()=>tone(180,.18,'square',.06),120); }
+function sndWin(){ [523,659,784,1046,1318].forEach((f,i)=>setTimeout(()=>tone(f,.18,'sine',.1),i*150)); }
+
+/* === STATE === */
+let pool = [];
+let direction = 'pl_en';
+let timeLeft = 60, score = 0, hits = 0, misses = 0, gold = 0, level = 1;
+let currentTarget = null;  // {pl, en} - aktualne haslo na gorze
+let balloons = [];         // [{el, x, y, vy, vx, type, pl, en, isTarget}]
+let spawnTimer = null;
+let timerHandle = null;
+let animFrame = null;
+let running = false;
+let baseSpawnInt = 1100;   // ms - czas miedzy balonami (maleje)
+let baseSpeed = 0.5;       // px/frame (rosnie)
+let lvlTimer = null;
+
+/* === SETUP === */
+(function(){
+  if (typeof BOOKS === 'undefined') return;
+  const bs = document.getElementById('bookSel');
+  Object.values(BOOKS)
+    .filter(b => !b.adminOnly)
+    .sort((a,b) => (a.name||'').localeCompare(b.name||'', 'pl'))
+    .forEach(b => {
+      const o = document.createElement('option');
+      o.value = b.id;
+      o.textContent = (b.icon||'📖') + ' ' + b.name;
+      bs.appendChild(o);
+    });
+  Object.values(BOOKS)
+    .filter(b => b.adminOnly)
+    .forEach(b => {
+      const o = document.createElement('option');
+      o.value = b.id;
+      o.textContent = (b.icon||'📖') + ' ' + b.name + ' (admin)';
+      bs.appendChild(o);
+    });
+
+  // Auto-start z URL params
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const bookParam = params.get('book');
+    const unitParam = params.get('unit');
+    if (bookParam && BOOKS[bookParam]) {
+      const backUrl = unitParam
+        ? 'app.html#/book/' + encodeURIComponent(bookParam) + '/' + encodeURIComponent(unitParam)
+        : 'app.html#/book/' + encodeURIComponent(bookParam);
+      document.querySelectorAll('a[href="app.html"]').forEach(a => { a.href = backUrl; });
+      bs.value = bookParam;
+      onBookChange();
+      const us = document.getElementById('unitSel');
+      const targetUnit = (unitParam === 'all' || !unitParam) ? '__all__' : unitParam;
+      if (BOOKS[bookParam].units?.[targetUnit] || targetUnit === '__all__') us.value = targetUnit;
+      setTimeout(() => { try { startGame(); } catch(e) {} }, 350);
+    }
+  } catch(e) {}
+})();
+
+function onBookChange(){
+  const bId = document.getElementById('bookSel').value;
+  const us = document.getElementById('unitSel');
+  const lb = document.getElementById('launchBtn');
+  us.innerHTML = '';
+  if (!bId || !BOOKS[bId]) {
+    us.innerHTML = '<option value="">— Najpierw wybierz podręcznik —</option>';
+    us.disabled = true; lb.disabled = true; return;
+  }
+  const all = document.createElement('option');
+  all.value = '__all__'; all.textContent = '🌍 Wszystkie słowa z podręcznika';
+  us.appendChild(all);
+  Object.entries(BOOKS[bId].units || {}).forEach(([key, u]) => {
+    const o = document.createElement('option');
+    o.value = key; o.textContent = (u.icon||'📖') + ' ' + (u.name||key);
+    us.appendChild(o);
+  });
+  us.disabled = false; us.value = '__all__'; lb.disabled = false;
+}
+
+/* === START === */
+function startGame(){
+  const bId = document.getElementById('bookSel').value;
+  const uKey = document.getElementById('unitSel').value;
+  direction = document.getElementById('dirSel').value;
+  if (!bId || !BOOKS[bId]) { alert('Wybierz podręcznik.'); return; }
+
+  pool = [];
+  if (uKey === '__all__' || uKey === 'all') {
+    Object.values(BOOKS[bId].units || {}).forEach(u => {
+      (u.words || []).forEach(w => pool.push([w[0]||'', w[1]||'']));
+    });
+  } else if (BOOKS[bId].units?.[uKey]) {
+    (BOOKS[bId].units[uKey].words || []).forEach(w => pool.push([w[0]||'', w[1]||'']));
+  }
+  pool = pool.filter(w => w[0] && w[1]);
+  if (pool.length < 4) { alert('Ten unit ma za mało słówek (min. 4).'); return; }
+
+  timeLeft = 60; score = 0; hits = 0; misses = 0; gold = 0; level = 1;
+  baseSpawnInt = 1100; baseSpeed = 0.5;
+  running = false;
+  clearBalloons();
+  updateHud();
+
+  document.getElementById('setup').style.display = 'none';
+  document.getElementById('end').classList.remove('active');
+  document.getElementById('game').classList.add('active');
+  document.getElementById('startOverlay').classList.remove('hidden');
+
+  // Countdown 3-2-1
+  const cd = document.getElementById('countdownEl');
+  cd.textContent = '3';
+  setTimeout(() => { cd.textContent = '2'; cd.style.animation = 'none'; void cd.offsetWidth; cd.style.animation = ''; }, 1000);
+  setTimeout(() => { cd.textContent = '1'; cd.style.animation = 'none'; void cd.offsetWidth; cd.style.animation = ''; }, 2000);
+  setTimeout(() => {
+    document.getElementById('startOverlay').classList.add('hidden');
+    nextTarget();
+    running = true;
+    startSpawning();
+    startMainTimer();
+    startLevelUp();
+    startAnim();
+  }, 3000);
+}
+
+function nextTarget(){
+  if (!pool.length) return;
+  const w = pool[Math.floor(Math.random() * pool.length)];
+  const [pl, en] = w;
+  currentTarget = { pl, en };
+  // Co jest na gorze (PL czy EN)
+  const promptWord = direction === 'pl_en' ? pl : en;
+  const promptLang = direction === 'pl_en' ? 'pl-PL' : 'en-GB';
+  document.getElementById('pPrompt').textContent =
+    direction === 'pl_en' ? 'Pęknij balon z angielskim słowem:' : 'Pęknij balon z polskim słowem:';
+  document.getElementById('pWord').textContent = promptWord;
+  speak(promptWord, promptLang);
+}
+
+/* === SPAWN === */
+function startSpawning(){
+  if (spawnTimer) clearTimeout(spawnTimer);
+  scheduleNext();
+}
+function scheduleNext(){
+  if (!running) return;
+  spawnTimer = setTimeout(() => {
+    spawnBalloon();
+    scheduleNext();
+  }, baseSpawnInt);
+}
+
+function spawnBalloon(){
+  if (!running || !currentTarget) return;
+  const scene = document.getElementById('scene');
+  const sceneRect = scene.getBoundingClientRect();
+  const r = Math.random();
+  let type = 'normal';
+  let pl = '', en = '', isTarget = false;
+  if (r < 0.06) {
+    type = 'crow';
+  } else if (r < 0.18) {
+    // Złoty balon — zawsze prawidłowy (zachęca do trafienia)
+    type = 'gold';
+    pl = currentTarget.pl; en = currentTarget.en; isTarget = true;
+  } else {
+    // Normalna ryba — 35% szansy że to target, 65% że random inny
+    if (Math.random() < 0.35) {
+      pl = currentTarget.pl; en = currentTarget.en; isTarget = true;
+    } else {
+      // Wybierz inny niz target
+      let candidate;
+      let attempts = 0;
+      do {
+        candidate = pool[Math.floor(Math.random() * pool.length)];
+        attempts++;
+      } while ((candidate[0] === currentTarget.pl || candidate[1] === currentTarget.en) && attempts < 20);
+      [pl, en] = candidate;
+      isTarget = false;
+    }
+  }
+
+  const el = document.createElement('div');
+  el.className = 'balloon';
+  if (type === 'gold') el.classList.add('gold');
+  if (type === 'crow') el.classList.add('crow');
+
+  // Zawartosc
+  let icon = '🎈';
+  let labelText = '';
+  if (type === 'gold') { icon = '🎈✨'; labelText = direction === 'pl_en' ? en : pl; }
+  else if (type === 'crow') { icon = '🐦‍⬛'; labelText = 'CROW'; }
+  else { icon = ['🎈','🎈','🎈','🎈'][Math.floor(Math.random()*4)]; labelText = direction === 'pl_en' ? en : pl; }
+  // Rozne kolory dla normalnych balonow przez hue-rotate
+  if (type === 'normal') {
+    const hue = Math.floor(Math.random() * 360);
+    el.style.filter = 'hue-rotate(' + hue + 'deg) drop-shadow(0 6px 8px rgba(0,0,0,.25))';
+  }
+
+  el.innerHTML = '<div class="balloon-icon">' + icon + '</div>'
+    + '<div class="balloon-string"></div>'
+    + '<div class="balloon-label">' + escHtml(labelText) + '</div>';
+
+  // Pozycja startowa: losowo na dole sceny
+  const x = 5 + Math.random() * 85;
+  const y = sceneRect.height + 50;
+  el.style.left = x + '%';
+  el.style.top = y + 'px';
+  el.dataset.type = type;
+  if (type === 'normal' || type === 'gold') {
+    el.dataset.target = isTarget ? '1' : '0';
+    el.dataset.pl = pl;
+    el.dataset.en = en;
+  }
+  el.addEventListener('click', e => onBalloonClick(el, e));
+
+  const speed = baseSpeed * (0.85 + Math.random() * 0.4);
+  const vxPhase = Math.random() * Math.PI * 2;
+  const vxAmp = 0.05 + Math.random() * 0.1;
+
+  scene.appendChild(el);
+  balloons.push({ el, x, y, vy: speed, vxPhase, vxAmp, type, isTarget, pl, en, t:0 });
+}
+
+function escHtml(s){
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/* === ANIMATION === */
+function startAnim(){
+  if (animFrame) cancelAnimationFrame(animFrame);
+  function frame(){
+    if (!running) return;
+    const scene = document.getElementById('scene');
+    const sceneRect = scene.getBoundingClientRect();
+    for (let i = balloons.length - 1; i >= 0; i--) {
+      const b = balloons[i];
+      b.t++;
+      b.y -= b.vy;
+      // Slight horizontal sway
+      const xOff = Math.sin(b.t * 0.04 + b.vxPhase) * b.vxAmp;
+      b.el.style.left = (b.x + xOff) + '%';
+      b.el.style.top = b.y + 'px';
+      // Out of screen — remove
+      if (b.y < -120) {
+        b.el.remove();
+        balloons.splice(i, 1);
+      }
+    }
+    animFrame = requestAnimationFrame(frame);
+  }
+  animFrame = requestAnimationFrame(frame);
+}
+
+/* === CLICK === */
+function onBalloonClick(el, e){
+  if (!running) return;
+  const idx = balloons.findIndex(b => b.el === el);
+  if (idx < 0) return;
+  const b = balloons[idx];
+
+  if (b.type === 'crow') {
+    // Kruk — pop sasiednich
+    sndCrow();
+    handleCrowPop(el);
+    popBalloon(el, idx, false);
+    floatScore('🐦‍⬛ KRUK!', 'crow', el);
+    return;
+  }
+
+  if (b.type === 'gold') {
+    if (b.isTarget) {
+      // Zlote trafienie — bonus + czas
+      hits++; gold++;
+      score += 20;
+      timeLeft = Math.min(120, timeLeft + 5);
+      sndGold();
+      floatScore('+20 ⭐ +5⏱', 'gold', el);
+      popBalloon(el, idx, true);
+      nextTarget();
+      updateHud();
+      return;
+    }
+  }
+
+  // Normalna lub gold ktora nie pasuje — sprawdz target
+  if (b.isTarget) {
+    hits++;
+    score += 10;
+    sndCorrect();
+    floatScore('+10', 'good', el);
+    popBalloon(el, idx, true);
+    nextTarget();
+  } else {
+    misses++;
+    score = Math.max(0, score - 5);
+    sndWrong();
+    floatScore('-5', 'bad', el);
+    popBalloon(el, idx, false);
+  }
+  updateHud();
+}
+
+function popBalloon(el, idx, isGood){
+  el.classList.add('popping');
+  // Particles
+  spawnParticles(el, isGood);
+  setTimeout(() => el.remove(), 350);
+  if (idx >= 0) balloons.splice(idx, 1);
+  if (!isGood) sndPop();
+}
+
+function spawnParticles(el, isGood){
+  const scene = document.getElementById('scene');
+  const sceneRect = scene.getBoundingClientRect();
+  const elRect = el.getBoundingClientRect();
+  const cx = elRect.left - sceneRect.left + elRect.width/2;
+  const cy = elRect.top - sceneRect.top + elRect.height/2;
+  const emojis = isGood ? ['✨','⭐','💫','🌟'] : ['💨','💥'];
+  for (let i = 0; i < 6; i++) {
+    const p = document.createElement('div');
+    p.className = 'particle';
+    p.textContent = emojis[Math.floor(Math.random() * emojis.length)];
+    p.style.left = cx + 'px';
+    p.style.top = cy + 'px';
+    const angle = (i / 6) * Math.PI * 2;
+    const dist = 40 + Math.random() * 30;
+    p.style.setProperty('--dx', Math.cos(angle) * dist + 'px');
+    p.style.setProperty('--dy', Math.sin(angle) * dist + 'px');
+    scene.appendChild(p);
+    setTimeout(() => p.remove(), 800);
+  }
+}
+
+function handleCrowPop(crowEl){
+  const crowRect = crowEl.getBoundingClientRect();
+  const cx = crowRect.left + crowRect.width / 2;
+  const cy = crowRect.top + crowRect.height / 2;
+  const RANGE = 120; // px
+  for (let i = balloons.length - 1; i >= 0; i--) {
+    const b = balloons[i];
+    if (b.el === crowEl) continue;
+    const r = b.el.getBoundingClientRect();
+    const bx = r.left + r.width / 2;
+    const by = r.top + r.height / 2;
+    if (Math.hypot(bx - cx, by - cy) < RANGE) {
+      // Pop — losowo dobre/zle (ale nie liczone do score'a)
+      popBalloon(b.el, i, false);
+    }
+  }
+}
+
+function floatScore(text, kind, el){
+  const scene = document.getElementById('scene');
+  const sceneRect = scene.getBoundingClientRect();
+  const elRect = el.getBoundingClientRect();
+  const f = document.createElement('div');
+  f.className = 'score-float ' + kind;
+  f.textContent = text;
+  f.style.left = (elRect.left - sceneRect.left + elRect.width/2 - 30) + 'px';
+  f.style.top = (elRect.top - sceneRect.top - 20) + 'px';
+  scene.appendChild(f);
+  setTimeout(() => f.remove(), 1300);
+}
+
+/* === MAIN TIMER + LEVEL UP === */
+function startMainTimer(){
+  if (timerHandle) clearInterval(timerHandle);
+  timerHandle = setInterval(() => {
+    timeLeft--;
+    updateHud();
+    if (timeLeft <= 0) endGame();
+  }, 1000);
+}
+
+function startLevelUp(){
+  if (lvlTimer) clearInterval(lvlTimer);
+  lvlTimer = setInterval(() => {
+    if (!running) return;
+    level++;
+    baseSpawnInt = Math.max(450, baseSpawnInt - 150);
+    baseSpeed = Math.min(2.5, baseSpeed + 0.25);
+    updateHud();
+  }, 15000);
+}
+
+function updateHud(){
+  document.getElementById('scoreVal').textContent = score;
+  const tEl = document.getElementById('timeVal');
+  tEl.textContent = timeLeft;
+  tEl.classList.toggle('warning', timeLeft <= 10);
+  document.getElementById('hitVal').textContent = hits;
+  document.getElementById('lvlVal').textContent = level;
+}
+
+/* === END === */
+function endGame(){
+  running = false;
+  if (spawnTimer) clearTimeout(spawnTimer);
+  if (timerHandle) clearInterval(timerHandle);
+  if (lvlTimer) clearInterval(lvlTimer);
+  if (animFrame) cancelAnimationFrame(animFrame);
+  spawnTimer = timerHandle = lvlTimer = animFrame = null;
+  clearBalloons();
+
+  document.getElementById('game').classList.remove('active');
+  document.getElementById('end').classList.add('active');
+  const titleEl = document.getElementById('endTitle');
+  const iconEl = document.getElementById('endIcon');
+  const subEl = document.getElementById('endSub');
+  if (score >= 200) {
+    iconEl.textContent = '🏆'; titleEl.textContent = 'MISTRZ BALONÓW!';
+    subEl.textContent = '🎉 Imponujący wynik! Powyżej 200 punktów!';
+    sndWin();
+  } else if (score >= 100) {
+    iconEl.textContent = '🎈'; titleEl.textContent = 'Świetna robota!';
+    subEl.textContent = '✨ Solidne 100+ punktów!';
+    sndCorrect();
+  } else if (score > 0) {
+    iconEl.textContent = '🎈'; titleEl.textContent = 'Dobra robota!';
+    subEl.textContent = '💪 Spróbuj ponownie po więcej!';
+  } else {
+    iconEl.textContent = '💨'; titleEl.textContent = 'Następnym razem!';
+    subEl.textContent = 'Każdy mistrz zaczynał od zera.';
+  }
+  document.getElementById('esScore').textContent = score;
+  document.getElementById('esHit').textContent = hits;
+  document.getElementById('esGold').textContent = gold;
+  document.getElementById('esMiss').textContent = misses;
+}
+
+function clearBalloons(){
+  balloons.forEach(b => b.el.remove());
+  balloons = [];
+  // Tez kruki/popping itp
+  document.querySelectorAll('.balloon, .particle, .score-float').forEach(el => el.remove());
+}
+
+function restart(){
+  document.getElementById('end').classList.remove('active');
+  startGame();
+}
+
+function backToSetup(){
+  document.getElementById('end').classList.remove('active');
+  document.getElementById('game').classList.remove('active');
+  document.getElementById('setup').style.display = '';
+  running = false;
+  if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
+}
+</script>
+</body>
+</html>
