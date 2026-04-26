@@ -437,6 +437,16 @@ body.shake{animation:shake-screen .15s linear 8;}
       </div>
     </div>
 
+    <label>📝 Sposób odpowiedzi</label>
+    <div class="dino-pick" style="grid-template-columns:1fr 1fr">
+      <div class="dino-card active" data-mode="type" onclick="pickMode(this,'type')">
+        <div class="ico">⌨️</div><div class="nm">Wpisz tłumaczenie</div>
+      </div>
+      <div class="dino-card" data-mode="choice" onclick="pickMode(this,'choice')">
+        <div class="ico">🎯</div><div class="nm">Wybierz z 4 opcji</div>
+      </div>
+    </div>
+
     <button class="btn-launch" id="launchBtn" onclick="startGame()" disabled>⛏️ ROZPOCZNIJ WYKOPALISKA</button>
   </div>
 
@@ -474,21 +484,42 @@ body.shake{animation:shake-screen .15s linear 8;}
     </div>
   </div>
 
-  <!-- ========== TYPE MODAL ========== -->
+  <!-- ========== TYPE / CHOICE MODAL ========== -->
   <div class="type-modal" id="typeModal">
     <div class="type-box">
       <div class="type-bone">🦴</div>
       <div class="type-prompt">Co to za słowo po angielsku?</div>
       <div class="type-pl" id="typePl">—</div>
-      <input type="text" id="typeInput" class="type-input" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Wpisz tłumaczenie…">
+      <!-- Tryb 'type': input -->
+      <div id="modeType">
+        <input type="text" id="typeInput" class="type-input" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Wpisz tłumaczenie…">
+      </div>
+      <!-- Tryb 'choice': 4 buttons -->
+      <div id="modeChoice" style="display:none">
+        <div id="choiceGrid" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"></div>
+      </div>
       <div class="type-attempts" id="typeAttempts">❤️❤️</div>
       <div class="type-msg" id="typeMsg"></div>
-      <div class="type-btns">
+      <div class="type-btns" id="typeBtns">
         <button class="type-btn secondary" onclick="typeSkip()">Pomiń</button>
-        <button class="type-btn primary" onclick="typeSubmit()">✓ Sprawdź</button>
+        <button class="type-btn primary" id="typeSubmitBtn" onclick="typeSubmit()">✓ Sprawdź</button>
       </div>
     </div>
   </div>
+<style>
+  .choice-btn{
+    padding:14px 12px;font-size:1rem;font-weight:800;font-family:inherit;cursor:pointer;
+    background:#fff;border:2px solid var(--border);border-radius:14px;
+    color:var(--text);transition:all .15s;text-align:center;word-break:break-word;
+    line-height:1.2;
+  }
+  .choice-btn:hover:not(:disabled){border-color:var(--sand-3);background:rgba(245,158,11,.1);transform:translateY(-2px);}
+  .choice-btn:disabled{cursor:not-allowed;opacity:.6;}
+  .choice-btn.correct{background:rgba(16,185,129,.18);border-color:#10b981;color:#10b981;animation:flash-good .5s ease;}
+  .choice-btn.wrong{background:rgba(239,68,68,.18);border-color:#ef4444;color:#ef4444;animation:flash-bad .5s ease;}
+  @keyframes flash-good{0%,100%{transform:scale(1);}50%{transform:scale(1.05);}}
+  @keyframes flash-bad{0%,100%{transform:translateX(0);}25%{transform:translateX(-6px);}75%{transform:translateX(6px);}}
+</style>
 
   <!-- ========== ROAR OVERLAY ========== -->
   <div class="roar-overlay" id="roarOverlay">
@@ -634,6 +665,7 @@ const DINOS = {
 /* === STATE === */
 let pool = [];
 let dinoKey = 'trex';
+let inputMode = 'type'; // 'type' | 'choice'
 let bones = [];        // [{pl, en}, ...] - 8 items
 let currentBoneIdx = 0;
 let digProgress = 0;   // 0..100
@@ -710,9 +742,15 @@ function onBookChange(){
 }
 
 function pickDino(card, key){
-  document.querySelectorAll('.dino-card').forEach(c => c.classList.remove('active'));
+  document.querySelectorAll('.dino-card[data-dino]').forEach(c => c.classList.remove('active'));
   card.classList.add('active');
   dinoKey = key;
+}
+
+function pickMode(card, mode){
+  document.querySelectorAll('.dino-card[data-mode]').forEach(c => c.classList.remove('active'));
+  card.classList.add('active');
+  inputMode = mode;
 }
 
 /* === START === */
@@ -857,19 +895,108 @@ function revealBone(){
   setTimeout(openTypeModal, 800);
 }
 
-/* === TYPE MODAL === */
+/* === TYPE / CHOICE MODAL === */
 function openTypeModal(){
   if (currentBoneIdx >= bones.length) return;
   const cur = bones[currentBoneIdx];
   document.getElementById('typePl').textContent = cur.pl;
-  document.getElementById('typeInput').value = '';
   document.getElementById('typeMsg').textContent = '';
   document.getElementById('typeMsg').className = 'type-msg';
   document.getElementById('typeAttempts').innerHTML = '<span class="heart">❤️</span><span class="heart">❤️</span>';
+
+  if (inputMode === 'choice') {
+    // Tryb 4-opcji
+    document.getElementById('modeType').style.display = 'none';
+    document.getElementById('modeChoice').style.display = '';
+    document.getElementById('typeSubmitBtn').style.display = 'none';
+    renderChoiceOptions(cur);
+  } else {
+    // Tryb wpisywania
+    document.getElementById('modeType').style.display = '';
+    document.getElementById('modeChoice').style.display = 'none';
+    document.getElementById('typeSubmitBtn').style.display = '';
+    document.getElementById('typeInput').value = '';
+  }
+
   document.getElementById('typeModal').classList.add('show');
   typeOpen = true;
-  setTimeout(() => document.getElementById('typeInput').focus(), 250);
+  if (inputMode === 'type') {
+    setTimeout(() => document.getElementById('typeInput').focus(), 250);
+  }
   speak(cur.pl, 'pl-PL');
+}
+
+function renderChoiceOptions(cur){
+  // Zbierz 3 zle EN z poola (rozne od cur.en)
+  const wrongs = [];
+  const seen = new Set([cur.en]);
+  let attempts2 = 0;
+  while (wrongs.length < 3 && attempts2 < 100) {
+    const cand = pool[Math.floor(Math.random() * pool.length)];
+    if (cand[1] && !seen.has(cand[1])) { wrongs.push(cand[1]); seen.add(cand[1]); }
+    attempts2++;
+  }
+  while (wrongs.length < 3) wrongs.push('—');
+  const options = shuffle([cur.en, ...wrongs]);
+  const grid = document.getElementById('choiceGrid');
+  grid.innerHTML = '';
+  options.forEach(opt => {
+    const b = document.createElement('button');
+    b.className = 'choice-btn';
+    b.textContent = opt;
+    b.addEventListener('click', () => onChoiceClick(b, opt));
+    grid.appendChild(b);
+  });
+}
+
+function onChoiceClick(btn, opt){
+  if (!typeOpen) return;
+  const cur = bones[currentBoneIdx];
+  const isCorrect = normalize(opt) === normalize(cur.en);
+  // Zablokuj wszystkie
+  document.querySelectorAll('#choiceGrid .choice-btn').forEach(b => b.disabled = true);
+  if (isCorrect) {
+    btn.classList.add('correct');
+    if (attempts === 2) firstTryHits++;
+    score += (attempts === 2 ? 12 : 6); // troche mniej niz typing (latwiejsze)
+    bonesFound++;
+    sndCorrect();
+    speak(cur.en, 'en-GB');
+    document.getElementById('typeMsg').textContent = '✅ Świetnie! ' + cur.en;
+    document.getElementById('typeMsg').className = 'type-msg good';
+    fillNextSlot();
+    setTimeout(closeTypeAndAdvance, 1300);
+  } else {
+    btn.classList.add('wrong');
+    // Zaznacz prawidlowa
+    document.querySelectorAll('#choiceGrid .choice-btn').forEach(b => {
+      if (normalize(b.textContent) === normalize(cur.en)) b.classList.add('correct');
+    });
+    attempts--;
+    misses++;
+    sndWrong();
+    if (attempts <= 0) {
+      document.getElementById('typeMsg').textContent = '❌ Prawidłowo: ' + cur.en;
+      document.getElementById('typeMsg').className = 'type-msg bad';
+      speak(cur.en, 'en-GB');
+      document.getElementById('typeAttempts').innerHTML = '<span class="heart lost">❤️</span><span class="heart lost">❤️</span>';
+      addEmptySlot();
+      setTimeout(closeTypeAndAdvance, 1800);
+    } else {
+      // Pozwol jeszcze raz — odblokuj 3 niezaznaczone, pokaz hint
+      document.getElementById('typeMsg').textContent = '❌ Spróbuj ponownie!';
+      document.getElementById('typeMsg').className = 'type-msg bad';
+      document.getElementById('typeAttempts').innerHTML = '<span class="heart">❤️</span><span class="heart lost">❤️</span>';
+      setTimeout(() => {
+        document.querySelectorAll('#choiceGrid .choice-btn').forEach(b => {
+          if (!b.classList.contains('wrong')) {
+            b.disabled = false;
+            b.classList.remove('correct');
+          }
+        });
+      }, 700);
+    }
+  }
 }
 
 document.getElementById('typeInput').addEventListener('keydown', e => {
