@@ -8140,8 +8140,33 @@ function bfNewWord() {
   const wrong = shuffle(others).slice(0, 3).map(w => w[1]);
   bfCurrent = {pl, en, wrong};
   document.getElementById('bfWord').textContent = pl;
-  // Czytaj polskie slowo na glos (jesli autoVoice wlaczone)
-  if (autoVoice) setTimeout(() => spkPl(pl), 100);
+  // Polski lektor — ale poczekaj az skonczy sie poprzednie spkForeign
+  // (po zlapaniu motyla z prawidlowa odpowiedzia angielski jest czytany,
+  // potem dopiero polski nastepnego slowa).
+  if (autoVoice) bfSpeakPlWhenIdle(pl);
+}
+
+// Czeka az speechSynthesis przestanie mowic (nie kasuje), potem czyta PL.
+// Fallback po 4s zeby gra nie utknela.
+function bfSpeakPlWhenIdle(text){
+  if (!text) return;
+  if (!('speechSynthesis' in window)) { spkPl(text); return; }
+  let done = false;
+  const speakNow = () => { if (done) return; done = true; spkPl(text); };
+  const start = Date.now();
+  const tick = () => {
+    if (done) return;
+    if (Date.now() - start > 4000) { speakNow(); return; } // safety
+    // speaking=true gdy obecnie mowi; pending=true gdy jest w kolejce
+    if (!speechSynthesis.speaking && !speechSynthesis.pending) {
+      // Krotka chwila po koncu poprzedniej wypowiedzi
+      setTimeout(speakNow, 200);
+      return;
+    }
+    setTimeout(tick, 120);
+  };
+  // Krotki wstep — daj spkForeign chwile by sie "rozkrecil"
+  setTimeout(tick, 250);
 }
 
 function bfSpawn() {
