@@ -1144,12 +1144,19 @@ const DB = (() => {
     if (!_userId) throw new Error('Nie zalogowany.');
     if (!_profile?.isParent) throw new Error('Tylko opiekun moze dodawac dzieci.');
     if (childUserId === _userId) throw new Error('Nie mozesz dodac siebie jako dziecka.');
-    const { error } = await supabase
-      .from('parent_children')
-      .insert({ parent_id: _userId, child_id: childUserId });
+    // Uzywamy RPC parent_add_child (SECURITY DEFINER) — omija problem
+    // rekurencji RLS profiles<->parent_children. Migracja: fix-parent-add-child.sql
+    const { error } = await supabase.rpc('parent_add_child', { p_child_id: childUserId });
     if (error) {
-      if (error.code === '23505') throw new Error('To dziecko juz jest przypisane.');
-      throw new Error(error.message);
+      // Fallback: stary direct insert (gdyby RPC jeszcze nie zostalo zainstalowane)
+      const { error: insErr } = await supabase
+        .from('parent_children')
+        .insert({ parent_id: _userId, child_id: childUserId });
+      if (insErr) {
+        if (insErr.code === '23505') throw new Error('To dziecko juz jest przypisane.');
+        // Zwracamy oryginalny blad RPC (zwykle bardziej opisowy)
+        throw new Error(error.message || insErr.message);
+      }
     }
   }
 
