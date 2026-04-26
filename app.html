@@ -12526,19 +12526,48 @@ function renderStudentSearchList(query) {
   });
 }
 
-async function openStudentProgress(userId, username) {
+// _studProgReturnTo — gdzie wracac z ekranu postepu ucznia.
+// 'class' (default) = sClassDetail (dla nauczyciela/admina);
+// 'parent' = sParentPanel (dla opiekuna).
+let _studProgReturnTo = 'class';
+
+async function openStudentProgress(userId, username, returnTo) {
+  if (returnTo) _studProgReturnTo = returnTo;
   showScreen('sStudentProgress');
+  // Aktualizuj przycisk Wroc zgodnie z kontekstem
+  const backBtn = document.querySelector('#sStudentProgress button[onclick^="showScreen"]');
+  if (backBtn) {
+    if (_studProgReturnTo === 'parent') {
+      backBtn.setAttribute('onclick', "showScreen('sParentPanel')");
+      backBtn.textContent = '← Panel opiekuna';
+    } else {
+      backBtn.setAttribute('onclick', "showScreen('sClassDetail')");
+      backBtn.textContent = '← Klasa';
+    }
+  }
   // Tytul z etykieta prywatna (jesli jest) + przycisk szybkiej edycji
   const titleEl = document.getElementById('studProgTitle');
   titleEl.innerHTML = '📊 ' + fmtNameWithLabel(userId, username, {inline:true})
-    + ` <button class="btn-sm" style="font-size:.62rem;padding:3px 7px;margin-left:6px;vertical-align:middle" title="Prywatna etykieta" onclick="openUserLabelModal('${userId}','${esc(username)}',()=>openStudentProgress('${userId}','${esc(username)}'))">✏️</button>`;
+    + ` <button class="btn-sm" style="font-size:.62rem;padding:3px 7px;margin-left:6px;vertical-align:middle" title="Prywatna etykieta" onclick="openUserLabelModal('${userId}','${esc(username)}',()=>openStudentProgress('${userId}','${esc(username)}','${_studProgReturnTo}'))">✏️</button>`;
   document.getElementById('studProgSub').textContent = 'Postęp nauki słówek';
   document.getElementById('studProgStats').innerHTML = '<div style="color:var(--muted);font-size:.8rem;padding:16px;font-weight:600">⏳ Ładowanie postępu…</div>';
   document.getElementById('studProgUnits').innerHTML = '';
 
   try {
-    const [profile, unitRows, activityRows] = await Promise.all([
-      Promise.resolve(_allProfiles.find(p => p.id === userId) || {}),
+    // Jesli profil nie jest w cache (np. opiekun nie ma _allProfiles),
+    // pobierz go bezposrednio z Supabase (RLS pozwala dzieki polityce
+    // prof_select_parent_child z helper-em _is_parent_of).
+    let profile = (Array.isArray(_allProfiles) ? _allProfiles : []).find(p => p.id === userId);
+    if (!profile) {
+      try {
+        const fetched = await DB.fetchProfileById(userId);
+        if (fetched) profile = fetched;
+      } catch(e) {
+        console.warn('[openStudentProgress] fetchProfileById:', e.message);
+      }
+    }
+    if (!profile) profile = {};
+    const [unitRows, activityRows] = await Promise.all([
       DB.loadUserProgress(userId),
       DB.getDailyXpHistory ? DB.getDailyXpHistory(userId, 90).catch(() => []) : Promise.resolve([])
     ]);
@@ -15839,15 +15868,17 @@ if ('serviceWorker' in navigator) {
         card.innerHTML = `
           <div style="min-width:0;flex:1">
             <div style="font-size:.95rem;font-weight:800;color:var(--accent);word-break:break-word">👶 ${fmtNameWithLabel(k.childId, p.username || '(nieznany)', {inline:true})}</div>
-            <div style="font-size:.7rem;color:var(--muted);font-weight:600;margin-top:2px">Plan: ${planLbl}  ·  XP dzisiaj: ${p.daily_xp || 0}</div>
+            <div style="font-size:.7rem;color:var(--muted);font-weight:600;margin-top:2px">Plan: ${planLbl}  ·  XP dzisiaj: ${p.daily_xp || 0}  ·  Poz. ${p.level || 1}  ·  🔥 ${p.streak || 0}</div>
           </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
             <button class="btn-sm" data-act="label" style="padding:5px 10px;font-size:.72rem" title="Prywatna etykieta">✏️</button>
+            <button class="btn-sm accent" data-act="progress" style="padding:5px 12px;font-size:.72rem" title="Statystyki i postęp">📊 Postęp</button>
             <button class="btn-sm" data-act="books" style="padding:5px 12px;font-size:.72rem">📚 Podręczniki</button>
             <button class="btn-sm" data-act="remove" style="border-color:rgba(255,118,117,.4);color:var(--danger);padding:5px 12px;font-size:.72rem">🗑️ Usuń</button>
           </div>
         `;
         card.querySelector('[data-act="label"]').addEventListener('click', ()=>openUserLabelModal(k.childId, p.username || '', refreshMyChildren));
+        card.querySelector('[data-act="progress"]').addEventListener('click', ()=>openStudentProgress(k.childId, p.username || '', 'parent'));
         card.querySelector('[data-act="books"]').addEventListener('click', ()=>openChildBooks(k.childId, p.username));
         card.querySelector('[data-act="remove"]').addEventListener('click', ()=>handleRemoveChild(k.relationId, p.username));
         listEl.appendChild(card);

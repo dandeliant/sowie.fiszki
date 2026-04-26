@@ -1107,6 +1107,22 @@ const DB = (() => {
     return data;
   }
 
+  // Pobierz dowolny profil po ID (uzywane przez opiekuna do widoku
+  // postepu dziecka — RLS pozwala dzieki polityce prof_select_parent_child).
+  async function fetchProfileById(userId) {
+    if (!userId) return null;
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, username, daily_xp, plan, xp, level, streak, total_sessions, total_answers, correct_answers, last_study_date, plan_expires_at, is_admin, is_teacher')
+      .eq('id', userId)
+      .maybeSingle();
+    if (error) {
+      console.warn('[fetchProfileById]', error.message);
+      return null;
+    }
+    return data || null;
+  }
+
   async function listMyChildren() {
     if (!_userId) return [];
     const { data: rels, error } = await supabase
@@ -1119,7 +1135,7 @@ const DB = (() => {
     const childIds = rels.map(r => r.child_id);
     const { data: profiles, error: pErr } = await supabase
       .from('profiles')
-      .select('id, username, daily_xp, plan')
+      .select('id, username, daily_xp, plan, xp, level, streak, total_sessions, total_answers, correct_answers, last_study_date, plan_expires_at, is_admin, is_teacher')
       .in('id', childIds);
     if (pErr) throw new Error(pErr.message);
     const byId = Object.fromEntries((profiles || []).map(p => [p.id, p]));
@@ -1934,6 +1950,7 @@ const DB = (() => {
     getInactiveChildren,
     autoDeleteInactiveUsers,
     listMyChildren,
+    fetchProfileById,
     findUserByUsername,
     addChild,
     removeChild,
