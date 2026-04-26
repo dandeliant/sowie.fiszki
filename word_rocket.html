@@ -57,6 +57,21 @@ body{
   font-family:inherit;backdrop-filter:blur(10px);
 }
 .htp-btn:hover{background:rgba(255,46,136,.25);}
+
+/* === SOUND TOGGLE === */
+.snd-btn{
+  position:fixed;top:14px;right:148px;z-index:1000;
+  width:42px;height:42px;display:inline-flex;align-items:center;justify-content:center;
+  background:rgba(255,215,0,.12);border:1.5px solid var(--neon-yellow);
+  border-radius:50%;color:var(--neon-yellow);font-size:1rem;cursor:pointer;
+  font-family:inherit;backdrop-filter:blur(10px);
+  transition:all .2s;
+}
+.snd-btn:hover{background:rgba(255,215,0,.25);transform:scale(1.05);}
+.snd-btn.muted{background:rgba(139,149,200,.12);border-color:var(--muted);color:var(--muted);}
+@media(max-width:600px){
+  .snd-btn{right:auto;left:14px;top:62px;}
+}
 .htp-modal{
   position:fixed;inset:0;background:rgba(10,14,42,.85);backdrop-filter:blur(8px);
   z-index:2000;display:none;align-items:center;justify-content:center;padding:20px;
@@ -310,6 +325,7 @@ body{
 <body>
 
 <a href="app.html" class="back-link">← Powrót do Sowie Fiszki</a>
+<button class="snd-btn" id="sndBtn" title="Włącz / wyłącz dźwięk" onclick="toggleSound()">🔊</button>
 <button class="htp-btn" onclick="document.getElementById('htpModal').classList.add('show')">ℹ️ Jak grać?</button>
 
 <!-- HTP modal -->
@@ -324,6 +340,7 @@ body{
       <li><strong>Limit czasu:</strong> 90 sekund. Im szybciej odpowiadasz, tym lepszy wynik.</li>
       <li><strong>Wygrywasz</strong>, gdy dotrzesz do Księżyca 🌕.</li>
       <li><strong>Przegrywasz</strong>, gdy paliwo spadnie do 0% lub skończy się czas.</li>
+      <li>🔊 Pytanie jest <strong>czytane na głos</strong>, a po wybraniu — <strong>odczytana zostaje prawidłowa odpowiedź</strong>. Możesz wyciszyć dźwięk przyciskiem 🔊/🔇 (prawy górny róg).</li>
     </ol>
     <button onclick="document.getElementById('htpModal').classList.remove('show')">Rozumiem!</button>
   </div>
@@ -424,6 +441,85 @@ body{
 'use strict';
 
 /* ============================================================
+   SOUND CONTROL — globalne wyciszenie (TTS + SFX)
+   Persistowane w localStorage.
+============================================================ */
+let soundOn = true;
+try {
+  const v = localStorage.getItem('wr_sound');
+  if (v === 'off') soundOn = false;
+} catch(e) {}
+function toggleSound(){
+  soundOn = !soundOn;
+  try { localStorage.setItem('wr_sound', soundOn ? 'on' : 'off'); } catch(e) {}
+  const btn = document.getElementById('sndBtn');
+  if (btn) {
+    btn.textContent = soundOn ? '🔊' : '🔇';
+    btn.classList.toggle('muted', !soundOn);
+    btn.title = soundOn ? 'Wycisz' : 'Włącz dźwięk';
+  }
+  if (!soundOn && 'speechSynthesis' in window) {
+    try { speechSynthesis.cancel(); } catch(e) {}
+  }
+}
+// Inicjalizuj stan przycisku po DOMContentLoaded (przycisk juz w DOM)
+(function initSndBtn(){
+  const btn = document.getElementById('sndBtn');
+  if (btn) {
+    btn.textContent = soundOn ? '🔊' : '🔇';
+    btn.classList.toggle('muted', !soundOn);
+    btn.title = soundOn ? 'Wycisz' : 'Włącz dźwięk';
+  }
+})();
+
+/* ============================================================
+   TEXT-TO-SPEECH — czytanie pytania i odpowiedzi
+   Pytanie czytane przy wyswietleniu, prawidlowa odpowiedz po
+   wybraniu (ok lub blad — zawsze slyszysz prawidlowa).
+============================================================ */
+let _voices = [];
+function loadVoices(){
+  try { _voices = speechSynthesis.getVoices() || []; } catch(e) { _voices = []; }
+}
+if ('speechSynthesis' in window) {
+  loadVoices();
+  speechSynthesis.onvoiceschanged = loadVoices;
+}
+function pickVoice(lang){
+  if (!_voices.length) loadVoices();
+  if (!_voices.length) return null;
+  if (lang === 'pl-PL' || lang.startsWith('pl')) {
+    return _voices.find(v => v.lang === 'pl-PL') ||
+           _voices.find(v => v.lang && v.lang.startsWith('pl')) || null;
+  }
+  // Angielski — preferuj UK Female
+  return _voices.find(v => v.name === 'Google UK English Female') ||
+         _voices.find(v => v.lang === 'en-GB' && /female/i.test(v.name||'')) ||
+         _voices.find(v => v.lang === 'en-GB') ||
+         _voices.find(v => v.lang && v.lang.startsWith('en')) || null;
+}
+function speak(text, lang){
+  if (!soundOn) return;
+  if (!text || !('speechSynthesis' in window)) return;
+  try {
+    speechSynthesis.cancel();
+    // Krótkie opóźnienie omija bug Chrome (cancel+speak w tym samym tick'u
+    // potrafi się "pożreć" — utterance nie odtwarza się).
+    setTimeout(() => {
+      try {
+        if (!soundOn) return; // user mógł wyłączyć w międzyczasie
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = lang || 'en-GB';
+        u.rate = 0.9; u.pitch = 1; u.volume = 1;
+        const v = pickVoice(u.lang);
+        if (v) u.voice = v;
+        speechSynthesis.speak(u);
+      } catch(e) {}
+    }, 60);
+  } catch(e) {}
+}
+
+/* ============================================================
    GENERATE STARS BACKGROUND
 ============================================================ */
 (function(){
@@ -479,6 +575,7 @@ const ALT_PER_CORRECT = 100 / TOTAL_QUESTIONS_TO_MOON; // ~8.33%
 let aC = null;
 function gAC(){ try{ if(!aC) aC = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} return aC; }
 function tone(f, d, type='sine', vol=.1){
+  if (!soundOn) return;
   try{
     const c = gAC(); if(!c) return;
     const o = c.createOscillator(), g = c.createGain();
@@ -501,6 +598,8 @@ function sndLose(){
 
 /* ============================================================
    SETUP — wypelnij selecty z BOOKS
+   Plus: obsluga URL param ?book=X&unit=Y (deep link z app.html
+   z poziomu konkretnego unitu) — auto-start gry.
 ============================================================ */
 (function(){
   if (typeof BOOKS === 'undefined') return;
@@ -515,6 +614,45 @@ function sndLose(){
       o.textContent = (b.icon||'📖') + ' ' + b.name;
       bs.appendChild(o);
     });
+  // Admin: tez pokaz adminOnly podreczniki (nie wiemy tutaj jakie role,
+  // ale rzadko sa to ksiazki dla studentów; przepuszczamy do selecta —
+  // jesli RLS/permissions nie pasuja, gra po prostu zwroci "za malo slow").
+  Object.values(BOOKS)
+    .filter(b => b.adminOnly)
+    .sort((a,b) => (a.name||'').localeCompare(b.name||'', 'pl'))
+    .forEach(b => {
+      const o = document.createElement('option');
+      o.value = b.id;
+      o.textContent = (b.icon||'📖') + ' ' + b.name + ' (admin)';
+      bs.appendChild(o);
+    });
+
+  // Deep-link z unit study (app.html?book=X&unit=Y)
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const bookParam = params.get('book');
+    const unitParam = params.get('unit');
+    if (bookParam && BOOKS[bookParam]) {
+      // Aktualizuj back-linki, zeby wracaly do unitu (a nie na strone glowna)
+      const backUrl = unitParam
+        ? 'app.html#/book/' + encodeURIComponent(bookParam) + '/' + encodeURIComponent(unitParam)
+        : 'app.html#/book/' + encodeURIComponent(bookParam);
+      document.querySelectorAll('a[href="app.html"]').forEach(a => { a.href = backUrl; });
+      // Wybierz w selectach
+      bs.value = bookParam;
+      onBookChange();
+      const us = document.getElementById('unitSel');
+      // 'all' = wirtualny unit "wszystkie" -> '__all__' w word_rocket
+      const targetUnit = (unitParam === 'all' || !unitParam) ? '__all__' : unitParam;
+      if (BOOKS[bookParam].units?.[targetUnit] || targetUnit === '__all__') {
+        us.value = targetUnit;
+      }
+      // Auto-start po krotkim opóznieniu (pozwala na render UI)
+      setTimeout(() => {
+        try { startGame(); } catch(e) { console.warn('[autostart]', e.message||e); }
+      }, 350);
+    }
+  } catch(e) { console.warn('[URL params]', e.message||e); }
 })();
 
 function onBookChange(){
@@ -649,6 +787,9 @@ function nextQuestion(){
     b.addEventListener('click', () => handleAnswer(b, opt));
     grid.appendChild(b);
   });
+  // TTS: odczytaj pytanie w jezyku zrodlowym
+  const qLang = direction === 'pl_en' ? 'pl-PL' : 'en-GB';
+  speak(qWord, qLang);
 }
 
 function handleAnswer(btn, opt){
@@ -679,6 +820,10 @@ function handleAnswer(btn, opt){
     asteroidHit();
   }
   updateHud();
+  // TTS: odczytaj prawidlowa odpowiedz w jezyku docelowym
+  // (dla 'pl_en' odpowiedz to EN; dla 'en_pl' odpowiedz to PL)
+  const ansLang = direction === 'pl_en' ? 'en-GB' : 'pl-PL';
+  setTimeout(() => speak(currentWord.answer, ansLang), 350);
 
   // Sprawdz koniec
   if (altitude >= 100) {
