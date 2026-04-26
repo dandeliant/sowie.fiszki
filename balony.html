@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;700&family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
 <script src="data.js"></script>
+<script src="distractors.js"></script>
 <style>
 :root{
   --sky-1:#87ceeb; --sky-2:#bde0fe; --sky-3:#fef9c3;
@@ -597,18 +598,40 @@ function spawnBalloon(){
     type = 'gold';
     pl = currentTarget.pl; en = currentTarget.en; isTarget = true;
   } else {
-    // Normalna ryba — 35% szansy że to target, 65% że random inny
+    // Normalna ryba — 35% szansy że to target, 65% że dystraktor
     if (Math.random() < 0.35) {
       pl = currentTarget.pl; en = currentTarget.en; isTarget = true;
     } else {
-      // Wybierz inny niz target
-      let candidate;
-      let attempts = 0;
-      do {
-        candidate = pool[Math.floor(Math.random() * pool.length)];
-        attempts++;
-      } while ((candidate[0] === currentTarget.pl || candidate[1] === currentTarget.en) && attempts < 20);
-      [pl, en] = candidate;
+      // Wybierz dystraktor zblizony do prawidlowego z labelField
+      const labelField = direction === 'pl_en' ? 1 : 0;
+      const targetLabel = direction === 'pl_en' ? currentTarget.en : currentTarget.pl;
+      let chosenLabel = null;
+      if (typeof generateDistractors === 'function') {
+        // Generuj nowa pule dystraktorow przy kazdym spawn (zeby ulec roznorodnosci)
+        const distractors = generateDistractors(targetLabel, pool, 6, labelField);
+        if (distractors.length) {
+          chosenLabel = distractors[Math.floor(Math.random() * distractors.length)];
+        }
+      }
+      if (chosenLabel) {
+        // Sprobuj znalezc oryginalny pl-en pair w pool dla tej etykiety
+        const found = pool.find(p => (p[labelField] === chosenLabel));
+        if (found) { pl = found[0]; en = found[1]; }
+        else {
+          // To literowka wygenerowana — utworz fake pair (uzytkownik nie potrzebuje 2-jezycznych danych dla zlych)
+          if (direction === 'pl_en') { pl = ''; en = chosenLabel; }
+          else                       { pl = chosenLabel; en = ''; }
+        }
+      } else {
+        // Fallback: random z pool
+        let candidate;
+        let attempts = 0;
+        do {
+          candidate = pool[Math.floor(Math.random() * pool.length)];
+          attempts++;
+        } while ((candidate[0] === currentTarget.pl || candidate[1] === currentTarget.en) && attempts < 20);
+        [pl, en] = candidate;
+      }
       isTarget = false;
     }
   }

@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;700&family=Nunito:wght@600;700;800;900&family=Special+Elite&display=swap" rel="stylesheet">
 <script src="data.js"></script>
+<script src="distractors.js"></script>
 <style>
 :root{
   --sand-1:#fef3c7; --sand-2:#fbbf24; --sand-3:#b45309;
@@ -927,14 +928,17 @@ function openTypeModal(){
 }
 
 function renderChoiceOptions(cur){
-  // Zbierz 3 zle EN z poola (rozne od cur.en)
-  const wrongs = [];
-  const seen = new Set([cur.en]);
-  let attempts2 = 0;
-  while (wrongs.length < 3 && attempts2 < 100) {
-    const cand = pool[Math.floor(Math.random() * pool.length)];
-    if (cand[1] && !seen.has(cand[1])) { wrongs.push(cand[1]); seen.add(cand[1]); }
-    attempts2++;
+  // Zbierz 3 zle EN — zblizone do prawidlowej (Levenshtein + literowki)
+  let wrongs = (typeof generateDistractors === 'function')
+    ? generateDistractors(cur.en, pool, 3, 1) : [];
+  if (wrongs.length < 3) {
+    const seen = new Set([cur.en, ...wrongs]);
+    let attempts2 = 0;
+    while (wrongs.length < 3 && attempts2 < 100) {
+      const cand = pool[Math.floor(Math.random() * pool.length)];
+      if (cand[1] && !seen.has(cand[1])) { wrongs.push(cand[1]); seen.add(cand[1]); }
+      attempts2++;
+    }
   }
   while (wrongs.length < 3) wrongs.push('—');
   const options = shuffle([cur.en, ...wrongs]);

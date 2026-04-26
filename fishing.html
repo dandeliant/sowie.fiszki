@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;700&family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
 <script src="data.js"></script>
+<script src="distractors.js"></script>
 <style>
 :root{
   --sky-1:#87ceeb; --sky-2:#bde0fe;
@@ -773,15 +774,19 @@ function doCatch(x, y){
   if (direction === 'en_pl') { qWord = en; aWord = pl; qLang = 'en-GB'; aLang = 'pl-PL'; }
   else                       { qWord = pl; aWord = en; qLang = 'pl-PL'; aLang = 'en-GB'; }
 
-  // Pula 3 zlych
-  const wrongs = [];
-  const seen = new Set([aWord]);
-  let attempts = 0;
-  while (wrongs.length < 3 && attempts < 100) {
-    const idx = Math.floor(Math.random() * pool.length);
-    const cand = direction === 'en_pl' ? pool[idx][0] : pool[idx][1];
-    if (cand && !seen.has(cand)) { wrongs.push(cand); seen.add(cand); }
-    attempts++;
+  // Pula 3 zlych — zblizone do prawidlowej (Levenshtein + literowki)
+  const fieldIdx = direction === 'en_pl' ? 0 : 1;
+  let wrongs = (typeof generateDistractors === 'function')
+    ? generateDistractors(aWord, pool, 3, fieldIdx) : [];
+  if (wrongs.length < 3) {
+    const seen = new Set([aWord, ...wrongs]);
+    let attempts = 0;
+    while (wrongs.length < 3 && attempts < 100) {
+      const idx = Math.floor(Math.random() * pool.length);
+      const cand = direction === 'en_pl' ? pool[idx][0] : pool[idx][1];
+      if (cand && !seen.has(cand)) { wrongs.push(cand); seen.add(cand); }
+      attempts++;
+    }
   }
   while (wrongs.length < 3) wrongs.push('—');
   const options = shuffle([aWord, ...wrongs]);

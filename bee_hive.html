@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;700&family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
 <script src="data.js"></script>
+<script src="distractors.js"></script>
 <style>
 :root{
   --sky-1:#bae6fd; --sky-2:#7dd3fc;
@@ -703,26 +704,30 @@ function nextRound(){
   document.getElementById('pWord').textContent = promptWord;
   speak(promptWord, promptLang);
 
-  // 4 kwiaty: 1 prawidlowy + 3 zle
-  const wrongs = [];
-  const seen = new Set([currentTarget.pl, currentTarget.en]);
-  let attempts = 0;
-  while (wrongs.length < 3 && attempts < 100) {
-    const idx = Math.floor(Math.random() * pool.length);
-    const cand = pool[idx];
-    if (cand[0] && cand[1] && !seen.has(cand[0]) && !seen.has(cand[1])) {
-      wrongs.push(cand);
-      seen.add(cand[0]); seen.add(cand[1]);
+  // 4 kwiaty: 1 prawidlowy + 3 zle (zblizone do prawidlowej)
+  const labelField = direction === 'pl_en' ? 1 : 0; // ktora strona idzie na kwiat
+  const targetLabel = direction === 'pl_en' ? currentTarget.en : currentTarget.pl;
+  const wrongLabels = (typeof generateDistractors === 'function')
+    ? generateDistractors(targetLabel, pool, 3, labelField) : [];
+  // Fallback gdy zbyt mala pula
+  if (wrongLabels.length < 3) {
+    const seen = new Set([targetLabel, ...wrongLabels]);
+    let a = 0;
+    while (wrongLabels.length < 3 && a < 100) {
+      const cand = pool[Math.floor(Math.random() * pool.length)];
+      const v = cand[labelField];
+      if (v && !seen.has(v)) { wrongLabels.push(v); seen.add(v); }
+      a++;
     }
-    attempts++;
   }
-  while (wrongs.length < 3) wrongs.push([currentTarget.pl + ' ?', currentTarget.en + ' ?']);
+  while (wrongLabels.length < 3) wrongLabels.push(targetLabel + ' ?');
 
+  // Zbuduj flowerData — tylko etykieta sie liczy do isCorrect
   const flowerData = shuffle([
     {pl: currentTarget.pl, en: currentTarget.en, isCorrect: true},
-    {pl: wrongs[0][0], en: wrongs[0][1], isCorrect: false},
-    {pl: wrongs[1][0], en: wrongs[1][1], isCorrect: false},
-    {pl: wrongs[2][0], en: wrongs[2][1], isCorrect: false},
+    ...wrongLabels.map(lbl => direction === 'pl_en'
+      ? {pl: '', en: lbl, isCorrect: false}
+      : {pl: lbl, en: '', isCorrect: false})
   ]);
 
   renderFlowers(flowerData);

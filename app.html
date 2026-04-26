@@ -3328,6 +3328,7 @@ szkoła	school"></textarea>
 <script src="supabase-config.js"></script>
 <script src="data.js"></script>
 <script src="db.js"></script>
+<script src="distractors.js"></script>
 <script>
 'use strict';
 // ══════════════════════════════════════════════
@@ -4952,9 +4953,16 @@ async function saveSentenceEdit() {
 // ══════════════════════════════════════════════
 function buildQuiz(ci) {
   const ans = getA(ci);
-  const pool2 = activeAllWords.map(w => studyDir === 'pl_en' ? w[1] : w[0]).filter(a => a !== ans);
-  shuffle(pool2);
-  const opts = shuffle([ans, ...pool2.slice(0, 3)]);
+  // Dystraktory zblizone do prawidlowej odpowiedzi (Levenshtein + literowki)
+  const fieldIdx = studyDir === 'pl_en' ? 1 : 0;
+  let wrongs = (typeof generateDistractors === 'function')
+    ? generateDistractors(ans, activeAllWords, 3, fieldIdx) : [];
+  if (wrongs.length < 3) {
+    const pool2 = activeAllWords.map(w => studyDir === 'pl_en' ? w[1] : w[0]).filter(a => a !== ans && !wrongs.includes(a));
+    shuffle(pool2);
+    while (wrongs.length < 3 && pool2.length) wrongs.push(pool2.shift());
+  }
+  const opts = shuffle([ans, ...wrongs]);
   const c = document.getElementById('qOpts'); c.innerHTML = '';
   opts.forEach(o => {
     const b = document.createElement('button');
@@ -7824,9 +7832,10 @@ function brNextQuestion() {
   // poprzedniej rundzie spkForeign).
   if (autoVoice) setTimeout(() => spkPl(pl), 100);
 
-  // 3 opcje
-  const others = activeAllWords.filter(w => w[1] !== en);
-  const wrong = shuffle(others).slice(0, 2).map(w => w[1]);
+  // 3 opcje — dystraktory zblizone do prawidlowej (Levenshtein + literowki)
+  const wrong = (typeof generateDistractors === 'function')
+    ? generateDistractors(en, activeAllWords, 2, 1)
+    : shuffle(activeAllWords.filter(w => w[1] !== en)).slice(0, 2).map(w => w[1]);
   const options = shuffle([{text: en, correct: true}, {text: wrong[0] || '?', correct: false}, {text: wrong[1] || '??', correct: false}]);
 
   const optsEl = document.getElementById('brOptions');
@@ -7958,9 +7967,10 @@ function jpNextRound() {
   guyWrap.style.opacity = '1';
   document.getElementById('jumpGuy').style.fontSize = '2.8rem';
 
-  // 2 złe + 1 dobra
-  const others = activeAllWords.filter(w => w[1] !== en);
-  const wrong = shuffle(others).slice(0, 2).map(w => w[1]);
+  // 2 złe + 1 dobra — dystraktory zblizone do prawidlowej (Levenshtein + literowki)
+  const wrong = (typeof generateDistractors === 'function')
+    ? generateDistractors(en, activeAllWords, 2, 1)
+    : shuffle(activeAllWords.filter(w => w[1] !== en)).slice(0, 2).map(w => w[1]);
   const options = shuffle([{text: en, correct: true}, {text: wrong[0] || 'cat', correct: false}, {text: wrong[1] || 'dog', correct: false}]);
 
   const blocksEl = document.getElementById('jumpBlocks');
@@ -8756,10 +8766,16 @@ function _renderQuizGrid(correct) {
   const grid = document.getElementById('duelPlayersGrid');
   grid.setAttribute('data-count', duelConfig.playerCount);
   grid.innerHTML = '';
-  // Pool blednych odpowiedzi
-  const allEn = [];
-  Object.values(BOOKS[currentBookId].units).forEach(u => u.words.forEach(w => { if (w[1] !== correct) allEn.push(w[1]); }));
-  const wrong = shuffle(allEn).slice(0, 4);
+  // Pool blednych odpowiedzi — zblizone do prawidlowej (Levenshtein + literowki)
+  const bookPool = [];
+  Object.values(BOOKS[currentBookId].units).forEach(u => u.words.forEach(w => bookPool.push(w)));
+  let wrong = (typeof generateDistractors === 'function')
+    ? generateDistractors(correct, bookPool, 4, 1) : [];
+  if (wrong.length < 4) {
+    const allEn = bookPool.map(w => w[1]).filter(a => a !== correct && !wrong.includes(a));
+    shuffle(allEn);
+    while (wrong.length < 4 && allEn.length) wrong.push(allEn.shift());
+  }
   const options = shuffle([correct, ...wrong]);
 
   for (let i = 0; i < duelConfig.playerCount; i++) {

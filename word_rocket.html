@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
 <script src="data.js"></script>
+<script src="distractors.js"></script>
 <style>
 :root{
   --space-1:#0a0e2a;
@@ -793,20 +794,21 @@ function nextQuestion(){
   let qWord, aWord;
   if (direction === 'pl_en') { qWord = pl; aWord = en; }
   else                       { qWord = en; aWord = pl; }
-  // 3 błędne odpowiedzi z poola
-  const wrongs = [];
-  const seen = new Set([aWord]);
-  let attempts = 0;
-  while (wrongs.length < 3 && attempts < 100) {
-    const idx = Math.floor(Math.random() * pool.length);
-    const candidate = direction === 'pl_en' ? pool[idx][1] : pool[idx][0];
-    if (candidate && !seen.has(candidate)) {
-      wrongs.push(candidate);
-      seen.add(candidate);
+  // 3 błędne odpowiedzi — najpierw zblizone (Levenshtein + literowki)
+  const fieldIdx = direction === 'pl_en' ? 1 : 0;
+  let wrongs = (typeof generateDistractors === 'function')
+    ? generateDistractors(aWord, pool, 3, fieldIdx) : [];
+  // Fallback: jesli helper nie zwrocil dosc, uzupelnij losowymi
+  if (wrongs.length < 3) {
+    const seen = new Set([aWord, ...wrongs]);
+    let attempts = 0;
+    while (wrongs.length < 3 && attempts < 100) {
+      const idx = Math.floor(Math.random() * pool.length);
+      const candidate = direction === 'pl_en' ? pool[idx][1] : pool[idx][0];
+      if (candidate && !seen.has(candidate)) { wrongs.push(candidate); seen.add(candidate); }
+      attempts++;
     }
-    attempts++;
   }
-  // Jeśli nie udało się dobrać 3 — uzupełnij dummy
   while (wrongs.length < 3) wrongs.push('—');
   const options = shuffle([aWord, ...wrongs]);
   currentWord = { question: qWord, answer: aWord, options };
