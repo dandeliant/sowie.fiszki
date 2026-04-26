@@ -282,6 +282,31 @@ body{
   font-size:.55rem;font-weight:800;color:#fde68a;text-transform:uppercase;letter-spacing:.06em;
 }
 
+/* === ORDER CHECKLIST === */
+.order-checklist{
+  position:absolute;left:8px;right:8px;bottom:170px;
+  display:flex;flex-wrap:wrap;gap:6px;justify-content:center;
+  z-index:9;pointer-events:none;
+}
+.checklist-item{
+  display:inline-flex;align-items:center;gap:4px;
+  background:rgba(255,255,255,.95);
+  border:2px dashed var(--brick-1);border-radius:100px;
+  padding:4px 12px 4px 8px;
+  font-weight:800;font-size:.78rem;color:var(--text);
+  box-shadow:0 4px 8px rgba(0,0,0,.15);
+  transition:all .25s;
+}
+.checklist-item .emo{font-size:1.1rem;line-height:1;}
+.checklist-item.done{
+  background:rgba(16,185,129,.18);
+  border:2px solid var(--green);
+  color:var(--green);
+}
+.checklist-item.done::after{
+  content:'✓';margin-left:4px;font-weight:900;
+}
+
 /* === INGREDIENT PALETTE === */
 .palette{
   position:absolute;left:8px;right:8px;bottom:6px;
@@ -306,7 +331,8 @@ body{
   transition:all .15s;position:relative;
 }
 .ingr-btn:hover{border-color:var(--tomato);background:rgba(220,38,38,.08);transform:translateY(-2px) scale(1.05);}
-.ingr-btn.added{background:rgba(16,185,129,.18);border-color:#10b981;}
+.ingr-btn.added{background:rgba(16,185,129,.18);border-color:#10b981;box-shadow:0 0 8px rgba(16,185,129,.4);}
+.ingr-btn.added-wrong{background:rgba(239,68,68,.18);border-color:#ef4444;box-shadow:0 0 8px rgba(239,68,68,.4);}
 .ingr-btn.wrong-flash{animation:ingr-wrong .4s ease;}
 @keyframes ingr-wrong{0%,100%{transform:translateX(0);}25%{transform:translateX(-4px);}75%{transform:translateX(4px);}}
 .ingr-emoji{font-size:2.4rem;line-height:1;}
@@ -483,6 +509,8 @@ body{
         <button class="act-btn primary" id="bakeBtn" onclick="bakeAndServe()" disabled>🔥 Do pieca!</button>
         <button class="act-btn secondary" id="undoBtn" onclick="undoLast()" disabled>↶ Cofnij</button>
       </div>
+
+      <div class="order-checklist" id="orderChecklist"></div>
 
       <div class="palette">
         <div class="palette-title">🧑‍🍳 Słuchaj zamówienia i klikaj składniki (najedź = podpowiedź)</div>
@@ -759,10 +787,24 @@ function nextCustomer(){
   setTimeout(() => {
     showSpeechBubble();
     speakOrder();
+    updateOrderChecklist();
   }, 700);
   // Oznacz przyciski
   document.getElementById('bakeBtn').disabled = true;
   document.getElementById('undoBtn').disabled = true;
+}
+
+function updateOrderChecklist(){
+  const cl = document.getElementById('orderChecklist');
+  if (!cl) return;
+  if (!currentOrder || !currentOrder.length) { cl.innerHTML = ''; return; }
+  cl.innerHTML = currentOrder.map(o => {
+    const done = pizzaItems.some(p => p.en === o.en);
+    return '<div class="checklist-item' + (done ? ' done' : '') + '">'
+      + '<span class="emo">' + o.emoji + '</span>'
+      + '<span>' + escHtml(o.en) + '</span>'
+      + '</div>';
+  }).join('');
 }
 
 function showSpeechBubble(){
@@ -862,7 +904,7 @@ function onIngrClick(btn, idx){
     btn.classList.add('added');
     sndAdd();
   } else {
-    btn.classList.add('wrong-flash','added');
+    btn.classList.add('wrong-flash','added-wrong');
     setTimeout(() => btn.classList.remove('wrong-flash'), 400);
     sndWrong();
   }
@@ -871,6 +913,8 @@ function onIngrClick(btn, idx){
   // Bake aktywne, gdy wszystkie z order sa juz na pizzy
   const allOrdered = currentOrder.every(o => pizzaItems.some(p => p.en === o.en));
   document.getElementById('bakeBtn').disabled = !allOrdered;
+  // Aktualizuj checklist
+  updateOrderChecklist();
 }
 
 function addToppingToPizza(item){
@@ -897,15 +941,18 @@ function undoLast(){
   const pizza = document.getElementById('pizza');
   const toppings = pizza.querySelectorAll('.pizza-topping');
   if (toppings.length) toppings[toppings.length - 1].remove();
-  // Zaznacz przycisk jako nie dodany (tylko jesli wlasciwy en)
+  // Zaznacz przycisk jako nie dodany (tylko jesli wlasciwy en) — usun OBA stany
   document.querySelectorAll('.ingr-btn').forEach(b => {
     const idx = +b.dataset.idx;
-    if (menuItems[idx]?.en === last.en) b.classList.remove('added');
+    if (menuItems[idx]?.en === last.en) {
+      b.classList.remove('added','added-wrong');
+    }
   });
   // Sprawdz przyciski
   const allOrdered = currentOrder.every(o => pizzaItems.some(p => p.en === o.en));
   document.getElementById('bakeBtn').disabled = !allOrdered;
   if (!pizzaItems.length) document.getElementById('undoBtn').disabled = true;
+  updateOrderChecklist();
 }
 
 /* === BAKE === */
@@ -914,8 +961,9 @@ function bakeAndServe(){
   busy = true;
   const pizza = document.getElementById('pizza');
   const sb = document.getElementById('speechBubble');
-  // Schowaj dymek
+  // Schowaj dymek + checklist
   sb.style.display = 'none';
+  document.getElementById('orderChecklist').innerHTML = '';
   // Oblicz wynik
   const correctCount = pizzaItems.filter(p => currentOrder.some(o => o.en === p.en)).length;
   const wrongCount = pizzaItems.filter(p => !currentOrder.some(o => o.en === p.en)).length;
