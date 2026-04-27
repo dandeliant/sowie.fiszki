@@ -439,6 +439,12 @@ function pickVoice(lang){
     return _voices.find(v => v.lang === 'pl-PL') ||
            _voices.find(v => v.lang && v.lang.startsWith('pl')) || null;
   }
+  if (lang === 'fr-FR' || lang.startsWith('fr')) {
+    return _voices.find(v => /Online.*Natural/i.test(v.name) && /fr/i.test(v.lang)) ||
+           _voices.find(v => v.name && /Google.*français/i.test(v.name)) ||
+           _voices.find(v => v.lang === 'fr-FR') ||
+           _voices.find(v => v.lang && v.lang.startsWith('fr')) || null;
+  }
   return _voices.find(v => v.name === 'Google UK English Female') ||
          _voices.find(v => v.lang === 'en-GB') ||
          _voices.find(v => v.lang && v.lang.startsWith('en')) || null;
@@ -512,6 +518,8 @@ function sndWin(){ [523,659,784,1046,1318].forEach((f,i)=>setTimeout(()=>tone(f,
 ============================================================ */
 let pool = [];
 let direction = 'en_pl';
+let bookLang = 'en';
+function langToBcp(l){ return l === 'fr' ? 'fr-FR' : 'en-GB'; }
 let casts = 15, score = 0, correct = 0, wrong = 0, gold = 0, boots = 0, catches = 0;
 let locked = true;        // locked podczas animacji + qa
 let currentItem = null;   // {kind, pl, en, options}
@@ -592,6 +600,7 @@ function startGame(){
   const uKey = document.getElementById('unitSel').value;
   direction = document.getElementById('dirSel').value;
   if (!bId || !BOOKS[bId]) { alert('Wybierz podręcznik.'); return; }
+  bookLang = BOOKS[bId].language || 'en';
 
   pool = [];
   if (uKey === '__all__' || uKey === 'all') {
@@ -771,8 +780,8 @@ function doCatch(x, y){
   const isGold = (r >= 0.08 && r < 0.20);
 
   let qWord, aWord, qLang, aLang;
-  if (direction === 'en_pl') { qWord = en; aWord = pl; qLang = 'en-GB'; aLang = 'pl-PL'; }
-  else                       { qWord = pl; aWord = en; qLang = 'pl-PL'; aLang = 'en-GB'; }
+  if (direction === 'en_pl') { qWord = en; aWord = pl; qLang = langToBcp(bookLang); aLang = 'pl-PL'; }
+  else                       { qWord = pl; aWord = en; qLang = 'pl-PL'; aLang = langToBcp(bookLang); }
 
   // Pula 3 zlych — zblizone do prawidlowej (Levenshtein + literowki)
   const fieldIdx = direction === 'en_pl' ? 0 : 1;
@@ -857,8 +866,11 @@ function hideHookAndLine(){
 function showQA(){
   const item = currentItem;
   if (!item) return;
+  // Etykieta promptu zalezna od jezyka pytania (bookLang dla docelowego)
+  const isTargetLangQ = item.qLang !== 'pl-PL';
+  const targetLangName = bookLang === 'fr' ? 'francusku' : 'angielsku';
   document.getElementById('qPrompt').textContent =
-    item.qLang === 'en-GB' ? 'Co znaczy to słowo po polsku?' : 'Jak powiedzieć to po angielsku?';
+    isTargetLangQ ? 'Co znaczy to słowo po polsku?' : ('Jak powiedzieć to po ' + targetLangName + '?');
   document.getElementById('qWord').textContent = item.qWord;
   // Ikona zalezna od typu rybki
   document.querySelector('#qText .icon').textContent = item.isGold ? '🐠✨' : '🐟';

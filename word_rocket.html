@@ -493,6 +493,12 @@ function pickVoice(lang){
     return _voices.find(v => v.lang === 'pl-PL') ||
            _voices.find(v => v.lang && v.lang.startsWith('pl')) || null;
   }
+  if (lang === 'fr-FR' || lang.startsWith('fr')) {
+    return _voices.find(v => /Online.*Natural/i.test(v.name) && /fr/i.test(v.lang)) ||
+           _voices.find(v => v.name && /Google.*français/i.test(v.name)) ||
+           _voices.find(v => v.lang === 'fr-FR') ||
+           _voices.find(v => v.lang && v.lang.startsWith('fr')) || null;
+  }
   // Angielski — preferuj UK Female
   return _voices.find(v => v.name === 'Google UK English Female') ||
          _voices.find(v => v.lang === 'en-GB' && /female/i.test(v.name||'')) ||
@@ -594,6 +600,8 @@ function speakThen(text, lang, callback, mutedFallbackMs){
 ============================================================ */
 let pool = [];        // [[pl, en], ...]
 let direction = 'pl_en';
+let bookLang = 'en';  // 'en' | 'fr' — jezyk wybranego podrecznika
+function langToBcp(l){ return l === 'fr' ? 'fr-FR' : 'en-GB'; }
 let fuel = 50;
 let altitude = 0;
 let timeLeft = 90;
@@ -726,6 +734,7 @@ function startGame(){
   const uKey = document.getElementById('unitSel').value;
   direction = document.getElementById('dirSel').value;
   if (!bId || !BOOKS[bId]) { alert('Wybierz podręcznik.'); return; }
+  bookLang = BOOKS[bId].language || 'en';
 
   // Zbierz słówka
   pool = [];
@@ -826,7 +835,7 @@ function nextQuestion(){
     grid.appendChild(b);
   });
   // TTS: odczytaj pytanie w jezyku zrodlowym
-  const qLang = direction === 'pl_en' ? 'pl-PL' : 'en-GB';
+  const qLang = direction === 'pl_en' ? 'pl-PL' : langToBcp(bookLang);
   speak(qWord, qLang);
 }
 
@@ -861,7 +870,7 @@ function handleAnswer(btn, opt){
   // TTS: odczytaj prawidlowa odpowiedz w jezyku docelowym, a po
   // zakonczeniu wypowiedzi advansuj. Dzieki temu lektor nie zostaje
   // ucięty przez kolejne pytanie. Gdy dzwiek wyciszony — fallback 800ms.
-  const ansLang = direction === 'pl_en' ? 'en-GB' : 'pl-PL';
+  const ansLang = direction === 'pl_en' ? langToBcp(bookLang) : 'pl-PL';
   const advance = () => {
     if (altitude >= 100) endGame(true, 'moon');
     else if (fuel <= 0) endGame(false, 'fuel');

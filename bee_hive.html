@@ -513,6 +513,12 @@ function pickVoice(lang){
            _voices.find(v => v.lang === 'pl-PL') ||
            _voices.find(v => v.lang && v.lang.startsWith('pl')) || null;
   }
+  if (lang === 'fr-FR' || lang.startsWith('fr')) {
+    return _voices.find(v => /Online.*Natural/i.test(v.name) && /fr/i.test(v.lang)) ||
+           _voices.find(v => v.name && /Google.*français/i.test(v.name)) ||
+           _voices.find(v => v.lang === 'fr-FR') ||
+           _voices.find(v => v.lang && v.lang.startsWith('fr')) || null;
+  }
   return _voices.find(v => /Online.*Natural/i.test(v.name) && /en-GB/i.test(v.lang)) ||
          _voices.find(v => v.name === 'Google UK English Female') ||
          _voices.find(v => v.lang === 'en-GB') ||
@@ -580,6 +586,8 @@ const FLOWER_EMOJIS = ['🌻','🌹','🌷','🌼','🌺','💐','🌸','🪷','
 /* === STATE === */
 let pool = [];
 let direction = 'pl_en';
+let bookLang = 'en'; // 'en' | 'fr' — jezyk wybranego podrecznika
+function langToBcp(l){ return l === 'fr' ? 'fr-FR' : 'en-GB'; } // mapuje na kod TTS
 let progress = 0;       // 0..12
 let streak = 0;
 let bestStreak = 0;
@@ -659,6 +667,9 @@ function startGame(){
   direction = document.getElementById('dirSel').value;
   if (!bId || !BOOKS[bId]) { alert('Wybierz podręcznik.'); return; }
 
+  // Zapamietaj jezyk podrecznika ('en' / 'fr') — uzywany do TTS
+  bookLang = BOOKS[bId].language || 'en';
+
   pool = [];
   if (uKey === '__all__' || uKey === 'all') {
     Object.values(BOOKS[bId].units || {}).forEach(u => {
@@ -698,7 +709,7 @@ function nextRound(){
 
   // Promp
   const promptWord = direction === 'pl_en' ? currentTarget.pl : currentTarget.en;
-  const promptLang = direction === 'pl_en' ? 'pl-PL' : 'en-GB';
+  const promptLang = direction === 'pl_en' ? 'pl-PL' : langToBcp(bookLang);
   document.getElementById('pPrompt').textContent =
     direction === 'pl_en' ? 'Pszczoła szuka kwiatu ze słowem:' : 'Pszczoła szuka kwiatu ze słowem:';
   document.getElementById('pWord').textContent = promptWord;
@@ -780,7 +791,7 @@ function onFlowerClick(flowerEl, data){
       collectNectar(fx, fy);
       sndCorrect();
       // TTS prawidlowej odpowiedzi (w jezyku kwiatu)
-      const ansLang = direction === 'pl_en' ? 'en-GB' : 'pl-PL';
+      const ansLang = direction === 'pl_en' ? langToBcp(bookLang) : 'pl-PL';
       const ansWord = direction === 'pl_en' ? data.en : data.pl;
       speak(ansWord, ansLang);
       // Wraca do ula i wypelnia hex
@@ -807,7 +818,7 @@ function onFlowerClick(flowerEl, data){
       // Pokaz prawidlowy kwiat (zaznacz)
       flowers.forEach(f => { if (f.isCorrect) f.el.classList.add('correct'); });
       // TTS prawidlowej (zeby uczen sie nauczyl)
-      const ansLang = direction === 'pl_en' ? 'en-GB' : 'pl-PL';
+      const ansLang = direction === 'pl_en' ? langToBcp(bookLang) : 'pl-PL';
       const ansWord = direction === 'pl_en' ? currentTarget.en : currentTarget.pl;
       setTimeout(() => speak(ansWord, ansLang), 400);
       floatScore('-1', 'bad', flowerEl);

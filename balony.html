@@ -391,6 +391,12 @@ function pickVoice(lang){
            _voices.find(v => v.lang === 'pl-PL') ||
            _voices.find(v => v.lang && v.lang.startsWith('pl')) || null;
   }
+  if (lang === 'fr-FR' || lang.startsWith('fr')) {
+    return _voices.find(v => /Online.*Natural/i.test(v.name) && /fr/i.test(v.lang)) ||
+           _voices.find(v => v.name && /Google.*français/i.test(v.name)) ||
+           _voices.find(v => v.lang === 'fr-FR') ||
+           _voices.find(v => v.lang && v.lang.startsWith('fr')) || null;
+  }
   return _voices.find(v => /Online.*Natural/i.test(v.name) && /en-GB/i.test(v.lang)) ||
          _voices.find(v => v.name === 'Google UK English Female') ||
          _voices.find(v => v.lang === 'en-GB') ||
@@ -467,6 +473,8 @@ function sndWin(){ [523,659,784,1046,1318].forEach((f,i)=>setTimeout(()=>tone(f,
 /* === STATE === */
 let pool = [];
 let direction = 'pl_en';
+let bookLang = 'en';
+function langToBcp(l){ return l === 'fr' ? 'fr-FR' : 'en-GB'; }
 let timeLeft = 60, score = 0, hits = 0, misses = 0, gold = 0, level = 1;
 let currentTarget = null;  // {pl, en} - aktualne haslo na gorze
 let balloons = [];         // [{el, x, y, vy, vx, type, pl, en, isTarget}]
@@ -546,6 +554,7 @@ function startGame(){
   const uKey = document.getElementById('unitSel').value;
   direction = document.getElementById('dirSel').value;
   if (!bId || !BOOKS[bId]) { alert('Wybierz podręcznik.'); return; }
+  bookLang = BOOKS[bId].language || 'en';
 
   pool = [];
   if (uKey === '__all__' || uKey === 'all') {
@@ -592,7 +601,7 @@ function nextTarget(){
   currentTarget = { pl, en };
   // Co jest na gorze (PL czy EN)
   const promptWord = direction === 'pl_en' ? pl : en;
-  const promptLang = direction === 'pl_en' ? 'pl-PL' : 'en-GB';
+  const promptLang = direction === 'pl_en' ? 'pl-PL' : langToBcp(bookLang);
   document.getElementById('pPrompt').textContent =
     direction === 'pl_en' ? 'Pęknij balon z angielskim słowem:' : 'Pęknij balon z polskim słowem:';
   document.getElementById('pWord').textContent = promptWord;
@@ -768,7 +777,7 @@ function onBalloonClick(el, e){
       popBalloon(el, idx, true);
       updateHud();
       // TTS: odczytaj prawidlowe slowo, potem nowy prompt
-      const ansLang = direction === 'pl_en' ? 'en-GB' : 'pl-PL';
+      const ansLang = direction === 'pl_en' ? langToBcp(bookLang) : 'pl-PL';
       const ansWord = direction === 'pl_en' ? b.en : b.pl;
       speakAndAdvance(ansWord, ansLang, () => nextTarget(), 800);
       return;
@@ -784,7 +793,7 @@ function onBalloonClick(el, e){
     popBalloon(el, idx, true);
     updateHud();
     // TTS: odczytaj prawidlowe slowo, potem nowy prompt (lektor nie ucinany)
-    const ansLang = direction === 'pl_en' ? 'en-GB' : 'pl-PL';
+    const ansLang = direction === 'pl_en' ? langToBcp(bookLang) : 'pl-PL';
     const ansWord = direction === 'pl_en' ? b.en : b.pl;
     speakAndAdvance(ansWord, ansLang, () => nextTarget(), 800);
     return;
