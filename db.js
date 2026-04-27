@@ -1391,14 +1391,98 @@ const DB = (() => {
         try { await supabase.rpc('set_profile_creator', { p_user_id: userId }); } catch(e) {}
       }
 
+      // Zapisz wygenerowane hasło w profiles (best-effort — wymaga migracji add-generated-passwords.sql)
+      if (userId && pass) {
+        try { await supabase.rpc('set_generated_password', { p_user_id: userId, p_password: pass }); } catch(e) {}
+      }
+
       // Dodaj do klasy (best-effort)
       try {
         if (userId) await addClassMember(classId, userId);
       } catch(e) { /* nie blokuj reszty */ }
 
-      created.push({ username, password: pass });
+      created.push({ username, password: pass, userId });
     }
     return { created, errors };
+  }
+
+  // Tworzy POJEDYNCZE konto ucznia z auto-generowanym hasłem,
+  // dodaje do klasy, zapisuje hasło w profiles (do późniejszego wglądu).
+  // Jeśli `customUsername` podany — używa go (sprawdza unikalność);
+  // w przeciwnym razie generuje login {slug}_{nextNum}.
+  async function createSingleStudentForClass(classId, className, customUsername) {
+    if (!_profile?.isAdmin && !_profile?.isTeacher) throw new Error('Brak uprawnień');
+    if (!classId) throw new Error('Brak ID klasy.');
+
+    // Limit Free: max 30 uczniów/klasa
+    if (_isFreeCreator()) {
+      const { count: currentMembers } = await supabase
+        .from('class_members')
+        .select('user_id', { count: 'exact', head: true })
+        .eq('class_id', classId);
+      const cur = currentMembers || 0;
+      if (cur + 1 > FREE_LIMITS.MAX_STUDENTS_PER_CLASS) {
+        throw new Error('LIMIT_STUDENTS:' + FREE_LIMITS.MAX_STUDENTS_PER_CLASS);
+      }
+    }
+
+    const slug = _slugifyClassName(className);
+    const pass = _randomPassword(8);
+    let username = (customUsername || '').trim();
+    let userId = null;
+
+    if (username) {
+      // Próbuj utworzyć z podanym loginem — jeśli zajęty, zgłoś błąd
+      const { data, error } = await supabase.rpc('admin_create_user', {
+        p_username: username, p_password: pass
+      });
+      if (error) {
+        if (/exist|duplicat|zaj/i.test(error.message)) {
+          throw new Error('Login „' + username + '" jest już zajęty.');
+        }
+        throw new Error(error.message);
+      }
+      userId = (data && data.user_id) || data;
+    } else {
+      // Auto-generuj login: znajdź pierwszy wolny slug_NN
+      let found = false;
+      for (let n = 1; n <= 99 && !found; n++) {
+        const candidate = `${slug}_${String(n).padStart(2, '0')}`;
+        try {
+          const { data, error } = await supabase.rpc('admin_create_user', {
+            p_username: candidate, p_password: pass
+          });
+          if (error) {
+            if (/exist|duplicat|zaj/i.test(error.message)) continue;
+            throw new Error(error.message);
+          }
+          username = candidate;
+          userId = (data && data.user_id) || data;
+          found = true;
+        } catch(e) {
+          if (/exist|duplicat|zaj/i.test(e.message)) continue;
+          throw e;
+        }
+      }
+      if (!found) throw new Error('Nie udało się znaleźć wolnego loginu.');
+    }
+
+    // Ustaw twórcę
+    if (userId) {
+      try { await supabase.rpc('set_profile_creator', { p_user_id: userId }); } catch(e) {}
+    }
+
+    // Zapisz hasło
+    if (userId) {
+      try { await supabase.rpc('set_generated_password', { p_user_id: userId, p_password: pass }); } catch(e) {}
+    }
+
+    // Dodaj do klasy
+    if (userId) {
+      try { await addClassMember(classId, userId); } catch(e) {}
+    }
+
+    return { username, password: pass, userId };
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -1608,7 +1692,7 @@ const DB = (() => {
     if (!_profile?.isAdmin && !_profile?.isTeacher) return [];
     let q = supabase
       .from('profiles')
-      .select('id, username, xp, level, streak, total_sessions, total_answers, correct_answers, last_study_date, is_admin, is_teacher, plan, created_by, created_at');
+      .select('id, username, xp, level, streak, total_sessions, total_answers, correct_answers, last_study_date, is_admin, is_teacher, plan, created_by, created_at, generated_password');
     if (!_profile.isAdmin && _profile.isTeacher) {
       q = q.eq('created_by', _userId);
     }
@@ -1968,6 +2052,7 @@ const DB = (() => {
     countOpenConversations,
     // bulk student creation
     bulkCreateStudentsForClass,
+    createSingleStudentForClass,
     adminResetUserPassword,
     // teacher sets
     teacherLoadMySets,
