@@ -2832,6 +2832,8 @@ szkoła	school"></textarea>
     </div>
     <div id="studProgStats" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;width:100%"></div>
     <div id="studProgUnits" style="width:100%"></div>
+    <div id="studProgActivity" style="width:100%;margin-top:18px"></div>
+    <div id="studProgWordStats" style="width:100%;margin-top:18px"></div>
   </div>
 </div>
 
@@ -3555,7 +3557,114 @@ function getBookAllWordsCustom(bId) {
 // ══════════════════════════════════════════════
 //  SCREEN
 // ══════════════════════════════════════════════
+// Wrapper do DB.recordAnswer — łączy istniejące zliczanie odpowiedzi
+// z logowaniem słowa do dziennika aktywności (activity_events).
+// Bezpieczne (try/catch) — gdy migracja activity_events nie jest uruchomiona,
+// po prostu poleci tylko stara ścieżka recordAnswer.
+function _recordAnswerLogged(correct, opts){
+  try { DB.recordAnswer(currentUser, correct); } catch(e) {}
+  if (!DB.logWordAnswer) return;
+  let pl = null, en = null;
+  if (opts && (opts.pl != null || opts.en != null)) {
+    pl = opts.pl || null;
+    en = opts.en || null;
+  } else if (typeof curIdx !== 'undefined' && curIdx !== null
+             && Array.isArray(activeWords) && activeWords[curIdx]) {
+    pl = activeWords[curIdx][0] || null;
+    en = activeWords[curIdx][1] || null;
+  }
+  try {
+    DB.logWordAnswer(
+      typeof currentBookId !== 'undefined' ? currentBookId : null,
+      typeof currentUnitKey !== 'undefined' ? currentUnitKey : null,
+      pl, en, correct, opts || null
+    );
+  } catch(e) {}
+}
+
+// Mapa hrefów standalone gier na nazwę aktywności (do trackera kliknięć).
+const STANDALONE_HREF_TO_ACTIVITY = {
+  'word_wheel.html': 'word_wheel',
+  'word_battleship.html': 'word_battleship',
+  'fishing.html': 'fishing',
+  'balony.html': 'balloon_pop',
+  'bee_hive.html': 'bee_hive',
+  'dino_dig.html': 'dino_dig',
+  'crossing.html': 'crossing_guard',
+  'alien_invasion.html': 'alien_invasion',
+  'word_rocket.html': 'word_rocket',
+  'pizza_chef.html': 'pizza_chef',
+  'restaurant_dialog.html': 'restaurant_dialog',
+  'skoczek.html': 'skoczek',
+  'most.html': 'most',
+  'motyle.html': 'motyle',
+  'memory.html': 'memory_standalone',
+  'wisielec.html': 'hangman_standalone',
+  'have_you_ever.html': 'speaking_have_you_ever',
+  'speaking_game_present_simple.html': 'speaking_present_simple',
+  'how-many.html': 'speaking_how_many',
+  'birthday.html': 'speaking_birthday',
+  'generator-cyfr.html': 'speaking_numbers',
+  'speaking_cards_together5.html': 'speaking_together5',
+  'speaking_cards_animals.html': 'speaking_animals',
+  'whats_the_matter.html': 'speaking_whats_matter',
+  'shops_speaking_generator.html': 'speaking_shops',
+  'citylife_speaking.html': 'speaking_citylife',
+  'has_he_got_a_pet.html': 'speaking_has_pet'
+};
+
+// Po pierwszym renderze attachuj listener kliknięć — przy klikaniu na grę
+// standalone logujemy 'game_open' (nie znamy czasu, ale wiemy że uczeń otworzył).
+(function _initSAppsClickLogger(){
+  if (typeof document === 'undefined') return;
+  const tryAttach = () => {
+    const grid = document.getElementById('sAppsGrid');
+    if (!grid || grid._activityHooked) return;
+    grid._activityHooked = true;
+    grid.addEventListener('click', (ev) => {
+      try {
+        const a = ev.target && ev.target.closest && ev.target.closest('a[href]');
+        if (!a) return;
+        const href = a.getAttribute('href') || '';
+        // Wytnij parametry URL i ścieżkę
+        const file = href.split('?')[0].split('/').pop();
+        const activity = STANDALONE_HREF_TO_ACTIVITY[file];
+        if (!activity || !window.DB || !window.DB.logActivityOpen) return;
+        // Fire-and-forget — nie czekaj na rezultat (nawigacja nastąpi)
+        window.DB.logActivityOpen(activity, null, null, { from: 'sApps' });
+      } catch(e) {}
+    }, { capture: true });
+  };
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', tryAttach);
+  } else {
+    tryAttach();
+  }
+})();
+
+// Mapa ekranów na typ aktywności (do trackera).
+// Po wejściu na taki ekran startujemy sesję; po wyjściu — kończymy.
+const SCREEN_TO_ACTIVITY = {
+  'sStudy':       'study',
+  'sCrossword':   'crossword',
+  'sWordsearch':  'wordsearch',
+  'sSnake':       'snake',
+  'sMemory':      'memory',
+  'sHangman':     'hangman',
+  'sScrGame':     'letter_scramble',
+  'sSentScrGame': 'sentence_scramble',
+  'sBoardGame':   'board_game',
+  'sDobble':      'dobble',
+  'sCubes':       'speaking_cubes',
+  'sImageCard':   'image_card',
+  'sDuel':        'duel',
+  'sSpeed':       'speed_round'
+};
+
 function showScreen(id) {
+  // Zakończ poprzednią aktywność (przez DB.endActivity — best-effort).
+  try { if (typeof DB !== 'undefined' && DB.endActivity) DB.endActivity(); } catch(e) {}
+
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
   if (id === 'sBooks') { refreshBooks(); if (isGuest) document.getElementById('guestBanner').style.display = 'flex'; if (isCurrentUserAdmin() || isCurrentUserTeacher()) renderAdminPanel(); }
@@ -3564,6 +3673,21 @@ function showScreen(id) {
   if (id === 'sUnits') refreshGrid();
   if (id === 'sStudy') updateModeLocks();
   if (id === 'sStats') { if (isGuest) { toast('📊 Statystyki dostępne po zalogowaniu! 🦉'); return; } renderStats(); }
+
+  // Wystartuj nową sesję jeśli ekran ma rozpoznany typ aktywności.
+  const activity = SCREEN_TO_ACTIVITY[id];
+  if (activity && !isGuest) {
+    try {
+      if (typeof DB !== 'undefined' && DB.startActivity) {
+        DB.startActivity(activity, {
+          bookId: typeof currentBookId !== 'undefined' ? currentBookId : null,
+          unitKey: typeof currentUnitKey !== 'undefined' ? currentUnitKey : null,
+          meta: id === 'sStudy' && typeof currentMode === 'string' ? { mode: currentMode } : null
+        });
+      }
+    } catch(e) {}
+  }
+
   window.scrollTo(0, 0);
 }
 
@@ -5061,10 +5185,10 @@ function onQuiz(btn, ok, correct) {
   });
   if (ok) {
     btn.classList.add('correct'); playOk(); bounce('quizArea'); particles(true);
-    owlR('easy'); DB.recordAnswer(currentUser, true);
+    owlR('easy'); _recordAnswerLogged(true);
   } else {
     btn.classList.add('wrong'); playBad(); shake('quizArea');
-    owlR('hard'); loseLife(); DB.recordAnswer(currentUser, false);
+    owlR('hard'); loseLife(); _recordAnswerLogged(false);
     trackMissed(); sessErrorCount++;
   }
   document.getElementById('qSpeak').style.display = 'block';
@@ -5086,12 +5210,12 @@ function checkType() {
     inp.classList.add('correct-inp'); r.className = 'type-result ok';
     r.innerHTML = '✓ Poprawnie! <span class="ar">' + esc(cor) + '</span>';
     playOk(); bounce('typeArea'); particles(true); owlR('easy');
-    DB.recordAnswer(currentUser, true);
+    _recordAnswerLogged(true);
   } else {
     inp.classList.add('wrong-inp'); r.className = 'type-result err';
     r.innerHTML = '✗ Odpowiedź: <span class="ar">' + esc(cor) + '</span>';
     playBad(); shake('typeArea'); owlR('hard');
-    DB.recordAnswer(currentUser, false);
+    _recordAnswerLogged(false);
     trackMissed(); sessErrorCount++;
   }
   document.getElementById('tSpeak').style.display = 'block';
@@ -5113,12 +5237,12 @@ function checkMissing() {
     inp.classList.add('correct-inp'); r.className = 'type-result ok';
     r.innerHTML = '✓ Poprawnie! <span class="ar">' + esc(cor) + '</span>';
     playOk(); bounce('missingArea'); particles(true); owlR('easy');
-    DB.recordAnswer(currentUser, true);
+    _recordAnswerLogged(true);
   } else {
     inp.classList.add('wrong-inp'); r.className = 'type-result err';
     r.innerHTML = '✗ Odpowiedź: <span class="ar">' + esc(cor) + '</span>';
     playBad(); shake('missingArea'); owlR('hard');
-    DB.recordAnswer(currentUser, false);
+    _recordAnswerLogged(false);
     trackMissed(); sessErrorCount++;
   }
   spkForeign(cor);
@@ -5144,12 +5268,12 @@ function checkDictation() {
     inp.classList.add('correct-inp'); r.className = 'type-result ok';
     r.innerHTML = '✓ Poprawnie! <span class="ar">' + esc(cor) + '</span>';
     playOk(); bounce('dictateArea'); particles(true); owlR('easy');
-    DB.recordAnswer(currentUser, true);
+    _recordAnswerLogged(true);
   } else {
     inp.classList.add('wrong-inp'); r.className = 'type-result err';
     r.innerHTML = '✗ Odpowiedź: <span class="ar">' + esc(cor) + '</span>';
     playBad(); shake('dictateArea'); owlR('hard');
-    DB.recordAnswer(currentUser, false);
+    _recordAnswerLogged(false);
     trackMissed(); sessErrorCount++;
   }
   document.getElementById('dictSpeak').style.display = 'block';
@@ -5168,14 +5292,14 @@ function checkTF(userSaysTrue) {
     r.className = 'type-result ok';
     r.innerHTML = '✓ ' + (tfIsCorrectPair ? 'Tak, para jest poprawna!' : 'Tak, para jest błędna!');
     playOk(); particles(true); owlR('easy');
-    DB.recordAnswer(currentUser, true);
+    _recordAnswerLogged(true);
   } else {
     r.className = 'type-result err';
     const corA = getA(curIdx);
     r.innerHTML = '✗ ' + (tfIsCorrectPair ? 'Para była poprawna! ' : 'Para była błędna! Poprawna: ') +
       '<span class="ar">' + esc(getQ(curIdx)) + ' → ' + esc(corA) + '</span>';
     playBad(); owlR('hard');
-    DB.recordAnswer(currentUser, false);
+    _recordAnswerLogged(false);
     trackMissed(); sessErrorCount++;
   }
   spkForeign(getA(curIdx));
@@ -5851,7 +5975,7 @@ function renderSpeedCard() {
       r.innerHTML = '⏰ Czas minął! Odpowiedź: <span class="ar">' + esc(a) + '</span>';
       playBad(); owlR('hard'); streak = 0;
       trackMissed(); sessErrorCount++;
-      DB.recordAnswer(currentUser, false);
+      _recordAnswerLogged(false);
       revealed = true;
       setTimeout(() => { if (mode === 'speed') rate('hard'); }, 1400);
     }
@@ -5876,7 +6000,7 @@ function onSpeedStudyAnswer(btn, ok, correct) {
     document.getElementById('studySpScore').textContent = studySpeedSessionScore;
     playOk(); particles(true); owlR('easy'); streak++;
     spkForeign(correct);
-    DB.recordAnswer(currentUser, true);
+    _recordAnswerLogged(true);
     if (studySpeedSessionScore >= 5)  checkAndUnlock('speed_5');
     if (studySpeedSessionScore >= 10) checkAndUnlock('speed_10');
     // Auto-ocena: Łatwe
@@ -5887,7 +6011,7 @@ function onSpeedStudyAnswer(btn, ok, correct) {
     r.innerHTML = '✗ Odpowiedź: <span class="ar">' + esc(correct) + '</span> → Trudne 📌';
     playBad(); owlR('hard'); streak = 0;
     trackMissed(); sessErrorCount++;
-    DB.recordAnswer(currentUser, false);
+    _recordAnswerLogged(false);
     // Auto-ocena: Trudne
     setTimeout(() => { if (mode === 'speed') rate('hard'); }, 1400);
   }
@@ -7492,12 +7616,12 @@ function checkTypeSent() {
     inp.classList.add('correct-inp'); r.className = 'type-result ok';
     r.innerHTML = '✓ Poprawnie! <span class="ar">' + esc(tsSentAnswer) + '</span>';
     playOk(); bounce('typeSentArea'); particles(true); owlR('easy');
-    DB.recordAnswer(currentUser, true);
+    _recordAnswerLogged(true);
   } else {
     inp.classList.add('wrong-inp'); r.className = 'type-result err';
     r.innerHTML = '✗ Poprawne zdanie: <span class="ar">' + esc(tsSentAnswer) + '</span>';
     playBad(); shake('typeSentArea'); owlR('hard');
-    DB.recordAnswer(currentUser, false);
+    _recordAnswerLogged(false);
     trackMissed(); sessErrorCount++;
   }
   spkForeign(tsSentAnswer);
@@ -7546,12 +7670,12 @@ function checkDictSent() {
     inp.classList.add('correct-inp'); r.className = 'type-result ok';
     r.innerHTML = '✓ Poprawnie! <span class="ar">' + esc(dsSentAnswer) + '</span>';
     playOk(); bounce('dictSentArea'); particles(true); owlR('easy');
-    DB.recordAnswer(currentUser, true);
+    _recordAnswerLogged(true);
   } else {
     inp.classList.add('wrong-inp'); r.className = 'type-result err';
     r.innerHTML = '✗ Poprawne zdanie: <span class="ar">' + esc(dsSentAnswer) + '</span>';
     playBad(); shake('dictSentArea'); owlR('hard');
-    DB.recordAnswer(currentUser, false);
+    _recordAnswerLogged(false);
     trackMissed(); sessErrorCount++;
   }
   spkForeign(dsSentAnswer);
@@ -7637,13 +7761,13 @@ function ssListen() {
       r.innerHTML = '✓ Świetnie! <span class="ar">' + esc(ssSentAnswer) + '</span>';
       document.getElementById('ssMicStatus').textContent = '🎉 Doskonała wymowa!';
       playOk(); particles(true); owlR('easy');
-      DB.recordAnswer(currentUser, true);
+      _recordAnswerLogged(true);
     } else {
       r.className = 'type-result err';
       r.innerHTML = '✗ Poprawne zdanie: <span class="ar">' + esc(ssSentAnswer) + '</span>';
       document.getElementById('ssMicStatus').textContent = 'Powiedziałeś: "' + heard + '"';
       playBad(); owlR('hard');
-      DB.recordAnswer(currentUser, false);
+      _recordAnswerLogged(false);
       trackMissed(); sessErrorCount++;
     }
     // Pokaż podpowiedź po odpowiedzi
@@ -7825,13 +7949,13 @@ function speakShowResult(ok, heard) {
     r.innerHTML = '✓ Poprawnie! <span class="ar">' + esc(speakAnswer) + '</span>';
     document.getElementById('speakMicStatus').textContent = '🎉 Świetna wymowa!';
     playOk(); bounce('speakArea'); particles(true); owlR('easy');
-    DB.recordAnswer(currentUser, true);
+    _recordAnswerLogged(true);
   } else {
     r.className = 'type-result err';
     r.innerHTML = '✗ Poprawna odpowiedź: <span class="ar">' + esc(speakAnswer) + '</span>';
     document.getElementById('speakMicStatus').textContent = 'Powiedziałeś: "' + heard + '"';
     playBad(); shake('speakArea'); owlR('hard');
-    DB.recordAnswer(currentUser, false);
+    _recordAnswerLogged(false);
     trackMissed(); sessErrorCount++;
   }
   spkForeign(speakAnswer);
@@ -11133,7 +11257,7 @@ function showDailyResult() {
 
   // Odznaki
   if (pct >= 100) checkAndUnlock('perfect_quiz');
-  DB.recordAnswer(currentUser, true);
+  _recordAnswerLogged(true);
 
   showScreen('sDailyResult');
   if (pct >= 90) { confetti(); playOk(); setTimeout(playOk, 300); }
@@ -11210,12 +11334,12 @@ function checkGap() {
     inp.classList.add('correct-inp'); r.className = 'type-result ok';
     r.innerHTML = '✓ Poprawnie! <span class="ar">' + esc(cor) + '</span>';
     playOk(); bounce('gapArea'); particles(true); owlR('easy');
-    DB.recordAnswer(currentUser, true);
+    _recordAnswerLogged(true);
   } else {
     inp.classList.add('wrong-inp'); r.className = 'type-result err';
     r.innerHTML = '✗ Odpowiedź: <span class="ar">' + esc(cor) + '</span>';
     playBad(); shake('gapArea'); owlR('hard');
-    DB.recordAnswer(currentUser, false);
+    _recordAnswerLogged(false);
     trackMissed(); sessErrorCount++;
   }
   spkForeign(cor);
@@ -11321,12 +11445,12 @@ function checkScramble() {
     r.className = 'type-result ok';
     r.innerHTML = '✓ Poprawnie! <span class="ar">' + esc(scrAnswer) + '</span>';
     playOk(); bounce('scrambleArea'); particles(true); owlR('easy');
-    DB.recordAnswer(currentUser, true);
+    _recordAnswerLogged(true);
   } else {
     r.className = 'type-result err';
     r.innerHTML = '✗ Poprawna kolejność: <span class="ar">' + esc(scrAnswer) + '</span>';
     playBad(); shake('scrambleArea'); owlR('hard');
-    DB.recordAnswer(currentUser, false);
+    _recordAnswerLogged(false);
     trackMissed(); sessErrorCount++;
   }
   spkForeign(scrAnswer);
@@ -11423,12 +11547,12 @@ function checkSentScr() {
     r.className = 'type-result ok';
     r.innerHTML = '✓ Poprawnie!';
     playOk(); bounce('sentScrArea'); particles(true); owlR('easy');
-    DB.recordAnswer(currentUser, true);
+    _recordAnswerLogged(true);
   } else {
     r.className = 'type-result err';
     r.innerHTML = '✗ Poprawna kolejność: <span class="ar">' + esc(correctSentence) + '</span>';
     playBad(); shake('sentScrArea'); owlR('hard');
-    DB.recordAnswer(currentUser, false);
+    _recordAnswerLogged(false);
     trackMissed(); sessErrorCount++;
   }
   spkForeign(correctSentence);
@@ -12974,6 +13098,230 @@ async function openStudentProgress(userId, username, returnTo) {
   } catch(e) {
     document.getElementById('studProgStats').innerHTML = `<div style="color:var(--danger);font-size:.8rem;padding:16px;font-weight:600">❌ Błąd: ${esc(e.message)}</div>`;
   }
+
+  // Załaduj i wyrenderuj sekcje "Dziennik aktywności" + "Trudne / łatwe słowa".
+  // Niezależne od głównej sekcji — błędy nie blokują reszty.
+  loadAndRenderActivityLog(userId).catch(e => console.warn('[activity log]', e));
+  loadAndRenderWordStats(userId).catch(e => console.warn('[word stats]', e));
+}
+
+// ══════════════════════════════════════════════
+//  DZIENNIK AKTYWNOŚCI — sesje gier i nauki
+// ══════════════════════════════════════════════
+const ACTIVITY_LABELS = {
+  'study': '📚 Nauka (tryby)',
+  'crossword': '🧩 Krzyżówka',
+  'wordsearch': '🔍 Wordsearch',
+  'snake': '🐍 Wąż wyrazowy',
+  'memory': '🎴 Memory',
+  'hangman': '🚀 Wisielec',
+  'letter_scramble': '🔤 Rozsypanka literowa',
+  'sentence_scramble': '📝 Rozsypanka zdaniowa',
+  'board_game': '🎲 Gra planszowa',
+  'dobble': '🃏 Dobble',
+  'speaking_cubes': '🎤 Speaking Cubes',
+  'image_card': '🖼️ Image Card',
+  'duel': '⚔️ Rywalizacja',
+  'speed_round': '⚡ Speed Round',
+  // Standalone (kind='game_open')
+  'word_wheel': '🎰 Word Wheel',
+  'word_battleship': '⚓ Word Battleship',
+  'fishing': '🎣 Vocabulary Fishing',
+  'balloon_pop': '🎈 Balloon Pop',
+  'bee_hive': '🐝 Bee Hive',
+  'dino_dig': '🦕 Dino Dig',
+  'crossing_guard': '🚦 Crossing Guard',
+  'alien_invasion': '🛸 Alien Invasion',
+  'word_rocket': '🚀 Word Rocket',
+  'pizza_chef': '🍕 Pizza Chef',
+  'restaurant_dialog': '🍽️ Restaurant Dialog',
+  'skoczek': '🏝️ Skoczek',
+  'most': '🌉 Most',
+  'motyle': '🦋 Motyle'
+};
+function activityLabel(a){ return ACTIVITY_LABELS[a] || ('🎯 ' + (a || '?')); }
+function fmtSeconds(s){
+  s = Number(s) || 0;
+  if (s < 60) return s + ' s';
+  const m = Math.floor(s / 60); const r = s % 60;
+  if (m < 60) return r ? (m + ' min ' + r + ' s') : (m + ' min');
+  const h = Math.floor(m / 60); const mm = m % 60;
+  return h + ' h ' + mm + ' min';
+}
+
+async function loadAndRenderActivityLog(userId){
+  const el = document.getElementById('studProgActivity');
+  if (!el) return;
+  if (!DB.loadStudentActivity) {
+    el.innerHTML = ''; return;
+  }
+  el.innerHTML = '<div style="font-size:.78rem;color:var(--muted);padding:12px;font-weight:600">⏳ Ładuję dziennik aktywności…</div>';
+
+  let events;
+  try {
+    events = await DB.loadStudentActivity(userId, 30);
+  } catch(e) {
+    // Migracja może być nie uruchomiona — pokaz delikatny komunikat
+    if (/relation.*activity_events.*does not exist|column.*activity_events/i.test(e.message)) {
+      el.innerHTML = '<div style="font-size:.74rem;color:var(--muted);padding:10px;background:var(--surface);border:1px dashed var(--border);border-radius:10px;font-weight:600;text-align:center">📜 Dziennik aktywności wymaga uruchomienia migracji <code>add-activity-tracking.sql</code> w Supabase.</div>';
+      return;
+    }
+    el.innerHTML = '<div style="color:var(--danger);font-size:.78rem;padding:10px;font-weight:600">❌ Błąd ładowania aktywności: ' + esc(e.message) + '</div>';
+    return;
+  }
+  if (!events || !events.length) {
+    el.innerHTML = `
+      <div style="font-size:.78rem;font-weight:800;color:var(--accent2);margin:6px 0 8px;text-transform:uppercase;letter-spacing:.06em">📜 Dziennik aktywności</div>
+      <div style="font-size:.78rem;color:var(--muted);padding:12px;background:var(--surface);border:1px dashed var(--border);border-radius:10px;font-weight:600;text-align:center">Brak zarejestrowanej aktywności w ostatnich 30 dniach.</div>`;
+    return;
+  }
+
+  // Suma czasu per typ aktywności (tylko sesje, czas aktywny)
+  const byActivity = new Map();
+  let totalActiveSec = 0;
+  let totalSessions = 0;
+  let totalGameOpens = 0;
+  events.forEach(ev => {
+    if (ev.kind === 'session') {
+      totalSessions++;
+      totalActiveSec += (ev.seconds_active || 0);
+      if (!byActivity.has(ev.activity)) byActivity.set(ev.activity, { sec: 0, sessions: 0 });
+      const r = byActivity.get(ev.activity);
+      r.sec += (ev.seconds_active || 0);
+      r.sessions++;
+    } else if (ev.kind === 'game_open') {
+      totalGameOpens++;
+      if (!byActivity.has(ev.activity)) byActivity.set(ev.activity, { sec: 0, sessions: 0, opens: 0 });
+      const r = byActivity.get(ev.activity);
+      r.opens = (r.opens || 0) + 1;
+    }
+  });
+  const sortedActivities = Array.from(byActivity.entries())
+    .sort((a,b) => (b[1].sec + (b[1].opens||0)*30) - (a[1].sec + (a[1].opens||0)*30));
+
+  // Top 50 sesji do wyświetlenia w timeline
+  const sessions = events.filter(e => e.kind === 'session').slice(0, 50);
+  const opens = events.filter(e => e.kind === 'game_open').slice(0, 30);
+
+  let html = '<div style="font-size:.78rem;font-weight:800;color:var(--accent2);margin:6px 0 8px;text-transform:uppercase;letter-spacing:.06em">📜 Dziennik aktywności (ostatnie 30 dni)</div>';
+  html += `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+    <div class="ac-stat-box" style="min-width:90px"><div class="ac-stat-val">${totalSessions}</div><div class="ac-stat-lbl">Sesji</div></div>
+    <div class="ac-stat-box" style="min-width:90px"><div class="ac-stat-val">${fmtSeconds(totalActiveSec)}</div><div class="ac-stat-lbl">Aktywny czas</div></div>
+    <div class="ac-stat-box" style="min-width:90px"><div class="ac-stat-val">${totalGameOpens}</div><div class="ac-stat-lbl">Otwarć gier</div></div>
+  </div>`;
+
+  // Sumy per aktywność
+  if (sortedActivities.length) {
+    html += '<div style="font-size:.7rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:10px 0 6px">Sumy per aktywność</div>';
+    html += '<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:10px">';
+    sortedActivities.forEach(([act, info]) => {
+      const opensStr = info.opens ? ` · ${info.opens} otwarć` : '';
+      const sessStr = info.sessions ? ` · ${info.sessions} sesji` : '';
+      html += `<div style="display:grid;grid-template-columns:1.6fr 1fr;gap:8px;padding:8px 12px;font-size:.78rem;border-top:1px solid var(--border)">
+        <div style="font-weight:700;color:var(--text)">${esc(activityLabel(act))}</div>
+        <div style="font-weight:700;color:var(--accent);text-align:right">${fmtSeconds(info.sec)}<span style="font-size:.65rem;color:var(--muted);font-weight:600">${esc(sessStr)}${esc(opensStr)}</span></div>
+      </div>`;
+    });
+    html += '</div>';
+  }
+
+  // Timeline ostatnich sesji (max 20)
+  if (sessions.length) {
+    html += '<div style="font-size:.7rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:10px 0 6px">Ostatnie sesje</div>';
+    html += '<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:10px">';
+    sessions.slice(0, 20).forEach(ev => {
+      const dt = new Date(ev.ts);
+      const dateStr = dt.toLocaleString('pl-PL', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+      const bookName = ev.book_id && BOOKS[ev.book_id] ? (BOOKS[ev.book_id].icon + ' ' + BOOKS[ev.book_id].name) : '';
+      const unitName = ev.unit_key && BOOKS[ev.book_id]?.units?.[ev.unit_key]?.name || ev.unit_key || '';
+      const ctx = bookName ? (bookName + (unitName ? ' · ' + unitName : '')) : '';
+      html += `<div style="display:grid;grid-template-columns:.7fr 1.4fr 1fr .7fr;gap:8px;padding:8px 12px;font-size:.76rem;border-top:1px solid var(--border)">
+        <div style="color:var(--muted);font-weight:600">${esc(dateStr)}</div>
+        <div style="font-weight:700;color:var(--text)">${esc(activityLabel(ev.activity))}</div>
+        <div style="color:var(--muted);font-size:.7rem;font-weight:600">${esc(ctx)}</div>
+        <div style="color:var(--accent);font-weight:800;text-align:right">${fmtSeconds(ev.seconds_active || 0)}</div>
+      </div>`;
+    });
+    html += '</div>';
+  }
+
+  if (opens.length) {
+    html += '<div style="font-size:.7rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:10px 0 6px">Otwarcia gier (bez śledzenia czasu)</div>';
+    html += '<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden">';
+    opens.slice(0, 15).forEach(ev => {
+      const dt = new Date(ev.ts);
+      const dateStr = dt.toLocaleString('pl-PL', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+      html += `<div style="display:grid;grid-template-columns:.7fr 1fr;gap:8px;padding:6px 12px;font-size:.74rem;border-top:1px solid var(--border)">
+        <div style="color:var(--muted);font-weight:600">${esc(dateStr)}</div>
+        <div style="font-weight:700;color:var(--text)">${esc(activityLabel(ev.activity))}</div>
+      </div>`;
+    });
+    html += '</div>';
+  }
+
+  el.innerHTML = html;
+}
+
+async function loadAndRenderWordStats(userId){
+  const el = document.getElementById('studProgWordStats');
+  if (!el) return;
+  if (!DB.loadStudentWordStats) { el.innerHTML = ''; return; }
+  el.innerHTML = '';
+  let stats;
+  try { stats = await DB.loadStudentWordStats(userId, 60); } catch(e) {
+    if (/relation.*activity_events/i.test(e.message)) return; // migracja nie uruchomiona — milczyj (już komunikat w sekcji wyżej)
+    el.innerHTML = '<div style="color:var(--danger);font-size:.78rem;padding:10px;font-weight:600">❌ Błąd: ' + esc(e.message) + '</div>';
+    return;
+  }
+  if (!stats || !stats.length) return;
+
+  // Trudne: wrong > 0, sortuj po wrong/(correct+wrong) malejąco
+  const hard = stats.filter(s => s.wrong > 0)
+    .map(s => ({ ...s, ratio: s.wrong / (s.correct + s.wrong) }))
+    .sort((a,b) => (b.ratio - a.ratio) || (b.wrong - a.wrong))
+    .slice(0, 15);
+  // Łatwe: correct >= 2 i wrong == 0
+  const easy = stats.filter(s => s.correct >= 2 && s.wrong === 0)
+    .sort((a,b) => b.correct - a.correct)
+    .slice(0, 15);
+
+  let html = '<div style="font-size:.78rem;font-weight:800;color:var(--accent2);margin:6px 0 8px;text-transform:uppercase;letter-spacing:.06em">🎯 Trudne i łatwe słowa (60 dni)</div>';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">';
+
+  // Trudne
+  html += '<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden">';
+  html += '<div style="padding:8px 12px;background:rgba(255,107,107,.15);font-size:.7rem;font-weight:800;color:var(--danger);text-transform:uppercase;letter-spacing:.06em">🔥 Trudne (najwięcej błędów)</div>';
+  if (!hard.length) {
+    html += '<div style="padding:14px 12px;color:var(--muted);font-size:.74rem;font-weight:600;text-align:center">Brak — uczeń odpowiada poprawnie!</div>';
+  } else {
+    hard.forEach(s => {
+      const word = (s.pl ? s.pl + ' → ' : '') + (s.en || '');
+      html += `<div style="display:grid;grid-template-columns:1fr auto;gap:6px;padding:6px 12px;font-size:.74rem;border-top:1px solid var(--border)">
+        <div style="font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(word)}</div>
+        <div style="color:var(--danger);font-weight:800">${s.wrong}❌ / ${s.correct}✓</div>
+      </div>`;
+    });
+  }
+  html += '</div>';
+
+  // Łatwe
+  html += '<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden">';
+  html += '<div style="padding:8px 12px;background:rgba(80,200,120,.15);font-size:.7rem;font-weight:800;color:var(--accent2);text-transform:uppercase;letter-spacing:.06em">✨ Łatwe (zawsze poprawnie)</div>';
+  if (!easy.length) {
+    html += '<div style="padding:14px 12px;color:var(--muted);font-size:.74rem;font-weight:600;text-align:center">Brak danych.</div>';
+  } else {
+    easy.forEach(s => {
+      const word = (s.pl ? s.pl + ' → ' : '') + (s.en || '');
+      html += `<div style="display:grid;grid-template-columns:1fr auto;gap:6px;padding:6px 12px;font-size:.74rem;border-top:1px solid var(--border)">
+        <div style="font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(word)}</div>
+        <div style="color:var(--accent2);font-weight:800">${s.correct}✓</div>
+      </div>`;
+    });
+  }
+  html += '</div>';
+
+  html += '</div>';
+  el.innerHTML = html;
 }
 
 // ══════════════════════════════════════════════
@@ -13224,6 +13572,18 @@ if ('serviceWorker' in navigator) {
         }
       }
     } catch(e) { console.warn('[BOOT] auto-delete inactive:', e.message); }
+    // Admin: globalne czyszczenie wpisow activity_events >60 dni (raz dziennie)
+    try {
+      if (DB.isAdmin && DB.isAdmin(currentUser) && DB.cleanupOldActivityEvents) {
+        const lastKey = 'fiszki_activity_cleanup_last_' + currentUser;
+        const today = new Date().toDateString();
+        if (localStorage.getItem(lastKey) !== today) {
+          const n = await DB.cleanupOldActivityEvents();
+          localStorage.setItem(lastKey, today);
+          if (n > 0) console.info('[BOOT] activity cleanup: usunięto ' + n + ' starych wpisów aktywności.');
+        }
+      }
+    } catch(e) { console.warn('[BOOT] activity cleanup:', e.message); }
   }
 
   // Wczytaj dane admina (nowe podręczniki, rozdziały, słówka) — dla wszystkich użytkowników

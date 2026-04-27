@@ -1937,6 +1937,192 @@ const DB = (() => {
 
   function getUserId() { return _userId; }
 
+  // ═══════════════════════════════════════════════════════════════
+  //  ACTIVITY TRACKING — sesje aktywności + odpowiedzi na słowa
+  // ═══════════════════════════════════════════════════════════════
+  //  Liczymy tylko CZAS AKTYWNY: jeśli użytkownik nie ruszał myszą
+  //  ani klawiaturą >60s, sekundy nie są dodawane (mógł odejść od
+  //  komputera). Sesja ma start (klient) i end (klient) — przy
+  //  zamknięciu strony korzystamy z fetch keepalive jako fallback.
+  //
+  //  Wymaga migracji add-activity-tracking.sql (RPC log_activity_event).
+  // ═══════════════════════════════════════════════════════════════
+  let _activity = {
+    cur: null,            // { activity, bookId, unitKey, startedAt, lastActiveAt, secondsActive, meta }
+    tickHandle: null,
+    accessToken: null     // do fetch keepalive na pagehide
+  };
+
+  function _bumpActivity() {
+    if (_activity.cur) _activity.cur.lastActiveAt = Date.now();
+  }
+
+  function startActivity(activity, opts) {
+    if (!activity) return;
+    if (_activity.cur) {
+      // Domknij poprzednią
+      endActivity();
+    }
+    _activity.cur = {
+      activity,
+      bookId: (opts && opts.bookId) || null,
+      unitKey: (opts && opts.unitKey) || null,
+      startedAt: Date.now(),
+      lastActiveAt: Date.now(),
+      secondsActive: 0,
+      meta: (opts && opts.meta) || null
+    };
+    if (_activity.tickHandle) clearInterval(_activity.tickHandle);
+    _activity.tickHandle = setInterval(() => {
+      const c = _activity.cur;
+      if (!c) return;
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      const idleMs = Date.now() - c.lastActiveAt;
+      if (idleMs <= 60000) c.secondsActive++;
+    }, 1000);
+  }
+
+  async function endActivity(extraMeta) {
+    const c = _activity.cur;
+    if (!c) return;
+    if (_activity.tickHandle) { clearInterval(_activity.tickHandle); _activity.tickHandle = null; }
+    const seconds = c.secondsActive;
+    const meta = Object.assign({}, c.meta || {}, extraMeta || {});
+    _activity.cur = null;
+    if (!_userId) return;
+    if (seconds < 3) return; // nie loguj migotów
+    try {
+      await supabase.rpc('log_activity_event', {
+        p_kind: 'session',
+        p_activity: c.activity,
+        p_book_id: c.bookId,
+        p_unit_key: c.unitKey,
+        p_seconds_active: seconds,
+        p_meta: meta
+      });
+    } catch(e) { /* graceful — migracja może nie być uruchomiona */ }
+  }
+
+  async function logActivityOpen(activity, bookId, unitKey, meta) {
+    if (!_userId) return;
+    try {
+      await supabase.rpc('log_activity_event', {
+        p_kind: 'game_open',
+        p_activity: activity || null,
+        p_book_id: bookId || null,
+        p_unit_key: unitKey || null,
+        p_seconds_active: 0,
+        p_meta: meta || null
+      });
+    } catch(e) {}
+  }
+
+  async function logWordAnswer(bookId, unitKey, wordPl, wordEn, correct, extra) {
+    _bumpActivity();
+    if (!_userId) return;
+    try {
+      await supabase.rpc('log_activity_event', {
+        p_kind: correct ? 'word_correct' : 'word_wrong',
+        p_activity: (extra && extra.activity) || (_activity.cur && _activity.cur.activity) || null,
+        p_book_id: bookId || null,
+        p_unit_key: unitKey || null,
+        p_seconds_active: 0,
+        p_meta: Object.assign({ pl: wordPl || null, en: wordEn || null }, extra || {})
+      });
+    } catch(e) {}
+  }
+
+  async function loadStudentActivity(userId, days) {
+    const d = days || 30;
+    const since = new Date(Date.now() - d * 86400000).toISOString();
+    const { data, error } = await supabase
+      .from('activity_events')
+      .select('id, ts, kind, activity, book_id, unit_key, seconds_active, meta')
+      .eq('user_id', userId)
+      .gte('ts', since)
+      .order('ts', { ascending: false })
+      .limit(500);
+    if (error) throw new Error(error.message);
+    return data || [];
+  }
+
+  // Globalne czyszczenie wpisow >60 dni (tylko admin). Klient-side
+  // wywoluje raz dziennie przy logowaniu admina — patrz app.html.
+  async function cleanupOldActivityEvents() {
+    if (!_profile?.isAdmin) throw new Error('Tylko administrator.');
+    const { data, error } = await supabase.rpc('cleanup_old_activity_events');
+    if (error) throw new Error(error.message);
+    return data || 0;
+  }
+
+  async function loadStudentWordStats(userId, days) {
+    const d = days || 60;
+    const since = new Date(Date.now() - d * 86400000).toISOString();
+    const { data, error } = await supabase
+      .from('activity_events')
+      .select('kind, book_id, unit_key, meta')
+      .eq('user_id', userId)
+      .gte('ts', since)
+      .in('kind', ['word_correct', 'word_wrong'])
+      .limit(2000);
+    if (error) throw new Error(error.message);
+    const map = new Map();
+    (data || []).forEach(ev => {
+      const pl = ev.meta && ev.meta.pl;
+      const en = ev.meta && ev.meta.en;
+      if (!pl && !en) return;
+      const key = (pl || '') + '|' + (en || '');
+      if (!map.has(key)) map.set(key, { pl: pl || '', en: en || '', book_id: ev.book_id, unit_key: ev.unit_key, correct: 0, wrong: 0 });
+      const r = map.get(key);
+      if (ev.kind === 'word_correct') r.correct++; else r.wrong++;
+    });
+    return Array.from(map.values());
+  }
+
+  // Globalne nasłuchy aktywności + cache tokenu do fetch keepalive
+  (function _initActivityListeners() {
+    if (typeof document === 'undefined') return;
+    ['mousemove', 'keydown', 'click', 'touchstart', 'wheel'].forEach(evt => {
+      document.addEventListener(evt, _bumpActivity, { passive: true });
+    });
+    // Cache access tokena (do beacona przy zamknięciu strony)
+    if (typeof window !== 'undefined' && window.supabase && window.supabase.auth) {
+      try {
+        window.supabase.auth.onAuthStateChange((_event, session) => {
+          _activity.accessToken = session && session.access_token || null;
+        });
+      } catch(e) {}
+    }
+    // Pagehide — domknij sesję przez fetch keepalive
+    if (typeof window !== 'undefined') {
+      window.addEventListener('pagehide', () => {
+        const c = _activity.cur;
+        if (!c || !_userId || c.secondsActive < 3) return;
+        try {
+          const tok = _activity.accessToken;
+          fetch((typeof SUPABASE_URL !== 'undefined' ? SUPABASE_URL : '') + '/rest/v1/rpc/log_activity_event', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'apikey': (typeof SUPABASE_ANON_KEY !== 'undefined' ? SUPABASE_ANON_KEY : ''),
+              'Authorization': 'Bearer ' + (tok || (typeof SUPABASE_ANON_KEY !== 'undefined' ? SUPABASE_ANON_KEY : '')),
+              'Prefer': 'return=minimal'
+            },
+            body: JSON.stringify({
+              p_kind: 'session',
+              p_activity: c.activity,
+              p_book_id: c.bookId,
+              p_unit_key: c.unitKey,
+              p_seconds_active: c.secondsActive,
+              p_meta: c.meta
+            }),
+            keepalive: true
+          }).catch(() => {});
+        } catch(e) {}
+      });
+    }
+  })();
+
   // ─── PUBLICZNE API ───────────────────────────────────────────
   return {
     // init / auth
@@ -2054,6 +2240,14 @@ const DB = (() => {
     bulkCreateStudentsForClass,
     createSingleStudentForClass,
     adminResetUserPassword,
+    // activity tracking
+    startActivity,
+    endActivity,
+    logActivityOpen,
+    logWordAnswer,
+    loadStudentActivity,
+    loadStudentWordStats,
+    cleanupOldActivityEvents,
     // teacher sets
     teacherLoadMySets,
     adminLoadAllTeacherSets,
