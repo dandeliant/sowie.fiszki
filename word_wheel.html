@@ -1,0 +1,1120 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🎰 Word Wheel — Koło Fortuny</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bungee:wght@400&family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
+<script src="data.js"></script>
+<script src="distractors.js"></script>
+<style>
+:root{
+  --gold:#fbbf24;
+  --gold-dark:#b45309;
+  --red:#dc2626;
+  --red-dark:#7f1d1d;
+  --black:#0f172a;
+  --green:#10b981;
+  --pink:#ec4899;
+  --purple:#7c3aed;
+  --bg:#1a0826;
+  --bg2:#2d1148;
+  --text:#fff;
+  --muted:rgba(255,255,255,.65);
+  --panel:rgba(255,255,255,.08);
+  --border:rgba(255,255,255,.18);
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;}
+body{
+  font-family:'Nunito',system-ui,sans-serif;
+  color:var(--text);
+  background:
+    radial-gradient(ellipse at top,#3b1361 0%,transparent 60%),
+    radial-gradient(ellipse at bottom right,#7f1d1d 0%,transparent 50%),
+    linear-gradient(180deg,#1a0826 0%,#0a0414 100%);
+  background-attachment:fixed;
+  min-height:100vh;overflow-x:hidden;position:relative;
+}
+
+/* Tlo - kropki/swiatla */
+body::before{
+  content:'';position:fixed;inset:0;
+  background-image:
+    radial-gradient(circle at 10% 20%,rgba(251,191,36,.15) 0%,transparent 8%),
+    radial-gradient(circle at 90% 30%,rgba(220,38,38,.18) 0%,transparent 10%),
+    radial-gradient(circle at 30% 80%,rgba(124,58,237,.18) 0%,transparent 8%),
+    radial-gradient(circle at 80% 90%,rgba(16,185,129,.15) 0%,transparent 8%);
+  pointer-events:none;z-index:0;
+  animation:bg-twinkle 8s ease-in-out infinite alternate;
+}
+@keyframes bg-twinkle{0%{opacity:.6;}100%{opacity:1;}}
+
+.back-link{
+  position:fixed;top:14px;left:14px;z-index:1000;
+  display:inline-flex;align-items:center;gap:6px;padding:9px 16px;
+  background:rgba(0,0,0,.55);border:1.5px solid var(--gold);
+  border-radius:100px;color:var(--gold);font-weight:800;font-size:.85rem;
+  text-decoration:none;backdrop-filter:blur(10px);transition:all .2s;
+}
+.back-link:hover{background:var(--gold);color:var(--black);transform:translateX(-2px);}
+
+.snd-btn{
+  position:fixed;top:14px;right:148px;z-index:1000;
+  width:42px;height:42px;display:inline-flex;align-items:center;justify-content:center;
+  background:rgba(0,0,0,.55);border:1.5px solid var(--gold);
+  border-radius:50%;color:var(--gold);font-size:1rem;cursor:pointer;
+  font-family:inherit;backdrop-filter:blur(10px);transition:all .2s;
+}
+.snd-btn:hover{background:var(--gold);color:var(--black);}
+.snd-btn.muted{background:rgba(150,150,150,.4);color:#666;border-color:#666;}
+@media(max-width:600px){.snd-btn{right:auto;left:14px;top:62px;}}
+
+.htp-btn{
+  position:fixed;top:14px;right:14px;z-index:1000;
+  padding:9px 16px;background:var(--red);
+  border:1.5px solid var(--gold);border-radius:100px;
+  color:#fff;font-weight:800;font-size:.85rem;cursor:pointer;
+  font-family:inherit;backdrop-filter:blur(10px);
+  box-shadow:0 0 12px rgba(220,38,38,.6);
+}
+.htp-btn:hover{background:var(--gold);color:var(--black);}
+.htp-modal{
+  position:fixed;inset:0;background:rgba(0,0,0,.8);backdrop-filter:blur(8px);
+  z-index:2000;display:none;align-items:center;justify-content:center;padding:20px;
+}
+.htp-modal.show{display:flex;}
+.htp-box{
+  background:linear-gradient(135deg,#2d1148 0%,#1a0826 100%);
+  border:2px solid var(--gold);border-radius:24px;
+  padding:28px 32px;max-width:560px;max-height:85vh;overflow-y:auto;
+  box-shadow:0 20px 60px rgba(0,0,0,.5),0 0 40px rgba(251,191,36,.3);
+}
+.htp-box h2{font-family:'Bungee',sans-serif;color:var(--gold);font-size:1.4rem;margin-bottom:14px;}
+.htp-box ol{padding-left:22px;}
+.htp-box li{margin-bottom:9px;font-size:.95rem;line-height:1.5;color:#fde68a;}
+.htp-box li strong{color:var(--gold);}
+.htp-box button{
+  margin-top:16px;width:100%;padding:11px;background:var(--gold);
+  border:none;border-radius:100px;font-weight:800;color:var(--black);cursor:pointer;
+  font-size:.95rem;font-family:inherit;
+}
+
+.wrap{max-width:1080px;margin:0 auto;padding:60px 16px 30px;position:relative;z-index:1;}
+
+/* === HEADER === */
+.title-bar{text-align:center;margin-bottom:14px;}
+.title-bar h1{
+  font-family:'Bungee',sans-serif;
+  font-size:clamp(1.9rem,5vw,3rem);font-weight:400;letter-spacing:.04em;
+  background:linear-gradient(180deg,#fef3c7 0%,#fbbf24 50%,#b45309 100%);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;
+  text-shadow:0 0 30px rgba(251,191,36,.5);
+  filter:drop-shadow(0 4px 8px rgba(0,0,0,.6));
+}
+.title-bar .subtitle{color:var(--muted);font-size:.95rem;margin-top:4px;font-style:italic;}
+
+/* === SETUP === */
+.setup-panel{
+  background:var(--panel);backdrop-filter:blur(8px);
+  border:2px solid var(--border);border-radius:18px;
+  padding:24px 26px;max-width:560px;margin:30px auto;
+  box-shadow:0 10px 30px rgba(0,0,0,.4);
+}
+.setup-panel label{
+  display:block;font-size:.78rem;font-weight:800;color:var(--gold);
+  text-transform:uppercase;letter-spacing:.1em;margin-top:12px;margin-bottom:6px;
+}
+.setup-panel select{
+  width:100%;padding:11px 14px;border:1.5px solid var(--border);
+  border-radius:10px;background:rgba(0,0,0,.4);color:var(--text);
+  font-family:inherit;font-size:.95rem;font-weight:700;cursor:pointer;
+}
+.setup-panel select:focus{outline:none;border-color:var(--gold);}
+.setup-panel select option{background:#1a0826;color:#fff;}
+.btn-launch{
+  margin-top:18px;width:100%;padding:14px;
+  background:linear-gradient(135deg,var(--red),var(--gold));
+  border:2px solid var(--gold);border-radius:100px;
+  color:#fff;font-family:'Bungee',sans-serif;font-size:1.05rem;
+  cursor:pointer;letter-spacing:.05em;
+  box-shadow:0 8px 22px rgba(220,38,38,.5),0 0 18px rgba(251,191,36,.4);
+  transition:all .2s;
+}
+.btn-launch:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 14px 30px rgba(220,38,38,.7),0 0 28px rgba(251,191,36,.6);}
+.btn-launch:disabled{opacity:.45;cursor:not-allowed;background:#444;border-color:#555;}
+
+/* === STATS BAR === */
+.stats-bar{
+  display:flex;justify-content:center;gap:14px;flex-wrap:wrap;
+  margin:0 auto 18px;max-width:880px;
+}
+.stat-chip{
+  background:rgba(0,0,0,.55);border:2px solid var(--gold);
+  border-radius:100px;padding:8px 18px;
+  display:inline-flex;align-items:center;gap:8px;
+  font-family:'Bungee',sans-serif;font-size:1rem;color:var(--gold);
+  box-shadow:0 0 14px rgba(251,191,36,.3);
+}
+.stat-chip.lives{border-color:var(--red);color:#fca5a5;box-shadow:0 0 14px rgba(220,38,38,.4);}
+.stat-chip.dxp{border-color:var(--green);color:#6ee7b7;box-shadow:0 0 14px rgba(16,185,129,.4);}
+.stat-chip.dxp.hidden{display:none;}
+
+/* === WHEEL STAGE === */
+.wheel-stage{
+  position:relative;
+  width:min(520px,90vw);height:min(520px,90vw);
+  margin:0 auto;
+}
+.wheel-bulbs{
+  position:absolute;inset:-6px;border-radius:50%;
+  pointer-events:none;
+}
+.bulb{
+  position:absolute;left:50%;top:50%;
+  width:14px;height:14px;border-radius:50%;
+  background:radial-gradient(circle at 30% 30%,#fef9c3,#fbbf24);
+  box-shadow:0 0 12px var(--gold),0 0 22px rgba(251,191,36,.6);
+  transform-origin:0 0;
+  animation:bulb-blink 1s ease-in-out infinite;
+}
+@keyframes bulb-blink{0%,100%{opacity:.6;transform:translate(-50%,-50%) scale(.85);}50%{opacity:1;transform:translate(-50%,-50%) scale(1.1);}}
+.bulb:nth-child(2n){animation-delay:.5s;background:radial-gradient(circle at 30% 30%,#fecaca,#dc2626);box-shadow:0 0 12px var(--red),0 0 22px rgba(220,38,38,.6);}
+.bulb:nth-child(3n){animation-delay:.25s;background:radial-gradient(circle at 30% 30%,#ddd6fe,#7c3aed);box-shadow:0 0 12px var(--purple),0 0 22px rgba(124,58,237,.6);}
+
+.wheel-svg{
+  position:absolute;inset:30px;width:calc(100% - 60px);height:calc(100% - 60px);
+  filter:drop-shadow(0 12px 30px rgba(0,0,0,.7));
+}
+.wheel-rotor{transform-origin:200px 200px;will-change:transform;}
+.segment{
+  stroke:var(--gold);stroke-width:1.5;
+  filter:drop-shadow(0 2px 4px rgba(0,0,0,.3));
+}
+.segment-text{
+  fill:#fff;font-family:'Nunito',sans-serif;font-weight:900;
+  text-anchor:middle;dominant-baseline:middle;
+  paint-order:stroke;stroke:rgba(0,0,0,.5);stroke-width:2;
+  user-select:none;pointer-events:none;
+}
+.segment-emoji{
+  font-size:24px;text-anchor:middle;dominant-baseline:middle;
+  user-select:none;pointer-events:none;
+}
+.hub{
+  fill:url(#hubGradient);stroke:var(--gold);stroke-width:3;
+  filter:drop-shadow(0 0 12px rgba(251,191,36,.7));
+}
+.hub-inner{fill:var(--gold);}
+
+/* Strzalka na gorze */
+.wheel-pointer{
+  position:absolute;left:50%;top:-6px;transform:translateX(-50%);
+  width:0;height:0;
+  border-left:22px solid transparent;
+  border-right:22px solid transparent;
+  border-top:38px solid var(--gold);
+  filter:drop-shadow(0 4px 8px rgba(0,0,0,.7)) drop-shadow(0 0 12px rgba(251,191,36,.8));
+  z-index:10;
+  transition:transform .1s;
+}
+.wheel-pointer::after{
+  content:'';position:absolute;left:-8px;top:-38px;
+  width:16px;height:14px;background:var(--gold);
+  border:2px solid var(--gold-dark);
+  border-radius:3px;
+}
+.wheel-pointer.bouncing{animation:pointer-tick .08s ease-out;}
+@keyframes pointer-tick{0%{transform:translateX(-50%) rotate(0);}50%{transform:translateX(-50%) rotate(-8deg);}100%{transform:translateX(-50%) rotate(0);}}
+
+/* === SPIN BUTTON === */
+.spin-controls{text-align:center;margin:18px 0;}
+.btn-spin{
+  padding:18px 44px;
+  background:linear-gradient(180deg,var(--red) 0%,var(--red-dark) 100%);
+  border:3px solid var(--gold);border-radius:100px;
+  color:#fff;font-family:'Bungee',sans-serif;font-size:1.4rem;
+  cursor:pointer;letter-spacing:.06em;
+  box-shadow:0 0 20px rgba(220,38,38,.7),0 8px 24px rgba(0,0,0,.5),inset 0 -4px 12px rgba(0,0,0,.3);
+  text-shadow:0 2px 4px rgba(0,0,0,.5);
+  animation:btn-pulse 1.6s ease-in-out infinite;
+}
+@keyframes btn-pulse{0%,100%{box-shadow:0 0 20px rgba(220,38,38,.7),0 8px 24px rgba(0,0,0,.5),inset 0 -4px 12px rgba(0,0,0,.3);}50%{box-shadow:0 0 35px rgba(251,191,36,.8),0 8px 24px rgba(0,0,0,.5),inset 0 -4px 12px rgba(0,0,0,.3);}}
+.btn-spin:hover:not(:disabled){transform:translateY(-2px) scale(1.03);}
+.btn-spin:disabled{animation:none;opacity:.5;cursor:not-allowed;}
+
+/* === CHALLENGE PANEL === */
+.challenge{
+  max-width:760px;margin:0 auto;
+  background:linear-gradient(135deg,#2d1148 0%,#1a0826 100%);
+  border:3px solid var(--gold);border-radius:22px;
+  padding:24px 28px;
+  box-shadow:0 0 30px rgba(251,191,36,.4),0 12px 40px rgba(0,0,0,.5);
+}
+.challenge.hidden{display:none;}
+.challenge-prompt{
+  text-align:center;margin-bottom:14px;
+}
+.challenge-prompt .label{
+  font-size:.74rem;text-transform:uppercase;letter-spacing:.15em;
+  color:var(--gold);font-weight:800;margin-bottom:4px;
+}
+.challenge-prompt .word-pl{
+  font-family:'Bungee',sans-serif;
+  font-size:clamp(1.5rem,4.5vw,2.4rem);
+  color:#fff;
+  text-shadow:0 0 14px rgba(251,191,36,.6),0 3px 6px rgba(0,0,0,.6);
+}
+.timer-bar{
+  height:10px;background:rgba(0,0,0,.4);border-radius:100px;overflow:hidden;
+  border:1.5px solid rgba(255,255,255,.2);margin:10px 0 18px;position:relative;
+}
+.timer-fill{
+  height:100%;background:linear-gradient(90deg,var(--green) 0%,var(--gold) 60%,var(--red) 100%);
+  border-radius:100px;width:100%;
+  transition:width .1s linear;
+  box-shadow:0 0 12px rgba(251,191,36,.6);
+}
+.timer-text{
+  position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  font-family:'Bungee',sans-serif;font-size:.8rem;color:#fff;
+  text-shadow:0 0 6px rgba(0,0,0,.8);
+}
+
+.options{
+  display:grid;grid-template-columns:repeat(2,1fr);gap:10px;
+}
+@media(max-width:520px){.options{grid-template-columns:1fr;}}
+.option-btn{
+  padding:14px 18px;background:rgba(0,0,0,.4);
+  border:2px solid var(--border);border-radius:14px;
+  color:#fff;font-family:inherit;font-weight:800;font-size:1rem;
+  cursor:pointer;text-align:left;
+  transition:all .15s;
+}
+.option-btn:hover:not(:disabled){border-color:var(--gold);background:rgba(251,191,36,.15);transform:translateY(-2px);}
+.option-btn.correct{
+  background:linear-gradient(135deg,var(--green),#059669);
+  border-color:#fff;color:#fff;
+  animation:flash-green 0.3s 3;
+}
+.option-btn.wrong{
+  background:linear-gradient(135deg,var(--red),var(--red-dark));
+  border-color:#fff;color:#fff;
+  animation:flash-red 0.2s 2;
+}
+@keyframes flash-green{0%,100%{box-shadow:0 0 0 0 rgba(16,185,129,1);}50%{box-shadow:0 0 0 12px rgba(16,185,129,0);}}
+@keyframes flash-red{0%,100%{box-shadow:0 0 0 0 rgba(220,38,38,1);}50%{box-shadow:0 0 0 10px rgba(220,38,38,0);}}
+.option-btn:disabled{cursor:default;opacity:.7;}
+
+/* === BONUS OVERLAY === */
+.bonus-overlay{
+  position:fixed;inset:0;display:none;align-items:center;justify-content:center;
+  background:rgba(0,0,0,.75);z-index:2500;backdrop-filter:blur(8px);
+}
+.bonus-overlay.show{display:flex;animation:fade-in .25s ease-out;}
+@keyframes fade-in{from{opacity:0;}to{opacity:1;}}
+.bonus-card{
+  text-align:center;padding:32px 40px;
+  background:linear-gradient(135deg,#2d1148 0%,#1a0826 100%);
+  border:4px solid var(--gold);border-radius:28px;
+  box-shadow:0 0 60px rgba(251,191,36,.7),0 20px 60px rgba(0,0,0,.6);
+  animation:bonus-pop .5s cubic-bezier(.34,1.56,.64,1);
+  max-width:90vw;
+}
+@keyframes bonus-pop{0%{transform:scale(.3) rotate(-15deg);opacity:0;}100%{transform:scale(1) rotate(0);opacity:1;}}
+.bonus-emoji{font-size:6rem;margin-bottom:8px;filter:drop-shadow(0 6px 12px rgba(0,0,0,.5));animation:emoji-bounce 1s ease-in-out infinite;}
+@keyframes emoji-bounce{0%,100%{transform:translateY(0);}50%{transform:translateY(-12px);}}
+.bonus-title{
+  font-family:'Bungee',sans-serif;font-size:clamp(1.6rem,5vw,2.4rem);
+  background:linear-gradient(180deg,#fef3c7,#fbbf24);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  margin-bottom:6px;
+}
+.bonus-desc{font-size:1rem;color:#fde68a;margin-bottom:18px;font-weight:700;}
+.bonus-overlay.bankrupt .bonus-card{border-color:var(--red);box-shadow:0 0 60px rgba(220,38,38,.8),0 20px 60px rgba(0,0,0,.6);animation:bankrupt-shake .5s ease-in-out;}
+.bonus-overlay.bankrupt .bonus-title{background:linear-gradient(180deg,#fecaca,#dc2626);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+@keyframes bankrupt-shake{0%,100%{transform:translateX(0);}10%,30%,50%,70%,90%{transform:translateX(-10px);}20%,40%,60%,80%{transform:translateX(10px);}}
+
+.btn-bonus-ok{
+  padding:13px 36px;background:var(--gold);border:none;border-radius:100px;
+  color:var(--black);font-family:'Bungee',sans-serif;font-size:1rem;
+  cursor:pointer;letter-spacing:.05em;
+  box-shadow:0 4px 14px rgba(251,191,36,.5);
+}
+.btn-bonus-ok:hover{transform:translateY(-2px);}
+
+/* === GAME OVER === */
+.gameover-screen{
+  max-width:560px;margin:30px auto;
+  background:linear-gradient(135deg,#2d1148 0%,#1a0826 100%);
+  border:3px solid var(--gold);border-radius:24px;
+  padding:32px 36px;text-align:center;
+  box-shadow:0 0 40px rgba(251,191,36,.5),0 20px 60px rgba(0,0,0,.5);
+}
+.gameover-screen h2{
+  font-family:'Bungee',sans-serif;font-size:2rem;color:var(--gold);
+  margin-bottom:16px;
+}
+.gameover-stats{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:18px 0;
+}
+.go-stat{
+  background:rgba(0,0,0,.4);border:1.5px solid var(--border);
+  border-radius:14px;padding:12px;
+}
+.go-stat-num{font-family:'Bungee',sans-serif;font-size:1.6rem;color:var(--gold);}
+.go-stat-label{font-size:.7rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-top:4px;}
+
+/* === KONFETTI === */
+.confetti{position:fixed;inset:0;pointer-events:none;z-index:1500;overflow:hidden;}
+.confetti-piece{
+  position:absolute;width:10px;height:14px;
+  animation:confetti-fall 3s linear forwards;
+}
+@keyframes confetti-fall{0%{transform:translateY(-20vh) rotate(0);opacity:1;}100%{transform:translateY(110vh) rotate(720deg);opacity:0;}}
+
+/* === FOOTER === */
+.bottom-back{text-align:center;margin:24px 0 10px;}
+.footer{text-align:center;font-size:.7rem;color:var(--muted);font-weight:600;padding:8px;}
+
+/* === HIDDEN HELPER === */
+.hidden{display:none!important;}
+
+@media print{.back-link,.htp-btn,.snd-btn,.bottom-back{display:none!important;}body{background:#fff;color:#000;}}
+</style>
+</head>
+<body>
+
+<a href="app.html" class="back-link">← Powrót do Sowie Fiszki</a>
+<button class="snd-btn" id="sndBtn" title="Włącz / wyłącz dźwięk" onclick="toggleSound()">🔊</button>
+<button class="htp-btn" onclick="document.getElementById('htpModal').classList.add('show')">ℹ️ Jak grać?</button>
+
+<div class="htp-modal" id="htpModal" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="htp-box">
+    <h2>🎰 Jak grać w Word Wheel?</h2>
+    <ol>
+      <li>Wybierz <strong>podręcznik</strong> i <strong>unit</strong>, kliknij <strong>ZAGRAJ</strong>.</li>
+      <li>Naciśnij <strong>SPIN!</strong> aby zakręcić kołem fortuny.</li>
+      <li>Strzałka zatrzyma się na słowie po polsku — masz <strong>5 sekund</strong> na wybranie poprawnego tłumaczenia po angielsku.</li>
+      <li><strong>Pola bonusowe:</strong>
+        <ul style="margin-top:6px;padding-left:18px;color:#fde68a">
+          <li>⭐ <strong>Podwójne XP</strong> — następne poprawne słowo da 2× punktów</li>
+          <li>❤️ <strong>+1 życie</strong> (max 5)</li>
+          <li>🎁 <strong>Pomiń słowo</strong> — kręcisz ponownie</li>
+          <li>💀 <strong>BANKRUT!</strong> — tracisz wszystkie XP!</li>
+        </ul>
+      </li>
+      <li>Zaczynasz z <strong>3 życiami</strong>. Stracisz wszystkie = koniec gry.</li>
+      <li>💡 <strong>Tryb klasowy</strong>: świetne na rzutniku — uczniowie krzyczą odpowiedź!</li>
+    </ol>
+    <button onclick="document.getElementById('htpModal').classList.remove('show')">Lights, camera, action!</button>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <div class="title-bar">
+    <h1>🎰 WORD WHEEL</h1>
+    <div class="subtitle">Koło Fortuny ze słówkami · zakręć i wygraj!</div>
+  </div>
+
+  <!-- SETUP -->
+  <div class="setup-panel" id="setupPanel">
+    <label for="bookSel">📚 Podręcznik</label>
+    <select id="bookSel" onchange="onBookChange()"><option value="">— Wybierz —</option></select>
+    <label for="unitSel">📑 Unit</label>
+    <select id="unitSel" disabled><option value="">— Najpierw wybierz podręcznik —</option></select>
+    <button class="btn-launch" id="launchBtn" disabled onclick="startGame()">🎰 ZAGRAJ</button>
+  </div>
+
+  <!-- GAME -->
+  <div id="gameArea" class="hidden">
+
+    <div class="stats-bar">
+      <div class="stat-chip lives" id="livesChip">❤️ <span id="livesNum">3</span></div>
+      <div class="stat-chip" id="xpChip">⭐ <span id="xpNum">0</span></div>
+      <div class="stat-chip dxp hidden" id="dxpChip">🔥 2× XP!</div>
+    </div>
+
+    <div class="wheel-stage">
+      <div class="wheel-bulbs" id="wheelBulbs"></div>
+      <svg viewBox="0 0 400 400" class="wheel-svg" id="wheelSvg">
+        <defs>
+          <radialGradient id="hubGradient" cx="0.5" cy="0.5" r="0.5">
+            <stop offset="0%" stop-color="#fef3c7"/>
+            <stop offset="60%" stop-color="#fbbf24"/>
+            <stop offset="100%" stop-color="#b45309"/>
+          </radialGradient>
+        </defs>
+        <g class="wheel-rotor" id="wheelRotor"></g>
+        <circle cx="200" cy="200" r="32" class="hub"/>
+        <circle cx="200" cy="200" r="12" class="hub-inner"/>
+      </svg>
+      <div class="wheel-pointer" id="wheelPointer"></div>
+    </div>
+
+    <div class="spin-controls">
+      <button class="btn-spin" id="btnSpin" onclick="spinWheel()">🎲 SPIN!</button>
+    </div>
+
+    <div class="challenge hidden" id="challenge">
+      <div class="challenge-prompt">
+        <div class="label">Przetłumacz:</div>
+        <div class="word-pl" id="challengeWord">—</div>
+      </div>
+      <div class="timer-bar">
+        <div class="timer-fill" id="timerFill"></div>
+        <div class="timer-text" id="timerText">5</div>
+      </div>
+      <div class="options" id="optionsGrid"></div>
+    </div>
+
+    <div class="gameover-screen hidden" id="gameOverScreen">
+      <h2>🎰 KONIEC GRY!</h2>
+      <div style="color:#fde68a;font-size:1.05rem">Świetnie się bawiłeś!</div>
+      <div class="gameover-stats">
+        <div class="go-stat"><div class="go-stat-num" id="goXP">0</div><div class="go-stat-label">XP</div></div>
+        <div class="go-stat"><div class="go-stat-num" id="goCorrect">0</div><div class="go-stat-label">Poprawnych</div></div>
+        <div class="go-stat"><div class="go-stat-num" id="goSpins">0</div><div class="go-stat-label">Zakręceń</div></div>
+      </div>
+      <button class="btn-launch" onclick="restartGame()">🎰 ZAGRAJ JESZCZE RAZ</button>
+    </div>
+
+  </div>
+
+</div>
+
+<!-- BONUS OVERLAY -->
+<div class="bonus-overlay" id="bonusOverlay">
+  <div class="bonus-card">
+    <div class="bonus-emoji" id="bonusEmoji">⭐</div>
+    <div class="bonus-title" id="bonusTitle">BONUS!</div>
+    <div class="bonus-desc" id="bonusDesc">—</div>
+    <button class="btn-bonus-ok" onclick="closeBonus()">DALEJ</button>
+  </div>
+</div>
+
+<div class="bottom-back"><a href="app.html" class="back-link" style="position:static;background:rgba(0,0,0,.55)">← Wróć do Sowie Fiszki</a></div>
+<div class="footer">© 2026 Sowie Fiszki</div>
+
+<script>
+'use strict';
+
+/* ============================================================
+   AUDIO — proceduralny dzwiek (WebAudio)
+============================================================ */
+let soundOn = true;
+try { if (localStorage.getItem('ww_sound') === 'off') soundOn = false; } catch(e) {}
+function toggleSound(){
+  soundOn = !soundOn;
+  try { localStorage.setItem('ww_sound', soundOn ? 'on' : 'off'); } catch(e) {}
+  const btn = document.getElementById('sndBtn');
+  if (btn) {
+    btn.textContent = soundOn ? '🔊' : '🔇';
+    btn.classList.toggle('muted', !soundOn);
+  }
+  if (!soundOn && 'speechSynthesis' in window) { try { speechSynthesis.cancel(); } catch(e) {} }
+}
+(function(){
+  const btn = document.getElementById('sndBtn');
+  if (btn) { btn.textContent = soundOn ? '🔊' : '🔇'; btn.classList.toggle('muted', !soundOn); }
+})();
+
+let _audioCtx = null;
+function audioCtx(){
+  if (!_audioCtx) {
+    try { _audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) { return null; }
+  }
+  return _audioCtx;
+}
+function beep(freq, dur, type, gain){
+  if (!soundOn) return;
+  const ctx = audioCtx(); if (!ctx) return;
+  try {
+    const osc = ctx.createOscillator();
+    const g = ctx.createGain();
+    osc.type = type || 'sine';
+    osc.frequency.value = freq;
+    g.gain.value = (gain != null ? gain : 0.18);
+    osc.connect(g); g.connect(ctx.destination);
+    osc.start();
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+    osc.stop(ctx.currentTime + dur + 0.02);
+  } catch(e) {}
+}
+function playTick(){ beep(720, 0.06, 'square', 0.08); }
+function playWin(){
+  // Akord arpeggio — radosny tryumf
+  beep(523, 0.15, 'sine', 0.18); // C5
+  setTimeout(() => beep(659, 0.15, 'sine', 0.18), 100); // E5
+  setTimeout(() => beep(784, 0.18, 'sine', 0.2), 200); // G5
+  setTimeout(() => beep(1046, 0.3, 'sine', 0.22), 300); // C6
+}
+function playWrong(){
+  beep(180, 0.18, 'sawtooth', 0.18);
+  setTimeout(() => beep(110, 0.25, 'sawtooth', 0.18), 180);
+}
+function playBonus(){
+  beep(880, 0.1, 'sine', 0.18);
+  setTimeout(() => beep(1318, 0.18, 'sine', 0.18), 90);
+}
+function playBankrupt(){
+  // Opadajaca melodia + buzz
+  beep(440, 0.2, 'sawtooth', 0.18);
+  setTimeout(() => beep(330, 0.2, 'sawtooth', 0.18), 180);
+  setTimeout(() => beep(220, 0.3, 'sawtooth', 0.18), 360);
+  setTimeout(() => beep(110, 0.5, 'sawtooth', 0.18), 540);
+}
+function playApplause(){
+  // Symulacja braw — szumy nakladane
+  if (!soundOn) return;
+  const ctx = audioCtx(); if (!ctx) return;
+  try {
+    const buffer = ctx.createBuffer(1, ctx.sampleRate * 1.2, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i/data.length, 1.5) * 0.4;
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'highpass'; filter.frequency.value = 1500;
+    src.connect(filter); filter.connect(ctx.destination);
+    src.start();
+  } catch(e) {}
+}
+
+/* ============================================================
+   TTS (po angielsku)
+============================================================ */
+let _voices = [];
+function loadVoices(){ try { _voices = speechSynthesis.getVoices() || []; } catch(e) { _voices = []; } }
+if ('speechSynthesis' in window) { loadVoices(); speechSynthesis.onvoiceschanged = loadVoices; }
+function pickVoice(lang){
+  if (!_voices.length) loadVoices();
+  if (!_voices.length) return null;
+  const want = lang === 'fr' ? 'fr-FR' : 'en-GB';
+  return _voices.find(v => /Online.*Natural/i.test(v.name) && v.lang === want) ||
+         _voices.find(v => v.lang === want) ||
+         _voices.find(v => v.lang && v.lang.startsWith(lang === 'fr' ? 'fr' : 'en')) || null;
+}
+function speak(text, lang){
+  if (!soundOn || !text || !('speechSynthesis' in window)) return;
+  try {
+    speechSynthesis.cancel();
+    setTimeout(() => {
+      try {
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = lang === 'fr' ? 'fr-FR' : 'en-GB';
+        u.rate = 0.92; u.volume = 1;
+        const v = pickVoice(lang);
+        if (v) u.voice = v;
+        speechSynthesis.speak(u);
+      } catch(e) {}
+    }, 60);
+  } catch(e) {}
+}
+
+/* ============================================================
+   STATE
+============================================================ */
+const SEGMENTS = 12;
+const SEG_DEG = 360 / SEGMENTS;
+let wordPool = [];           // [[pl, en], ...]
+let bookLang = 'en';
+let lives = 3;
+let xp = 0;
+let doubleNext = false;
+let correctCount = 0;
+let spinCount = 0;
+let spinning = false;
+let timerHandle = null;
+let currentRotation = 0;     // cumulative degrees
+let currentSegments = [];    // 12 entries: { type:'word'|'bonus', word?:[pl,en], bonus?:{kind, emoji, label, color} }
+
+/* Bonus types */
+const BONUSES = [
+  { kind:'double', emoji:'⭐', label:'PODWÓJNE XP', color:'#7c3aed', desc:'Następne poprawne słowo da 2× punktów!' },
+  { kind:'life',   emoji:'❤️', label:'+1 ŻYCIE',    color:'#ec4899', desc:'Dostajesz dodatkowe życie!' },
+  { kind:'skip',   emoji:'🎁', label:'POMIŃ',       color:'#10b981', desc:'Kręcisz kołem ponownie — bez ryzyka!' },
+  { kind:'bust',   emoji:'💀', label:'BANKRUT!',    color:'#1f2937', desc:'Tracisz wszystkie XP!' },
+];
+
+const SEG_COLORS_WORD = ['#dc2626','#fbbf24','#0f172a','#7c3aed','#dc2626','#fbbf24','#0f172a','#7c3aed'];
+
+/* ============================================================
+   SETUP — selecty z BOOKS
+============================================================ */
+(function(){
+  if (typeof BOOKS === 'undefined') return;
+  const bs = document.getElementById('bookSel');
+  Object.values(BOOKS)
+    .filter(b => !b.adminOnly)
+    .sort((a,b) => (a.name||'').localeCompare(b.name||'', 'pl'))
+    .forEach(b => {
+      const o = document.createElement('option');
+      o.value = b.id;
+      o.textContent = (b.icon||'📖') + ' ' + b.name;
+      bs.appendChild(o);
+    });
+  Object.values(BOOKS)
+    .filter(b => b.adminOnly)
+    .forEach(b => {
+      const o = document.createElement('option');
+      o.value = b.id;
+      o.textContent = (b.icon||'📖') + ' ' + b.name + ' (admin)';
+      bs.appendChild(o);
+    });
+
+  // Auto-start z URL params
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const bookParam = params.get('book');
+    const unitParam = params.get('unit');
+    if (bookParam && BOOKS[bookParam]) {
+      const backUrl = unitParam
+        ? 'app.html#/book/' + encodeURIComponent(bookParam) + '/' + encodeURIComponent(unitParam)
+        : 'app.html#/book/' + encodeURIComponent(bookParam);
+      document.querySelectorAll('a[href="app.html"]').forEach(a => { a.href = backUrl; });
+      bs.value = bookParam;
+      onBookChange();
+      const us = document.getElementById('unitSel');
+      const targetUnit = (unitParam === 'all' || !unitParam) ? '__all__' : unitParam;
+      if (BOOKS[bookParam].units?.[targetUnit] || targetUnit === '__all__') {
+        us.value = targetUnit;
+      }
+      setTimeout(() => { try { startGame(); } catch(e) {} }, 350);
+    }
+  } catch(e) {}
+})();
+
+function onBookChange(){
+  const bId = document.getElementById('bookSel').value;
+  const us = document.getElementById('unitSel');
+  const lb = document.getElementById('launchBtn');
+  us.innerHTML = '';
+  if (!bId || !BOOKS[bId]) {
+    us.innerHTML = '<option value="">— Najpierw wybierz podręcznik —</option>';
+    us.disabled = true; lb.disabled = true; return;
+  }
+  const all = document.createElement('option');
+  all.value = '__all__'; all.textContent = '🌍 Wszystkie słowa z podręcznika';
+  us.appendChild(all);
+  Object.entries(BOOKS[bId].units || {}).forEach(([key, u]) => {
+    const o = document.createElement('option');
+    o.value = key; o.textContent = (u.icon||'📖') + ' ' + (u.name||key);
+    us.appendChild(o);
+  });
+  us.disabled = false; us.value = '__all__'; lb.disabled = false;
+}
+
+/* ============================================================
+   START GAME
+============================================================ */
+function startGame(){
+  const bId = document.getElementById('bookSel').value;
+  const uKey = document.getElementById('unitSel').value;
+  if (!bId || !BOOKS[bId]) { alert('Wybierz podręcznik.'); return; }
+
+  bookLang = BOOKS[bId].language || 'en';
+  const pool = [];
+  if (uKey === '__all__') {
+    Object.values(BOOKS[bId].units || {}).forEach(u => {
+      (u.words || []).forEach(w => pool.push([w[0]||'', w[1]||'']));
+    });
+  } else if (BOOKS[bId].units?.[uKey]) {
+    (BOOKS[bId].units[uKey].words || []).forEach(w => pool.push([w[0]||'', w[1]||'']));
+  }
+  if (pool.length < 4) {
+    alert('Za mało słówek w wybranym unicie (potrzeba minimum 4).');
+    return;
+  }
+  wordPool = pool;
+
+  // Reset state
+  lives = 3; xp = 0; doubleNext = false; correctCount = 0; spinCount = 0; spinning = false;
+  currentRotation = 0;
+
+  // UI
+  document.getElementById('setupPanel').classList.add('hidden');
+  document.getElementById('gameArea').classList.remove('hidden');
+  document.getElementById('gameOverScreen').classList.add('hidden');
+  document.getElementById('challenge').classList.add('hidden');
+  document.getElementById('btnSpin').disabled = false;
+  buildBulbs();
+  refreshStats();
+  buildWheel();
+}
+
+function buildBulbs(){
+  const cont = document.getElementById('wheelBulbs');
+  cont.innerHTML = '';
+  const N = 24;
+  const rect = cont.getBoundingClientRect();
+  // Position bulbs around outer rim; we use percentage so it scales
+  for (let i = 0; i < N; i++) {
+    const a = (i / N) * Math.PI * 2 - Math.PI / 2;
+    const x = 50 + Math.cos(a) * 50; // % of container
+    const y = 50 + Math.sin(a) * 50;
+    const b = document.createElement('div');
+    b.className = 'bulb';
+    b.style.left = x + '%';
+    b.style.top = y + '%';
+    cont.appendChild(b);
+  }
+}
+
+/* ============================================================
+   WHEEL — buduj segmenty
+============================================================ */
+function shuffle(arr){
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function pickWordsForWheel(){
+  // 8 slow z puli (preferuj pojedyncze slowa)
+  const single = wordPool.filter(w => !/\s/.test((w[1]||'').trim()) && !/\s/.test((w[0]||'').trim()));
+  const all = single.length >= 8 ? single : wordPool;
+  const copy = [...all];
+  shuffle(copy);
+  return copy.slice(0, 8);
+}
+
+function buildWheel(){
+  // 8 slow + 4 bonusy w losowej kolejnosci
+  const words = pickWordsForWheel();
+  const segs = words.map(w => ({ type:'word', word:w }));
+  BONUSES.forEach(b => segs.push({ type:'bonus', bonus:b }));
+  shuffle(segs);
+  currentSegments = segs;
+
+  const rotor = document.getElementById('wheelRotor');
+  rotor.innerHTML = '';
+
+  segs.forEach((seg, i) => {
+    const startDeg = i * SEG_DEG - SEG_DEG / 2;
+    const endDeg = i * SEG_DEG + SEG_DEG / 2;
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', segmentPathD(200, 200, 175, startDeg, endDeg));
+    path.setAttribute('class', 'segment');
+    let fillColor;
+    if (seg.type === 'bonus') {
+      fillColor = seg.bonus.color;
+    } else {
+      fillColor = SEG_COLORS_WORD[i % SEG_COLORS_WORD.length];
+    }
+    path.setAttribute('fill', fillColor);
+    rotor.appendChild(path);
+
+    // Tekst lub emoji
+    const midDeg = i * SEG_DEG;
+    const textRadius = 115;
+    const [tx, ty] = polarPoint(200, 200, textRadius, midDeg);
+
+    if (seg.type === 'bonus') {
+      const emoji = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      emoji.setAttribute('class', 'segment-emoji');
+      emoji.setAttribute('x', tx);
+      emoji.setAttribute('y', ty);
+      emoji.setAttribute('transform', 'rotate(' + midDeg + ' ' + tx + ' ' + ty + ')');
+      emoji.style.fontSize = '32px';
+      emoji.textContent = seg.bonus.emoji;
+      rotor.appendChild(emoji);
+    } else {
+      // PL slowo - dlugie skroc
+      const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      txt.setAttribute('class', 'segment-text');
+      txt.setAttribute('x', tx);
+      txt.setAttribute('y', ty);
+      txt.setAttribute('transform', 'rotate(' + midDeg + ' ' + tx + ' ' + ty + ')');
+      // Dopasuj rozmiar do dlugosci
+      let label = seg.word[0] || '';
+      if (label.length > 14) label = label.slice(0, 12) + '…';
+      const fontSize = label.length > 10 ? 11 : (label.length > 6 ? 13 : 15);
+      txt.style.fontSize = fontSize + 'px';
+      txt.textContent = label;
+      rotor.appendChild(txt);
+    }
+  });
+
+  // Reset rotation visually (no transition)
+  rotor.style.transition = 'none';
+  rotor.style.transform = 'rotate(0deg)';
+  currentRotation = 0;
+  void rotor.offsetWidth;
+}
+
+function polarPoint(cx, cy, r, deg){
+  // 0 deg = top (12 o'clock), clockwise
+  const rad = (deg - 90) * Math.PI / 180;
+  return [cx + r * Math.cos(rad), cy + r * Math.sin(rad)];
+}
+
+function segmentPathD(cx, cy, r, startDeg, endDeg){
+  const [x1, y1] = polarPoint(cx, cy, r, startDeg);
+  const [x2, y2] = polarPoint(cx, cy, r, endDeg);
+  const largeArc = Math.abs(endDeg - startDeg) > 180 ? 1 : 0;
+  return `M ${cx} ${cy} L ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r} ${r} 0 ${largeArc} 1 ${x2.toFixed(2)} ${y2.toFixed(2)} Z`;
+}
+
+/* ============================================================
+   SPIN
+============================================================ */
+function spinWheel(){
+  if (spinning) return;
+  if (lives <= 0) return;
+  spinning = true;
+  spinCount++;
+  document.getElementById('btnSpin').disabled = true;
+  document.getElementById('challenge').classList.add('hidden');
+
+  const targetIdx = Math.floor(Math.random() * SEGMENTS);
+  // Want segment targetIdx to land under arrow (top)
+  // Wheel rotor rotates clockwise. To bring segment K to top:
+  //   rotation_mod_360 = (360 - K * SEG_DEG) % 360 (so segment K's center is at angle 0/top)
+  const targetMod = (360 - targetIdx * SEG_DEG) % 360;
+  const currentMod = ((currentRotation % 360) + 360) % 360;
+  let delta = (targetMod - currentMod + 360) % 360;
+  if (delta < 30) delta += 360; // ensure decent spin even when near target
+  const fullSpins = 5 + Math.floor(Math.random() * 3); // 5–7 full
+  const totalAdd = fullSpins * 360 + delta;
+  currentRotation += totalAdd;
+
+  const rotor = document.getElementById('wheelRotor');
+  const dur = 4500;
+  rotor.style.transition = `transform ${dur}ms cubic-bezier(0.17, 0.67, 0.21, 0.99)`;
+  rotor.style.transform = `rotate(${currentRotation}deg)`;
+
+  // Schedule ticks during spin (slowing down)
+  scheduleTicks(dur);
+
+  // Result
+  setTimeout(() => {
+    spinning = false;
+    handleResult(currentSegments[targetIdx]);
+  }, dur + 100);
+}
+
+function scheduleTicks(durMs){
+  // ~30 ticks z eksponencjalnym spowolnieniem
+  const N = 32;
+  for (let i = 0; i < N; i++) {
+    const ratio = i / (N - 1);
+    // Easing: tickly fast at start, slow at end
+    const eased = 1 - Math.pow(1 - ratio, 2.5);
+    const t = eased * durMs;
+    setTimeout(() => {
+      playTick();
+      const ptr = document.getElementById('wheelPointer');
+      if (ptr) {
+        ptr.classList.add('bouncing');
+        setTimeout(() => ptr.classList.remove('bouncing'), 70);
+      }
+    }, t);
+  }
+}
+
+/* ============================================================
+   RESULT — co spadlo na strzalce
+============================================================ */
+function handleResult(seg){
+  if (!seg) {
+    document.getElementById('btnSpin').disabled = false;
+    return;
+  }
+  if (seg.type === 'bonus') {
+    applyBonus(seg.bonus);
+  } else {
+    showChallenge(seg.word);
+  }
+}
+
+/* ============================================================
+   BONUS
+============================================================ */
+function applyBonus(bonus){
+  const overlay = document.getElementById('bonusOverlay');
+  overlay.classList.remove('bankrupt');
+  document.getElementById('bonusEmoji').textContent = bonus.emoji;
+  document.getElementById('bonusTitle').textContent = bonus.label;
+  document.getElementById('bonusDesc').textContent = bonus.desc;
+
+  if (bonus.kind === 'double') {
+    doubleNext = true;
+    playBonus();
+    document.getElementById('dxpChip').classList.remove('hidden');
+  } else if (bonus.kind === 'life') {
+    if (lives < 5) lives++;
+    playBonus();
+  } else if (bonus.kind === 'skip') {
+    playBonus();
+    // Po kliknieciu DALEJ — buildWheel + reset btnSpin (gracz krect ponownie)
+  } else if (bonus.kind === 'bust') {
+    overlay.classList.add('bankrupt');
+    xp = 0;
+    doubleNext = false;
+    document.getElementById('dxpChip').classList.add('hidden');
+    playBankrupt();
+  }
+  refreshStats();
+  overlay.classList.add('show');
+}
+
+function closeBonus(){
+  document.getElementById('bonusOverlay').classList.remove('show');
+  // Pozwol na nastepny spin
+  document.getElementById('btnSpin').disabled = false;
+  // Po skip-u od razu nowe slowa na kole
+  buildWheel();
+}
+
+/* ============================================================
+   CHALLENGE — multiple choice + 5s timer
+============================================================ */
+function showChallenge(wordPair){
+  const [pl, en] = wordPair;
+  document.getElementById('challengeWord').textContent = pl;
+
+  // Wygeneruj 4 opcje (1 poprawna + 3 dystraktory)
+  let distractors;
+  if (typeof generateDistractors === 'function') {
+    distractors = generateDistractors(en, wordPool, 3, 1);
+  } else {
+    distractors = wordPool.filter(w => w[1] !== en).map(w => w[1]);
+    shuffle(distractors); distractors = distractors.slice(0, 3);
+  }
+  const options = shuffle([en, ...distractors]);
+
+  const grid = document.getElementById('optionsGrid');
+  grid.innerHTML = '';
+  options.forEach(opt => {
+    const btn = document.createElement('button');
+    btn.className = 'option-btn';
+    btn.textContent = opt;
+    btn.onclick = () => answerChallenge(opt, en, btn);
+    grid.appendChild(btn);
+  });
+
+  document.getElementById('challenge').classList.remove('hidden');
+  startTimer(5, () => {
+    // Timeout — automatic loss
+    answerChallenge(null, en, null);
+  });
+}
+
+function startTimer(seconds, onExpire){
+  const fill = document.getElementById('timerFill');
+  const text = document.getElementById('timerText');
+  let remaining = seconds * 1000;
+  const total = remaining;
+  fill.style.width = '100%';
+  text.textContent = seconds.toFixed(0);
+
+  if (timerHandle) clearInterval(timerHandle);
+  const start = Date.now();
+  timerHandle = setInterval(() => {
+    const elapsed = Date.now() - start;
+    remaining = total - elapsed;
+    if (remaining <= 0) {
+      clearInterval(timerHandle); timerHandle = null;
+      fill.style.width = '0%'; text.textContent = '0';
+      onExpire();
+    } else {
+      const pct = (remaining / total) * 100;
+      fill.style.width = pct + '%';
+      text.textContent = Math.ceil(remaining / 1000).toString();
+    }
+  }, 80);
+}
+
+function answerChallenge(picked, correct, btn){
+  if (timerHandle) { clearInterval(timerHandle); timerHandle = null; }
+  // Wylacz wszystkie przyciski
+  document.querySelectorAll('#optionsGrid .option-btn').forEach(b => {
+    b.disabled = true;
+    if (b.textContent === correct) b.classList.add('correct');
+    else if (b === btn && picked !== correct) b.classList.add('wrong');
+  });
+
+  if (picked === correct) {
+    correctCount++;
+    let gain = 10;
+    if (doubleNext) { gain *= 2; doubleNext = false; document.getElementById('dxpChip').classList.add('hidden'); }
+    xp += gain;
+    playWin(); playApplause();
+    spawnConfetti();
+    // Przeczytaj poprawne EN
+    setTimeout(() => speak(correct, bookLang), 200);
+  } else {
+    lives--;
+    playWrong();
+    setTimeout(() => speak(correct, bookLang), 400);
+  }
+  refreshStats();
+
+  // Po chwili — zakoncz lub nowa runda
+  setTimeout(() => {
+    document.getElementById('challenge').classList.add('hidden');
+    if (lives <= 0) {
+      endGame();
+    } else {
+      buildWheel();
+      document.getElementById('btnSpin').disabled = false;
+    }
+  }, 2200);
+}
+
+/* ============================================================
+   STATS / END
+============================================================ */
+function refreshStats(){
+  document.getElementById('livesNum').textContent = '×' + Math.max(0, lives);
+  document.getElementById('xpNum').textContent = xp;
+}
+
+function endGame(){
+  document.getElementById('challenge').classList.add('hidden');
+  document.getElementById('btnSpin').disabled = true;
+  document.getElementById('goXP').textContent = xp;
+  document.getElementById('goCorrect').textContent = correctCount;
+  document.getElementById('goSpins').textContent = spinCount;
+  document.getElementById('gameOverScreen').classList.remove('hidden');
+}
+
+function restartGame(){
+  document.getElementById('gameOverScreen').classList.add('hidden');
+  startGame();
+}
+
+/* ============================================================
+   KONFETTI
+============================================================ */
+function spawnConfetti(){
+  const cont = document.createElement('div');
+  cont.className = 'confetti';
+  document.body.appendChild(cont);
+  const colors = ['#fbbf24','#dc2626','#7c3aed','#10b981','#ec4899','#fef3c7'];
+  for (let i = 0; i < 60; i++) {
+    const piece = document.createElement('div');
+    piece.className = 'confetti-piece';
+    piece.style.left = Math.random() * 100 + 'vw';
+    piece.style.top = '-10vh';
+    piece.style.background = colors[Math.floor(Math.random() * colors.length)];
+    piece.style.animationDelay = (Math.random() * 0.6) + 's';
+    piece.style.animationDuration = (2 + Math.random() * 1.5) + 's';
+    piece.style.transform = 'rotate(' + (Math.random() * 360) + 'deg)';
+    cont.appendChild(piece);
+  }
+  setTimeout(() => { try { cont.remove(); } catch(e) {} }, 4000);
+}
+</script>
+</body>
+</html>
