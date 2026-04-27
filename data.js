@@ -1290,6 +1290,33 @@ const BOOKS = {
           ['Jeżdżę na deskorolce.', 'I skateboard.'],
         ]
       },
+      unit5: {
+        name: 'Unit 5', icon: '🏙️', color: '#fd79a8',
+        words: [
+          ['sklep z zabawkami', 'toy shop'],
+          ['piekarnia', 'bakery'],
+          ['sklep zoologiczny', 'pet shop'],
+          ['księgarnia', 'bookshop'],
+          ['sklep ze słodyczami', 'sweet shop'],
+          ['sklep obuwniczy', 'shoe shop'],
+          ['sklep odzieżowy', 'clothes shop'],
+          ['targ, rynek', 'market'],
+          ['szkoła', 'school'],
+          ['hotel', 'hotel'],
+          ['szpital', 'hospital'],
+          ['poczta', 'post office'],
+          ['restauracja', 'restaurant'],
+          ['dworzec kolejowy', 'train station'],
+          ['Przepraszam, szukam piekarni.', "Excuse me, I'm looking for a bakery."],
+          ['Przepraszam, szukam księgarni.', "Excuse me, I'm looking for a bookshop."],
+          ['Są trzy piekarnie na ulicy Nowej.', 'There are three bakeries on New Street.'],
+          ['Jest piekarnia na ulicy Owocowej.', "There's a bakery on Fruit Street."],
+          ['Jest targ/rynek.', "There's a market."],
+          ['Są dwie księgarnie.', 'There are two bookshops.'],
+          ['Nie ma szpitala.', "There isn't a hospital."],
+          ['Nie ma żadnych restauracji.', "There aren't any restaurants."],
+        ]
+      },
     }
   }
 

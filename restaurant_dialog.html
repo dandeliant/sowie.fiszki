@@ -161,7 +161,7 @@ body{
   box-shadow:0 4px 8px rgba(0,0,0,.3);
 }
 .painting::before{
-  content:'🍷';position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  content:'🍇';position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
   font-size:2rem;filter:drop-shadow(0 2px 4px rgba(0,0,0,.5));
 }
 
@@ -231,8 +231,16 @@ body{
 }
 @keyframes char-bob{0%,100%{transform:translateY(0);}50%{transform:translateY(-4px);}}
 .character.customer{left:6%;}
-.character.waiter{right:6%;}
+.character.waiter{
+  right:6%;
+  transition:transform 1.2s cubic-bezier(.42,0,.58,1), opacity .5s ease;
+}
 .character.waiter .character-emoji{animation-delay:-1s;}
+.character.waiter.walked-off{
+  transform:translateX(-680px);
+  opacity:0;
+  pointer-events:none;
+}
 .char-name{
   font-family:'Fredoka',sans-serif;font-weight:700;font-size:.72rem;
   background:#fff;padding:2px 8px;border-radius:100px;
@@ -241,6 +249,31 @@ body{
 }
 .character.customer .char-name{color:var(--cust);border-color:var(--cust);}
 .character.waiter .char-name{color:var(--waiter);border-color:var(--waiter);}
+
+/* === THOUGHT BUBBLE (chmurka myślowa nad klientem) === */
+.thought{
+  position:absolute;
+  left:5%;top:3%;
+  background:#fff;
+  border:2.5px dashed var(--cust);
+  border-radius:50% 50% 50% 50% / 60% 60% 40% 40%;
+  padding:14px 22px;
+  display:flex;align-items:center;gap:10px;
+  z-index:11;
+  box-shadow:0 6px 14px rgba(0,0,0,.2);
+  animation:bubble-pop .4s cubic-bezier(.34,1.56,.64,1);
+  cursor:pointer;
+}
+.thought.hidden{display:none;}
+.thought::before,.thought::after{
+  content:'';position:absolute;left:36px;
+  background:#fff;border:2px dashed var(--cust);
+  border-radius:50%;
+}
+.thought::before{width:18px;height:18px;bottom:-14px;}
+.thought::after{width:10px;height:10px;bottom:-30px;left:46px;}
+.thought-emoji{font-size:2.2rem;line-height:1;}
+.thought-text{font-family:'Fredoka',sans-serif;font-weight:700;font-size:1.05rem;color:var(--cust);}
 
 /* === SPEECH BUBBLES === */
 .bubble{
@@ -372,13 +405,14 @@ body{
   <div class="htp-box">
     <h2>🍴 Jak korzystać z Restaurant Dialog?</h2>
     <ol>
-      <li>Kliknij <strong>🎲 Wylosuj</strong> aby wygenerować nowy losowy dialog w restauracji.</li>
-      <li><strong>Klient pyta</strong>: <em>„Can I have some soup, please?"</em> — pojawia się dymek po lewej stronie.</li>
-      <li><strong>Kelner odpowiada</strong>: <em>„Yes, of course, right away."</em> — dymek po prawej.</li>
-      <li>🔊 Każdy dymek można <strong>kliknąć aby odsłuchać</strong> — z brytyjską wymową.</li>
-      <li>Możesz też <strong>kliknąć konkretne danie</strong> z palety na dole, aby wygenerować dialog z tym daniem.</li>
-      <li>Wyrażenia klienta i kelnera <strong>losują się dla różnorodności</strong>.</li>
-      <li>Cel: <strong>powtórz głośno</strong> dialog — to ćwiczenie speakingowe!</li>
+      <li>Kliknij <strong>🎲 Wylosuj</strong> aby wygenerować nowy dialog w restauracji.</li>
+      <li>Najpierw nad głową klienta pojawi się <strong>chmurka myślowa</strong> z jedzeniem (np. 🍕 pizza). To jest moment dla Ciebie — <strong>spróbuj sam zamówić to po angielsku</strong> na głos.</li>
+      <li>Klient mówi: <em>„Can I have some pizza, please?"</em></li>
+      <li>Kelner: <em>„Yes, of course, right away."</em> — i wychodzi do kuchni.</li>
+      <li>Po chwili na stole pojawia się <strong>talerz z zamówieniem</strong>, kelner wraca i mówi: <em>„Here you are. Enjoy your meal!"</em></li>
+      <li>Klient odpowiada: <em>„Thank you."</em></li>
+      <li>🔊 Każdy dymek (i chmurka myśli) można kliknąć, aby <strong>odsłuchać ponownie</strong>.</li>
+      <li>Możesz też wybrać <strong>konkretne danie</strong> z palety na dole.</li>
     </ol>
     <button onclick="document.getElementById('htpModal').classList.remove('show')">Zamawiam!</button>
   </div>
@@ -418,9 +452,15 @@ body{
       <div class="character-emoji">👨‍🦱</div>
       <div class="char-name">Customer</div>
     </div>
-    <div class="character waiter">
+    <div class="character waiter" id="waiter">
       <div class="character-emoji">🧑‍🍳</div>
       <div class="char-name">Waiter</div>
+    </div>
+
+    <!-- Myślowa chmurka nad klientem (co chce zamówić) -->
+    <div class="thought hidden" id="thought" onclick="speakThought()" title="Kliknij aby odsłuchać">
+      <span class="thought-emoji" id="thoughtEmoji"></span>
+      <span class="thought-text" id="thoughtText"></span>
     </div>
 
     <!-- Dymki -->
@@ -443,7 +483,7 @@ body{
 
   <div class="actions">
     <button class="btn-action primary" onclick="generateRandom()">🎲 Wylosuj nowy dialog</button>
-    <button class="btn-action secondary" onclick="speakBoth()">🔊 Odtwórz cały dialog</button>
+    <button class="btn-action secondary" onclick="speakBoth()">🔄 Odtwórz dialog ponownie</button>
   </div>
 
   <div class="palette-wrap">
@@ -489,14 +529,24 @@ const CUSTOMER_PHRASES = [
   food => `Can I order ${food.det ? food.det + ' ' : ''}${food.en}?`,
 ];
 
-const WAITER_PHRASES = [
+const WAITER_CONFIRM_PHRASES = [
   `Yes, of course, right away.`,
   `Of course! Coming right up.`,
-  `Sure thing! Anything else?`,
-  `Right away. Enjoy your meal!`,
-  `Certainly. With pleasure!`,
-  `Of course, sir/madam.`,
+  `Right away, sir.`,
+  `Certainly. One moment, please.`,
   `Coming up in a moment!`,
+];
+
+const WAITER_SERVE_PHRASES = [
+  `Here you are. Enjoy your meal!`,
+  `Here you are. Enjoy your meal.`,
+  `There you go. Enjoy your meal!`,
+];
+
+const CUSTOMER_THANK_PHRASES = [
+  `Thank you.`,
+  `Thank you very much.`,
+  `Thanks a lot!`,
 ];
 
 /* === SOUND CONTROL + TTS === */
@@ -564,7 +614,45 @@ function speakWith(text, prefMale, callback){
 /* === STATE === */
 let currentFood = null;
 let currentCustText = '';
-let currentWaitText = '';
+let currentWaitConfirm = '';
+let currentWaitServe = '';
+let currentCustThank = '';
+let dialogPlaying = false;
+
+/* === HELPERS: animacja kelnera + plyta === */
+function waiterExit(){
+  document.getElementById('waiter').classList.add('walked-off');
+}
+function waiterEnter(){
+  document.getElementById('waiter').classList.remove('walked-off');
+}
+function plateClear(){
+  const p = document.getElementById('plate');
+  p.classList.add('empty');
+  document.getElementById('plateFood').textContent = '';
+}
+function plateSet(food){
+  const p = document.getElementById('plate');
+  const f = document.getElementById('plateFood');
+  f.textContent = food.emoji;
+  p.classList.remove('empty');
+  // re-trigger pop
+  f.style.animation = 'none'; void f.offsetWidth; f.style.animation = '';
+}
+function showBubble(id, text, opts){
+  const el = document.getElementById(id);
+  if (opts && opts.emojiId && opts.emoji) document.getElementById(opts.emojiId).textContent = opts.emoji;
+  if (opts && opts.textId) document.getElementById(opts.textId).textContent = text;
+  el.classList.remove('hidden');
+  el.style.animation = 'none'; void el.offsetWidth; el.style.animation = '';
+}
+function hideBubble(id){
+  document.getElementById(id).classList.add('hidden');
+}
+function wait(ms){ return new Promise(r => setTimeout(r, ms)); }
+function speakAsync(text, prefMale){
+  return new Promise(resolve => speakWith(text, prefMale, resolve));
+}
 
 /* === RENDER PALETTE === */
 (function(){
@@ -591,37 +679,19 @@ function generateRandom(){
   generateForFood(food);
 }
 
-function generateForFood(food){
+async function generateForFood(food){
+  if (dialogPlaying) {
+    // Anuluj biezacy dialog i resetuj
+    try { speechSynthesis.cancel(); } catch(e) {}
+    dialogPlaying = false;
+    await wait(120);
+  }
   currentFood = food;
-  // Wybierz losowo phrase customer + waiter
   const custFn = CUSTOMER_PHRASES[Math.floor(Math.random() * CUSTOMER_PHRASES.length)];
-  const waitTpl = WAITER_PHRASES[Math.floor(Math.random() * WAITER_PHRASES.length)];
-  currentCustText = custFn(food);
-  currentWaitText = waitTpl;
-
-  // Pokaz jedzenie na talerzu
-  const plate = document.getElementById('plate');
-  plate.classList.remove('empty');
-  const plateFood = document.getElementById('plateFood');
-  plateFood.textContent = food.emoji;
-  // Re-trigger animation
-  plateFood.style.animation = 'none';
-  void plateFood.offsetWidth;
-  plateFood.style.animation = '';
-
-  // Pokaz dymek customera (od razu)
-  const custBubble = document.getElementById('custBubble');
-  document.getElementById('custEmoji').textContent = food.emoji;
-  document.getElementById('custText').textContent = currentCustText;
-  custBubble.classList.remove('hidden');
-  // Re-trigger pop animation
-  custBubble.style.animation = 'none';
-  void custBubble.offsetWidth;
-  custBubble.style.animation = '';
-
-  // Schowaj dymek kelnera, pokaz po wypowiedzi customer
-  const waitBubble = document.getElementById('waitBubble');
-  waitBubble.classList.add('hidden');
+  currentCustText   = custFn(food);
+  currentWaitConfirm = WAITER_CONFIRM_PHRASES[Math.floor(Math.random() * WAITER_CONFIRM_PHRASES.length)];
+  currentWaitServe   = WAITER_SERVE_PHRASES[Math.floor(Math.random() * WAITER_SERVE_PHRASES.length)];
+  currentCustThank   = CUSTOMER_THANK_PHRASES[Math.floor(Math.random() * CUSTOMER_THANK_PHRASES.length)];
 
   // Highlight selected food in palette
   document.querySelectorAll('.food-btn').forEach(b => {
@@ -629,28 +699,87 @@ function generateForFood(food){
     b.classList.toggle('active', FOODS[idx]?.en === food.en);
   });
 
-  // Speak customer, then show + speak waiter
-  speakWith(currentCustText, true, () => {
-    document.getElementById('waitText').textContent = currentWaitText;
-    waitBubble.classList.remove('hidden');
-    waitBubble.style.animation = 'none';
-    void waitBubble.offsetWidth;
-    waitBubble.style.animation = '';
-    setTimeout(() => speakWith(currentWaitText, false), 300);
-  });
+  await playDialog();
 }
 
+async function playDialog(){
+  if (!currentFood) return;
+  dialogPlaying = true;
+
+  // Reset stanu sceny
+  hideBubble('custBubble');
+  hideBubble('waitBubble');
+  hideBubble('thought');
+  plateClear();
+  waiterEnter();
+  await wait(150);
+
+  // 1. Mysl klienta — co chce zamowic (chmurka nad glowa)
+  document.getElementById('thoughtEmoji').textContent = currentFood.emoji;
+  document.getElementById('thoughtText').textContent = currentFood.en;
+  document.getElementById('thought').classList.remove('hidden');
+  document.getElementById('thought').style.animation = 'none';
+  void document.getElementById('thought').offsetWidth;
+  document.getElementById('thought').style.animation = '';
+  await wait(2200); // czas zeby uczen przeczytal i wypowiedzial sie po cichu
+  if (!dialogPlaying) return;
+
+  // 2. Klient mowi swoja kwestie (dymek + TTS jako wzorzec)
+  hideBubble('thought');
+  showBubble('custBubble', currentCustText, { emoji: currentFood.emoji, emojiId: 'custEmoji', textId: 'custText' });
+  await speakAsync(currentCustText, true);
+  if (!dialogPlaying) return;
+
+  // 3. Kelner: "Yes, of course, right away."
+  showBubble('waitBubble', currentWaitConfirm, { textId: 'waitText' });
+  await speakAsync(currentWaitConfirm, false);
+  if (!dialogPlaying) return;
+
+  // 4. Kelner schodzi za kulisy (lewo)
+  hideBubble('waitBubble');
+  await wait(200);
+  waiterExit();
+  await wait(1300);
+  if (!dialogPlaying) return;
+
+  // 5. Talerz pojawia sie na stole
+  plateSet(currentFood);
+  await wait(700);
+  if (!dialogPlaying) return;
+
+  // 6. Kelner wraca
+  waiterEnter();
+  await wait(1200);
+  if (!dialogPlaying) return;
+
+  // 7. Kelner: "Here you are. Enjoy your meal."
+  showBubble('waitBubble', currentWaitServe, { textId: 'waitText' });
+  await speakAsync(currentWaitServe, false);
+  if (!dialogPlaying) return;
+
+  // 8. Klient: "Thank you."
+  showBubble('custBubble', currentCustThank, { emoji: '🙏', emojiId: 'custEmoji', textId: 'custText' });
+  await speakAsync(currentCustThank, true);
+
+  dialogPlaying = false;
+}
+
+function speakThought(){
+  if (currentFood) speakWith(currentFood.en, true);
+}
 function speakCustomer(){
-  if (currentCustText) speakWith(currentCustText, true);
+  // odtwarza biezacy tekst w dymku klienta (kwestia LUB Thank you)
+  const t = document.getElementById('custText').textContent;
+  if (t) speakWith(t, true);
 }
 function speakWaiter(){
-  if (currentWaitText) speakWith(currentWaitText, false);
+  const t = document.getElementById('waitText').textContent;
+  if (t) speakWith(t, false);
 }
 function speakBoth(){
-  if (!currentCustText) { generateRandom(); return; }
-  speakWith(currentCustText, true, () => {
-    setTimeout(() => speakWith(currentWaitText, false), 400);
-  });
+  if (!currentFood) { generateRandom(); return; }
+  // Powtorz caly dialog od poczatku
+  playDialog();
 }
 </script>
 </body>
