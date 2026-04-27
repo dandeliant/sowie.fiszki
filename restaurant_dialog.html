@@ -237,7 +237,7 @@ body{
 }
 .character.waiter .character-emoji{animation-delay:-1s;}
 .character.waiter.walked-off{
-  transform:translateX(-680px);
+  transform:translateX(680px);
   opacity:0;
   pointer-events:none;
 }
@@ -405,14 +405,19 @@ body{
   <div class="htp-box">
     <h2>🍴 Jak korzystać z Restaurant Dialog?</h2>
     <ol>
-      <li>Kliknij <strong>🎲 Wylosuj</strong> aby wygenerować nowy dialog w restauracji.</li>
-      <li>Najpierw nad głową klienta pojawi się <strong>chmurka myślowa</strong> z jedzeniem (np. 🍕 pizza). To jest moment dla Ciebie — <strong>spróbuj sam zamówić to po angielsku</strong> na głos.</li>
-      <li>Klient mówi: <em>„Can I have some pizza, please?"</em></li>
-      <li>Kelner: <em>„Yes, of course, right away."</em> — i wychodzi do kuchni.</li>
-      <li>Po chwili na stole pojawia się <strong>talerz z zamówieniem</strong>, kelner wraca i mówi: <em>„Here you are. Enjoy your meal!"</em></li>
-      <li>Klient odpowiada: <em>„Thank you."</em></li>
-      <li>🔊 Każdy dymek (i chmurka myśli) można kliknąć, aby <strong>odsłuchać ponownie</strong>.</li>
-      <li>Możesz też wybrać <strong>konkretne danie</strong> z palety na dole.</li>
+      <li>Kliknij <strong>🎲 Wylosuj jedzenie</strong> — w chmurce myśli nad klientem pojawi się danie (np. 🍕 pizza).</li>
+      <li>To jest moment dla Ciebie — <strong>spróbuj sam zamówić to po angielsku</strong> na głos: <em>„Can I have some pizza, please?"</em></li>
+      <li>Gdy jesteś gotowy, kliknij <strong>▶️ Odtwórz dialog</strong>, aby zobaczyć i usłyszeć całą scenkę:
+        <ul style="margin-top:6px;padding-left:18px">
+          <li>klient mówi swoją kwestię,</li>
+          <li>kelner: <em>„Yes, of course, right away."</em> i wychodzi do kuchni (znika po prawej),</li>
+          <li>na stole pojawia się <strong>talerz z zamówieniem</strong>,</li>
+          <li>kelner wraca: <em>„Here you are. Enjoy your meal!"</em></li>
+          <li>klient: <em>„Thank you."</em></li>
+        </ul>
+      </li>
+      <li>🔊 Każdy dymek (i chmurkę myśli) można <strong>kliknąć, aby odsłuchać ponownie</strong>.</li>
+      <li>Możesz też wybrać <strong>konkretne danie</strong> z palety poniżej zamiast losować.</li>
     </ol>
     <button onclick="document.getElementById('htpModal').classList.remove('show')">Zamawiam!</button>
   </div>
@@ -482,8 +487,8 @@ body{
   </div>
 
   <div class="actions">
-    <button class="btn-action primary" onclick="generateRandom()">🎲 Wylosuj nowy dialog</button>
-    <button class="btn-action secondary" onclick="speakBoth()">🔄 Odtwórz dialog ponownie</button>
+    <button class="btn-action primary" onclick="generateRandom()">🎲 Wylosuj jedzenie</button>
+    <button class="btn-action secondary" onclick="speakBoth()">▶️ Odtwórz dialog</button>
   </div>
 
   <div class="palette-wrap">
@@ -679,16 +684,15 @@ function generateRandom(){
   generateForFood(food);
 }
 
-async function generateForFood(food){
+function generateForFood(food){
+  // Anuluj biezacy dialog jesli gra
   if (dialogPlaying) {
-    // Anuluj biezacy dialog i resetuj
     try { speechSynthesis.cancel(); } catch(e) {}
     dialogPlaying = false;
-    await wait(120);
   }
   currentFood = food;
   const custFn = CUSTOMER_PHRASES[Math.floor(Math.random() * CUSTOMER_PHRASES.length)];
-  currentCustText   = custFn(food);
+  currentCustText    = custFn(food);
   currentWaitConfirm = WAITER_CONFIRM_PHRASES[Math.floor(Math.random() * WAITER_CONFIRM_PHRASES.length)];
   currentWaitServe   = WAITER_SERVE_PHRASES[Math.floor(Math.random() * WAITER_SERVE_PHRASES.length)];
   currentCustThank   = CUSTOMER_THANK_PHRASES[Math.floor(Math.random() * CUSTOMER_THANK_PHRASES.length)];
@@ -699,32 +703,37 @@ async function generateForFood(food){
     b.classList.toggle('active', FOODS[idx]?.en === food.en);
   });
 
-  await playDialog();
+  // Reset sceny: pusty talerz, kelner widoczny, ukryj dymki, pokaz tylko chmurke mysli
+  hideBubble('custBubble');
+  hideBubble('waitBubble');
+  plateClear();
+  waiterEnter();
+  document.getElementById('thoughtEmoji').textContent = food.emoji;
+  document.getElementById('thoughtText').textContent = food.en;
+  const th = document.getElementById('thought');
+  th.classList.remove('hidden');
+  th.style.animation = 'none'; void th.offsetWidth; th.style.animation = '';
 }
 
 async function playDialog(){
   if (!currentFood) return;
   dialogPlaying = true;
 
-  // Reset stanu sceny
+  // Reset stanu sceny — kelner wraca, talerz pusty, dymki ukryte, chmurka pozostaje
   hideBubble('custBubble');
   hideBubble('waitBubble');
-  hideBubble('thought');
   plateClear();
   waiterEnter();
-  await wait(150);
-
-  // 1. Mysl klienta — co chce zamowic (chmurka nad glowa)
+  // Pokaz/odswiez chmurke mysli
   document.getElementById('thoughtEmoji').textContent = currentFood.emoji;
   document.getElementById('thoughtText').textContent = currentFood.en;
-  document.getElementById('thought').classList.remove('hidden');
-  document.getElementById('thought').style.animation = 'none';
-  void document.getElementById('thought').offsetWidth;
-  document.getElementById('thought').style.animation = '';
-  await wait(2200); // czas zeby uczen przeczytal i wypowiedzial sie po cichu
+  const th = document.getElementById('thought');
+  th.classList.remove('hidden');
+  th.style.animation = 'none'; void th.offsetWidth; th.style.animation = '';
+  await wait(900);
   if (!dialogPlaying) return;
 
-  // 2. Klient mowi swoja kwestie (dymek + TTS jako wzorzec)
+  // Klient mowi swoja kwestie (dymek + TTS jako wzorzec)
   hideBubble('thought');
   showBubble('custBubble', currentCustText, { emoji: currentFood.emoji, emojiId: 'custEmoji', textId: 'custText' });
   await speakAsync(currentCustText, true);
@@ -777,8 +786,8 @@ function speakWaiter(){
   if (t) speakWith(t, false);
 }
 function speakBoth(){
-  if (!currentFood) { generateRandom(); return; }
-  // Powtorz caly dialog od poczatku
+  if (!currentFood) { generateRandom(); }
+  // Odpal pelny dialog od poczatku
   playDialog();
 }
 </script>
