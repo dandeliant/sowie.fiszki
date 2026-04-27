@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🍴 Restaurant Dialog — Speaking Generator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;700&family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
+<style>
+:root{
+  --wall-1:#fef3c7; --wall-2:#fde68a;
+  --wood-1:#92400e; --wood-2:#78350f; --wood-3:#451a03;
+  --table:#a16207; --table-cloth:#fff;
+  --candle:#fde047; --flame:#f97316;
+  --cust:#ec4899; --waiter:#3b82f6;
+  --green:#10b981; --tomato:#dc2626;
+  --text:#1f2937; --muted:rgba(31,41,55,.6);
+  --border:rgba(31,41,55,.18);
+  --panel:rgba(255,251,235,.96);
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;}
+body{
+  font-family:'Nunito',system-ui,sans-serif;
+  color:var(--text);
+  background:linear-gradient(180deg,#fef3c7 0%,#fde68a 50%,#f59e0b 100%);
+  background-attachment:fixed;
+  min-height:100vh;overflow-x:hidden;position:relative;
+}
+
+/* === BACK / SOUND / HTP === */
+.back-link{
+  position:fixed;top:14px;left:14px;z-index:1000;
+  display:inline-flex;align-items:center;gap:6px;padding:9px 16px;
+  background:rgba(255,251,235,.92);border:1.5px solid var(--border);
+  border-radius:100px;color:var(--text);font-weight:700;font-size:.85rem;
+  text-decoration:none;backdrop-filter:blur(10px);transition:all .2s;
+}
+.back-link:hover{background:#fff;transform:translateX(-2px);}
+.snd-btn{
+  position:fixed;top:14px;right:148px;z-index:1000;
+  width:42px;height:42px;display:inline-flex;align-items:center;justify-content:center;
+  background:rgba(255,251,235,.92);border:1.5px solid var(--border);
+  border-radius:50%;color:var(--text);font-size:1rem;cursor:pointer;
+  font-family:inherit;backdrop-filter:blur(10px);transition:all .2s;
+}
+.snd-btn:hover{background:#fff;transform:scale(1.05);}
+.snd-btn.muted{background:rgba(150,150,150,.5);color:#666;}
+@media(max-width:600px){.snd-btn{right:auto;left:14px;top:62px;}}
+
+.htp-btn{
+  position:fixed;top:14px;right:14px;z-index:1000;
+  padding:9px 16px;background:rgba(220,38,38,.18);
+  border:1.5px solid var(--tomato);border-radius:100px;
+  color:var(--tomato);font-weight:800;font-size:.85rem;cursor:pointer;
+  font-family:inherit;backdrop-filter:blur(10px);
+}
+.htp-btn:hover{background:rgba(220,38,38,.32);}
+.htp-modal{
+  position:fixed;inset:0;background:rgba(31,41,55,.7);backdrop-filter:blur(8px);
+  z-index:2000;display:none;align-items:center;justify-content:center;padding:20px;
+}
+.htp-modal.show{display:flex;}
+.htp-box{
+  background:#fff;border:2px solid var(--tomato);border-radius:24px;
+  padding:28px 32px;max-width:520px;max-height:85vh;overflow-y:auto;
+  box-shadow:0 20px 60px rgba(0,0,0,.3);
+}
+.htp-box h2{font-family:'Fredoka',sans-serif;color:var(--tomato);font-size:1.4rem;margin-bottom:14px;}
+.htp-box ol{padding-left:22px;}
+.htp-box li{margin-bottom:9px;font-size:.95rem;line-height:1.5;}
+.htp-box li strong{color:var(--tomato);}
+.htp-box button{
+  margin-top:16px;width:100%;padding:11px;background:var(--tomato);
+  border:none;border-radius:100px;font-weight:800;color:#fff;cursor:pointer;
+  font-size:.95rem;font-family:inherit;
+}
+
+.wrap{max-width:880px;margin:0 auto;padding:60px 16px 30px;position:relative;z-index:1;}
+
+/* === HEADER === */
+.title-bar{
+  text-align:center;margin-bottom:14px;
+}
+.title-bar h1{
+  font-family:'Fredoka',sans-serif;
+  font-size:clamp(1.7rem,4vw,2.4rem);font-weight:700;
+  color:var(--tomato);
+  text-shadow:2px 2px 0 rgba(0,0,0,.05);
+}
+.title-bar .subtitle{color:var(--muted);font-size:.95rem;font-style:italic;margin-top:4px;}
+
+/* === SCENE === */
+.scene{
+  position:relative;height:540px;border-radius:20px;overflow:hidden;
+  background:
+    linear-gradient(180deg,#fef3c7 0%,#fde68a 30%,#f59e0b 60%,#92400e 100%);
+  border:3px solid var(--wood-2);
+  box-shadow:inset 0 0 60px rgba(0,0,0,.15),0 10px 30px rgba(120,53,15,.4);
+  user-select:none;
+  margin-bottom:14px;
+}
+/* Sciana z cegiel */
+.scene::before{
+  content:'';position:absolute;left:0;right:0;top:0;height:60%;
+  background:
+    repeating-linear-gradient(0deg,transparent 0,transparent 26px,rgba(180,83,9,.18) 26px,rgba(180,83,9,.2) 28px),
+    linear-gradient(180deg,#fef3c7 0%,#fde68a 100%);
+  z-index:0;
+}
+/* Drewniana podloga */
+.scene::after{
+  content:'';position:absolute;left:0;right:0;bottom:0;height:25%;
+  background:
+    repeating-linear-gradient(90deg,#92400e 0,#92400e 32px,#78350f 32px,#78350f 34px),
+    linear-gradient(180deg,#a16207 0%,#78350f 100%);
+  border-top:3px solid var(--wood-3);
+  z-index:0;
+}
+
+/* Lampa nad stolem */
+.lamp{
+  position:absolute;top:0;left:50%;transform:translateX(-50%);
+  width:80px;height:60px;z-index:1;
+}
+.lamp::before{
+  content:'';position:absolute;left:50%;top:0;width:3px;height:30px;
+  transform:translateX(-50%);background:#1f2937;
+}
+.lamp::after{
+  content:'';position:absolute;left:50%;top:25px;
+  width:80px;height:32px;
+  background:radial-gradient(ellipse at center,#fef3c7 0%,#f59e0b 100%);
+  box-shadow:0 0 30px rgba(245,158,11,.8);
+  border-radius:50% 50% 4px 4px;
+  transform:translateX(-50%);
+  border:2px solid #92400e;
+}
+
+/* Okno */
+.window{
+  position:absolute;top:8%;left:5%;width:70px;height:90px;
+  background:linear-gradient(180deg,#bfdbfe,#60a5fa);
+  border:4px solid var(--wood-2);border-radius:6px;
+  z-index:1;
+  box-shadow:inset 0 0 10px rgba(0,0,0,.15);
+}
+.window::before,.window::after{
+  content:'';position:absolute;background:var(--wood-2);
+}
+.window::before{left:50%;top:0;bottom:0;width:3px;transform:translateX(-50%);}
+.window::after{top:50%;left:0;right:0;height:3px;transform:translateY(-50%);}
+
+/* Obrazek na scianie */
+.painting{
+  position:absolute;top:12%;right:8%;width:60px;height:80px;
+  background:linear-gradient(135deg,#fef3c7,#f59e0b 50%,#92400e);
+  border:5px solid var(--wood-3);border-radius:4px;
+  z-index:1;
+  box-shadow:0 4px 8px rgba(0,0,0,.3);
+}
+.painting::before{
+  content:'🍷';position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  font-size:2rem;filter:drop-shadow(0 2px 4px rgba(0,0,0,.5));
+}
+
+/* === STOL === */
+.table{
+  position:absolute;left:50%;bottom:18%;transform:translateX(-50%);
+  width:70%;max-width:480px;height:100px;z-index:3;
+}
+.table-top{
+  position:absolute;inset:0 0 40px 0;
+  background:linear-gradient(180deg,#a16207 0%,#78350f 100%);
+  border:3px solid var(--wood-3);border-radius:10px 10px 4px 4px;
+  box-shadow:0 8px 16px rgba(0,0,0,.3);
+}
+.table-cloth{
+  position:absolute;inset:5px 5px 5px 5px;
+  background:linear-gradient(135deg,#fff 0%,#fef3c7 100%);
+  border-radius:6px;
+  background-image:repeating-linear-gradient(45deg,transparent 0,transparent 12px,rgba(220,38,38,.08) 12px,rgba(220,38,38,.1) 14px);
+}
+.table-leg{
+  position:absolute;width:6px;height:50px;background:var(--wood-3);
+  bottom:-5px;
+}
+.table-leg.l{left:15%;}
+.table-leg.r{right:15%;}
+
+/* Talerz na stole */
+.plate{
+  position:absolute;left:50%;top:24%;transform:translateX(-50%);
+  width:130px;height:55px;z-index:5;
+}
+.plate-base{
+  position:absolute;inset:0;
+  background:radial-gradient(ellipse at center,#fff 0%,#e5e7eb 100%);
+  border:3px solid #9ca3af;
+  border-radius:50%;
+  box-shadow:0 4px 8px rgba(0,0,0,.3),inset 0 0 14px rgba(0,0,0,.1);
+}
+.plate-food{
+  position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  font-size:3rem;line-height:1;z-index:6;
+  filter:drop-shadow(0 4px 8px rgba(0,0,0,.4));
+  animation:food-pop .6s cubic-bezier(.34,1.56,.64,1);
+}
+@keyframes food-pop{0%{transform:translate(-50%,-50%) scale(0) rotate(-30deg);}100%{transform:translate(-50%,-50%) scale(1) rotate(0);}}
+
+.plate.empty .plate-food{display:none;}
+
+/* Sztucce */
+.fork,.knife{
+  position:absolute;font-size:1.2rem;z-index:7;line-height:1;
+  filter:drop-shadow(0 2px 3px rgba(0,0,0,.3));
+}
+.fork{left:18%;top:40%;transform:rotate(-15deg);}
+.knife{right:18%;top:40%;transform:rotate(15deg);}
+
+/* === POSTACIE === */
+.character{
+  position:absolute;bottom:20%;z-index:4;
+  display:flex;flex-direction:column;align-items:center;
+}
+.character-emoji{
+  font-size:4rem;line-height:1;
+  filter:drop-shadow(0 6px 10px rgba(0,0,0,.35));
+  animation:char-bob 2.5s ease-in-out infinite;
+}
+@keyframes char-bob{0%,100%{transform:translateY(0);}50%{transform:translateY(-4px);}}
+.character.customer{left:6%;}
+.character.waiter{right:6%;}
+.character.waiter .character-emoji{animation-delay:-1s;}
+.char-name{
+  font-family:'Fredoka',sans-serif;font-weight:700;font-size:.72rem;
+  background:#fff;padding:2px 8px;border-radius:100px;
+  margin-top:4px;color:var(--text);
+  box-shadow:0 2px 4px rgba(0,0,0,.2);border:1.5px solid var(--text);
+}
+.character.customer .char-name{color:var(--cust);border-color:var(--cust);}
+.character.waiter .char-name{color:var(--waiter);border-color:var(--waiter);}
+
+/* === SPEECH BUBBLES === */
+.bubble{
+  position:absolute;background:#fff;
+  border:2px solid var(--text);border-radius:18px;
+  padding:10px 14px;font-size:.95rem;font-weight:700;line-height:1.35;
+  max-width:48%;
+  box-shadow:0 6px 14px rgba(0,0,0,.25);
+  z-index:10;
+  animation:bubble-pop .4s cubic-bezier(.34,1.56,.64,1);
+}
+@keyframes bubble-pop{0%{transform:scale(.5);opacity:0;}100%{transform:scale(1);opacity:1;}}
+.bubble.hidden{display:none;}
+
+.bubble.customer{
+  left:5%;top:20%;
+  border-color:var(--cust);
+}
+.bubble.customer::before,.bubble.customer::after{
+  content:'';position:absolute;left:30px;
+  border:10px solid transparent;
+}
+.bubble.customer::before{
+  bottom:-22px;
+  border-top-color:var(--cust);
+}
+.bubble.customer::after{
+  bottom:-18px;
+  border-top-color:#fff;
+}
+
+.bubble.waiter{
+  right:5%;top:36%;
+  border-color:var(--waiter);
+}
+.bubble.waiter::before,.bubble.waiter::after{
+  content:'';position:absolute;right:30px;
+  border:10px solid transparent;
+}
+.bubble.waiter::before{
+  bottom:-22px;
+  border-top-color:var(--waiter);
+}
+.bubble.waiter::after{
+  bottom:-18px;
+  border-top-color:#fff;
+}
+
+.bubble .speaker{
+  font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;
+  color:var(--muted);font-weight:800;margin-bottom:3px;
+}
+.bubble.customer .speaker{color:var(--cust);}
+.bubble.waiter .speaker{color:var(--waiter);}
+
+.bubble-content{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+.bubble-emoji{font-size:1.5rem;line-height:1;}
+.bubble-text{flex:1;min-width:80px;}
+
+.bubble-replay{
+  display:inline-flex;align-items:center;gap:4px;margin-top:6px;
+  background:rgba(0,0,0,.06);border:1px solid var(--border);border-radius:100px;
+  padding:3px 9px;font-size:.7rem;font-weight:800;color:var(--text);
+  cursor:pointer;font-family:inherit;
+}
+.bubble-replay:hover{background:rgba(0,0,0,.12);}
+
+/* === ACTION === */
+.actions{
+  display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-bottom:14px;
+}
+.btn-action{
+  padding:13px 26px;font-size:1rem;font-weight:900;font-family:'Fredoka',sans-serif;
+  cursor:pointer;border:none;border-radius:100px;letter-spacing:.04em;
+  transition:all .2s;
+}
+.btn-action.primary{
+  background:linear-gradient(135deg,var(--tomato),#f59e0b);color:#fff;
+  box-shadow:0 6px 18px rgba(220,38,38,.4);
+}
+.btn-action.primary:hover{transform:translateY(-2px);box-shadow:0 10px 24px rgba(220,38,38,.6);}
+.btn-action.secondary{
+  background:#fff;border:1.5px solid var(--border);color:var(--text);
+}
+.btn-action.secondary:hover{background:#fef3c7;}
+
+/* === FOOD PALETTE === */
+.palette-wrap{
+  background:var(--panel);backdrop-filter:blur(8px);
+  border:2px solid var(--border);border-radius:18px;
+  padding:14px 18px;margin-bottom:14px;
+}
+.palette-title{
+  font-size:.62rem;text-transform:uppercase;letter-spacing:.1em;
+  color:var(--tomato);font-weight:800;text-align:center;margin-bottom:8px;
+}
+.palette-grid{
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;
+}
+.food-btn{
+  display:flex;flex-direction:column;align-items:center;gap:3px;
+  padding:10px 8px;background:#fff;border:2px solid var(--border);
+  border-radius:14px;cursor:pointer;font-family:inherit;color:var(--text);
+  transition:all .15s;
+}
+.food-btn:hover{border-color:var(--tomato);background:rgba(220,38,38,.06);transform:translateY(-2px);}
+.food-btn.active{
+  border-color:var(--tomato);background:rgba(220,38,38,.15);
+  box-shadow:0 0 0 3px rgba(220,38,38,.2);
+}
+.food-emoji{font-size:1.8rem;line-height:1;}
+.food-name{font-size:.78rem;font-weight:800;line-height:1.15;text-align:center;}
+.food-pl{font-size:.6rem;color:var(--muted);font-weight:700;}
+
+/* === FOOTER === */
+.bottom-back{text-align:center;margin:20px 0 16px;}
+.footer{text-align:center;font-size:.7rem;color:var(--muted);font-weight:600;padding:8px;}
+
+@media print{.back-link,.htp-btn,.snd-btn,.bottom-back{display:none!important;}body{background:#fff;}}
+</style>
+</head>
+<body>
+
+<a href="app.html" class="back-link">← Powrót do Sowie Fiszki</a>
+<button class="snd-btn" id="sndBtn" title="Włącz / wyłącz dźwięk" onclick="toggleSound()">🔊</button>
+<button class="htp-btn" onclick="document.getElementById('htpModal').classList.add('show')">ℹ️ Jak grać?</button>
+
+<div class="htp-modal" id="htpModal" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="htp-box">
+    <h2>🍴 Jak korzystać z Restaurant Dialog?</h2>
+    <ol>
+      <li>Kliknij <strong>🎲 Wylosuj</strong> aby wygenerować nowy losowy dialog w restauracji.</li>
+      <li><strong>Klient pyta</strong>: <em>„Can I have some soup, please?"</em> — pojawia się dymek po lewej stronie.</li>
+      <li><strong>Kelner odpowiada</strong>: <em>„Yes, of course, right away."</em> — dymek po prawej.</li>
+      <li>🔊 Każdy dymek można <strong>kliknąć aby odsłuchać</strong> — z brytyjską wymową.</li>
+      <li>Możesz też <strong>kliknąć konkretne danie</strong> z palety na dole, aby wygenerować dialog z tym daniem.</li>
+      <li>Wyrażenia klienta i kelnera <strong>losują się dla różnorodności</strong>.</li>
+      <li>Cel: <strong>powtórz głośno</strong> dialog — to ćwiczenie speakingowe!</li>
+    </ol>
+    <button onclick="document.getElementById('htpModal').classList.remove('show')">Zamawiam!</button>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <div class="title-bar">
+    <h1>🍴 RESTAURANT DIALOG</h1>
+    <div class="subtitle">Speaking generator · zamawianie jedzenia po angielsku</div>
+  </div>
+
+  <div class="scene" id="scene">
+    <div class="lamp"></div>
+    <div class="window"></div>
+    <div class="painting"></div>
+
+    <!-- Stol -->
+    <div class="table">
+      <div class="table-top">
+        <div class="table-cloth"></div>
+      </div>
+      <div class="table-leg l"></div>
+      <div class="table-leg r"></div>
+    </div>
+
+    <!-- Talerz z jedzeniem -->
+    <div class="plate empty" id="plate">
+      <div class="plate-base"></div>
+      <div class="plate-food" id="plateFood"></div>
+    </div>
+    <div class="fork">🍴</div>
+    <div class="knife">🔪</div>
+
+    <!-- Postaci -->
+    <div class="character customer">
+      <div class="character-emoji">👨‍🦱</div>
+      <div class="char-name">Customer</div>
+    </div>
+    <div class="character waiter">
+      <div class="character-emoji">🧑‍🍳</div>
+      <div class="char-name">Waiter</div>
+    </div>
+
+    <!-- Dymki -->
+    <div class="bubble customer hidden" id="custBubble">
+      <div class="speaker">Customer 👨‍🦱</div>
+      <div class="bubble-content">
+        <span class="bubble-emoji" id="custEmoji"></span>
+        <span class="bubble-text" id="custText">Click 🎲 below…</span>
+      </div>
+      <button class="bubble-replay" onclick="speakCustomer()">🔊 Odsłuchaj</button>
+    </div>
+    <div class="bubble waiter hidden" id="waitBubble">
+      <div class="speaker">Waiter 🧑‍🍳</div>
+      <div class="bubble-content">
+        <span class="bubble-text" id="waitText">…</span>
+      </div>
+      <button class="bubble-replay" onclick="speakWaiter()">🔊 Odsłuchaj</button>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="btn-action primary" onclick="generateRandom()">🎲 Wylosuj nowy dialog</button>
+    <button class="btn-action secondary" onclick="speakBoth()">🔊 Odtwórz cały dialog</button>
+  </div>
+
+  <div class="palette-wrap">
+    <div class="palette-title">🍽️ Lub wybierz konkretne danie</div>
+    <div class="palette-grid" id="palette"></div>
+  </div>
+
+</div>
+
+<div class="bottom-back"><a href="app.html" class="back-link" style="position:static;background:rgba(255,251,235,.92)">← Wróć do Sowie Fiszki</a></div>
+<div class="footer">© 2026 Sowie Fiszki</div>
+
+<script>
+'use strict';
+
+/* === MENU === */
+const FOODS = [
+  { en:'chips',     pl:'frytki',     emoji:'🍟', det:'some' },
+  { en:'soup',      pl:'zupa',       emoji:'🍲', det:'some' },
+  { en:'cabbage',   pl:'kapusta',    emoji:'🥬', det:'some' },
+  { en:'meatballs', pl:'klopsiki',   emoji:'🍖', det:'some' },
+  { en:'salad',     pl:'sałatka',    emoji:'🥗', det:'some' },
+  { en:'chicken',   pl:'kurczak',    emoji:'🍗', det:'some' },
+  { en:'pasta',     pl:'makaron',    emoji:'🍝', det:'some' },
+  { en:'yoghurt',   pl:'jogurt',     emoji:'🥛', det:'some' },
+  { en:'pizza',     pl:'pizza',      emoji:'🍕', det:'a' },
+  { en:'a sandwich',pl:'kanapka',    emoji:'🥪', det:'' },
+  { en:'a hamburger',pl:'hamburger', emoji:'🍔', det:'' },
+  { en:'rice',      pl:'ryż',        emoji:'🍚', det:'some' },
+  { en:'fish',      pl:'ryba',       emoji:'🐟', det:'some' },
+  { en:'ice cream', pl:'lody',       emoji:'🍨', det:'some' },
+  { en:'water',     pl:'woda',       emoji:'💧', det:'some' },
+  { en:'juice',     pl:'sok',        emoji:'🧃', det:'some' },
+  { en:'coffee',    pl:'kawa',       emoji:'☕', det:'some' },
+  { en:'tea',       pl:'herbata',    emoji:'🍵', det:'some' }
+];
+
+const CUSTOMER_PHRASES = [
+  food => `Can I have ${food.det ? food.det + ' ' : ''}${food.en}, please?`,
+  food => `I'd like ${food.det ? food.det + ' ' : ''}${food.en}, please.`,
+  food => `Could I have ${food.det ? food.det + ' ' : ''}${food.en}, please?`,
+  food => `I'll have ${food.det ? food.det + ' ' : ''}${food.en}, please.`,
+  food => `Can I order ${food.det ? food.det + ' ' : ''}${food.en}?`,
+];
+
+const WAITER_PHRASES = [
+  `Yes, of course, right away.`,
+  `Of course! Coming right up.`,
+  `Sure thing! Anything else?`,
+  `Right away. Enjoy your meal!`,
+  `Certainly. With pleasure!`,
+  `Of course, sir/madam.`,
+  `Coming up in a moment!`,
+];
+
+/* === SOUND CONTROL + TTS === */
+let soundOn = true;
+try { if (localStorage.getItem('rd_sound') === 'off') soundOn = false; } catch(e) {}
+function toggleSound(){
+  soundOn = !soundOn;
+  try { localStorage.setItem('rd_sound', soundOn ? 'on' : 'off'); } catch(e) {}
+  const btn = document.getElementById('sndBtn');
+  if (btn) {
+    btn.textContent = soundOn ? '🔊' : '🔇';
+    btn.classList.toggle('muted', !soundOn);
+  }
+  if (!soundOn && 'speechSynthesis' in window) { try { speechSynthesis.cancel(); } catch(e) {} }
+}
+(function(){
+  const btn = document.getElementById('sndBtn');
+  if (btn) { btn.textContent = soundOn ? '🔊' : '🔇'; btn.classList.toggle('muted', !soundOn); }
+})();
+
+let _voices = [];
+function loadVoices(){ try { _voices = speechSynthesis.getVoices() || []; } catch(e) { _voices = []; } }
+if ('speechSynthesis' in window) { loadVoices(); speechSynthesis.onvoiceschanged = loadVoices; }
+function pickVoice(prefMale){
+  if (!_voices.length) loadVoices();
+  if (!_voices.length) return null;
+  // Klient — meski glos preferowany; kelner — kobiecy preferowany (dla zroznicowania)
+  if (prefMale) {
+    return _voices.find(v => v.name === 'Google UK English Male') ||
+           _voices.find(v => /Online.*Natural/i.test(v.name) && /en-GB/i.test(v.lang) && /male/i.test(v.name||'')) ||
+           _voices.find(v => v.lang === 'en-GB') ||
+           _voices.find(v => v.lang && v.lang.startsWith('en')) || null;
+  }
+  return _voices.find(v => /Online.*Natural/i.test(v.name) && /en-GB/i.test(v.lang)) ||
+         _voices.find(v => v.name === 'Google UK English Female') ||
+         _voices.find(v => v.lang === 'en-GB') ||
+         _voices.find(v => v.lang && v.lang.startsWith('en')) || null;
+}
+
+function speakWith(text, prefMale, callback){
+  if (!soundOn || !text || !('speechSynthesis' in window)) {
+    if (callback) setTimeout(callback, 500);
+    return;
+  }
+  try {
+    speechSynthesis.cancel();
+    setTimeout(() => {
+      try {
+        if (!soundOn) { if (callback) setTimeout(callback, 300); return; }
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = 'en-GB';
+        u.rate = 0.92; u.pitch = prefMale ? 0.85 : 1.05; u.volume = 1;
+        const v = pickVoice(prefMale);
+        if (v) u.voice = v;
+        let done = false;
+        const advance = () => { if (done) return; done = true; if (callback) setTimeout(callback, 200); };
+        u.onend = advance; u.onerror = advance;
+        setTimeout(advance, 8000); // safety
+        speechSynthesis.speak(u);
+      } catch(e) { if (callback) setTimeout(callback, 300); }
+    }, 60);
+  } catch(e) { if (callback) setTimeout(callback, 300); }
+}
+
+/* === STATE === */
+let currentFood = null;
+let currentCustText = '';
+let currentWaitText = '';
+
+/* === RENDER PALETTE === */
+(function(){
+  const grid = document.getElementById('palette');
+  FOODS.forEach((f, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'food-btn';
+    btn.dataset.idx = i;
+    btn.innerHTML = '<div class="food-emoji">' + f.emoji + '</div>'
+      + '<div class="food-name">' + escHtml(f.en) + '</div>'
+      + '<div class="food-pl">' + escHtml(f.pl) + '</div>';
+    btn.addEventListener('click', () => generateForFood(f));
+    grid.appendChild(btn);
+  });
+})();
+
+function escHtml(s){
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/* === GENERATE === */
+function generateRandom(){
+  const food = FOODS[Math.floor(Math.random() * FOODS.length)];
+  generateForFood(food);
+}
+
+function generateForFood(food){
+  currentFood = food;
+  // Wybierz losowo phrase customer + waiter
+  const custFn = CUSTOMER_PHRASES[Math.floor(Math.random() * CUSTOMER_PHRASES.length)];
+  const waitTpl = WAITER_PHRASES[Math.floor(Math.random() * WAITER_PHRASES.length)];
+  currentCustText = custFn(food);
+  currentWaitText = waitTpl;
+
+  // Pokaz jedzenie na talerzu
+  const plate = document.getElementById('plate');
+  plate.classList.remove('empty');
+  const plateFood = document.getElementById('plateFood');
+  plateFood.textContent = food.emoji;
+  // Re-trigger animation
+  plateFood.style.animation = 'none';
+  void plateFood.offsetWidth;
+  plateFood.style.animation = '';
+
+  // Pokaz dymek customera (od razu)
+  const custBubble = document.getElementById('custBubble');
+  document.getElementById('custEmoji').textContent = food.emoji;
+  document.getElementById('custText').textContent = currentCustText;
+  custBubble.classList.remove('hidden');
+  // Re-trigger pop animation
+  custBubble.style.animation = 'none';
+  void custBubble.offsetWidth;
+  custBubble.style.animation = '';
+
+  // Schowaj dymek kelnera, pokaz po wypowiedzi customer
+  const waitBubble = document.getElementById('waitBubble');
+  waitBubble.classList.add('hidden');
+
+  // Highlight selected food in palette
+  document.querySelectorAll('.food-btn').forEach(b => {
+    const idx = +b.dataset.idx;
+    b.classList.toggle('active', FOODS[idx]?.en === food.en);
+  });
+
+  // Speak customer, then show + speak waiter
+  speakWith(currentCustText, true, () => {
+    document.getElementById('waitText').textContent = currentWaitText;
+    waitBubble.classList.remove('hidden');
+    waitBubble.style.animation = 'none';
+    void waitBubble.offsetWidth;
+    waitBubble.style.animation = '';
+    setTimeout(() => speakWith(currentWaitText, false), 300);
+  });
+}
+
+function speakCustomer(){
+  if (currentCustText) speakWith(currentCustText, true);
+}
+function speakWaiter(){
+  if (currentWaitText) speakWith(currentWaitText, false);
+}
+function speakBoth(){
+  if (!currentCustText) { generateRandom(); return; }
+  speakWith(currentCustText, true, () => {
+    setTimeout(() => speakWith(currentWaitText, false), 400);
+  });
+}
+</script>
+</body>
+</html>
