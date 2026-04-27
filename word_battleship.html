@@ -1,0 +1,1074 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>⚓ Word Battleship — Statki słów</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Pirata+One&family=IM+Fell+English+SC&family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
+<script src="data.js"></script>
+<script src="distractors.js"></script>
+<style>
+:root{
+  --parchment:#f1deb6;
+  --parchment-dark:#d6b681;
+  --parchment-darker:#a07b3e;
+  --ink:#3a2410;
+  --ink-soft:#6b4523;
+  --water:#3a7a9e;
+  --water-deep:#1c4762;
+  --gold:#c9a149;
+  --red:#8b1e1e;
+  --red-light:#dc2626;
+  --green:#3d7a40;
+  --wood:#7a4a1d;
+  --wood-dark:#4a2c10;
+  --bg:#1a0e05;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;}
+body{
+  font-family:'IM Fell English SC','Nunito',serif;
+  color:var(--ink);
+  background:
+    radial-gradient(ellipse at top,#3d2817 0%,transparent 70%),
+    repeating-linear-gradient(45deg, #1a0e05, #1a0e05 14px, #221610 14px, #221610 28px),
+    linear-gradient(180deg,#1a0e05,#0a0502);
+  background-attachment:fixed;
+  min-height:100vh;overflow-x:hidden;position:relative;
+}
+
+/* === BACK / SOUND / HTP === */
+.back-link{
+  position:fixed;top:14px;left:14px;z-index:1000;
+  display:inline-flex;align-items:center;gap:6px;padding:9px 16px;
+  background:rgba(58,36,16,.92);border:2px solid var(--gold);
+  border-radius:6px;color:var(--gold);font-weight:800;font-size:.85rem;
+  text-decoration:none;backdrop-filter:blur(6px);transition:all .2s;
+  font-family:'IM Fell English SC',serif;letter-spacing:.05em;
+}
+.back-link:hover{background:var(--gold);color:var(--ink);transform:translateX(-2px);}
+
+.snd-btn{
+  position:fixed;top:14px;right:148px;z-index:1000;
+  width:42px;height:42px;display:inline-flex;align-items:center;justify-content:center;
+  background:rgba(58,36,16,.92);border:2px solid var(--gold);
+  border-radius:50%;color:var(--gold);font-size:1rem;cursor:pointer;
+  font-family:inherit;backdrop-filter:blur(6px);transition:all .2s;
+}
+.snd-btn:hover{background:var(--gold);color:var(--ink);}
+.snd-btn.muted{background:rgba(150,150,150,.4);color:#999;border-color:#999;}
+@media(max-width:600px){.snd-btn{right:auto;left:14px;top:62px;}}
+
+.htp-btn{
+  position:fixed;top:14px;right:14px;z-index:1000;
+  padding:9px 16px;background:rgba(139,30,30,.85);
+  border:2px solid var(--gold);border-radius:6px;
+  color:#fde68a;font-weight:800;font-size:.85rem;cursor:pointer;
+  font-family:'IM Fell English SC',serif;letter-spacing:.05em;
+  backdrop-filter:blur(6px);
+}
+.htp-btn:hover{background:var(--gold);color:var(--ink);}
+.htp-modal{
+  position:fixed;inset:0;background:rgba(10,5,2,.85);backdrop-filter:blur(6px);
+  z-index:2000;display:none;align-items:center;justify-content:center;padding:20px;
+}
+.htp-modal.show{display:flex;}
+.htp-box{
+  background:linear-gradient(145deg,var(--parchment) 0%,var(--parchment-dark) 100%);
+  border:3px double var(--ink);border-radius:6px;
+  padding:28px 32px;max-width:560px;max-height:85vh;overflow-y:auto;
+  box-shadow:0 20px 60px rgba(0,0,0,.7);
+  position:relative;
+}
+.htp-box::before{
+  content:'';position:absolute;inset:8px;border:1px dashed var(--ink-soft);
+  border-radius:4px;pointer-events:none;
+}
+.htp-box h2{font-family:'Pirata One',serif;color:var(--red);font-size:1.8rem;margin-bottom:14px;text-align:center;}
+.htp-box ol{padding-left:22px;}
+.htp-box li{margin-bottom:9px;font-size:.95rem;line-height:1.5;color:var(--ink);font-family:'Nunito',sans-serif;}
+.htp-box li strong{color:var(--red);}
+.htp-box button{
+  margin-top:16px;width:100%;padding:11px;background:var(--ink);
+  border:2px solid var(--gold);border-radius:6px;font-weight:800;color:var(--gold);cursor:pointer;
+  font-size:1rem;font-family:'IM Fell English SC',serif;letter-spacing:.05em;
+}
+.htp-box button:hover{background:var(--gold);color:var(--ink);}
+
+.wrap{max-width:1180px;margin:0 auto;padding:60px 16px 30px;position:relative;z-index:1;}
+
+/* === TITLE === */
+.title-bar{text-align:center;margin-bottom:14px;}
+.title-bar h1{
+  font-family:'Pirata One',serif;
+  font-size:clamp(2rem,6vw,3.4rem);font-weight:400;
+  color:var(--gold);
+  text-shadow:0 0 20px rgba(201,161,73,.5),0 4px 8px rgba(0,0,0,.7);
+  letter-spacing:.04em;
+}
+.title-bar .subtitle{color:#d6b681;font-size:.95rem;margin-top:4px;font-family:'IM Fell English SC',serif;font-style:italic;}
+
+/* === SETUP === */
+.setup-panel{
+  background:linear-gradient(145deg,var(--parchment) 0%,var(--parchment-dark) 100%);
+  border:3px double var(--ink);border-radius:6px;
+  padding:24px 26px;max-width:560px;margin:30px auto;
+  box-shadow:0 10px 30px rgba(0,0,0,.6);position:relative;
+}
+.setup-panel::before{
+  content:'';position:absolute;inset:8px;border:1px dashed var(--ink-soft);
+  border-radius:4px;pointer-events:none;
+}
+.setup-panel label{
+  display:block;font-size:.85rem;font-weight:800;color:var(--ink);
+  text-transform:uppercase;letter-spacing:.1em;margin-top:12px;margin-bottom:6px;
+  font-family:'IM Fell English SC',serif;
+}
+.setup-panel select{
+  width:100%;padding:11px 14px;border:2px solid var(--ink);
+  border-radius:4px;background:rgba(255,251,235,.7);color:var(--ink);
+  font-family:'Nunito',sans-serif;font-size:.95rem;font-weight:700;cursor:pointer;
+}
+.setup-panel select:focus{outline:none;border-color:var(--red);}
+.setup-panel select option{background:var(--parchment);color:var(--ink);}
+
+.diff-row{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:6px;
+}
+.diff-btn{
+  padding:11px 8px;background:rgba(255,251,235,.7);
+  border:2px solid var(--ink);border-radius:4px;
+  font-family:'IM Fell English SC',serif;font-size:.9rem;font-weight:800;
+  color:var(--ink);cursor:pointer;letter-spacing:.05em;
+  transition:all .15s;
+}
+.diff-btn:hover{background:var(--gold);color:var(--ink);}
+.diff-btn.active{
+  background:var(--ink);color:var(--gold);
+  box-shadow:inset 0 0 0 2px var(--gold);
+}
+
+.btn-launch{
+  margin-top:18px;width:100%;padding:14px;
+  background:var(--ink);
+  border:2px solid var(--gold);border-radius:4px;
+  color:var(--gold);font-family:'Pirata One',serif;font-size:1.4rem;
+  cursor:pointer;letter-spacing:.06em;
+  box-shadow:0 6px 14px rgba(0,0,0,.4);
+  transition:all .2s;
+}
+.btn-launch:hover:not(:disabled){background:var(--red);transform:translateY(-2px);}
+.btn-launch:disabled{opacity:.45;cursor:not-allowed;}
+
+/* === GAME AREA === */
+.game-bar{
+  display:flex;justify-content:center;gap:14px;flex-wrap:wrap;
+  margin:0 auto 14px;max-width:980px;
+}
+.bar-chip{
+  background:rgba(58,36,16,.88);border:2px solid var(--gold);
+  border-radius:4px;padding:8px 18px;
+  display:inline-flex;align-items:center;gap:8px;
+  font-family:'IM Fell English SC',serif;font-size:1rem;color:var(--gold);
+  letter-spacing:.05em;
+}
+.bar-chip.player{border-color:#5da870;color:#9eda9c;}
+.bar-chip.ai{border-color:var(--red-light);color:#fca5a5;}
+.bar-chip.turn{background:var(--gold);color:var(--ink);font-weight:800;}
+.bar-chip.turn.ai{background:var(--red);color:#fde68a;}
+
+.battle-stage{
+  position:relative;
+  display:grid;grid-template-columns:1fr auto 1fr;gap:18px;align-items:start;
+  max-width:980px;margin:0 auto;
+}
+@media(max-width:880px){.battle-stage{grid-template-columns:1fr;}.compass-wrap{order:-1;margin:0 auto;}}
+
+.board{
+  background:linear-gradient(145deg,var(--parchment) 0%,var(--parchment-dark) 100%);
+  border:6px double var(--wood-dark);border-radius:4px;
+  padding:14px 14px 16px;box-shadow:0 12px 30px rgba(0,0,0,.6),inset 0 0 30px rgba(160,123,62,.4);
+  position:relative;
+}
+.board::before{
+  content:'';position:absolute;inset:6px;border:1px dashed rgba(58,36,16,.4);
+  border-radius:2px;pointer-events:none;
+}
+.board-title{
+  text-align:center;font-family:'Pirata One',serif;
+  font-size:1.35rem;color:var(--ink);
+  margin-bottom:8px;letter-spacing:.04em;
+}
+.board.enemy .board-title{color:var(--red);}
+
+.grid{
+  display:grid;grid-template-columns:auto repeat(10,1fr);grid-template-rows:auto repeat(10,1fr);
+  gap:0;background:rgba(255,251,235,.4);
+  border:2px solid var(--ink);
+}
+.cell{
+  aspect-ratio:1/1;
+  display:flex;align-items:center;justify-content:center;
+  font-family:'Nunito',sans-serif;font-weight:800;font-size:.7rem;
+  border:1px dashed rgba(58,36,16,.35);
+  background:rgba(255,251,235,.5);
+  color:var(--ink);
+  position:relative;
+  user-select:none;
+  cursor:default;
+}
+.cell.coord{
+  background:rgba(58,36,16,.18);
+  font-family:'IM Fell English SC',serif;font-size:.78rem;
+  color:var(--ink);font-weight:700;
+  border:1px solid rgba(58,36,16,.5);
+  cursor:default;
+}
+
+.grid.enemy .cell:not(.coord):not(.shot){
+  cursor:crosshair;
+  background:
+    radial-gradient(ellipse at center,rgba(46,125,158,.35) 0%,rgba(28,71,98,.2) 100%);
+}
+.grid.enemy .cell:not(.coord):not(.shot):hover{
+  background:rgba(46,125,158,.6);
+  box-shadow:inset 0 0 0 2px var(--red),0 0 8px var(--red-light);
+}
+.grid.player .cell.ship{
+  background:linear-gradient(135deg,#5d4527 0%,#3a2410 100%);
+  color:var(--gold);font-size:.6rem;line-height:1;
+  border-color:var(--gold);
+  box-shadow:inset 0 0 0 1px var(--gold);
+}
+.grid.player .cell.ship .ship-label{
+  text-align:center;padding:1px;overflow:hidden;text-overflow:ellipsis;
+  width:100%;
+}
+
+.cell.shot.miss{
+  background:rgba(46,125,158,.3);
+  color:var(--water-deep);
+}
+.cell.shot.miss::before{
+  content:'•';font-size:1.4rem;line-height:1;color:var(--water-deep);
+  text-shadow:0 0 6px rgba(46,125,158,.8);
+}
+.cell.shot.hit{
+  background:radial-gradient(circle,#ff7a45 0%,#8b1e1e 100%);
+  color:#fff;animation:hit-flash .3s ease-out;
+}
+.cell.shot.hit::before{
+  content:'💥';font-size:1.2rem;
+  filter:drop-shadow(0 0 4px rgba(255,200,0,.8));
+}
+@keyframes hit-flash{
+  0%{transform:scale(1.3);box-shadow:0 0 0 8px rgba(255,200,0,.8);}
+  100%{transform:scale(1);box-shadow:0 0 0 0 rgba(255,200,0,0);}
+}
+.cell.shot.sunk{
+  background:radial-gradient(circle,#1f2937 0%,#0a0502 100%);
+  color:var(--gold);
+}
+.cell.shot.sunk::before{
+  content:'☠️';font-size:1rem;
+}
+
+/* === COMPASS === */
+.compass-wrap{
+  width:120px;height:120px;margin:auto;
+  display:flex;align-items:center;justify-content:center;
+  position:sticky;top:20px;
+}
+.compass{
+  width:100%;height:100%;
+  filter:drop-shadow(0 0 14px rgba(201,161,73,.4));
+  animation:compass-spin 30s linear infinite;
+}
+@keyframes compass-spin{from{transform:rotate(0);}to{transform:rotate(360deg);}}
+
+/* === MODAL TRANSLATION === */
+.trans-modal{
+  position:fixed;inset:0;background:rgba(10,5,2,.85);backdrop-filter:blur(6px);
+  z-index:2500;display:none;align-items:center;justify-content:center;padding:20px;
+}
+.trans-modal.show{display:flex;animation:fade-in .25s ease-out;}
+@keyframes fade-in{from{opacity:0;}to{opacity:1;}}
+.trans-card{
+  background:linear-gradient(145deg,var(--parchment) 0%,var(--parchment-dark) 100%);
+  border:4px double var(--red);border-radius:6px;
+  padding:28px 32px;max-width:520px;width:100%;
+  box-shadow:0 0 60px rgba(139,30,30,.6),0 20px 60px rgba(0,0,0,.7);
+  animation:card-pop .35s cubic-bezier(.34,1.56,.64,1);
+  position:relative;
+}
+@keyframes card-pop{0%{transform:scale(.6);opacity:0;}100%{transform:scale(1);opacity:1;}}
+.trans-card::before{
+  content:'';position:absolute;inset:8px;border:1px dashed var(--red);
+  border-radius:3px;pointer-events:none;
+}
+.trans-title{
+  text-align:center;font-family:'Pirata One',serif;
+  font-size:1.6rem;color:var(--red);margin-bottom:8px;
+  text-shadow:0 2px 4px rgba(0,0,0,.2);
+}
+.trans-prompt{text-align:center;margin:14px 0 18px;}
+.trans-prompt .label{
+  font-size:.78rem;text-transform:uppercase;letter-spacing:.15em;
+  color:var(--ink-soft);font-weight:800;margin-bottom:4px;
+  font-family:'IM Fell English SC',serif;
+}
+.trans-prompt .word{
+  font-family:'Pirata One',serif;
+  font-size:clamp(1.6rem,5vw,2.4rem);color:var(--ink);
+  text-shadow:0 2px 4px rgba(0,0,0,.2);
+}
+.trans-options{
+  display:grid;grid-template-columns:repeat(2,1fr);gap:9px;
+}
+@media(max-width:480px){.trans-options{grid-template-columns:1fr;}}
+.trans-opt{
+  padding:13px 16px;background:rgba(255,251,235,.7);
+  border:2px solid var(--ink);border-radius:4px;
+  color:var(--ink);font-family:'Nunito',sans-serif;font-weight:800;font-size:.95rem;
+  cursor:pointer;text-align:center;
+  transition:all .15s;
+}
+.trans-opt:hover:not(:disabled){background:var(--gold);transform:translateY(-2px);}
+.trans-opt.correct{background:var(--green);color:#fff;border-color:#fff;animation:flash-green 0.3s 3;}
+.trans-opt.wrong{background:var(--red);color:#fff;border-color:#fff;animation:flash-red 0.2s 2;}
+.trans-opt:disabled{cursor:default;opacity:.7;}
+@keyframes flash-green{0%,100%{box-shadow:0 0 0 0 rgba(61,122,64,1);}50%{box-shadow:0 0 0 12px rgba(61,122,64,0);}}
+@keyframes flash-red{0%,100%{box-shadow:0 0 0 0 rgba(139,30,30,1);}50%{box-shadow:0 0 0 10px rgba(139,30,30,0);}}
+
+/* === LOG === */
+.log-panel{
+  max-width:980px;margin:14px auto 0;
+  background:rgba(58,36,16,.4);
+  border:2px solid var(--gold);border-radius:4px;
+  padding:8px 14px;
+  font-family:'IM Fell English SC',serif;font-size:.88rem;
+  color:#fde68a;letter-spacing:.04em;
+  text-align:center;min-height:32px;
+}
+.log-panel .log-msg{animation:log-fade .3s ease-out;}
+@keyframes log-fade{from{opacity:0;transform:translateY(-4px);}to{opacity:1;transform:translateY(0);}}
+
+/* === END SCREEN === */
+.end-screen{
+  max-width:560px;margin:30px auto;
+  background:linear-gradient(145deg,var(--parchment) 0%,var(--parchment-dark) 100%);
+  border:4px double var(--ink);border-radius:6px;
+  padding:32px 36px;text-align:center;
+  box-shadow:0 0 40px rgba(201,161,73,.4),0 20px 60px rgba(0,0,0,.7);
+  position:relative;
+}
+.end-screen::before{
+  content:'';position:absolute;inset:8px;border:1px dashed var(--ink);
+  border-radius:3px;pointer-events:none;
+}
+.end-screen h2{
+  font-family:'Pirata One',serif;font-size:2.4rem;
+  color:var(--red);margin-bottom:8px;
+  text-shadow:0 4px 8px rgba(0,0,0,.3);
+}
+.end-screen.win h2{color:var(--green);}
+.end-screen .end-msg{font-size:1.05rem;color:var(--ink);font-family:'Nunito',sans-serif;}
+.end-stats{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:18px 0;
+}
+.end-stat{
+  background:rgba(58,36,16,.1);border:1.5px dashed var(--ink);
+  border-radius:4px;padding:12px;
+}
+.end-stat-num{font-family:'Pirata One',serif;font-size:1.8rem;color:var(--ink);}
+.end-stat-label{font-size:.7rem;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-soft);margin-top:4px;font-family:'IM Fell English SC',serif;}
+
+.bottom-back{text-align:center;margin:24px 0 10px;}
+.footer{text-align:center;font-size:.7rem;color:#a07b3e;font-weight:600;padding:8px;}
+.hidden{display:none!important;}
+
+@media print{.back-link,.htp-btn,.snd-btn,.bottom-back{display:none!important;}body{background:#fff;color:#000;}}
+</style>
+</head>
+<body>
+
+<a href="app.html" class="back-link">← Powrót do Sowie Fiszki</a>
+<button class="snd-btn" id="sndBtn" title="Włącz / wyłącz dźwięk" onclick="toggleSound()">🔊</button>
+<button class="htp-btn" onclick="document.getElementById('htpModal').classList.add('show')">ℹ️ Jak grać?</button>
+
+<div class="htp-modal" id="htpModal" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="htp-box">
+    <h2>⚓ Jak grać w Word Battleship?</h2>
+    <ol>
+      <li>Wybierz <strong>podręcznik</strong>, <strong>unit</strong> i <strong>poziom trudności</strong>, kliknij <strong>BIJ ZBROJENIE</strong>.</li>
+      <li><strong>Twoja flota (PL)</strong> i <strong>flota AI (EN)</strong> dostają po 5 statków, rozmieszczonych losowo na mapie 10×10.</li>
+      <li>Kliknij pole na prawej mapie (wody wroga) — to Twój strzał.</li>
+      <li>Jeśli trafisz, pojawi się modal: <strong>przetłumacz angielskie słowo</strong> żeby zatopić statek!</li>
+      <li>Poprawnie → ☠️ statek zatopiony, strzelasz dalej. Błąd → statek ucieka, koniec tury.</li>
+      <li>AI strzela do Ciebie z szansą trafienia: <strong>Łatwy 15% · Średni 35% · Trudny 60%</strong>.</li>
+      <li>Wygrywa ten, kto pierwszy zatopi <strong>wszystkie 5 statków</strong> przeciwnika.</li>
+    </ol>
+    <button onclick="document.getElementById('htpModal').classList.remove('show')">Wszystkie ręce na pokład!</button>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <div class="title-bar">
+    <h1>⚓ WORD BATTLESHIP</h1>
+    <div class="subtitle">Statki słów · 10×10 · Polish vs English fleet</div>
+  </div>
+
+  <!-- SETUP -->
+  <div class="setup-panel" id="setupPanel">
+    <label for="bookSel">📚 Podręcznik</label>
+    <select id="bookSel" onchange="onBookChange()"><option value="">— Wybierz —</option></select>
+    <label for="unitSel">📑 Unit</label>
+    <select id="unitSel" disabled><option value="">— Najpierw wybierz podręcznik —</option></select>
+    <label>⚔️ Poziom trudności</label>
+    <div class="diff-row">
+      <button class="diff-btn active" data-diff="easy" onclick="setDifficulty('easy')">⚓ Łatwy<br><small style="font-weight:600;font-size:.7rem">AI 15%</small></button>
+      <button class="diff-btn" data-diff="medium" onclick="setDifficulty('medium')">🚢 Średni<br><small style="font-weight:600;font-size:.7rem">AI 35%</small></button>
+      <button class="diff-btn" data-diff="hard" onclick="setDifficulty('hard')">☠️ Trudny<br><small style="font-weight:600;font-size:.7rem">AI 60%</small></button>
+    </div>
+    <button class="btn-launch" id="launchBtn" disabled onclick="startGame()">⚓ BIJ ZBROJENIE</button>
+  </div>
+
+  <!-- GAME -->
+  <div id="gameArea" class="hidden">
+
+    <div class="game-bar">
+      <div class="bar-chip player" id="playerChip">🚢 TY: <span id="playerNum">5</span>/5</div>
+      <div class="bar-chip turn" id="turnChip">🎯 Twoja tura</div>
+      <div class="bar-chip ai" id="aiChip">⚓ AI: <span id="aiNum">5</span>/5</div>
+    </div>
+
+    <div class="battle-stage">
+      <div class="board player-board">
+        <div class="board-title">🏴‍☠️ TWOJA FLOTA (PL)</div>
+        <div class="grid player" id="playerGrid"></div>
+      </div>
+
+      <div class="compass-wrap">
+        <svg class="compass" viewBox="0 0 100 100">
+          <defs>
+            <linearGradient id="compassG" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#fef3c7"/>
+              <stop offset="100%" stop-color="#a07b3e"/>
+            </linearGradient>
+          </defs>
+          <circle cx="50" cy="50" r="46" fill="rgba(58,36,16,.85)" stroke="#c9a149" stroke-width="2"/>
+          <circle cx="50" cy="50" r="40" fill="none" stroke="#c9a149" stroke-width="0.6"/>
+          <circle cx="50" cy="50" r="32" fill="none" stroke="#c9a149" stroke-width="0.4" stroke-dasharray="2,2"/>
+          <!-- N S E W -->
+          <text x="50" y="14" text-anchor="middle" fill="#c9a149" font-family="'Pirata One',serif" font-size="9">N</text>
+          <text x="50" y="92" text-anchor="middle" fill="#c9a149" font-family="'Pirata One',serif" font-size="9">S</text>
+          <text x="89" y="54" text-anchor="middle" fill="#c9a149" font-family="'Pirata One',serif" font-size="9">E</text>
+          <text x="11" y="54" text-anchor="middle" fill="#c9a149" font-family="'Pirata One',serif" font-size="9">W</text>
+          <!-- Compass arrow -->
+          <polygon points="50,18 53,50 50,52 47,50" fill="#dc2626" stroke="#c9a149" stroke-width="0.5"/>
+          <polygon points="50,82 47,50 50,48 53,50" fill="url(#compassG)" stroke="#c9a149" stroke-width="0.5"/>
+          <circle cx="50" cy="50" r="3" fill="#c9a149"/>
+        </svg>
+      </div>
+
+      <div class="board enemy-board">
+        <div class="board-title">⚔️ WODY WROGA (EN)</div>
+        <div class="grid enemy" id="aiGrid"></div>
+      </div>
+    </div>
+
+    <div class="log-panel" id="logPanel">
+      <span class="log-msg" id="logMsg">⚔️ Bitwa się rozpoczyna! Wybierz pole na mapie wroga.</span>
+    </div>
+
+  </div>
+
+  <!-- END -->
+  <div id="endScreen" class="hidden end-screen">
+    <h2 id="endTitle">⚓</h2>
+    <div class="end-msg" id="endMsg">—</div>
+    <div class="end-stats">
+      <div class="end-stat"><div class="end-stat-num" id="endShots">0</div><div class="end-stat-label">Strzałów</div></div>
+      <div class="end-stat"><div class="end-stat-num" id="endHits">0</div><div class="end-stat-label">Trafień</div></div>
+      <div class="end-stat"><div class="end-stat-num" id="endAcc">0%</div><div class="end-stat-label">Skuteczność</div></div>
+    </div>
+    <button class="btn-launch" onclick="restart()">⚓ NOWA BITWA</button>
+  </div>
+
+</div>
+
+<!-- TRANSLATION MODAL -->
+<div class="trans-modal" id="transModal">
+  <div class="trans-card">
+    <div class="trans-title" id="transTitle">💥 TRAFIONY!</div>
+    <div class="trans-prompt">
+      <div class="label">Przetłumacz aby zatopić:</div>
+      <div class="word" id="transWord">—</div>
+    </div>
+    <div class="trans-options" id="transOpts"></div>
+  </div>
+</div>
+
+<div class="bottom-back"><a href="app.html" class="back-link" style="position:static;background:rgba(58,36,16,.92)">← Wróć do Sowie Fiszki</a></div>
+<div class="footer">© 2026 Sowie Fiszki</div>
+
+<script>
+'use strict';
+
+/* ============================================================
+   AUDIO
+============================================================ */
+let soundOn = true;
+try { if (localStorage.getItem('wb_sound') === 'off') soundOn = false; } catch(e) {}
+function toggleSound(){
+  soundOn = !soundOn;
+  try { localStorage.setItem('wb_sound', soundOn ? 'on' : 'off'); } catch(e) {}
+  const btn = document.getElementById('sndBtn');
+  if (btn) {
+    btn.textContent = soundOn ? '🔊' : '🔇';
+    btn.classList.toggle('muted', !soundOn);
+  }
+  if (!soundOn && 'speechSynthesis' in window) { try { speechSynthesis.cancel(); } catch(e) {} }
+}
+(function(){
+  const btn = document.getElementById('sndBtn');
+  if (btn) { btn.textContent = soundOn ? '🔊' : '🔇'; btn.classList.toggle('muted', !soundOn); }
+})();
+
+let _audioCtx = null;
+function audioCtx(){
+  if (!_audioCtx) {
+    try { _audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) { return null; }
+  }
+  return _audioCtx;
+}
+function beep(freq, dur, type, gain){
+  if (!soundOn) return;
+  const ctx = audioCtx(); if (!ctx) return;
+  try {
+    const osc = ctx.createOscillator();
+    const g = ctx.createGain();
+    osc.type = type || 'sine';
+    osc.frequency.value = freq;
+    g.gain.value = (gain != null ? gain : 0.18);
+    osc.connect(g); g.connect(ctx.destination);
+    osc.start();
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+    osc.stop(ctx.currentTime + dur + 0.02);
+  } catch(e) {}
+}
+function noiseBurst(dur, gain, hpHz){
+  if (!soundOn) return;
+  const ctx = audioCtx(); if (!ctx) return;
+  try {
+    const buffer = ctx.createBuffer(1, ctx.sampleRate * dur, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i/data.length, 1.5) * (gain || 0.5);
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    if (hpHz) {
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'highpass'; filter.frequency.value = hpHz;
+      src.connect(filter); filter.connect(ctx.destination);
+    } else {
+      src.connect(ctx.destination);
+    }
+    src.start();
+  } catch(e) {}
+}
+function playShoot(){
+  noiseBurst(0.18, 0.45, 800);
+  beep(110, 0.15, 'sawtooth', 0.16);
+}
+function playMiss(){
+  noiseBurst(0.25, 0.4, 2500);
+}
+function playHit(){
+  noiseBurst(0.35, 0.6, 200);
+  beep(80, 0.4, 'sawtooth', 0.18);
+  setTimeout(() => beep(60, 0.5, 'sawtooth', 0.18), 100);
+}
+function playSink(){
+  beep(220, 0.2, 'sawtooth', 0.18);
+  setTimeout(() => beep(165, 0.2, 'sawtooth', 0.18), 180);
+  setTimeout(() => beep(110, 0.4, 'sawtooth', 0.18), 360);
+  noiseBurst(0.6, 0.3, 100);
+}
+function playWin(){
+  // Trumpet fanfare
+  beep(523, 0.18, 'square', 0.15); // C
+  setTimeout(() => beep(659, 0.18, 'square', 0.15), 200); // E
+  setTimeout(() => beep(784, 0.18, 'square', 0.15), 400); // G
+  setTimeout(() => beep(1046, 0.4, 'square', 0.18), 600); // C
+}
+function playLose(){
+  beep(220, 0.3, 'sawtooth', 0.16);
+  setTimeout(() => beep(180, 0.3, 'sawtooth', 0.16), 300);
+  setTimeout(() => beep(110, 0.6, 'sawtooth', 0.18), 600);
+}
+
+/* ============================================================
+   TTS
+============================================================ */
+let _voices = [];
+function loadVoices(){ try { _voices = speechSynthesis.getVoices() || []; } catch(e) { _voices = []; } }
+if ('speechSynthesis' in window) { loadVoices(); speechSynthesis.onvoiceschanged = loadVoices; }
+function pickVoice(lang){
+  if (!_voices.length) loadVoices();
+  if (!_voices.length) return null;
+  const want = lang === 'fr' ? 'fr-FR' : 'en-GB';
+  return _voices.find(v => /Online.*Natural/i.test(v.name) && v.lang === want) ||
+         _voices.find(v => v.lang === want) ||
+         _voices.find(v => v.lang && v.lang.startsWith(lang === 'fr' ? 'fr' : 'en')) || null;
+}
+function speak(text, lang){
+  if (!soundOn || !text || !('speechSynthesis' in window)) return;
+  try {
+    speechSynthesis.cancel();
+    setTimeout(() => {
+      try {
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = lang === 'fr' ? 'fr-FR' : 'en-GB';
+        u.rate = 0.92; u.volume = 1;
+        const v = pickVoice(lang);
+        if (v) u.voice = v;
+        speechSynthesis.speak(u);
+      } catch(e) {}
+    }, 60);
+  } catch(e) {}
+}
+
+/* ============================================================
+   STATE
+============================================================ */
+const N = 10; // grid size
+const SHIPS_COUNT = 5;
+const DIFF = { easy: 0.15, medium: 0.35, hard: 0.60 };
+
+let bookLang = 'en';
+let wordPool = [];
+let difficulty = 'easy';
+let playerGrid = [];   // 10x10 of null or { ship }
+let aiGrid = [];
+let playerShips = [];  // [{ row, col, word:[pl,en], sunk }]
+let aiShips = [];
+let playerSunk = 0, aiSunk = 0;
+let whoseTurn = 'player';
+let gameOver = false;
+let shotsByPlayer = 0;
+let hitsByPlayer = 0;
+let pendingHitShipIdx = -1;
+
+/* ============================================================
+   SETUP — selecty
+============================================================ */
+(function(){
+  if (typeof BOOKS === 'undefined') return;
+  const bs = document.getElementById('bookSel');
+  Object.values(BOOKS)
+    .filter(b => !b.adminOnly)
+    .sort((a,b) => (a.name||'').localeCompare(b.name||'', 'pl'))
+    .forEach(b => {
+      const o = document.createElement('option');
+      o.value = b.id;
+      o.textContent = (b.icon||'📖') + ' ' + b.name;
+      bs.appendChild(o);
+    });
+  Object.values(BOOKS)
+    .filter(b => b.adminOnly)
+    .forEach(b => {
+      const o = document.createElement('option');
+      o.value = b.id;
+      o.textContent = (b.icon||'📖') + ' ' + b.name + ' (admin)';
+      bs.appendChild(o);
+    });
+
+  // Auto-start
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const bookParam = params.get('book');
+    const unitParam = params.get('unit');
+    if (bookParam && BOOKS[bookParam]) {
+      const backUrl = unitParam
+        ? 'app.html#/book/' + encodeURIComponent(bookParam) + '/' + encodeURIComponent(unitParam)
+        : 'app.html#/book/' + encodeURIComponent(bookParam);
+      document.querySelectorAll('a[href="app.html"]').forEach(a => { a.href = backUrl; });
+      bs.value = bookParam;
+      onBookChange();
+      const us = document.getElementById('unitSel');
+      const targetUnit = (unitParam === 'all' || !unitParam) ? '__all__' : unitParam;
+      if (BOOKS[bookParam].units?.[targetUnit] || targetUnit === '__all__') {
+        us.value = targetUnit;
+      }
+      setTimeout(() => { try { startGame(); } catch(e) {} }, 350);
+    }
+  } catch(e) {}
+})();
+
+function onBookChange(){
+  const bId = document.getElementById('bookSel').value;
+  const us = document.getElementById('unitSel');
+  const lb = document.getElementById('launchBtn');
+  us.innerHTML = '';
+  if (!bId || !BOOKS[bId]) {
+    us.innerHTML = '<option value="">— Najpierw wybierz podręcznik —</option>';
+    us.disabled = true; lb.disabled = true; return;
+  }
+  const all = document.createElement('option');
+  all.value = '__all__'; all.textContent = '🌍 Wszystkie słowa z podręcznika';
+  us.appendChild(all);
+  Object.entries(BOOKS[bId].units || {}).forEach(([key, u]) => {
+    const o = document.createElement('option');
+    o.value = key; o.textContent = (u.icon||'📖') + ' ' + (u.name||key);
+    us.appendChild(o);
+  });
+  us.disabled = false; us.value = '__all__'; lb.disabled = false;
+}
+
+function setDifficulty(d){
+  difficulty = d;
+  document.querySelectorAll('.diff-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.diff === d);
+  });
+}
+
+/* ============================================================
+   START
+============================================================ */
+function startGame(){
+  const bId = document.getElementById('bookSel').value;
+  const uKey = document.getElementById('unitSel').value;
+  if (!bId || !BOOKS[bId]) { alert('Wybierz podręcznik.'); return; }
+
+  bookLang = BOOKS[bId].language || 'en';
+  const pool = [];
+  if (uKey === '__all__') {
+    Object.values(BOOKS[bId].units || {}).forEach(u => {
+      (u.words || []).forEach(w => pool.push([w[0]||'', w[1]||'']));
+    });
+  } else if (BOOKS[bId].units?.[uKey]) {
+    (BOOKS[bId].units[uKey].words || []).forEach(w => pool.push([w[0]||'', w[1]||'']));
+  }
+  // Tylko pojedyncze slowa dla statkow (dluzsze jako dystraktory)
+  const single = pool.filter(w => !/\s/.test((w[1]||'').trim()) && !/\s/.test((w[0]||'').trim()));
+  if (single.length < SHIPS_COUNT * 2) {
+    alert('Za mało pojedynczych słówek (potrzeba ' + (SHIPS_COUNT * 2) + ').');
+    return;
+  }
+  wordPool = pool;
+
+  // Reset state
+  playerGrid = Array.from({length:N}, () => Array(N).fill(null));
+  aiGrid     = Array.from({length:N}, () => Array(N).fill(null));
+  playerShips = []; aiShips = [];
+  playerSunk = 0; aiSunk = 0;
+  whoseTurn = 'player';
+  gameOver = false;
+  shotsByPlayer = 0; hitsByPlayer = 0;
+  pendingHitShipIdx = -1;
+
+  // Pick 10 unique words: 5 for player, 5 for AI
+  const shuffled = [...single];
+  shuffle(shuffled);
+  const playerWords = shuffled.slice(0, SHIPS_COUNT);
+  const aiWords = shuffled.slice(SHIPS_COUNT, SHIPS_COUNT * 2);
+
+  // Place ships randomly
+  for (let i = 0; i < SHIPS_COUNT; i++) {
+    placeShipRandom(playerGrid, playerShips, i, playerWords[i]);
+    placeShipRandom(aiGrid, aiShips, i, aiWords[i]);
+  }
+
+  // UI
+  document.getElementById('setupPanel').classList.add('hidden');
+  document.getElementById('gameArea').classList.remove('hidden');
+  document.getElementById('endScreen').classList.add('hidden');
+  refreshBars();
+  renderGrids();
+  log('⚔️ Bitwa się rozpoczyna! Wybierz pole na mapie wroga.');
+}
+
+function shuffle(arr){
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function placeShipRandom(grid, ships, idx, word){
+  let placed = false;
+  while (!placed) {
+    const r = Math.floor(Math.random() * N);
+    const c = Math.floor(Math.random() * N);
+    if (grid[r][c] === null) {
+      const ship = { idx, row:r, col:c, word, sunk:false, hit:false };
+      ships.push(ship);
+      grid[r][c] = ship;
+      placed = true;
+    }
+  }
+}
+
+/* ============================================================
+   RENDER GRIDS
+============================================================ */
+function renderGrids(){
+  renderGrid('playerGrid', playerGrid, 'player');
+  renderGrid('aiGrid', aiGrid, 'enemy');
+}
+
+function renderGrid(elId, grid, kind){
+  const el = document.getElementById(elId);
+  el.innerHTML = '';
+  // header row: pusta + A B C D E F G H I J
+  const headers = ['','A','B','C','D','E','F','G','H','I','J'];
+  headers.forEach(h => {
+    const c = document.createElement('div');
+    c.className = 'cell coord';
+    c.textContent = h;
+    el.appendChild(c);
+  });
+  // 10 rows
+  for (let r = 0; r < N; r++) {
+    // row label 1-10
+    const lbl = document.createElement('div');
+    lbl.className = 'cell coord';
+    lbl.textContent = (r + 1).toString();
+    el.appendChild(lbl);
+    for (let cIdx = 0; cIdx < N; cIdx++) {
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.dataset.r = r;
+      cell.dataset.c = cIdx;
+      const slot = grid[r][cIdx];
+      // PLAYER GRID — pokaz statki
+      if (kind === 'player' && slot && slot.word) {
+        cell.classList.add('ship');
+        const lbl2 = document.createElement('div');
+        lbl2.className = 'ship-label';
+        lbl2.textContent = slot.word[0]; // PL
+        cell.appendChild(lbl2);
+      }
+      // ENEMY GRID — klik = strzal (jesli nie shot)
+      if (kind === 'enemy') {
+        cell.addEventListener('click', () => playerShoot(r, cIdx));
+      }
+      el.appendChild(cell);
+    }
+  }
+}
+
+function cellEl(elId, r, c){
+  const el = document.getElementById(elId);
+  return el.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
+}
+
+/* ============================================================
+   PLAYER SHOOT
+============================================================ */
+function playerShoot(r, c){
+  if (gameOver || whoseTurn !== 'player') return;
+  // Modal otwarty?
+  if (document.getElementById('transModal').classList.contains('show')) return;
+  const cell = cellEl('aiGrid', r, c);
+  if (!cell || cell.classList.contains('shot')) return;
+
+  shotsByPlayer++;
+  playShoot();
+  const slot = aiGrid[r][c];
+
+  if (slot && slot.word) {
+    // HIT — pokaz modal tlumaczenia
+    cell.classList.add('shot', 'hit');
+    hitsByPlayer++;
+    pendingHitShipIdx = slot.idx;
+    log('💥 Trafiony! Przetłumacz angielskie słowo aby zatopić!');
+    showTranslateModal(slot.word);
+  } else {
+    // MISS
+    cell.classList.add('shot', 'miss');
+    playMiss();
+    log('💧 Pudło! Tura przeciwnika...');
+    setTimeout(aiTurn, 900);
+  }
+}
+
+function showTranslateModal(word){
+  const [pl, en] = word;
+  document.getElementById('transWord').textContent = en;
+  speak(en, bookLang);
+
+  // 4 opcje (1 PL poprawne + 3 PL dystraktory)
+  let distractors;
+  if (typeof generateDistractors === 'function') {
+    distractors = generateDistractors(pl, wordPool, 3, 0);
+  } else {
+    distractors = wordPool.filter(w => w[0] !== pl).map(w => w[0]);
+    shuffle(distractors); distractors = distractors.slice(0, 3);
+  }
+  const options = shuffle([pl, ...distractors]);
+
+  const grid = document.getElementById('transOpts');
+  grid.innerHTML = '';
+  options.forEach(opt => {
+    const btn = document.createElement('button');
+    btn.className = 'trans-opt';
+    btn.textContent = opt;
+    btn.onclick = () => answerTranslation(opt, pl, btn);
+    grid.appendChild(btn);
+  });
+  document.getElementById('transModal').classList.add('show');
+}
+
+function answerTranslation(picked, correct, btn){
+  document.querySelectorAll('#transOpts .trans-opt').forEach(b => {
+    b.disabled = true;
+    if (b.textContent === correct) b.classList.add('correct');
+    else if (b === btn && picked !== correct) b.classList.add('wrong');
+  });
+
+  const ship = aiShips[pendingHitShipIdx];
+  if (picked === correct) {
+    // Statek zatopiony
+    ship.sunk = true;
+    aiSunk++;
+    const cell = cellEl('aiGrid', ship.row, ship.col);
+    cell.classList.remove('hit'); cell.classList.add('sunk');
+    playSink();
+    log('☠️ Statek zatopiony! Strzelaj dalej!');
+    setTimeout(() => {
+      document.getElementById('transModal').classList.remove('show');
+      refreshBars();
+      if (aiSunk >= SHIPS_COUNT) {
+        endGame(true);
+      }
+      // Gracz strzela ponownie
+    }, 1300);
+  } else {
+    // Statek ucieka — czyli "przewracamy" stan
+    log('🌊 Niestety, statek wymknal się z celownika! Tura AI.');
+    setTimeout(() => {
+      document.getElementById('transModal').classList.remove('show');
+      // Pole pozostaje "hit" wizualnie ale statek nadal zyje
+      // Aby gracz mogl strzelic raz jeszcze, zostawmy je jako hit (bez ponownego strzalu) - nie, lepiej odznaczmy z grida
+      const cell = cellEl('aiGrid', ship.row, ship.col);
+      cell.classList.remove('hit', 'shot');
+      cell.classList.add('shot', 'miss'); // pokaz jako pudlo (statek umknal)
+      pendingHitShipIdx = -1;
+      setTimeout(aiTurn, 600);
+    }, 1300);
+  }
+}
+
+/* ============================================================
+   AI TURN
+============================================================ */
+function aiTurn(){
+  if (gameOver) return;
+  whoseTurn = 'ai';
+  const turnChip = document.getElementById('turnChip');
+  turnChip.classList.add('ai');
+  turnChip.innerHTML = '⚓ Tura AI...';
+
+  setTimeout(() => {
+    // Cheat probability based on difficulty
+    const accuracy = DIFF[difficulty] || 0.25;
+    const cheat = Math.random() < accuracy;
+    let r, c;
+
+    if (cheat) {
+      // Pick a random alive ship cell
+      const alive = playerShips.filter(s => !s.sunk);
+      if (alive.length > 0) {
+        const ship = alive[Math.floor(Math.random() * alive.length)];
+        r = ship.row; c = ship.col;
+      } else {
+        return;
+      }
+    } else {
+      // Random cell that hasn't been shot
+      const candidates = [];
+      for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
+        const cellElx = cellEl('playerGrid', i, j);
+        if (cellElx && !cellElx.classList.contains('shot')) candidates.push([i, j]);
+      }
+      if (candidates.length === 0) return;
+      [r, c] = candidates[Math.floor(Math.random() * candidates.length)];
+    }
+
+    playShoot();
+    const cell = cellEl('playerGrid', r, c);
+    const slot = playerGrid[r][c];
+    if (slot && slot.word) {
+      // HIT — playerSunk
+      slot.sunk = true;
+      playerSunk++;
+      cell.classList.add('shot', 'sunk');
+      playHit();
+      setTimeout(playSink, 200);
+      log('💥 AI trafił Twój statek "' + slot.word[0] + '"! Zatopiony!');
+      refreshBars();
+      if (playerSunk >= SHIPS_COUNT) {
+        endGame(false);
+        return;
+      }
+    } else {
+      cell.classList.add('shot', 'miss');
+      playMiss();
+      log('💧 AI pudłuje! Twoja tura.');
+    }
+
+    // Pass back to player
+    whoseTurn = 'player';
+    const turnChip2 = document.getElementById('turnChip');
+    turnChip2.classList.remove('ai');
+    turnChip2.innerHTML = '🎯 Twoja tura';
+  }, 1100);
+}
+
+/* ============================================================
+   STATE / END
+============================================================ */
+function refreshBars(){
+  document.getElementById('playerNum').textContent = SHIPS_COUNT - playerSunk;
+  document.getElementById('aiNum').textContent = SHIPS_COUNT - aiSunk;
+}
+
+function log(msg){
+  const el = document.getElementById('logMsg');
+  if (!el) return;
+  el.textContent = msg;
+  // re-trigger animation
+  el.style.animation = 'none'; void el.offsetWidth; el.style.animation = '';
+}
+
+function endGame(won){
+  gameOver = true;
+  whoseTurn = null;
+  document.getElementById('gameArea').classList.add('hidden');
+  const screen = document.getElementById('endScreen');
+  screen.classList.remove('hidden');
+  screen.classList.toggle('win', won);
+  document.getElementById('endTitle').textContent = won ? '🏆 ZWYCIĘSTWO!' : '☠️ PORAŻKA';
+  document.getElementById('endMsg').textContent = won
+    ? 'Zatopiłeś całą flotę wroga, kapitanie! Brawo!'
+    : 'AI zatopił Twoją flotę. Spróbuj ponownie!';
+  document.getElementById('endShots').textContent = shotsByPlayer;
+  document.getElementById('endHits').textContent = hitsByPlayer;
+  document.getElementById('endAcc').textContent = (shotsByPlayer > 0 ? Math.round(hitsByPlayer / shotsByPlayer * 100) : 0) + '%';
+  if (won) playWin(); else playLose();
+}
+
+function restart(){
+  document.getElementById('endScreen').classList.add('hidden');
+  document.getElementById('setupPanel').classList.remove('hidden');
+}
+</script>
+</body>
+</html>
