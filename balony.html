@@ -414,6 +414,34 @@ function speak(text, lang){
   } catch(e) {}
 }
 
+// speakAndAdvance — czyta tekst i wywoluje callback PO zakonczeniu
+// (zeby kolejny prompt nie ucial lektora). Gdy dzwiek wyciszony — fallback.
+function speakAndAdvance(text, lang, callback, mutedFallbackMs){
+  const fbMs = (typeof mutedFallbackMs === 'number') ? mutedFallbackMs : 700;
+  if (!soundOn || !text || !('speechSynthesis' in window)) {
+    setTimeout(callback, fbMs);
+    return;
+  }
+  try {
+    speechSynthesis.cancel();
+    setTimeout(() => {
+      try {
+        if (!soundOn) { setTimeout(callback, fbMs); return; }
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = lang || 'en-GB';
+        u.rate = 0.95; u.pitch = 1; u.volume = 1;
+        const v = pickVoice(u.lang);
+        if (v) u.voice = v;
+        let done = false;
+        const advance = () => { if (done) return; done = true; setTimeout(callback, 200); };
+        u.onend = advance; u.onerror = advance;
+        setTimeout(advance, 5000); // safety
+        speechSynthesis.speak(u);
+      } catch(e) { setTimeout(callback, fbMs); }
+    }, 60);
+  } catch(e) { setTimeout(callback, fbMs); }
+}
+
 /* === SOUND EFFECTS === */
 let aC = null;
 function gAC(){ try { if (!aC) aC = new (window.AudioContext||window.webkitAudioContext)(); } catch(e){} return aC; }
@@ -738,8 +766,11 @@ function onBalloonClick(el, e){
       sndGold();
       floatScore('+20 ⭐ +5⏱', 'gold', el);
       popBalloon(el, idx, true);
-      nextTarget();
       updateHud();
+      // TTS: odczytaj prawidlowe slowo, potem nowy prompt
+      const ansLang = direction === 'pl_en' ? 'en-GB' : 'pl-PL';
+      const ansWord = direction === 'pl_en' ? b.en : b.pl;
+      speakAndAdvance(ansWord, ansLang, () => nextTarget(), 800);
       return;
     }
   }
@@ -751,14 +782,19 @@ function onBalloonClick(el, e){
     sndCorrect();
     floatScore('+10', 'good', el);
     popBalloon(el, idx, true);
-    nextTarget();
-  } else {
-    misses++;
-    score = Math.max(0, score - 5);
-    sndWrong();
-    floatScore('-5', 'bad', el);
-    popBalloon(el, idx, false);
+    updateHud();
+    // TTS: odczytaj prawidlowe slowo, potem nowy prompt (lektor nie ucinany)
+    const ansLang = direction === 'pl_en' ? 'en-GB' : 'pl-PL';
+    const ansWord = direction === 'pl_en' ? b.en : b.pl;
+    speakAndAdvance(ansWord, ansLang, () => nextTarget(), 800);
+    return;
   }
+  // Pomylka
+  misses++;
+  score = Math.max(0, score - 5);
+  sndWrong();
+  floatScore('-5', 'bad', el);
+  popBalloon(el, idx, false);
   updateHud();
 }
 
