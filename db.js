@@ -1608,11 +1608,12 @@ const DB = (() => {
     if (!_profile?.isAdmin && !_profile?.isTeacher) return [];
     let q = supabase
       .from('profiles')
-      .select('id, username, xp, level, streak, total_sessions, total_answers, correct_answers, last_study_date, is_admin, is_teacher, plan, created_by');
+      .select('id, username, xp, level, streak, total_sessions, total_answers, correct_answers, last_study_date, is_admin, is_teacher, plan, created_by, created_at');
     if (!_profile.isAdmin && _profile.isTeacher) {
       q = q.eq('created_by', _userId);
     }
-    q = q.order('username');
+    // Sortuj od najnowszych do najstarszych (created_at malejaco)
+    q = q.order('created_at', { ascending: false, nullsFirst: false });
     const { data, error } = await q;
     if (error) throw new Error(error.message);
     return data || [];

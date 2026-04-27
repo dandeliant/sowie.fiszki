@@ -12103,13 +12103,21 @@ async function openAdminAccess() {
 
 function buildAccessUserCard(u) {
   const card = document.createElement('div');
-  card.style.cssText = 'background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 16px;margin-bottom:8px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;transition:border-color .2s;';
+  card.style.cssText = 'background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 16px;margin-bottom:8px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;transition:border-color .2s;flex-wrap:wrap';
+  // Daty: utworzenie konta + ostatnia aktywnosc
+  const created = u.created_at ? new Date(u.created_at).toLocaleDateString('pl-PL') : '—';
+  const lastSeen = u.last_study_date
+    ? new Date(u.last_study_date).toLocaleDateString('pl-PL') : '—';
   card.innerHTML = `
-    <div>
+    <div style="min-width:0;flex:1">
       <div style="font-size:.88rem;font-weight:700;color:var(--text)">${fmtNameWithLabel(u.id, u.username)} ${u.is_teacher ? '<span style="font-size:.58rem;background:rgba(255,209,102,.15);color:var(--accent);padding:1px 6px;border-radius:100px;margin-left:4px">👩‍🏫 Nauczyciel</span>' : '<span style="font-size:.58rem;background:rgba(6,214,160,.1);color:var(--accent2);padding:1px 6px;border-radius:100px;margin-left:4px">🎓 Uczeń</span>'}</div>
-      <div style="font-size:.65rem;color:var(--muted)">Poz. ${u.level || 1} · ${u.total_sessions || 0} sesji</div>
+      <div style="font-size:.65rem;color:var(--muted);display:flex;gap:10px;flex-wrap:wrap;margin-top:3px">
+        <span>📅 Utworzone: <strong>${esc(created)}</strong></span>
+        <span>👁️ Ostatnio: <strong>${esc(lastSeen)}</strong></span>
+        <span>Poz. ${u.level || 1} · ${u.total_sessions || 0} sesji</span>
+      </div>
     </div>
-    <div style="display:flex;gap:8px;align-items:center">
+    <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
       <div style="font-size:.72rem;font-weight:700;color:var(--accent);padding:4px 8px;border-radius:8px;border:1px solid rgba(124,77,255,.3)" class="access-label-btn" title="Prywatna etykieta">✏️</div>
       <div style="font-size:.72rem;font-weight:700;color:var(--accent2)" class="access-manage-btn">📋 Zarządzaj</div>
       <div style="font-size:.72rem;font-weight:700;color:var(--danger);padding:4px 8px;border-radius:8px;border:1px solid rgba(255,118,117,.3)" class="access-delete-btn">🗑️</div>
@@ -12131,6 +12139,12 @@ function renderAccessUserList() {
     el.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:.8rem;padding:24px;font-weight:600">Brak uczniów do wyświetlenia.</div>';
     return;
   }
+  // Sortuj od najnowszych do najstarszych kont (created_at malejaco)
+  users.sort((a, b) => {
+    const aT = a.created_at ? new Date(a.created_at).getTime() : 0;
+    const bT = b.created_at ? new Date(b.created_at).getTime() : 0;
+    return bT - aT;
+  });
   el.innerHTML = '';
   users.forEach(u => el.appendChild(buildAccessUserCard(u)));
 }
