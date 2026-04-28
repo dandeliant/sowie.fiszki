@@ -202,6 +202,35 @@ body::before{
   font-family:var(--user-font);
 }
 
+/* === LIVE PREVIEW (mini-podglad karty na zywo) === */
+.live-preview-wrap{margin-top:10px;}
+.live-preview-wrap .lp-label{
+  display:flex;align-items:center;gap:8px;
+  font-size:.78rem;font-weight:800;color:var(--accent2);
+  text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px;
+}
+.live-preview-wrap .lp-label .lp-hint{
+  font-weight:500;font-size:.7rem;color:rgba(255,255,255,.5);
+  text-transform:none;letter-spacing:0;
+}
+.live-preview{
+  background:#fff;
+  border:1.5px solid var(--border);border-radius:12px;
+  padding:14px 16px;
+  max-height:340px;overflow:hidden;
+  position:relative;
+}
+.live-preview::after{
+  content:'PODGLĄD';
+  position:absolute;top:6px;right:10px;
+  font-family:'Fredoka',sans-serif;font-size:.62rem;letter-spacing:.12em;
+  color:#cbd5e1;font-weight:700;
+  pointer-events:none;
+}
+.live-preview .row{margin-bottom:6px;}
+.live-preview svg{display:block;width:100%;height:auto;}
+.live-preview .lp-empty{color:#94a3b8;font-size:.85rem;text-align:center;padding:24px 8px;font-style:italic;}
+
 .btn-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;}
 .btn-launch{
   flex:1;min-width:200px;padding:13px;
@@ -401,6 +430,13 @@ body::before{
       <button class="btn-secondary" type="button" onclick="clearUploadedFont()">🗑️ Usuń wgraną</button>
     </div>
     <div class="font-preview" id="fontPreview">Aa Bb Cc — rabbit, frog, phone</div>
+
+    <div class="live-preview-wrap">
+      <div class="lp-label">👁️ Podgląd na żywo <span class="lp-hint">(odzwierciedla wszystkie ustawienia powyżej — pierwsze 2 słowa)</span></div>
+      <div class="live-preview" id="livePreview">
+        <div class="lp-empty">Wpisz lub zaznacz słowa, aby zobaczyć podgląd…</div>
+      </div>
+    </div>
 
     <h3>💾 Ustawienia</h3>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
@@ -917,9 +953,52 @@ function applySettings(obj){
   }
 }
 
+/* ============================================================
+   LIVE PREVIEW — minia karty na zywo (pierwsze 2 slowa)
+============================================================ */
+function renderLivePreview(){
+  const el = document.getElementById('livePreview');
+  if (!el) return;
+  const words = parseWords(wordsInput.value).slice(0, 2);
+  if (!words.length) {
+    el.innerHTML = '<div class="lp-empty">Wpisz lub zaznacz słowa, aby zobaczyć podgląd…</div>';
+    return;
+  }
+  const opts = {
+    fontSize: parseFloat(fontSizeInp.value||'37'),
+    copies:   parseInt(copiesInp.value||'22',10),
+    wordGap:  parseFloat(wordGapInp.value||'10'),
+    letterSpacing: parseFloat(letterSpInp.value||'0'),
+    rowH:     parseFloat(rowHeightInp.value||'15'),
+    dotted:   !!dottedInp.checked,
+    emptyLine:!!emptyLineInp.checked,
+    strokeW:  parseFloat(strokeWInp.value||'1.5')
+  };
+  el.innerHTML = '';
+  for (const w of words) {
+    el.appendChild(makeRowSVG({
+      text: w, copies: opts.copies, fontSize: opts.fontSize, wordGap: opts.wordGap,
+      letterSpacing: opts.letterSpacing, dotted: opts.dotted, strokeW: opts.strokeW,
+      emptyLine: opts.emptyLine, rowHmm: opts.rowH
+    }));
+  }
+}
+
+// Wszystkie pola, ktore wplywaja na rendering — wywoluja live preview po zmianie
+[fontSizeInp, copiesInp, wordGapInp, letterSpInp, rowGapInp, rowHeightInp,
+ dottedInp, emptyLineInp, strokeWInp, wordsInput].forEach(el => {
+  if (!el) return;
+  el.addEventListener('input', renderLivePreview);
+  el.addEventListener('change', renderLivePreview);
+});
+// Po zmianie wybranej czcionki — odswiez podglad (z lekkim opoznieniem aby font sie zaladowal)
+fontUseSel.addEventListener('change', () => setTimeout(renderLivePreview, 80));
+fontFileInp.addEventListener('change', () => setTimeout(renderLivePreview, 200));
+
 // Init preview
 updatePreview();
 applyFontChoice();
+renderLivePreview();
 </script>
 </body>
 </html>
