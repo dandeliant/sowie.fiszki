@@ -156,6 +156,44 @@ body::before{
 
 .font-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;align-items:end;}
 
+/* === WORD CHIPS PANEL === */
+.chips-toolbar{
+  display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px;
+}
+.chips-toolbar .btn-mini{
+  padding:5px 11px;font-family:'Nunito',sans-serif;font-size:.74rem;font-weight:700;
+  background:rgba(0,0,0,.4);border:1.5px solid var(--border);border-radius:100px;
+  color:#fff;cursor:pointer;transition:all .15s;
+}
+.chips-toolbar .btn-mini:hover{background:rgba(124,58,237,.18);border-color:var(--accent);}
+.chips-toolbar .chip-count{
+  font-size:.74rem;color:var(--muted);font-weight:700;margin-left:auto;
+}
+.chips-toolbar .chip-count b{color:var(--accent2);}
+.word-chips{
+  max-height:220px;overflow-y:auto;
+  background:rgba(0,0,0,.3);border:1.5px solid var(--border);border-radius:12px;
+  padding:10px;display:flex;flex-wrap:wrap;gap:5px;
+  margin-bottom:8px;
+}
+.word-chip{
+  padding:5px 12px;background:rgba(255,255,255,.06);
+  border:1.5px solid rgba(255,255,255,.15);border-radius:100px;
+  cursor:pointer;
+  font-family:'Nunito',sans-serif;font-size:.82rem;font-weight:700;
+  color:rgba(255,255,255,.7);transition:all .15s;user-select:none;
+}
+.word-chip:hover{transform:translateY(-1px);border-color:var(--accent);background:rgba(124,58,237,.12);}
+.word-chip.eligible{
+  /* wieloczłonowe wyrażenia — niezaznaczone domyślnie */
+  background:transparent;border-style:dashed;color:rgba(255,255,255,.5);
+}
+.word-chip.selected{
+  background:linear-gradient(135deg,var(--accent),var(--accent2));
+  color:#fff;border-color:#fff;
+  box-shadow:0 2px 6px rgba(124,58,237,.4);
+}
+
 .font-preview{
   margin-top:8px;padding:14px 18px;
   background:rgba(255,255,255,.92);
@@ -299,7 +337,17 @@ body::before{
         </select>
       </div>
     </div>
-    <label style="margin-top:10px">📝 Lista słów (przecinki lub nowe linie)</label>
+    <label style="margin-top:10px">📋 Wybór słów <span style="font-weight:500;font-size:.7rem;color:rgba(255,255,255,.5);text-transform:none;letter-spacing:0">(klikaj, aby zaznaczyć/odznaczyć)</span></label>
+    <div class="chips-toolbar">
+      <button type="button" class="btn-mini" onclick="selectChipsAll()">☑ Wszystkie</button>
+      <button type="button" class="btn-mini" onclick="selectChipsSingles()">✓ Tylko pojedyncze</button>
+      <button type="button" class="btn-mini" onclick="selectChipsNone()">☐ Żadne</button>
+      <span class="chip-count">Zaznaczone: <b id="chipCount">0 / 0</b></span>
+    </div>
+    <div id="wordChips" class="word-chips">
+      <div style="color:var(--muted);font-size:.78rem;padding:6px 4px;width:100%;text-align:center">Wybierz podręcznik i unit, aby zobaczyć słowa.</div>
+    </div>
+    <label style="margin-top:6px">📝 Lista słów na karcie pracy <span style="font-weight:500;font-size:.7rem;color:rgba(255,255,255,.5);text-transform:none;letter-spacing:0">(możesz edytować ręcznie)</span></label>
     <textarea id="wordsInput" placeholder="rabbit, frog, phone, ..."></textarea>
 
     <h3>🔤 Parametry tekstu</h3>
@@ -475,6 +523,9 @@ function onBookChange(){
   loadUnitWords();
 }
 
+// Pula slow z chipsami: [{word, isSingle, selected}]
+let _chipPool = [];
+
 function loadUnitWords(){
   const bId = bookSel.value;
   const uKey = unitSel.value;
@@ -489,9 +540,70 @@ function loadUnitWords(){
   } else if (BOOKS[bId].units?.[uKey]) {
     (BOOKS[bId].units[uKey].words || []).forEach(w => { if (w[fieldIdx]) pool.push(w[fieldIdx]); });
   }
-  // Wszystkie slowa z unitu — uzytkownik moze sam usunac/dopisac
-  wordsInput.value = pool.join(', ');
+  // Auto-select pojedynczych slow (jak w Krzyzowce/Wordsearch);
+  // wieloczlonowe wyrazenia sa klikalne ale niezaznaczone.
+  _chipPool = pool.map(w => {
+    const isSingle = !/\s/.test(String(w).trim());
+    return { word: w, isSingle, selected: isSingle };
+  });
+  renderChips();
+  syncWordsFromChips();
+}
+
+function renderChips(){
+  const c = document.getElementById('wordChips');
+  c.innerHTML = '';
+  if (!_chipPool.length) {
+    c.innerHTML = '<div style="color:var(--muted);font-size:.78rem;padding:6px 4px;width:100%;text-align:center">Brak słów w wybranym unicie.</div>';
+    updateChipCount();
+    return;
+  }
+  _chipPool.forEach((it, i) => {
+    const chip = document.createElement('div');
+    let cls = 'word-chip';
+    if (!it.isSingle) cls += ' eligible';
+    if (it.selected) cls += ' selected';
+    chip.className = cls;
+    chip.textContent = it.word;
+    chip.dataset.i = i;
+    chip.title = it.isSingle ? 'Pojedyncze słowo' : 'Wyrażenie wieloczłonowe (kliknij aby zaznaczyć)';
+    chip.addEventListener('click', () => {
+      it.selected = !it.selected;
+      chip.classList.toggle('selected', it.selected);
+      syncWordsFromChips();
+    });
+    c.appendChild(chip);
+  });
+  updateChipCount();
+}
+
+function updateChipCount(){
+  const sel = _chipPool.filter(x => x.selected).length;
+  const el = document.getElementById('chipCount');
+  if (el) el.textContent = sel + ' / ' + _chipPool.length;
+}
+
+function syncWordsFromChips(){
+  const sel = _chipPool.filter(x => x.selected).map(x => x.word);
+  wordsInput.value = sel.join(', ');
+  updateChipCount();
   updatePreview();
+}
+
+function selectChipsAll(){
+  _chipPool.forEach(x => x.selected = true);
+  renderChips();
+  syncWordsFromChips();
+}
+function selectChipsSingles(){
+  _chipPool.forEach(x => x.selected = x.isSingle);
+  renderChips();
+  syncWordsFromChips();
+}
+function selectChipsNone(){
+  _chipPool.forEach(x => x.selected = false);
+  renderChips();
+  syncWordsFromChips();
 }
 
 dirSel.addEventListener('change', loadUnitWords);
