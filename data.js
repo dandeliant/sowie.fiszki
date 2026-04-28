@@ -3607,6 +3607,18 @@ const BOOKS = {
           ['Kiedy (bierzesz prysznic)?', 'When do you (have a shower)?'],
           ['(Biorę prysznic) (wieczorem).', 'I (have a shower) (in the evening).'],
         ]
+      },
+      unit5: {
+        name: 'Unit 5', icon: '🏊', color: '#fd79a8',
+        words: [
+          ['nurkować', 'dive'],
+          ['wiosłować', 'row'],
+          ['grać w tenisa stołowego', 'play table tennis'],
+          ['uprawiać judo', 'do judo'],
+          ['uprawiać karate', 'do karate'],
+          ['jeździć rowerem', 'ride a bike'],
+          ['jeździć konno', 'ride a horse'],
+        ]
       }
     }
   }
