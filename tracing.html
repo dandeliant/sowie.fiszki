@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>✍️ Pisanie po śladzie — Sowie Fiszki</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;700&family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
+<script src="data.js"></script>
+<style>
+/* === Default tracing font (osadzona na stale) === */
+@font-face{
+  font-family:'MyTracingFont';
+  src:url('MyTracingFont.ttf') format('truetype');
+  font-display:swap;
+}
+
+:root{
+  --bg:#0a0e1a;
+  --bg2:#1a1f33;
+  --accent:#7c3aed;
+  --accent2:#22d3ee;
+  --accent3:#f59e0b;
+  --gold:#fbbf24;
+  --green:#10b981;
+  --red:#ef4444;
+  --text:#fff;
+  --muted:rgba(255,255,255,.65);
+  --border:rgba(255,255,255,.18);
+  --panel:rgba(255,255,255,.08);
+
+  /* Tracing — kolory linii i tekstu */
+  --text-color:#555;
+  --top-line-color:#3B82F6;
+  --low-line-color:#EF4444;
+  --guide-thick:1.6px;
+
+  /* Aktywna czcionka do tracingu (mozna nadpisac) */
+  --user-font: 'MyTracingFont', Arial, 'Segoe UI', Roboto, system-ui, sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;}
+body{
+  font-family:'Nunito',system-ui,sans-serif;
+  color:var(--text);
+  background:
+    radial-gradient(ellipse at top,#3b1361 0%,transparent 60%),
+    radial-gradient(ellipse at bottom right,#0e7490 0%,transparent 50%),
+    linear-gradient(180deg,var(--bg) 0%,var(--bg2) 100%);
+  background-attachment:fixed;
+  min-height:100vh;overflow-x:hidden;position:relative;
+}
+
+body::before{
+  content:'';position:fixed;inset:0;
+  background-image:
+    radial-gradient(circle at 14% 22%,rgba(124,58,237,.15) 0%,transparent 9%),
+    radial-gradient(circle at 86% 26%,rgba(34,211,238,.18) 0%,transparent 10%),
+    radial-gradient(circle at 30% 80%,rgba(245,158,11,.13) 0%,transparent 9%);
+  pointer-events:none;z-index:0;
+  animation:bg-pulse 9s ease-in-out infinite alternate;
+}
+@keyframes bg-pulse{0%{opacity:.55;}100%{opacity:1;}}
+
+.back-link{
+  position:fixed;top:14px;left:14px;z-index:1000;
+  display:inline-flex;align-items:center;gap:6px;padding:9px 16px;
+  background:rgba(0,0,0,.55);border:1.5px solid var(--accent);
+  border-radius:100px;color:var(--accent);font-weight:800;font-size:.85rem;
+  text-decoration:none;backdrop-filter:blur(10px);transition:all .2s;
+}
+.back-link:hover{background:var(--accent);color:#fff;transform:translateX(-2px);}
+
+.htp-btn{
+  position:fixed;top:14px;right:14px;z-index:1000;
+  padding:9px 16px;background:rgba(34,211,238,.85);
+  border:1.5px solid var(--accent);border-radius:100px;
+  color:#fff;font-weight:800;font-size:.85rem;cursor:pointer;
+  font-family:inherit;backdrop-filter:blur(10px);
+}
+.htp-btn:hover{background:var(--accent);color:#fff;}
+.htp-modal{
+  position:fixed;inset:0;background:rgba(0,0,0,.85);backdrop-filter:blur(8px);
+  z-index:2000;display:none;align-items:center;justify-content:center;padding:20px;
+}
+.htp-modal.show{display:flex;}
+.htp-box{
+  background:linear-gradient(145deg,#3b1361 0%,#0a0e1a 100%);
+  border:2px solid var(--accent);border-radius:24px;
+  padding:28px 32px;max-width:580px;max-height:85vh;overflow-y:auto;
+  box-shadow:0 0 40px rgba(124,58,237,.4),0 20px 60px rgba(0,0,0,.6);
+}
+.htp-box h2{font-family:'Fredoka',sans-serif;color:var(--accent2);font-size:1.5rem;margin-bottom:14px;}
+.htp-box ol{padding-left:22px;}
+.htp-box li{margin-bottom:9px;font-size:.95rem;line-height:1.5;color:#e0f2fe;}
+.htp-box li strong{color:var(--gold);}
+.htp-box button{
+  margin-top:16px;width:100%;padding:11px;background:var(--accent);
+  border:none;border-radius:100px;font-weight:800;color:#fff;cursor:pointer;
+  font-size:.95rem;font-family:inherit;
+}
+
+.wrap{max-width:1180px;margin:0 auto;padding:60px 16px 30px;position:relative;z-index:1;}
+
+.title-bar{text-align:center;margin-bottom:14px;}
+.title-bar h1{
+  font-family:'Fredoka',sans-serif;
+  font-size:clamp(2rem,5vw,3rem);font-weight:700;letter-spacing:.02em;
+  background:linear-gradient(90deg,var(--accent) 0%,var(--accent2) 50%,var(--accent3) 100%);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  filter:drop-shadow(0 4px 12px rgba(124,58,237,.4));
+}
+.title-bar .subtitle{color:var(--muted);font-size:.95rem;margin-top:4px;font-style:italic;}
+
+/* === SETUP === */
+.setup-panel{
+  background:var(--panel);backdrop-filter:blur(8px);
+  border:2px solid var(--border);border-radius:18px;
+  padding:22px 24px;max-width:760px;margin:30px auto;
+  box-shadow:0 10px 30px rgba(0,0,0,.4);
+}
+.setup-panel h3{
+  font-family:'Fredoka',sans-serif;font-size:.95rem;color:var(--accent2);
+  font-weight:800;text-transform:uppercase;letter-spacing:.08em;margin-top:14px;margin-bottom:8px;
+  padding-top:10px;border-top:1px dashed var(--border);
+}
+.setup-panel h3:first-of-type{padding-top:0;border-top:none;margin-top:4px;}
+
+.setup-panel label{
+  display:block;font-size:.74rem;font-weight:800;color:var(--accent2);
+  text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px;
+}
+.setup-panel select,
+.setup-panel input[type=number],
+.setup-panel input[type=text],
+.setup-panel input[type=file],
+.setup-panel textarea{
+  width:100%;padding:9px 12px;border:1.5px solid var(--border);
+  border-radius:10px;background:rgba(0,0,0,.4);color:var(--text);
+  font-family:inherit;font-size:.9rem;font-weight:600;outline:none;
+}
+.setup-panel select:focus,
+.setup-panel input:focus,
+.setup-panel textarea:focus{border-color:var(--accent);}
+.setup-panel select option{background:#0a0e1a;color:#fff;}
+.setup-panel textarea{min-height:60px;resize:vertical;}
+
+.fld-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;}
+
+.opt-row{
+  display:flex;align-items:center;gap:10px;margin-top:8px;
+  font-size:.82rem;color:var(--muted);font-weight:700;cursor:pointer;
+}
+.opt-row input[type=checkbox]{accent-color:var(--accent);width:18px;height:18px;cursor:pointer;}
+
+.font-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;align-items:end;}
+
+.font-preview{
+  margin-top:8px;padding:14px 18px;
+  background:rgba(255,255,255,.92);
+  border:1.5px solid var(--border);border-radius:12px;
+  color:#0f172a;font-size:1.4rem;
+  font-family:var(--user-font);
+}
+
+.btn-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;}
+.btn-launch{
+  flex:1;min-width:200px;padding:13px;
+  background:linear-gradient(135deg,var(--accent),var(--accent2));
+  border:none;border-radius:100px;
+  color:#fff;font-family:'Fredoka',sans-serif;font-size:1.1rem;
+  cursor:pointer;letter-spacing:.04em;
+  box-shadow:0 8px 22px rgba(124,58,237,.4);
+  transition:all .2s;
+}
+.btn-launch:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 14px 30px rgba(124,58,237,.6);}
+.btn-launch:disabled{opacity:.45;cursor:not-allowed;background:#444;}
+.btn-secondary{
+  padding:11px 16px;background:rgba(0,0,0,.45);border:1.5px solid var(--border);border-radius:100px;
+  color:#fff;font-family:'Fredoka',sans-serif;font-size:.9rem;font-weight:700;cursor:pointer;
+  transition:all .15s;
+}
+.btn-secondary:hover{background:rgba(124,58,237,.18);border-color:var(--accent);transform:translateY(-1px);}
+
+/* === GAME TOOLBAR === */
+.game-toolbar{
+  display:flex;justify-content:center;gap:8px;flex-wrap:wrap;
+  margin:0 auto 14px;max-width:980px;
+}
+.game-toolbar button{
+  padding:10px 18px;font-family:'Fredoka',sans-serif;font-size:.95rem;font-weight:700;
+  background:rgba(0,0,0,.45);border:1.5px solid var(--border);border-radius:100px;
+  color:#fff;cursor:pointer;backdrop-filter:blur(8px);transition:all .2s;
+  display:inline-flex;align-items:center;gap:6px;
+}
+.game-toolbar button:hover{background:rgba(124,58,237,.18);border-color:var(--accent);transform:translateY(-1px);}
+.game-toolbar button.primary{
+  background:linear-gradient(135deg,var(--accent),var(--accent2));
+  border-color:#fff;
+  box-shadow:0 4px 14px rgba(124,58,237,.4);
+}
+.game-toolbar button.primary:hover{transform:translateY(-2px);box-shadow:0 8px 22px rgba(124,58,237,.6);}
+
+/* === SHEET (kartka A4) === */
+.sheet-wrap{
+  max-width:1100px;margin:0 auto 14px;
+  display:flex;justify-content:center;
+}
+.sheet{
+  width:210mm;
+  min-height:297mm;
+  background:#fff;
+  color:#000;
+  padding:12mm;
+  border-radius:8px;
+  box-shadow:0 18px 40px rgba(0,0,0,.5);
+  page-break-after:always;
+}
+.sheet .row{width:100%;page-break-inside:avoid;}
+.sheet .sheet-meta{
+  text-align:center;font-family:'Fredoka',sans-serif;color:#0f172a;
+  font-size:11pt;font-weight:700;margin-bottom:5mm;
+  border-bottom:1px solid #e5e7eb;padding-bottom:3mm;
+}
+.sheet .sheet-meta .meta-sub{font-size:9pt;color:#6b7280;font-weight:500;margin-top:1mm;}
+
+/* === FOOTER === */
+.bottom-back{text-align:center;margin:24px 0 10px;}
+.footer{text-align:center;font-size:.7rem;color:var(--muted);font-weight:600;padding:8px;}
+.hidden{display:none!important;}
+
+/* === PRINT === */
+@page{ size: A4 portrait; margin: 0; }
+@media print{
+  body{
+    background:#fff!important;color:#000!important;
+    -webkit-print-color-adjust:exact;print-color-adjust:exact;
+  }
+  body::before{display:none!important;}
+  .back-link,.htp-btn,.bottom-back,.game-toolbar,.title-bar,.setup-panel,.footer{display:none!important;}
+  .wrap{padding:0;max-width:none;}
+  .sheet-wrap{max-width:none;margin:0;}
+  .sheet{
+    box-shadow:none!important;border-radius:0!important;
+    margin:0;width:210mm;min-height:297mm;
+    padding:12mm;page-break-after:always;
+    background:#fff!important;
+  }
+}
+</style>
+</head>
+<body>
+
+<a href="app.html" class="back-link">← Powrót do Sowie Fiszki</a>
+<button class="htp-btn" onclick="document.getElementById('htpModal').classList.add('show')">ℹ️ Jak grać?</button>
+
+<div class="htp-modal" id="htpModal" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="htp-box">
+    <h2>✍️ Jak korzystać z Pisania po śladzie?</h2>
+    <ol>
+      <li>Wybierz <strong>podręcznik</strong> i <strong>unit</strong> — słowa załadują się automatycznie.</li>
+      <li>Możesz też <strong>ręcznie wpisać/edytować</strong> listę słów (oddzielone przecinkami lub nowymi liniami).</li>
+      <li>Ustaw <strong>parametry</strong>: rozmiar liter, liczbę powtórzeń, odstępy, grubość obrysu.</li>
+      <li>Domyślnie używana jest czcionka <strong>MyTracingFont</strong> — szkolna do nauki pisania. Możesz <strong>wgrać własną czcionkę</strong> (TTF/OTF/WOFF) i przełączyć na nią.</li>
+      <li>Linie: <span style="color:#3B82F6;font-weight:700">niebieska góra</span>, <span style="color:#EF4444;font-weight:700">czerwone dół</span> — po nich uczeń pisze.</li>
+      <li><strong>🖨️ Drukuj</strong> wydaje gotową kartę pracy A4 — zaznacz w przeglądarce „Background graphics".</li>
+      <li><strong>💾 Eksport JSON</strong> zachowuje wszystkie ustawienia (opcjonalnie z czcionką), <strong>📥 Import</strong> wczytuje je z pliku.</li>
+    </ol>
+    <button onclick="document.getElementById('htpModal').classList.remove('show')">Zaczynamy pisać!</button>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <div class="title-bar">
+    <h1>✍️ PISANIE PO ŚLADZIE</h1>
+    <div class="subtitle">Karta pracy A4 · litery z konturem · niebieska góra, czerwone dół</div>
+  </div>
+
+  <!-- SETUP -->
+  <div class="setup-panel" id="setupPanel">
+
+    <h3>📚 Źródło słów</h3>
+    <div class="fld-grid">
+      <div>
+        <label for="bookSel">Podręcznik</label>
+        <select id="bookSel" onchange="onBookChange()"><option value="">— Wybierz —</option></select>
+      </div>
+      <div>
+        <label for="unitSel">Unit</label>
+        <select id="unitSel" disabled onchange="loadUnitWords()"><option value="">— Najpierw wybierz podręcznik —</option></select>
+      </div>
+      <div>
+        <label for="dirSel">Język</label>
+        <select id="dirSel" onchange="loadUnitWords()">
+          <option value="en">🇬🇧 Angielski (EN)</option>
+          <option value="pl">🇵🇱 Polski (PL)</option>
+        </select>
+      </div>
+    </div>
+    <label style="margin-top:10px">📝 Lista słów (przecinki lub nowe linie)</label>
+    <textarea id="wordsInput" placeholder="rabbit, frog, phone, ..."></textarea>
+
+    <h3>🔤 Parametry tekstu</h3>
+    <div class="fld-grid">
+      <div><label>Wielkość liter (px)</label><input type="number" id="fontSize" value="37" min="15" max="180" step="2"></div>
+      <div><label>Powtórzeń w wierszu</label><input type="number" id="copies" value="22" min="1" max="50" step="1"></div>
+      <div><label>Odstęp między słowami (px)</label><input type="number" id="wordGap" value="10" min="-30" max="80" step="1"></div>
+      <div><label>Letter-spacing (px)</label><input type="number" id="letterSpacing" value="0" min="-2" max="10" step="0.1"></div>
+      <div><label>Wysokość wiersza (mm)</label><input type="number" id="rowHeight" value="15" min="10" max="50" step="1"></div>
+      <div><label>Odstęp między wierszami (mm)</label><input type="number" id="rowGap" value="0" min="0" max="30" step="1"></div>
+      <div><label>Grubość obrysu (px)</label><input type="number" id="strokeW" value="1.5" min="0.5" max="4" step="0.1"></div>
+    </div>
+    <div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:8px">
+      <label class="opt-row"><input type="checkbox" id="dotted"> Kropkowany ślad</label>
+      <label class="opt-row"><input type="checkbox" id="emptyLine" checked> Dodatkowa linia do samodzielnego pisania</label>
+    </div>
+
+    <h3>🖋️ Czcionka</h3>
+    <div class="font-row">
+      <div>
+        <label>Wybierz czcionkę</label>
+        <select id="fontUse" onchange="onFontUseChange()">
+          <option value="builtin" selected>📌 MyTracingFont (wbudowana)</option>
+          <option value="system">Systemowa (Arial)</option>
+          <option value="uploaded" disabled>Wgrana (twoja)</option>
+        </select>
+      </div>
+      <div>
+        <label>Wgraj własną (TTF/OTF/WOFF)</label>
+        <input type="file" id="fontFile" accept=".ttf,.otf,.woff,.woff2">
+      </div>
+      <div>
+        <label>Nazwa wgranej</label>
+        <input type="text" id="fontName" placeholder="Np. MojaCzcionka">
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+      <button class="btn-secondary" type="button" onclick="clearUploadedFont()">🗑️ Usuń wgraną</button>
+    </div>
+    <div class="font-preview" id="fontPreview">Aa Bb Cc — rabbit, frog, phone</div>
+
+    <h3>💾 Ustawienia</h3>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <button class="btn-secondary" type="button" onclick="exportSettings()">💾 Eksport JSON</button>
+      <label class="btn-secondary" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px">
+        📥 Import JSON <input type="file" id="importFile" accept=".json" style="display:none">
+      </label>
+      <label class="opt-row"><input type="checkbox" id="embedFontInExport" checked> Dołącz wgraną czcionkę w JSON</label>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn-launch" id="launchBtn" onclick="generate()">✍️ WYGENERUJ KARTĘ</button>
+    </div>
+  </div>
+
+  <!-- GAME -->
+  <div id="gameArea" class="hidden">
+    <div class="game-toolbar">
+      <button class="primary" onclick="generate()">🎲 Generuj ponownie</button>
+      <button onclick="window.print()">🖨️ Drukuj</button>
+      <button onclick="returnToSetup()">⚙️ Ustawienia</button>
+    </div>
+    <div class="sheet-wrap" id="sheetWrap"></div>
+  </div>
+
+</div>
+
+<div class="bottom-back"><a href="app.html" class="back-link" style="position:static;background:rgba(0,0,0,.55)">← Wróć do Sowie Fiszki</a></div>
+<div class="footer">© 2026 Sowie Fiszki</div>
+
+<script>
+'use strict';
+
+const A4_W_MM = 210, A4_H_MM = 297, MARGIN_MM = 12;
+
+const wordsInput = document.getElementById('wordsInput');
+const bookSel = document.getElementById('bookSel');
+const unitSel = document.getElementById('unitSel');
+const dirSel  = document.getElementById('dirSel');
+const fontSizeInp = document.getElementById('fontSize');
+const copiesInp   = document.getElementById('copies');
+const wordGapInp  = document.getElementById('wordGap');
+const letterSpInp = document.getElementById('letterSpacing');
+const rowGapInp   = document.getElementById('rowGap');
+const rowHeightInp= document.getElementById('rowHeight');
+const dottedInp   = document.getElementById('dotted');
+const emptyLineInp= document.getElementById('emptyLine');
+const strokeWInp  = document.getElementById('strokeW');
+const fontFileInp = document.getElementById('fontFile');
+const fontNameInp = document.getElementById('fontName');
+const fontUseSel  = document.getElementById('fontUse');
+const fontPreview = document.getElementById('fontPreview');
+const importFile  = document.getElementById('importFile');
+const embedFontInExport = document.getElementById('embedFontInExport');
+const sheetWrap = document.getElementById('sheetWrap');
+
+let bookLang = 'en';
+
+function mmToPx(mm){ return mm * (96/25.4); }
+function escHtml(s){ return String(s).replace(/[&<>"']/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m])); }
+function parseWords(raw){ return raw.split(/[\n,]+/g).map(s=>s.trim()).filter(Boolean); }
+function cssGet(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+function cssSet(name,val){ document.documentElement.style.setProperty(name,val); }
+
+/* ============================================================
+   BOOKS — populacja podrecznikow + auto-load slow
+============================================================ */
+(function(){
+  if (typeof BOOKS === 'undefined') return;
+  Object.values(BOOKS)
+    .filter(b => !b.adminOnly)
+    .sort((a,b) => (a.name||'').localeCompare(b.name||'', 'pl'))
+    .forEach(b => {
+      const o = document.createElement('option');
+      o.value = b.id;
+      o.textContent = (b.icon||'📖') + ' ' + b.name;
+      bookSel.appendChild(o);
+    });
+  Object.values(BOOKS)
+    .filter(b => b.adminOnly)
+    .forEach(b => {
+      const o = document.createElement('option');
+      o.value = b.id;
+      o.textContent = (b.icon||'📖') + ' ' + b.name + ' (admin)';
+      bookSel.appendChild(o);
+    });
+
+  // Auto-start z URL params
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const bookParam = params.get('book');
+    const unitParam = params.get('unit');
+    if (bookParam && BOOKS[bookParam]) {
+      const backUrl = unitParam
+        ? 'app.html#/book/' + encodeURIComponent(bookParam) + '/' + encodeURIComponent(unitParam)
+        : 'app.html#/book/' + encodeURIComponent(bookParam);
+      document.querySelectorAll('a[href="app.html"]').forEach(a => { a.href = backUrl; });
+      bookSel.value = bookParam;
+      onBookChange();
+      const targetUnit = (unitParam === 'all' || !unitParam) ? '__all__' : unitParam;
+      if (BOOKS[bookParam].units?.[targetUnit] || targetUnit === '__all__') {
+        unitSel.value = targetUnit;
+      }
+      loadUnitWords();
+      setTimeout(() => { try { generate(); } catch(e) {} }, 350);
+    }
+  } catch(e) {}
+})();
+
+function onBookChange(){
+  const bId = bookSel.value;
+  unitSel.innerHTML = '';
+  if (!bId || !BOOKS[bId]) {
+    unitSel.innerHTML = '<option value="">— Najpierw wybierz podręcznik —</option>';
+    unitSel.disabled = true;
+    return;
+  }
+  bookLang = BOOKS[bId].language || 'en';
+  // Domyslny jezyk = jezyk podrecznika (target — np. EN)
+  dirSel.value = bookLang === 'fr' ? 'en' /* fr = celowo zostaw EN aby uczen widzial pisanie */ : 'en';
+  // Pelniejsze: jezyk pisania = jezyk podrecznika; PL = pl
+  if (bookLang === 'fr') dirSel.value = 'en'; // tracingowe litery łatwiejsze w EN; uzytkownik moze przelaczyc
+  const all = document.createElement('option');
+  all.value = '__all__'; all.textContent = '🌍 Wszystkie słowa z podręcznika';
+  unitSel.appendChild(all);
+  Object.entries(BOOKS[bId].units || {}).forEach(([key, u]) => {
+    const o = document.createElement('option');
+    o.value = key; o.textContent = (u.icon||'📖') + ' ' + (u.name||key);
+    unitSel.appendChild(o);
+  });
+  unitSel.disabled = false;
+  unitSel.value = '__all__';
+  loadUnitWords();
+}
+
+function loadUnitWords(){
+  const bId = bookSel.value;
+  const uKey = unitSel.value;
+  if (!bId || !BOOKS[bId] || !uKey) return;
+  bookLang = BOOKS[bId].language || 'en';
+  const fieldIdx = (dirSel.value === 'pl') ? 0 : 1; // 0=PL, 1=EN
+  const pool = [];
+  if (uKey === '__all__') {
+    Object.values(BOOKS[bId].units || {}).forEach(u => {
+      (u.words || []).forEach(w => { if (w[fieldIdx]) pool.push(w[fieldIdx]); });
+    });
+  } else if (BOOKS[bId].units?.[uKey]) {
+    (BOOKS[bId].units[uKey].words || []).forEach(w => { if (w[fieldIdx]) pool.push(w[fieldIdx]); });
+  }
+  // Preferuj pojedyncze slowa (krotsze, lepiej pasuja do pisania)
+  const single = pool.filter(w => !/\s/.test(w.trim()));
+  const useList = single.length >= 5 ? single : pool;
+  // Wez pierwsze 8 (jedna karta A4)
+  const picked = useList.slice(0, 8);
+  wordsInput.value = picked.join(', ');
+  updatePreview();
+}
+
+dirSel.addEventListener('change', loadUnitWords);
+wordsInput.addEventListener('input', updatePreview);
+
+function updatePreview(){
+  const sample = wordsInput.value.split(/[\n,]+/).slice(0,3).map(s=>s.trim()).filter(Boolean).join(', ');
+  fontPreview.textContent = sample || 'Aa Bb Cc — rabbit, frog, phone';
+  fontPreview.style.fontFamily = cssGet('--user-font');
+}
+
+/* ============================================================
+   FONT — wbudowana / systemowa / wgrana
+============================================================ */
+let uploadedFont = { name:null, dataUrl:null, styleEl:null };
+
+function installFontFace(name, dataUrl){
+  if (uploadedFont.styleEl) uploadedFont.styleEl.remove();
+  const styleEl = document.createElement('style');
+  styleEl.textContent = `@font-face{font-family:'${name}';src:url('${dataUrl}');font-display:swap;}`;
+  document.head.appendChild(styleEl);
+  uploadedFont = { name, dataUrl, styleEl };
+  fontUseSel.querySelector('option[value="uploaded"]').disabled = false;
+}
+
+function applyFontChoice(){
+  const choice = fontUseSel.value;
+  if (choice === 'uploaded' && uploadedFont.name){
+    cssSet('--user-font', `'${uploadedFont.name}', Arial, 'Segoe UI', Roboto, system-ui, sans-serif`);
+  } else if (choice === 'system'){
+    cssSet('--user-font', `Arial, 'Segoe UI', Roboto, system-ui, sans-serif`);
+  } else {
+    // builtin
+    cssSet('--user-font', `'MyTracingFont', Arial, 'Segoe UI', Roboto, system-ui, sans-serif`);
+  }
+  updatePreview();
+}
+
+function onFontUseChange(){
+  applyFontChoice();
+  if (sheetWrap.querySelector('.sheet')) generate();
+}
+
+fontFileInp.addEventListener('change', () => {
+  const file = fontFileInp.files?.[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const dataUrl = e.target.result;
+    const name = (fontNameInp.value || file.name.replace(/\.(ttf|otf|woff2?|TTF|OTF|WOFF2?)$/,'') || 'LocalFont').replace(/[^\w\- ]+/g,'_');
+    installFontFace(name, dataUrl);
+    fontUseSel.value = 'uploaded';
+    applyFontChoice();
+    if (sheetWrap.querySelector('.sheet')) generate();
+  };
+  reader.readAsDataURL(file);
+});
+
+function clearUploadedFont(){
+  if (uploadedFont.styleEl) uploadedFont.styleEl.remove();
+  uploadedFont = { name:null, dataUrl:null, styleEl:null };
+  fontUseSel.querySelector('option[value="uploaded"]').disabled = true;
+  if (fontUseSel.value === 'uploaded') fontUseSel.value = 'builtin';
+  applyFontChoice();
+  fontFileInp.value = ''; fontNameInp.value = '';
+  if (sheetWrap.querySelector('.sheet')) generate();
+}
+
+/* ============================================================
+   POMIAR SZEROKOŚCI TEKSTU (SVG getComputedTextLength)
+============================================================ */
+function measureTextWidth(text, fontSize, family, letterSpacing){
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('width','0'); svg.setAttribute('height','0');
+  svg.style.position='absolute'; svg.style.opacity='0';
+  const t = document.createElementNS(svg.namespaceURI,'text');
+  t.setAttribute('x','0'); t.setAttribute('y','0');
+  t.setAttribute('font-size', String(fontSize));
+  t.setAttribute('font-family', family);
+  t.setAttribute('dominant-baseline','alphabetic');
+  t.setAttribute('style', `letter-spacing:${letterSpacing}px;`);
+  t.textContent = text;
+  svg.appendChild(t);
+  document.body.appendChild(svg);
+  const len = t.getComputedTextLength();
+  svg.remove();
+  return len || (text.length * fontSize * 0.6);
+}
+
+/* ============================================================
+   RYSOWANIE WIERSZA (SVG)
+============================================================ */
+function makeRowSVG({text, copies, fontSize, wordGap, letterSpacing, dotted, strokeW, emptyLine, rowHmm}){
+  const wPx = mmToPx(A4_W_MM - 2*MARGIN_MM);
+  const hPx = mmToPx(rowHmm);
+
+  const topY = hPx * 0.22;
+  const midY = hPx * 0.50;
+  const botY = hPx * 0.78;
+
+  const dash = dotted ? 'stroke-dasharray="8 10"' : '';
+  const family = cssGet('--user-font') || "Arial, 'Segoe UI', Roboto, system-ui, sans-serif";
+
+  const padLeft = 6;
+  const avail = wPx - padLeft - 6;
+
+  const wordW = measureTextWidth(text, fontSize, family, letterSpacing);
+  const denom = Math.max(1, wordW + wordGap);
+  let fit = Math.floor((avail + wordGap) / denom);
+  fit = Math.max(1, Math.min(copies, fit));
+
+  let texts = '';
+  let x = padLeft;
+  for (let i=0; i<fit; i++){
+    texts += `<text x="${x}" y="${botY-2}" font-size="${fontSize}" dominant-baseline="alphabetic"
+              font-family="${family}" fill="none"
+              stroke="${cssGet('--text-color')}" stroke-width="${strokeW}" ${dash}
+              paint-order="stroke" style="letter-spacing:${letterSpacing}px;">${escHtml(text)}</text>`;
+    x += wordW + wordGap;
+  }
+
+  const extraOffset = emptyLine ? (hPx + mmToPx(4)) : 0;
+  const totalH = emptyLine ? (hPx*2 + mmToPx(4)) : hPx;
+  const guideThick = cssGet('--guide-thick') || '1.6px';
+
+  const guides = (yShift=0) => `
+    <line x1="0" y1="${topY+yShift}" x2="${wPx}" y2="${topY+yShift}" stroke="${cssGet('--top-line-color')}" stroke-width="${guideThick}" />
+    <line x1="0" y1="${midY+yShift}" x2="${wPx}" y2="${midY+yShift}" stroke="${cssGet('--low-line-color')}" stroke-width="${guideThick}" />
+    <line x1="0" y1="${botY+yShift}" x2="${wPx}" y2="${botY+yShift}" stroke="${cssGet('--low-line-color')}" stroke-width="${guideThick}" />
+  `;
+
+  const svg = `
+    <svg width="100%" height="${totalH}px" viewBox="0 0 ${wPx} ${totalH}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Wiersz: ${escHtml(text)}">
+      ${guides(0)} ${texts} ${emptyLine ? guides(extraOffset) : ''}
+    </svg>`;
+  const wrap = document.createElement('div'); wrap.className = 'row';
+  wrap.style.marginBottom = (parseFloat(rowGapInp.value || 0)) + 'mm';
+  wrap.innerHTML = svg;
+  return wrap;
+}
+
+/* ============================================================
+   GENERATE — buduje strony A4
+============================================================ */
+function generate(){
+  const words = parseWords(wordsInput.value);
+  if (!words.length) { alert('Brak słów do wygenerowania.'); return; }
+
+  // UI
+  document.getElementById('setupPanel').classList.add('hidden');
+  document.getElementById('gameArea').classList.remove('hidden');
+
+  const opts = {
+    fontSize: parseFloat(fontSizeInp.value||'37'),
+    copies:   parseInt(copiesInp.value||'22',10),
+    wordGap:  parseFloat(wordGapInp.value||'10'),
+    letterSpacing: parseFloat(letterSpInp.value||'0'),
+    rowGap:   parseFloat(rowGapInp.value||'0'),
+    rowH:     parseFloat(rowHeightInp.value||'15'),
+    dotted:   !!dottedInp.checked,
+    emptyLine:!!emptyLineInp.checked,
+    strokeW:  parseFloat(strokeWInp.value||'1.5')
+  };
+
+  sheetWrap.innerHTML = '';
+
+  const usableH = A4_H_MM - 2*MARGIN_MM;
+  // Wysokosc jednego wiersza = rowH + (jesli emptyLine: rowH + 4mm)
+  const rowFullH = opts.emptyLine ? (opts.rowH * 2 + 4) : opts.rowH;
+  const rowsPerPage = Math.max(1, Math.floor(usableH / (rowFullH + opts.rowGap)));
+
+  // Naglowek meta
+  const bId = bookSel.value;
+  const uKey = unitSel.value;
+  const book = bId && BOOKS[bId] ? BOOKS[bId] : null;
+  const ctx = book
+    ? (book.icon||'📖') + ' ' + book.name + ' · ' + (uKey === '__all__' ? '🌍 Wszystkie' : (book.units?.[uKey]?.name || uKey))
+    : 'Lista własna';
+
+  let page = newSheet(ctx);
+  let rows = 0;
+
+  for (const w of words){
+    if (rows >= rowsPerPage){
+      sheetWrap.appendChild(page);
+      page = newSheet(ctx);
+      rows = 0;
+    }
+    page.appendChild(makeRowSVG({
+      text:w, copies:opts.copies, fontSize:opts.fontSize, wordGap:opts.wordGap,
+      letterSpacing:opts.letterSpacing, dotted:opts.dotted, strokeW:opts.strokeW,
+      emptyLine:opts.emptyLine, rowHmm:opts.rowH
+    }));
+    rows++;
+  }
+  if (page.childElementCount > 1) sheetWrap.appendChild(page); // > 1 bo meta zawsze jest
+}
+
+function newSheet(ctxText){
+  const sheet = document.createElement('section');
+  sheet.className = 'sheet';
+  const meta = document.createElement('div');
+  meta.className = 'sheet-meta';
+  meta.innerHTML = `✍️ Pisanie po śladzie · Sowie Fiszki<div class="meta-sub">${escHtml(ctxText)}</div>`;
+  sheet.appendChild(meta);
+  return sheet;
+}
+
+function returnToSetup(){
+  document.getElementById('gameArea').classList.add('hidden');
+  document.getElementById('setupPanel').classList.remove('hidden');
+}
+
+/* ============================================================
+   EXPORT / IMPORT JSON
+============================================================ */
+function collectSettings(){
+  return {
+    version: 2,
+    words: wordsInput.value,
+    book: bookSel.value || null,
+    unit: unitSel.value || null,
+    dir:  dirSel.value,
+    options: {
+      fontSize: parseFloat(fontSizeInp.value||'37'),
+      copies: parseInt(copiesInp.value||'22',10),
+      wordGap: parseFloat(wordGapInp.value||'10'),
+      letterSpacing: parseFloat(letterSpInp.value||'0'),
+      rowGap: parseFloat(rowGapInp.value||'0'),
+      rowH: parseFloat(rowHeightInp.value||'15'),
+      dotted: !!dottedInp.checked,
+      emptyLine: !!emptyLineInp.checked,
+      strokeW: parseFloat(strokeWInp.value||'1.5')
+    },
+    fontUse: fontUseSel.value,
+    font: (embedFontInExport.checked && uploadedFont.name && uploadedFont.dataUrl)
+      ? { name: uploadedFont.name, dataUrl: uploadedFont.dataUrl }
+      : null
+  };
+}
+
+function exportSettings(){
+  const data = collectSettings();
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const ts = new Date().toISOString().replace(/[:.]/g,'-');
+  a.href = url; a.download = `tracing-settings-${ts}.json`; a.click();
+  URL.revokeObjectURL(url);
+}
+
+importFile.addEventListener('change', () => {
+  const file = importFile.files?.[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try{
+      const obj = JSON.parse(e.target.result);
+      applySettings(obj);
+    }catch(err){
+      alert('Błędny plik JSON: ' + err.message);
+    } finally {
+      importFile.value = '';
+    }
+  };
+  reader.readAsText(file, 'utf-8');
+});
+
+function applySettings(obj){
+  try{
+    if (obj.words !== undefined) wordsInput.value = String(obj.words);
+    if (obj.book && BOOKS && BOOKS[obj.book]) {
+      bookSel.value = obj.book;
+      onBookChange();
+      if (obj.unit) unitSel.value = obj.unit;
+      if (obj.dir) dirSel.value = obj.dir;
+    }
+    if (obj.options){
+      const o = obj.options;
+      if (o.fontSize!=null) fontSizeInp.value = o.fontSize;
+      if (o.copies!=null) copiesInp.value = o.copies;
+      if (o.wordGap!=null) wordGapInp.value = o.wordGap;
+      if (o.letterSpacing!=null) letterSpInp.value = o.letterSpacing;
+      if (o.rowGap!=null) rowGapInp.value = o.rowGap;
+      if (o.rowH!=null) rowHeightInp.value = o.rowH;
+      if (o.dotted!=null) dottedInp.checked = !!o.dotted;
+      if (o.emptyLine!=null) emptyLineInp.checked = !!o.emptyLine;
+      if (o.strokeW!=null) strokeWInp.value = o.strokeW;
+    }
+    if (obj.font && obj.font.dataUrl && obj.font.name){
+      installFontFace(obj.font.name, obj.font.dataUrl);
+    }
+    if (obj.fontUse) {
+      fontUseSel.value = obj.fontUse;
+    }
+    applyFontChoice();
+    updatePreview();
+  }catch(e){
+    alert('Nie udało się zastosować ustawień: ' + e.message);
+  }
+}
+
+// Init preview
+updatePreview();
+applyFontChoice();
+</script>
+</body>
+</html>
