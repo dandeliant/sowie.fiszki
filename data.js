@@ -3382,6 +3382,79 @@ const BOOKS = {
     }
   }
 
+  // ─── KIDS CAN 1 ───────────────────────────────────────
+  ,kidscan1: {
+    id: 'kidscan1',
+    language: 'en', schoolType: 'primary', grade: 1,
+    name: 'Kids Can 1',
+    shortName: 'Kids Can 1',
+    icon: '🧒',
+    color: '#fdcb6e',
+    description: 'Klasa 1 · Szkoła Podstawowa',
+    units: {
+      unit5: {
+        name: 'Unit 5', icon: '🤸', color: '#a29bfe',
+        words: [
+          ['skakać', 'jump'],
+          ['wspinać się', 'climb'],
+          ['jeździć rowerem', 'ride a bike'],
+          ['biegać', 'run'],
+          ['jeździć konno', 'ride a horse'],
+          ['skakać na skakance', 'skip'],
+          ['łapać piłkę', 'catch a ball'],
+          ['grać w piłkę nożną', 'play football'],
+          ['podskakiwać', 'hop'],
+          ['pływać', 'swim'],
+          ['puszczać latawce', 'fly a kite'],
+          ['tańczyć', 'dance'],
+          ['Czy potrafisz tańczyć?', 'Can you dance?'],
+          ['Czy potrafisz grać w piłkę nożną? Tak.', 'Can you play football? Yes, I can.'],
+          ['Czy potrafisz grać w piłkę nożną? Nie.', "Can you play football? No, I can't."],
+          ['Czy możesz pomóc?', 'Can you help?'],
+          ['Mogę pomóc.', 'I can help.'],
+          ['Czy możesz mi pomóc?', 'Can you help me, please?'],
+          ['Potrafię biegać.', 'I can run.'],
+          ['Nie potrafię skakać na skakance.', "I can't skip."],
+          ['Potrafię skakać.', 'I can jump.'],
+          ['Nie potrafię się wspinać.', "I can't climb."],
+        ]
+      },
+      unit6: {
+        name: 'Unit 6', icon: '🍔', color: '#ff7675',
+        words: [
+          ['hamburgery', 'burgers'],
+          ['jajka', 'eggs'],
+          ['cebule', 'onions'],
+          ['frytki', 'chips'],
+          ['milkshake', 'milkshake'],
+          ['ciasto', 'cake'],
+          ['sok', 'juice'],
+          ['lody', 'ice cream'],
+          ['cytrynowy', 'lemon'],
+          ['mango', 'mango'],
+          ['wiśniowy', 'cherry'],
+          ['czekoladowy', 'chocolate'],
+          ['waniliowy', 'vanilla'],
+          ['truskawki', 'strawberries'],
+          ['marchewki', 'carrots'],
+          ['winogrona', 'grapes'],
+          ['papryki', 'peppers'],
+          ['owoce', 'fruit'],
+          ['warzywa', 'vegetables'],
+          ['Lubię lody.', 'I like ice cream.'],
+          ['Nie lubię cebul.', "I don't like onions."],
+          ['Uwielbiam lody.', 'I love ice cream.'],
+          ['Jestem głodny.', "I'm hungry."],
+          ['Czy mogę prosić o hamburgera?', 'Can I have a burger, please?'],
+          ['Tak, proszę.', 'Yes, here you are.'],
+          ['Dziękuję.', 'Thank you.'],
+          ['Czy lubisz lody czekoladowe? Tak.', 'Do you like chocolate ice cream? Yes, I do.'],
+          ['Czy lubisz lody czekoladowe? Nie.', "Do you like chocolate ice cream? No, I don't."],
+        ]
+      }
+    }
+  }
+
   // ─── TIGER AND FRIENDS 2 ──────────────────────────────
   ,tiger2: {
     id: 'tiger2',
