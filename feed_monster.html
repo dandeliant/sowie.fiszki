@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0,user-scalable=no">
-<title>🍽️ Nakarm potworka — Sowie Fiszki</title>
+<title>🍽️ Feed the Creature — Sowie Fiszki</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
@@ -358,7 +358,7 @@ body::before{
 
 <div class="htp-modal" id="htpModal" onclick="if(event.target===this)this.classList.remove('show')">
   <div class="htp-box">
-    <h2>🍽️ Nakarm potworka!</h2>
+    <h2>🍽️ Feed the Creature!</h2>
     <ol>
       <li>Wybierz <strong>podręcznik</strong>, <strong>unit</strong> i <strong>kierunek</strong> tłumaczenia, kliknij <strong>START</strong>.</li>
       <li>Po lewej stronie pojawi się <strong>głodny stworek</strong> 🐲 i powie <em>„Chcę zjeść..."</em> + losowe słowo.</li>
@@ -375,7 +375,7 @@ body::before{
 <div class="wrap">
 
   <div class="title-bar">
-    <h1>🍽️ NAKARM POTWORKA</h1>
+    <h1>🍽️ FEED THE CREATURE</h1>
     <div class="subtitle">Głodny stworek, smaczne słówka · 20 trafień = nowy przyjaciel</div>
   </div>
 
@@ -510,6 +510,46 @@ function playFanfare(){
   setTimeout(() => beep(659, 0.12, 'square', 0.16), 130);
   setTimeout(() => beep(784, 0.12, 'square', 0.16), 260);
   setTimeout(() => beep(1046, 0.3, 'square', 0.18), 390);
+}
+
+/* ============================================================
+   TTS — czytanie kwestii postaci i odpowiedzi
+============================================================ */
+let _voices = [];
+function loadVoices(){ try { _voices = speechSynthesis.getVoices() || []; } catch(e) { _voices = []; } }
+if ('speechSynthesis' in window) { loadVoices(); speechSynthesis.onvoiceschanged = loadVoices; }
+function pickVoice(lang){
+  if (!_voices.length) loadVoices();
+  if (!_voices.length) return null;
+  const want = lang === 'fr' ? 'fr-FR' : (lang === 'pl' ? 'pl-PL' : 'en-GB');
+  return _voices.find(v => /Online.*Natural/i.test(v.name) && v.lang === want) ||
+         _voices.find(v => v.lang === want) ||
+         _voices.find(v => v.lang && v.lang.startsWith(want.split('-')[0])) || null;
+}
+// Sekwencyjne odczytywanie listy fraz (chain via onend)
+function speakChain(items){
+  if (!soundOn) return;
+  if (!('speechSynthesis' in window)) return;
+  try { speechSynthesis.cancel(); } catch(e) {}
+  let i = 0;
+  function next(){
+    if (i >= items.length) return;
+    const it = items[i++];
+    if (!it || !it.text) { setTimeout(next, 80); return; }
+    try {
+      const u = new SpeechSynthesisUtterance(it.text);
+      u.lang = it.lang === 'fr' ? 'fr-FR' : (it.lang === 'pl' ? 'pl-PL' : 'en-GB');
+      u.rate = 0.95; u.volume = 1;
+      const v = pickVoice(it.lang);
+      if (v) u.voice = v;
+      let done = false;
+      const cont = () => { if (done) return; done = true; setTimeout(next, 100); };
+      u.onend = cont; u.onerror = cont;
+      setTimeout(cont, 5500); // safety
+      speechSynthesis.speak(u);
+    } catch(e) { setTimeout(next, 100); }
+  }
+  setTimeout(next, 80);
 }
 
 /* ============================================================
@@ -690,6 +730,13 @@ function newQuestion(){
 
   renderAnswers();
   isLocked = false;
+
+  // TTS: postac wypowiada "Chce zjesc..." + slowo
+  const promptLang = (dir === 'pl_en') ? 'pl' : bookLang;
+  speakChain([
+    { text: 'Chcę zjeść...', lang: 'pl' },
+    { text: word[promptIdx], lang: promptLang }
+  ]);
 }
 
 function renderAnswers(){
@@ -728,7 +775,7 @@ function onAnswerClick(text, chipEl){
     }, 450);
     setTimeout(() => charEl.classList.remove('eating'), 850);
 
-    // Reaction bubble
+    // Reaction bubble + TTS
     setTimeout(() => {
       const bubble = document.getElementById('bubble');
       bubble.classList.add('good');
@@ -736,6 +783,12 @@ function onAnswerClick(text, chipEl){
       document.getElementById('bubbleWord').innerHTML = '😋 +' + gained + ' pkt';
       playYum();
       sparkle(charEl);
+      // TTS: "Dziekuje" (PL) + odczytanie poprawnej odpowiedzi w jezyku celowym
+      const correctLang = (dir === 'pl_en') ? bookLang : 'pl';
+      speakChain([
+        { text: 'Dziękuję!', lang: 'pl' },
+        { text: text, lang: correctLang }
+      ]);
     }, 600);
 
     refreshHUD();
