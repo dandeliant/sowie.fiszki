@@ -61,7 +61,7 @@
         '<li>👨‍👩‍👧 Dzieci poniżej 16 lat — wymagana zgoda rodzica/opiekuna (checkbox przy rejestracji)</li>' +
       '</ul>' +
       '<h3 style="font-size:1rem;margin:14px 0 6px;color:#1f2937">🌐 Hosting i przechowywanie danych</h3>' +
-      '<p>Aplikacja hostowana na <strong>GitHub Pages</strong> (Microsoft, EOG/USA). Baza danych: <strong>Supabase</strong> (UE/EOG). Komunikacja zawsze przez HTTPS.</p>' +
+      '<p>Domena <strong>sowiefiszki.com</strong> — aplikacja hostowana na <strong>Vercel Inc.</strong> (USA, infrastruktura w UE/EOG; logi serwerowe: IP, user-agent, request URL — RODO art. 6.1.f). Baza danych i uwierzytelnianie: <strong>Supabase Inc.</strong> (UE/EOG). Komunikacja zawsze przez HTTPS.</p>' +
       '<p style="font-size:13px;color:#6b7280;margin-top:14px;font-style:italic">Pełny regulamin i polityka prywatności dostępne w aplikacji po zalogowaniu (zakładka „Moje konto" → „Regulamin" / „Polityka prywatności").</p>' +
       '<button onclick="this.closest(\'#sowie-policy-modal\').remove()" style="margin-top:18px;padding:11px 26px;background:#7c3aed;color:#fff;border:none;border-radius:100px;font-weight:800;cursor:pointer;font-size:15px;font-family:inherit;width:100%">Zamknij</button>' +
       '</div>';
