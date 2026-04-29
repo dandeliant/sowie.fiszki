@@ -38,7 +38,7 @@
     modal.innerHTML =
       '<div style="background:#fff;max-width:680px;max-height:88vh;border-radius:18px;padding:26px 30px;overflow-y:auto;color:#1f2937;line-height:1.55;font-size:14.5px;box-shadow:0 20px 60px rgba(0,0,0,.5)">' +
       '<h2 style="font-size:1.4rem;margin:0 0 14px;color:#7c3aed;font-weight:800">🦉 Polityka prywatności i cookies</h2>' +
-      '<p><strong>Sowie Fiszki</strong> to projekt edukacyjny non-profit (Daniel Ostrowski, kontakt: <a href="mailto:sowie.fiszki@gmail.com" style="color:#7c3aed">sowie.fiszki@gmail.com</a>).</p>' +
+      '<p><strong>Sowie Fiszki</strong> to platforma edukacyjna prowadzona przez Daniela Ostrowskiego (kontakt: <a href="mailto:sowie.fiszki@gmail.com" style="color:#7c3aed">sowie.fiszki@gmail.com</a>). Dostępna w modelu freemium: 7-dniowy trial Premium + plan Free / Premium po opłacie.</p>' +
       '<h3 style="font-size:1rem;margin:14px 0 6px;color:#1f2937">🍪 Co przechowujemy w przeglądarce</h3>' +
       '<ul style="margin:0 0 10px 22px;padding:0">' +
         '<li><strong>localStorage</strong> — preferencje (motyw, dźwięk, ustawienia gier), wybrane słówka, stany lokalne aplikacji</li>' +
