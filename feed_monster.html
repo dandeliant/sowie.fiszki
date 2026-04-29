@@ -527,14 +527,21 @@ function pickVoice(lang){
          _voices.find(v => v.lang === want) ||
          _voices.find(v => v.lang && v.lang.startsWith(want.split('-')[0])) || null;
 }
-// Sekwencyjne odczytywanie listy fraz (chain via onend)
-function speakChain(items){
-  if (!soundOn) return;
-  if (!('speechSynthesis' in window)) return;
+// Sekwencyjne odczytywanie listy fraz (chain via onend) + opcjonalny onComplete
+function speakChain(items, onComplete){
+  // Dzwiek wylaczony lub brak TTS — i tak czekaj chwile zanim wywola callback,
+  // zeby user widzial reakcje "Dziekuje!" przed przejsciem do nastepnego pytania.
+  if (!soundOn || !('speechSynthesis' in window)) {
+    if (onComplete) setTimeout(onComplete, 1800);
+    return;
+  }
   try { speechSynthesis.cancel(); } catch(e) {}
   let i = 0;
   function next(){
-    if (i >= items.length) return;
+    if (i >= items.length) {
+      if (onComplete) setTimeout(onComplete, 250);
+      return;
+    }
     const it = items[i++];
     if (!it || !it.text) { setTimeout(next, 80); return; }
     try {
@@ -544,7 +551,7 @@ function speakChain(items){
       const v = pickVoice(it.lang);
       if (v) u.voice = v;
       let done = false;
-      const cont = () => { if (done) return; done = true; setTimeout(next, 100); };
+      const cont = () => { if (done) return; done = true; setTimeout(next, 200); };
       u.onend = cont; u.onerror = cont;
       setTimeout(cont, 5500); // safety
       speechSynthesis.speak(u);
@@ -784,22 +791,22 @@ function onAnswerClick(text, chipEl){
       document.getElementById('bubbleWord').innerHTML = '😋 +' + gained + ' pkt';
       playYum();
       sparkle(charEl);
-      // TTS: "Dziekuje" (PL) + odczytanie poprawnej odpowiedzi w jezyku celowym
+      // TTS: "Dziekuje" (PL) + odczytanie poprawnej odpowiedzi w jezyku celowym.
+      // Po zakonczeniu czytania — przechodzimy do nastepnego pytania (lub konca rundy).
       const correctLang = (dir === 'pl_en') ? bookLang : 'pl';
       speakChain([
         { text: 'Dziękuję!', lang: 'pl' },
         { text: text, lang: correctLang }
-      ]);
+      ], () => {
+        if (correctInRound >= TARGET) {
+          showRoundEnd();
+        } else {
+          newQuestion();
+        }
+      });
     }, 600);
 
     refreshHUD();
-
-    // Po 20 trafieniach — koniec rundy
-    if (correctInRound >= TARGET) {
-      setTimeout(showRoundEnd, 1700);
-    } else {
-      setTimeout(newQuestion, 1500);
-    }
   } else {
     // Wrong
     mistakesTotal++;
