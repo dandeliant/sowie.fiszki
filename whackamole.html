@@ -245,6 +245,7 @@ body::before{
   position:relative;
   aspect-ratio:1/1;
   cursor:pointer;
+  overflow:hidden;        /* chowa postac schowana w norce (translate(-50%, 100%) */
 }
 
 /* Pit (czarna dziura) — bottom 65% */
@@ -325,16 +326,17 @@ body::before{
   75%{transform:translateX(4px);}
 }
 
-/* Floating score popup */
+/* Floating score popup — appendowane do .garden, nie .hole (zeby nie bylo obcinane) */
 .popup{
-  position:absolute;left:50%;top:30%;
+  position:absolute;
+  /* left/top ustawiane inline na podstawie offsetow holea */
   transform:translateX(-50%);
   font-family:'Fredoka',sans-serif;font-weight:700;
   font-size:1.4rem;color:var(--neon-yellow);
   text-shadow:0 0 8px rgba(253,224,71,.8),0 2px 4px rgba(0,0,0,.5);
   pointer-events:none;
   animation:popup-float 1.1s ease-out forwards;
-  z-index:10;
+  z-index:30;
 }
 .popup.bad{color:var(--red);text-shadow:0 0 8px rgba(239,68,68,.8),0 2px 4px rgba(0,0,0,.5);}
 @keyframes popup-float{
@@ -343,12 +345,14 @@ body::before{
   100%{transform:translate(-50%, -50px) scale(1);opacity:0;}
 }
 
-/* Particles */
+/* Particles — appendowane do .garden, pozycje inline */
 .particle{
-  position:absolute;left:50%;top:50%;
+  position:absolute;
+  /* left/top ustawiane inline */
   font-size:1rem;
   pointer-events:none;
   animation:particle-fly .8s ease-out forwards;
+  z-index:30;
 }
 @keyframes particle-fly{
   0%{transform:translate(-50%, -50%) scale(.5);opacity:1;}
@@ -830,24 +834,34 @@ function comboMultiplier(){
 }
 
 function spawnPopup(holeEl, value, bad){
+  // Appenduj do .garden (parenta) zamiast do .hole — bo .hole ma overflow:hidden
+  // i obcialby unoszacy sie popup. Pozycja liczona z offset holea wzgledem garden.
+  const garden = holeEl.parentElement || document.getElementById('garden');
   const p = document.createElement('div');
   p.className = 'popup' + (bad ? ' bad' : '');
   p.textContent = value;
-  holeEl.appendChild(p);
+  p.style.left = (holeEl.offsetLeft + holeEl.offsetWidth / 2) + 'px';
+  p.style.top  = (holeEl.offsetTop + holeEl.offsetHeight * 0.30) + 'px';
+  garden.appendChild(p);
   setTimeout(() => { try { p.remove(); } catch(e) {} }, 1100);
 }
 
 function spawnParticles(holeEl){
+  const garden = holeEl.parentElement || document.getElementById('garden');
+  const cx = holeEl.offsetLeft + holeEl.offsetWidth / 2;
+  const cy = holeEl.offsetTop  + holeEl.offsetHeight / 2;
   const emojis = ['⭐','✨','💫','🌟'];
   for (let i = 0; i < 8; i++) {
     const p = document.createElement('div');
     p.className = 'particle';
     p.textContent = emojis[Math.floor(Math.random() * emojis.length)];
+    p.style.left = cx + 'px';
+    p.style.top  = cy + 'px';
     const angle = (i / 8) * Math.PI * 2 + Math.random() * 0.4;
     const dist = 60 + Math.random() * 40;
     p.style.setProperty('--dx', Math.cos(angle) * dist + 'px');
     p.style.setProperty('--dy', Math.sin(angle) * dist + 'px');
-    holeEl.appendChild(p);
+    garden.appendChild(p);
     setTimeout(() => { try { p.remove(); } catch(e) {} }, 850);
   }
 }
