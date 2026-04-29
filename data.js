@@ -3347,6 +3347,37 @@ const BOOKS = {
           ['(Szynka) to (mięso).', '(Ham) is (meat).'],
           ['(Szynka) jest od (zwierząt).', '(Ham) is from (animals).'],
         ]
+      },
+      unit5: {
+        name: 'Unit 5', icon: '🐒', color: '#fd79a8',
+        words: [
+          ['wąż', 'snake'],
+          ['żaba', 'frog'],
+          ['papuga', 'parrot'],
+          ['słoń', 'elephant'],
+          ['małpa', 'monkey'],
+          ['mysz', 'mouse'],
+          ['żyrafa', 'giraffe'],
+          ['krokodyl', 'crocodile'],
+          ['chodzić', 'walk'],
+          ['biegać', 'run'],
+          ['wspinać się', 'climb'],
+          ['skakać', 'jump'],
+          ['pływać', 'swim'],
+          ['latać', 'fly'],
+          ['Spójrz na małpę.', 'Look at the monkey.'],
+          ['Ta małpa potrafi się wspinać.', 'The monkey can climb.'],
+          ['Żyrafa potrafi biegać.', 'A giraffe can run.'],
+          ['Potrafisz skakać? Tak, potrafię.', 'Can you jump? Yes, I can.'],
+          ['Potrafisz latać? Nie, nie potrafię.', "Can you fly? No, I can't."],
+          ['Dziękuję.', 'Thank you.'],
+          ['Czy możesz mi pomóc?', 'Can you help me, please?'],
+          ['Tak, oczywiście, że mogę.', 'Yes, of course I can.'],
+          ['Nie, przepraszam, nie mogę.', "No, sorry, I can't."],
+          ['Żaba potrafi skakać.', 'A frog can jump.'],
+          ['Krokodyl potrafi pływać.', 'A crocodile can swim.'],
+          ['Papuga potrafi latać.', 'A parrot can fly.'],
+        ]
       }
     }
   }
