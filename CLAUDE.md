@@ -11,7 +11,7 @@
 - **Repo:** https://github.com/dandeliant/sowie.fiszki (branch `main`, **prywatne** od 29.04.2026)
 - **Hosting:** Vercel → **https://sowiefiszki.com** (custom domain, od 29.04.2026; wcześniej GitHub Pages)
 - **Backend:** Supabase (auth + Postgres + RLS), projekt `kofenaaeleyhwhbkytcz`
-- **Charakter:** projekt niekomercyjny (osoba fizyczna)
+- **Charakter:** osoba fizyczna prowadząca Platformę; **model freemium** (7-dniowy trial Premium → Free / Premium po opłacie). Wcześniej projekt był non-commercial — od ~2026-04-29 przygotowywany do monetyzacji.
 - **Service Worker:** aktualnie `v50` (stan na 23 kwietnia 2026)
 
 ## 📂 Architektura
