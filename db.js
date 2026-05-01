@@ -1915,6 +1915,30 @@ const DB = (() => {
     }
   }
 
+  // Bulk: przydziel jeden konkretny podręcznik wielu użytkownikom naraz.
+  // Zachowuje dotychczasowe przydziały (UPSERT z ignorowaniem duplikatów
+  // dzięki UNIQUE(user_id, book_id) z migracji #25). Używane przez panel
+  // „🔓 Dostęp" na kafelku podręcznika — admin/nauczyciel przydziela dany
+  // podręcznik całej klasie lub wybranej osobie.
+  // Zwraca: { added: liczba_nowych, total: liczba_userId }
+  async function adminGrantBookAccess(userIds, bookId) {
+    if (!_profile?.isAdmin && !_profile?.isTeacher) throw new Error('Brak uprawnień');
+    if (!bookId) throw new Error('Brak book_id.');
+    const ids = Array.from(new Set((userIds || []).filter(Boolean)));
+    if (!ids.length) return { added: 0, total: 0 };
+    const rows = ids.map(uid => ({ user_id: uid, book_id: bookId }));
+    // upsert — jeśli rekord (user_id, book_id) już jest, nic nie rób.
+    // Zwracamy tylko nowo dodane wiersze (count via .select()), żeby pokazać
+    // realną liczbę zmian. RLS po stronie Supabase odfiltruje cudzych
+    // uczniów dla nauczyciela (Postgres odrzuci insert) — wtedy added < total.
+    const { data, error } = await supabase
+      .from('user_books')
+      .upsert(rows, { onConflict: 'user_id,book_id', ignoreDuplicates: true })
+      .select('user_id');
+    if (error) throw new Error(error.message);
+    return { added: (data || []).length, total: ids.length };
+  }
+
   async function adminCreateUser(username, password) {
     if (!_profile?.isAdmin && !_profile?.isTeacher) throw new Error('Brak uprawnień');
     const { data, error } = await supabase.rpc('admin_create_user', {
@@ -2179,6 +2203,7 @@ const DB = (() => {
     getUserBooks,
     adminLoadUserBooks,
     adminSetUserBooks,
+    adminGrantBookAccess,
     adminCreateUser,
     adminDeleteUser,
     // admin — klasy

@@ -120,6 +120,13 @@ header{width:100%;display:flex;align-items:flex-start;justify-content:space-betw
 .book-bar-bg{width:100%;height:6px;background:var(--surface2);border-radius:6px;overflow:hidden;margin-top:4px;}
 .book-bar-fill{height:100%;border-radius:6px;transition:width .6s ease;}
 .books-actions{display:flex;gap:9px;justify-content:center;width:100%;margin-bottom:8px;}
+/* Mały przycisk „🔓 Dostęp" widoczny tylko dla admina/nauczyciela na każdym
+   kafelku podręcznika. Otwiera modal przydzielenia dostępu klasie/osobie. */
+.book-access-btn{position:absolute;top:7px;right:7px;background:rgba(124,77,255,.18);border:1.5px solid rgba(124,77,255,.45);border-radius:100px;padding:3px 9px;font-size:.62rem;font-weight:800;color:var(--purple);letter-spacing:.02em;cursor:pointer;display:inline-flex;align-items:center;gap:3px;line-height:1.2;z-index:5;transition:all .18s;user-select:none;}
+.book-access-btn:hover{background:var(--purple);color:#fff;border-color:var(--purple);transform:scale(1.04);}
+.book-access-btn:active{transform:scale(.95);}
+.book-access-btn .bab-text{font-size:.58rem;text-transform:uppercase;}
+@media (max-width:420px){.book-access-btn .bab-text{display:none;} .book-access-btn{padding:4px 7px;}}
 
 /* ── UNIT SELECTION ── */
 .unit-title{font-family:'Playfair Display',serif;font-size:1.55rem;color:var(--accent);text-align:center;margin-bottom:5px;}
@@ -1340,6 +1347,48 @@ body.guest-mode .progress-wrap{opacity:.4;}
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button class="btn-modal-cancel" onclick="closeRequestAccessModal()">Anuluj</button>
       <button class="btn-modal-save" id="btnSubmitReqAccess" onclick="submitRequestAccess()">Wyślij prośbę</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Admin/Nauczyciel — Przydziel dostęp do podręcznika -->
+<div class="modal-overlay" id="assignBookAccessModal" style="display:none" onclick="if(event.target===this)closeAssignBookAccessModal()">
+  <div class="modal-box" style="max-width:480px">
+    <div style="font-family:'Playfair Display',serif;font-size:1.15rem;color:var(--accent);margin-bottom:4px">🔓 Przydziel dostęp</div>
+    <div id="abaTitleBook" style="font-size:.78rem;color:var(--text);margin-bottom:12px;font-weight:700;line-height:1.4"></div>
+
+    <!-- Toggle: Klasa / Osoba -->
+    <div style="display:flex;gap:6px;margin-bottom:12px;background:var(--surface2);padding:4px;border-radius:10px">
+      <button id="abaModeClass" type="button" onclick="setAssignAccessMode('class')" style="flex:1;padding:8px 10px;border:none;border-radius:7px;background:var(--purple);color:#fff;font-weight:800;font-size:.78rem;cursor:pointer;font-family:inherit;transition:all .18s">👥 Klasa</button>
+      <button id="abaModePerson" type="button" onclick="setAssignAccessMode('person')" style="flex:1;padding:8px 10px;border:none;border-radius:7px;background:transparent;color:var(--muted);font-weight:800;font-size:.78rem;cursor:pointer;font-family:inherit;transition:all .18s">👤 Osoba</button>
+    </div>
+
+    <!-- Mode: Klasa -->
+    <div id="abaPaneClass">
+      <label style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px">Wybierz klasę *</label>
+      <select id="abaClassSelect" style="width:100%;padding:9px 11px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.85rem;font-weight:600;outline:none;margin-bottom:6px;font-family:inherit">
+        <option value="">— ładowanie… —</option>
+      </select>
+      <div id="abaClassInfo" style="font-size:.68rem;color:var(--muted);font-weight:600;margin-bottom:10px;line-height:1.4"></div>
+    </div>
+
+    <!-- Mode: Osoba -->
+    <div id="abaPanePerson" style="display:none">
+      <label style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px">Wyszukaj po loginie</label>
+      <input type="text" id="abaPersonSearch" placeholder="np. jan_k…" autocomplete="off" oninput="filterAssignAccessUserList()" style="width:100%;padding:9px 11px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.85rem;font-weight:600;outline:none;margin-bottom:8px;font-family:inherit">
+
+      <label style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px">Wybierz osobę *</label>
+      <select id="abaPersonSelect" size="6" style="width:100%;padding:6px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.82rem;font-weight:600;outline:none;margin-bottom:8px;font-family:inherit">
+        <option value="">— ładowanie… —</option>
+      </select>
+      <div id="abaPersonInfo" style="font-size:.68rem;color:var(--muted);font-weight:600;margin-bottom:10px;line-height:1.4"></div>
+    </div>
+
+    <div id="abaMsg" style="font-size:.78rem;font-weight:700;margin-bottom:8px;min-height:18px"></div>
+
+    <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+      <button class="btn-modal-cancel" type="button" onclick="closeAssignBookAccessModal()">Anuluj</button>
+      <button class="btn-modal-save" id="btnSubmitAssignAccess" type="button" onclick="submitAssignBookAccess()">🔓 Przydziel</button>
     </div>
   </div>
 </div>
@@ -4066,6 +4115,7 @@ function refreshBooks() {
     emptyEl.style.display = 'block';
     return;
   }
+  const isStaffNow = isCurrentUserAdmin() || isCurrentUserTeacher();
   visibleBooks.sort((a, b) => a.name.localeCompare(b.name, 'pl')).forEach(book => {
     const prog = DB.getBookProgress(currentUser, book);
     const unitKeys = Object.keys(book.units);
@@ -4077,7 +4127,14 @@ function refreshBooks() {
     d.href = 'app.html#/book/' + book.id;
     d.style.cssText = 'text-decoration:none;color:inherit';
     d.style.borderColor = pct > 0 ? book.color + '55' : '';
+    // Mały przycisk „🔓 Dostęp" w prawym górnym rogu kafelka — tylko dla
+    // admina/nauczyciela. Otwiera modal przydzielenia dostępu do tego
+    // konkretnego podręcznika (klasie lub wybranej osobie).
+    const accessBtn = isStaffNow
+      ? `<span class="book-access-btn" role="button" tabindex="0" title="Przydziel dostęp do tego podręcznika" onclick="event.preventDefault();event.stopPropagation();openAssignBookAccessModal('${escHtml(book.id)}');" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();openAssignBookAccessModal('${escHtml(book.id)}');}">🔓 <span class="bab-text">Dostęp</span></span>`
+      : '';
     d.innerHTML = `
+      ${accessBtn}
       <div class="book-icon">${book.icon}</div>
       <div class="book-name">${book.name}</div>
       <div class="book-desc">${book.description}</div>
@@ -16031,6 +16088,189 @@ if ('serviceWorker' in navigator) {
       if (typeof toast==='function') toast('📩 Prośba wysłana.', 2400);
     } catch(e) {
       console.error('[submitRequestAccess]', e);
+      msgEl.style.color='var(--danger)';
+      msgEl.textContent='❌ ' + e.message;
+    } finally {
+      btn.disabled = false;
+    }
+  };
+
+  // ═══════════════════════════════════════════════
+  //  PRZYDZIEL DOSTĘP DO PODRĘCZNIKA (kafelek 🔓)
+  //  Modal otwierany z kafelka w sBooks. Admin/nauczyciel wybiera klasę
+  //  lub konkretną osobę → bulk upsert do user_books.
+  // ═══════════════════════════════════════════════
+  let _assignAccessState = {
+    bookId: null,
+    mode: 'class',          // 'class' | 'person'
+    classes: null,          // cache: lista klas (loadClasses)
+    persons: null           // cache: lista profili (loadAllProfiles, bez admina/nauczyciela)
+  };
+
+  window.openAssignBookAccessModal = async function(bookId){
+    if (!isCurrentUserAdmin() && !isCurrentUserTeacher()) {
+      if (typeof toast==='function') toast('Dostępne tylko dla admina/nauczyciela.', 2400);
+      return;
+    }
+    const book = (typeof BOOKS !== 'undefined' && BOOKS[bookId]) ? BOOKS[bookId] : null;
+    if (!book) { if (typeof toast==='function') toast('Nie znaleziono podręcznika.', 2400); return; }
+    _assignAccessState.bookId = bookId;
+    _assignAccessState.mode = 'class';
+    _assignAccessState.classes = null;
+    _assignAccessState.persons = null;
+
+    document.getElementById('abaTitleBook').textContent = `${book.icon || '📖'} ${book.name}`;
+    document.getElementById('abaMsg').textContent = '';
+    document.getElementById('abaMsg').style.color = '';
+    document.getElementById('abaPersonSearch').value = '';
+    document.getElementById('abaClassInfo').textContent = '';
+    document.getElementById('abaPersonInfo').textContent = '';
+    setAssignAccessMode('class');
+    document.getElementById('assignBookAccessModal').style.display = 'flex';
+
+    // Asynchroniczne ładowanie obu list (klas + osób) — niezależnie
+    loadAssignAccessClasses().catch(e => {
+      console.error('[loadAssignAccessClasses]', e);
+      const sel = document.getElementById('abaClassSelect');
+      sel.innerHTML = `<option value="">— błąd: ${escHtml(e.message)} —</option>`;
+    });
+    loadAssignAccessPersons().catch(e => {
+      console.error('[loadAssignAccessPersons]', e);
+      const sel = document.getElementById('abaPersonSelect');
+      sel.innerHTML = `<option value="">— błąd: ${escHtml(e.message)} —</option>`;
+    });
+  };
+
+  window.closeAssignBookAccessModal = function(){
+    document.getElementById('assignBookAccessModal').style.display = 'none';
+  };
+
+  window.setAssignAccessMode = function(mode){
+    _assignAccessState.mode = mode;
+    const btnC = document.getElementById('abaModeClass');
+    const btnP = document.getElementById('abaModePerson');
+    const paneC = document.getElementById('abaPaneClass');
+    const paneP = document.getElementById('abaPanePerson');
+    if (mode === 'class') {
+      btnC.style.background = 'var(--purple)'; btnC.style.color = '#fff';
+      btnP.style.background = 'transparent';   btnP.style.color = 'var(--muted)';
+      paneC.style.display = ''; paneP.style.display = 'none';
+    } else {
+      btnP.style.background = 'var(--purple)'; btnP.style.color = '#fff';
+      btnC.style.background = 'transparent';   btnC.style.color = 'var(--muted)';
+      paneP.style.display = ''; paneC.style.display = 'none';
+    }
+  };
+
+  async function loadAssignAccessClasses(){
+    const sel = document.getElementById('abaClassSelect');
+    sel.innerHTML = '<option value="">— ładowanie… —</option>';
+    const classes = await DB.loadClasses();
+    _assignAccessState.classes = classes;
+    if (!classes.length) {
+      sel.innerHTML = '<option value="">— nie masz jeszcze żadnej klasy —</option>';
+      document.getElementById('abaClassInfo').textContent = 'Stwórz klasę w panelu Klasy, żeby móc przydzielać dostęp grupowo.';
+      return;
+    }
+    sel.innerHTML = '<option value="">— wybierz klasę —</option>' +
+      classes.map(c => {
+        const n = (c.class_members || []).length;
+        return `<option value="${escHtml(c.id)}" data-count="${n}">${escHtml(c.name)} · ${n} ucz.</option>`;
+      }).join('');
+    sel.onchange = function(){
+      const opt = sel.options[sel.selectedIndex];
+      const n = opt ? parseInt(opt.dataset.count || '0', 10) : 0;
+      const info = document.getElementById('abaClassInfo');
+      if (!sel.value) { info.textContent = ''; return; }
+      info.textContent = n === 0
+        ? 'W tej klasie nie ma jeszcze uczniów.'
+        : `Dostęp zostanie przydzielony ${n} ${n === 1 ? 'uczniowi' : (n < 5 ? 'uczniom' : 'uczniom')}.`;
+    };
+  }
+
+  async function loadAssignAccessPersons(){
+    const sel = document.getElementById('abaPersonSelect');
+    sel.innerHTML = '<option value="">— ładowanie… —</option>';
+    const all = await DB.loadAllProfiles();
+    // Wykluczamy administratorów i nauczycieli — dostęp przydzielamy
+    // uczniom/dorosłym uczącym się. Opiekunów też nie.
+    const persons = (all || []).filter(p => !p.is_admin && !p.is_teacher && !p.is_parent);
+    _assignAccessState.persons = persons;
+    renderAssignAccessUserList(persons);
+  }
+
+  function renderAssignAccessUserList(list){
+    const sel = document.getElementById('abaPersonSelect');
+    if (!list.length) {
+      sel.innerHTML = '<option value="">— brak użytkowników —</option>';
+      document.getElementById('abaPersonInfo').textContent = '';
+      return;
+    }
+    // Sortuj alfabetycznie po username
+    list = list.slice().sort((a,b) => (a.username || '').localeCompare(b.username || '', 'pl'));
+    sel.innerHTML = list.map(u => {
+      const label = (typeof fmtNameWithLabel === 'function')
+        ? fmtNameWithLabel(u.id, u.username)
+        : (u.username || '—');
+      return `<option value="${escHtml(u.id)}">${escHtml(label)}</option>`;
+    }).join('');
+    document.getElementById('abaPersonInfo').textContent = `${list.length} ${list.length === 1 ? 'osoba' : (list.length < 5 ? 'osoby' : 'osób')} na liście.`;
+  }
+
+  window.filterAssignAccessUserList = function(){
+    const q = (document.getElementById('abaPersonSearch').value || '').trim().toLowerCase();
+    const all = _assignAccessState.persons || [];
+    if (!q) { renderAssignAccessUserList(all); return; }
+    const filtered = all.filter(u => (u.username || '').toLowerCase().includes(q));
+    renderAssignAccessUserList(filtered);
+  };
+
+  window.submitAssignBookAccess = async function(){
+    const msgEl = document.getElementById('abaMsg');
+    const btn = document.getElementById('btnSubmitAssignAccess');
+    const bookId = _assignAccessState.bookId;
+    if (!bookId) { msgEl.style.color='var(--danger)'; msgEl.textContent='⚠️ Brak podręcznika.'; return; }
+
+    let userIds = [];
+    let label = '';
+    if (_assignAccessState.mode === 'class') {
+      const cId = document.getElementById('abaClassSelect').value;
+      if (!cId) { msgEl.style.color='var(--danger)'; msgEl.textContent='⚠️ Wybierz klasę.'; return; }
+      const cls = (_assignAccessState.classes || []).find(c => c.id === cId);
+      if (!cls) { msgEl.style.color='var(--danger)'; msgEl.textContent='⚠️ Klasa nie istnieje.'; return; }
+      userIds = (cls.class_members || []).map(m => m.user_id).filter(Boolean);
+      if (!userIds.length) { msgEl.style.color='var(--danger)'; msgEl.textContent='⚠️ W tej klasie nie ma uczniów.'; return; }
+      label = `klasie „${cls.name}" (${userIds.length} ucz.)`;
+    } else {
+      const uId = document.getElementById('abaPersonSelect').value;
+      if (!uId) { msgEl.style.color='var(--danger)'; msgEl.textContent='⚠️ Wybierz osobę.'; return; }
+      const person = (_assignAccessState.persons || []).find(p => p.id === uId);
+      userIds = [uId];
+      label = person ? `osobie „${person.username}"` : 'wybranej osobie';
+    }
+
+    btn.disabled = true;
+    msgEl.style.color='var(--muted)'; msgEl.textContent='⏳ Przydzielam dostęp…';
+    try {
+      const r = await DB.adminGrantBookAccess(userIds, bookId);
+      const added = r.added || 0;
+      const total = r.total || userIds.length;
+      const skipped = total - added;
+      let txt = `✓ Przydzielono dostęp ${label}.`;
+      if (skipped > 0 && added === 0) {
+        txt = `ℹ️ Wszyscy (${total}) już mieli dostęp — nic do dodania.`;
+        msgEl.style.color = 'var(--accent2)';
+      } else if (skipped > 0) {
+        txt = `✓ Dodano ${added} z ${total} (${skipped} już miało dostęp).`;
+        msgEl.style.color = 'var(--success)';
+      } else {
+        msgEl.style.color = 'var(--success)';
+      }
+      msgEl.textContent = txt;
+      if (typeof toast === 'function') toast('🔓 Dostęp przydzielony.', 2400);
+      setTimeout(()=>closeAssignBookAccessModal(), 1500);
+    } catch(e) {
+      console.error('[submitAssignBookAccess]', e);
       msgEl.style.color='var(--danger)';
       msgEl.textContent='❌ ' + e.message;
     } finally {
