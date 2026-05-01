@@ -1939,6 +1939,39 @@ const DB = (() => {
     return { added: (data || []).length, total: ids.length };
   }
 
+  // Bulk: cofnij dostęp do jednego konkretnego podręcznika dla wielu
+  // użytkowników naraz. DELETE z user_books gdzie user_id IN (...) AND
+  // book_id = .... Zwraca { removed, total }. RLS po stronie Supabase
+  // odfiltruje próby usunięcia cudzych uczniów dla nauczyciela.
+  async function adminRevokeBookAccess(userIds, bookId) {
+    if (!_profile?.isAdmin && !_profile?.isTeacher) throw new Error('Brak uprawnień');
+    if (!bookId) throw new Error('Brak book_id.');
+    const ids = Array.from(new Set((userIds || []).filter(Boolean)));
+    if (!ids.length) return { removed: 0, total: 0 };
+    const { data, error } = await supabase
+      .from('user_books')
+      .delete()
+      .eq('book_id', bookId)
+      .in('user_id', ids)
+      .select('user_id');
+    if (error) throw new Error(error.message);
+    return { removed: (data || []).length, total: ids.length };
+  }
+
+  // Lista user_id, którzy mają dostęp do danego podręcznika. Używane przez
+  // modal „🔓 Dostęp" w trybie Osoba — żeby pokazać kto już ma dostęp
+  // (zaznaczone checkboxy / wskaźnik „już ma").
+  async function adminListUsersWithBook(bookId) {
+    if (!_profile?.isAdmin && !_profile?.isTeacher) return [];
+    if (!bookId) return [];
+    const { data, error } = await supabase
+      .from('user_books')
+      .select('user_id')
+      .eq('book_id', bookId);
+    if (error) throw new Error(error.message);
+    return (data || []).map(r => r.user_id);
+  }
+
   async function adminCreateUser(username, password) {
     if (!_profile?.isAdmin && !_profile?.isTeacher) throw new Error('Brak uprawnień');
     const { data, error } = await supabase.rpc('admin_create_user', {
@@ -2204,6 +2237,8 @@ const DB = (() => {
     adminLoadUserBooks,
     adminSetUserBooks,
     adminGrantBookAccess,
+    adminRevokeBookAccess,
+    adminListUsersWithBook,
     adminCreateUser,
     adminDeleteUser,
     // admin — klasy

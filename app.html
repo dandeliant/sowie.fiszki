@@ -127,6 +127,15 @@ header{width:100%;display:flex;align-items:flex-start;justify-content:space-betw
 .book-access-btn:active{transform:scale(.95);}
 .book-access-btn .bab-text{font-size:.58rem;text-transform:uppercase;}
 @media (max-width:420px){.book-access-btn .bab-text{display:none;} .book-access-btn{padding:4px 7px;}}
+/* Modal „🔓 Dostęp" — lista osób z checkboxami i akcje masowej selekcji */
+.aba-pick-btn{padding:3px 7px;border-radius:6px;border:1.5px solid var(--border);background:var(--surface);color:var(--muted);font-weight:700;font-size:.62rem;cursor:pointer;font-family:inherit;transition:all .16s;letter-spacing:.02em}
+.aba-pick-btn:hover{border-color:var(--purple);color:var(--purple);background:rgba(124,77,255,.07)}
+.aba-pick-btn:active{transform:scale(.96)}
+.aba-row{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;cursor:pointer;transition:background-color .12s;user-select:none}
+.aba-row:hover{background:rgba(124,77,255,.08)}
+.aba-row input[type="checkbox"]{cursor:pointer;width:15px;height:15px;accent-color:var(--purple);flex-shrink:0}
+.aba-row .aba-row-name{flex:1;min-width:0;color:var(--text);word-break:break-word}
+.aba-row .aba-row-tag{font-size:.6rem;font-weight:800;padding:1px 5px;border-radius:4px;background:rgba(0,184,148,.15);color:var(--success);flex-shrink:0;letter-spacing:.02em;text-transform:uppercase}
 
 /* ── UNIT SELECTION ── */
 .unit-title{font-family:'Playfair Display',serif;font-size:1.55rem;color:var(--accent);text-align:center;margin-bottom:5px;}
@@ -1377,10 +1386,17 @@ body.guest-mode .progress-wrap{opacity:.4;}
       <label style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px">Wyszukaj po loginie</label>
       <input type="text" id="abaPersonSearch" placeholder="np. jan_k…" autocomplete="off" oninput="filterAssignAccessUserList()" style="width:100%;padding:9px 11px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.85rem;font-weight:600;outline:none;margin-bottom:8px;font-family:inherit">
 
-      <label style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px">Wybierz osobę *</label>
-      <select id="abaPersonSelect" size="6" style="width:100%;padding:6px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.82rem;font-weight:600;outline:none;margin-bottom:8px;font-family:inherit">
-        <option value="">— ładowanie… —</option>
-      </select>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;gap:6px;flex-wrap:wrap">
+        <label style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Zaznacz osoby *</label>
+        <div style="display:flex;gap:4px;flex-wrap:wrap">
+          <button type="button" class="aba-pick-btn" onclick="abaSelectAll(true)">✓ Wszystkie</button>
+          <button type="button" class="aba-pick-btn" onclick="abaSelectVisible()">✓ Widoczne</button>
+          <button type="button" class="aba-pick-btn" onclick="abaSelectAll(false)">✗ Odznacz</button>
+        </div>
+      </div>
+      <div id="abaPersonList" style="width:100%;max-height:220px;overflow-y:auto;padding:6px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);font-size:.82rem;font-weight:600;outline:none;margin-bottom:8px">
+        <div style="text-align:center;color:var(--muted);padding:12px;font-weight:600">— ładowanie… —</div>
+      </div>
       <div id="abaPersonInfo" style="font-size:.68rem;color:var(--muted);font-weight:600;margin-bottom:10px;line-height:1.4"></div>
     </div>
 
@@ -1388,7 +1404,8 @@ body.guest-mode .progress-wrap{opacity:.4;}
 
     <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
       <button class="btn-modal-cancel" type="button" onclick="closeAssignBookAccessModal()">Anuluj</button>
-      <button class="btn-modal-save" id="btnSubmitAssignAccess" type="button" onclick="submitAssignBookAccess()">🔓 Przydziel</button>
+      <button class="btn-modal-save" id="btnRevokeAssignAccess" type="button" onclick="submitAssignBookAccess('revoke')" style="display:none;background:var(--danger);">🔒 Cofnij dostęp</button>
+      <button class="btn-modal-save" id="btnSubmitAssignAccess" type="button" onclick="submitAssignBookAccess('grant')">🔓 Przydziel</button>
     </div>
   </div>
 </div>
@@ -16104,7 +16121,10 @@ if ('serviceWorker' in navigator) {
     bookId: null,
     mode: 'class',          // 'class' | 'person'
     classes: null,          // cache: lista klas (loadClasses)
-    persons: null           // cache: lista profili (loadAllProfiles, bez admina/nauczyciela)
+    persons: null,          // cache: lista profili (loadAllProfiles, bez admina/nauczyciela/opiekuna)
+    selectedIds: null,      // Set<userId> — zaznaczone w trybie Osoba
+    visibleIds: null,       // Set<userId> — aktualnie widoczne po filtrze
+    accessSet: null         // Set<userId> — kto już ma dostęp do tego podręcznika
   };
 
   window.openAssignBookAccessModal = async function(bookId){
@@ -16118,6 +16138,9 @@ if ('serviceWorker' in navigator) {
     _assignAccessState.mode = 'class';
     _assignAccessState.classes = null;
     _assignAccessState.persons = null;
+    _assignAccessState.selectedIds = new Set();
+    _assignAccessState.visibleIds = new Set();
+    _assignAccessState.accessSet = new Set();
 
     document.getElementById('abaTitleBook').textContent = `${book.icon || '📖'} ${book.name}`;
     document.getElementById('abaMsg').textContent = '';
@@ -16125,19 +16148,29 @@ if ('serviceWorker' in navigator) {
     document.getElementById('abaPersonSearch').value = '';
     document.getElementById('abaClassInfo').textContent = '';
     document.getElementById('abaPersonInfo').textContent = '';
+    document.getElementById('abaPersonList').innerHTML = '<div style="text-align:center;color:var(--muted);padding:12px;font-weight:600">— ładowanie… —</div>';
     setAssignAccessMode('class');
     document.getElementById('assignBookAccessModal').style.display = 'flex';
 
-    // Asynchroniczne ładowanie obu list (klas + osób) — niezależnie
+    // Asynchroniczne ładowanie list — niezależnie
     loadAssignAccessClasses().catch(e => {
       console.error('[loadAssignAccessClasses]', e);
       const sel = document.getElementById('abaClassSelect');
       sel.innerHTML = `<option value="">— błąd: ${escHtml(e.message)} —</option>`;
     });
-    loadAssignAccessPersons().catch(e => {
+    // Persons + lista użytkowników z dostępem (równolegle, scal po Promise.all)
+    Promise.all([
+      DB.loadAllProfiles(),
+      DB.adminListUsersWithBook(bookId)
+    ]).then(([all, withBook]) => {
+      const persons = (all || []).filter(p => !p.is_admin && !p.is_teacher && !p.is_parent);
+      _assignAccessState.persons = persons;
+      _assignAccessState.accessSet = new Set(withBook || []);
+      renderAssignAccessUserList(persons);
+    }).catch(e => {
       console.error('[loadAssignAccessPersons]', e);
-      const sel = document.getElementById('abaPersonSelect');
-      sel.innerHTML = `<option value="">— błąd: ${escHtml(e.message)} —</option>`;
+      const list = document.getElementById('abaPersonList');
+      list.innerHTML = `<div style="color:var(--danger);font-weight:600;padding:10px">❌ ${escHtml(e.message)}</div>`;
     });
   };
 
@@ -16151,14 +16184,18 @@ if ('serviceWorker' in navigator) {
     const btnP = document.getElementById('abaModePerson');
     const paneC = document.getElementById('abaPaneClass');
     const paneP = document.getElementById('abaPanePerson');
+    const btnRevoke = document.getElementById('btnRevokeAssignAccess');
     if (mode === 'class') {
       btnC.style.background = 'var(--purple)'; btnC.style.color = '#fff';
       btnP.style.background = 'transparent';   btnP.style.color = 'var(--muted)';
       paneC.style.display = ''; paneP.style.display = 'none';
+      // W trybie Klasy nie ma cofania dostępu (cofanie tylko per osoba)
+      if (btnRevoke) btnRevoke.style.display = 'none';
     } else {
       btnP.style.background = 'var(--purple)'; btnP.style.color = '#fff';
       btnC.style.background = 'transparent';   btnC.style.color = 'var(--muted)';
       paneP.style.display = ''; paneC.style.display = 'none';
+      if (btnRevoke) btnRevoke.style.display = '';
     }
   };
 
@@ -16188,52 +16225,98 @@ if ('serviceWorker' in navigator) {
     };
   }
 
-  async function loadAssignAccessPersons(){
-    const sel = document.getElementById('abaPersonSelect');
-    sel.innerHTML = '<option value="">— ładowanie… —</option>';
-    const all = await DB.loadAllProfiles();
-    // Wykluczamy administratorów i nauczycieli — dostęp przydzielamy
-    // uczniom/dorosłym uczącym się. Opiekunów też nie.
-    const persons = (all || []).filter(p => !p.is_admin && !p.is_teacher && !p.is_parent);
-    _assignAccessState.persons = persons;
-    renderAssignAccessUserList(persons);
-  }
-
   function renderAssignAccessUserList(list){
-    const sel = document.getElementById('abaPersonSelect');
+    const wrap = document.getElementById('abaPersonList');
     if (!list.length) {
-      sel.innerHTML = '<option value="">— brak użytkowników —</option>';
-      document.getElementById('abaPersonInfo').textContent = '';
+      wrap.innerHTML = '<div style="text-align:center;color:var(--muted);padding:12px;font-weight:600">— brak użytkowników —</div>';
+      _assignAccessState.visibleIds = new Set();
+      updateAssignAccessPersonInfo();
       return;
     }
-    // Sortuj alfabetycznie po username
-    list = list.slice().sort((a,b) => (a.username || '').localeCompare(b.username || '', 'pl'));
-    sel.innerHTML = list.map(u => {
-      const label = (typeof fmtNameWithLabel === 'function')
-        ? fmtNameWithLabel(u.id, u.username)
-        : (u.username || '—');
-      return `<option value="${escHtml(u.id)}">${escHtml(label)}</option>`;
+    // Sortuj alfabetycznie po username (osoby z już istniejącym dostępem na górę)
+    const accessSet = _assignAccessState.accessSet || new Set();
+    const selSet    = _assignAccessState.selectedIds || new Set();
+    list = list.slice().sort((a, b) => {
+      const aHas = accessSet.has(a.id) ? 0 : 1;
+      const bHas = accessSet.has(b.id) ? 0 : 1;
+      if (aHas !== bHas) return aHas - bHas;
+      return (a.username || '').localeCompare(b.username || '', 'pl');
+    });
+    const visibleIds = new Set();
+    wrap.innerHTML = list.map(u => {
+      visibleIds.add(u.id);
+      const label = (typeof fmtNameWithLabel === 'function') ? fmtNameWithLabel(u.id, u.username) : (u.username || '—');
+      const has   = accessSet.has(u.id);
+      const sel   = selSet.has(u.id);
+      const tag   = has ? '<span class="aba-row-tag">ma dostęp</span>' : '';
+      return `<label class="aba-row" data-uid="${escHtml(u.id)}">
+        <input type="checkbox" ${sel ? 'checked' : ''} onchange="abaToggleUser('${escHtml(u.id)}', this.checked)">
+        <span class="aba-row-name">${escHtml(label)}</span>
+        ${tag}
+      </label>`;
     }).join('');
-    document.getElementById('abaPersonInfo').textContent = `${list.length} ${list.length === 1 ? 'osoba' : (list.length < 5 ? 'osoby' : 'osób')} na liście.`;
+    _assignAccessState.visibleIds = visibleIds;
+    updateAssignAccessPersonInfo();
+  }
+
+  function updateAssignAccessPersonInfo(){
+    const total = (_assignAccessState.persons || []).length;
+    const visible = (_assignAccessState.visibleIds || new Set()).size;
+    const selected = (_assignAccessState.selectedIds || new Set()).size;
+    const txt = `${visible} z ${total} widocznych · ${selected} zaznaczonych`;
+    document.getElementById('abaPersonInfo').textContent = txt;
+  }
+
+  window.abaToggleUser = function(uid, checked){
+    const set = _assignAccessState.selectedIds || (_assignAccessState.selectedIds = new Set());
+    if (checked) set.add(uid); else set.delete(uid);
+    updateAssignAccessPersonInfo();
+  };
+
+  // Zaznacz/odznacz wszystkie (cała baza, nie tylko widoczne po filtrze)
+  window.abaSelectAll = function(check){
+    const set = _assignAccessState.selectedIds || (_assignAccessState.selectedIds = new Set());
+    const all = _assignAccessState.persons || [];
+    if (check) all.forEach(p => set.add(p.id));
+    else set.clear();
+    // Re-render listy żeby odświeżyć checkboxy
+    renderAssignAccessUserListByFilter();
+  };
+
+  // Zaznacz tylko aktualnie widoczne (po filtrze tekstu)
+  window.abaSelectVisible = function(){
+    const set = _assignAccessState.selectedIds || (_assignAccessState.selectedIds = new Set());
+    const vis = _assignAccessState.visibleIds || new Set();
+    vis.forEach(id => set.add(id));
+    renderAssignAccessUserListByFilter();
+  };
+
+  // Re-render listy z bieżącym filtrem
+  function renderAssignAccessUserListByFilter(){
+    const q = (document.getElementById('abaPersonSearch').value || '').trim().toLowerCase();
+    const all = _assignAccessState.persons || [];
+    const filtered = q ? all.filter(u => (u.username || '').toLowerCase().includes(q)) : all;
+    renderAssignAccessUserList(filtered);
   }
 
   window.filterAssignAccessUserList = function(){
-    const q = (document.getElementById('abaPersonSearch').value || '').trim().toLowerCase();
-    const all = _assignAccessState.persons || [];
-    if (!q) { renderAssignAccessUserList(all); return; }
-    const filtered = all.filter(u => (u.username || '').toLowerCase().includes(q));
-    renderAssignAccessUserList(filtered);
+    renderAssignAccessUserListByFilter();
   };
 
-  window.submitAssignBookAccess = async function(){
+  // action: 'grant' (przydziel) | 'revoke' (cofnij — tylko tryb Osoba)
+  window.submitAssignBookAccess = async function(action){
+    action = action || 'grant';
     const msgEl = document.getElementById('abaMsg');
-    const btn = document.getElementById('btnSubmitAssignAccess');
+    const btnGrant  = document.getElementById('btnSubmitAssignAccess');
+    const btnRevoke = document.getElementById('btnRevokeAssignAccess');
     const bookId = _assignAccessState.bookId;
     if (!bookId) { msgEl.style.color='var(--danger)'; msgEl.textContent='⚠️ Brak podręcznika.'; return; }
 
     let userIds = [];
     let label = '';
     if (_assignAccessState.mode === 'class') {
+      // Tryb klasy — tylko grant (nie ma revoke)
+      if (action !== 'grant') { msgEl.style.color='var(--danger)'; msgEl.textContent='⚠️ Cofanie dostępu działa tylko w trybie Osoba.'; return; }
       const cId = document.getElementById('abaClassSelect').value;
       if (!cId) { msgEl.style.color='var(--danger)'; msgEl.textContent='⚠️ Wybierz klasę.'; return; }
       const cls = (_assignAccessState.classes || []).find(c => c.id === cId);
@@ -16242,39 +16325,68 @@ if ('serviceWorker' in navigator) {
       if (!userIds.length) { msgEl.style.color='var(--danger)'; msgEl.textContent='⚠️ W tej klasie nie ma uczniów.'; return; }
       label = `klasie „${cls.name}" (${userIds.length} ucz.)`;
     } else {
-      const uId = document.getElementById('abaPersonSelect').value;
-      if (!uId) { msgEl.style.color='var(--danger)'; msgEl.textContent='⚠️ Wybierz osobę.'; return; }
-      const person = (_assignAccessState.persons || []).find(p => p.id === uId);
-      userIds = [uId];
-      label = person ? `osobie „${person.username}"` : 'wybranej osobie';
+      // Tryb Osoby — userIds z zaznaczonych checkboxów
+      userIds = Array.from(_assignAccessState.selectedIds || []);
+      if (!userIds.length) { msgEl.style.color='var(--danger)'; msgEl.textContent='⚠️ Zaznacz przynajmniej jedną osobę.'; return; }
+      label = userIds.length === 1
+        ? '1 osobie'
+        : `${userIds.length} osobom`;
     }
 
-    btn.disabled = true;
-    msgEl.style.color='var(--muted)'; msgEl.textContent='⏳ Przydzielam dostęp…';
+    btnGrant.disabled = true;
+    if (btnRevoke) btnRevoke.disabled = true;
+    msgEl.style.color = 'var(--muted)';
+    msgEl.textContent = action === 'grant' ? '⏳ Przydzielam dostęp…' : '⏳ Cofam dostęp…';
     try {
-      const r = await DB.adminGrantBookAccess(userIds, bookId);
-      const added = r.added || 0;
-      const total = r.total || userIds.length;
-      const skipped = total - added;
-      let txt = `✓ Przydzielono dostęp ${label}.`;
-      if (skipped > 0 && added === 0) {
-        txt = `ℹ️ Wszyscy (${total}) już mieli dostęp — nic do dodania.`;
-        msgEl.style.color = 'var(--accent2)';
-      } else if (skipped > 0) {
-        txt = `✓ Dodano ${added} z ${total} (${skipped} już miało dostęp).`;
-        msgEl.style.color = 'var(--success)';
+      if (action === 'grant') {
+        const r = await DB.adminGrantBookAccess(userIds, bookId);
+        const added = r.added || 0;
+        const total = r.total || userIds.length;
+        const skipped = total - added;
+        let txt = `✓ Przydzielono dostęp ${label}.`;
+        if (skipped > 0 && added === 0) {
+          txt = `ℹ️ Wszyscy (${total}) już mieli dostęp — nic do dodania.`;
+          msgEl.style.color = 'var(--accent2)';
+        } else if (skipped > 0) {
+          txt = `✓ Dodano ${added} z ${total} (${skipped} już miało dostęp).`;
+          msgEl.style.color = 'var(--success)';
+        } else {
+          msgEl.style.color = 'var(--success)';
+        }
+        msgEl.textContent = txt;
+        if (typeof toast === 'function') toast('🔓 Dostęp przydzielony.', 2400);
+        // Aktualizuj cache: dodaj nowo dodanych do accessSet
+        userIds.forEach(uid => _assignAccessState.accessSet.add(uid));
       } else {
-        msgEl.style.color = 'var(--success)';
+        const r = await DB.adminRevokeBookAccess(userIds, bookId);
+        const removed = r.removed || 0;
+        const total = r.total || userIds.length;
+        const skipped = total - removed;
+        let txt = `✓ Cofnięto dostęp ${label}.`;
+        if (skipped > 0 && removed === 0) {
+          txt = `ℹ️ Nikt z zaznaczonych (${total}) nie miał dostępu — nic do cofnięcia.`;
+          msgEl.style.color = 'var(--accent2)';
+        } else if (skipped > 0) {
+          txt = `✓ Cofnięto ${removed} z ${total} (${skipped} nie miało dostępu).`;
+          msgEl.style.color = 'var(--success)';
+        } else {
+          msgEl.style.color = 'var(--success)';
+        }
+        msgEl.textContent = txt;
+        if (typeof toast === 'function') toast('🔒 Dostęp cofnięty.', 2400);
+        // Aktualizuj cache: usuń z accessSet
+        userIds.forEach(uid => _assignAccessState.accessSet.delete(uid));
       }
-      msgEl.textContent = txt;
-      if (typeof toast === 'function') toast('🔓 Dostęp przydzielony.', 2400);
+      // Re-render listy żeby odświeżyć tagi „ma dostęp"
+      renderAssignAccessUserListByFilter();
       setTimeout(()=>closeAssignBookAccessModal(), 1500);
     } catch(e) {
       console.error('[submitAssignBookAccess]', e);
       msgEl.style.color='var(--danger)';
       msgEl.textContent='❌ ' + e.message;
     } finally {
-      btn.disabled = false;
+      btnGrant.disabled = false;
+      if (btnRevoke) btnRevoke.disabled = false;
     }
   };
 
