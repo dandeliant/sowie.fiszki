@@ -1203,19 +1203,24 @@ body.guest-mode .progress-wrap{opacity:.4;}
   <div class="unit-subtitle">Wybierz poziom nauczania</div>
   <div class="book-grid" id="schoolGrid">
     <a class="book-card" href="app.html#/lang/en/primary" style="text-decoration:none;color:inherit">
-      <div class="book-icon">🏫</div>
+      <div class="book-icon">🎒</div>
       <div class="book-name">Szkoła Podstawowa</div>
       <div class="book-desc">Klasy 1–8</div>
     </a>
     <a class="book-card" href="app.html#/lang/en/secondary" style="text-decoration:none;color:inherit">
       <div class="book-icon">🎓</div>
       <div class="book-name">Szkoła Średnia</div>
-      <div class="book-desc">Poziom A2+ / B1</div>
+      <div class="book-desc">Liceum i technikum · matura podstawowa i rozszerzona</div>
     </a>
-    <a class="book-card" href="app.html#/lang/en/other" style="grid-column:1/-1;text-decoration:none;color:inherit">
-      <div class="book-icon">📖</div>
-      <div class="book-name">Inne</div>
-      <div class="book-desc">Czasowniki nieregularne i dodatki</div>
+    <a class="book-card" href="app.html#/lang/en/courses" style="text-decoration:none;color:inherit">
+      <div class="book-icon">💼</div>
+      <div class="book-name">Kursy tematyczne</div>
+      <div class="book-desc">Praktyczny angielski: praca, podróże, naturalne zwroty</div>
+    </a>
+    <a class="book-card" href="app.html#/lang/en/grammar" style="text-decoration:none;color:inherit">
+      <div class="book-icon">🔤</div>
+      <div class="book-name">Gramatyka i dodatki</div>
+      <div class="book-desc">Powtórki gramatyczne i materiały pomocnicze</div>
     </a>
   </div>
   <div style="margin-top:12px"><button class="btn-sm" onclick="showScreen('sLang')">← Wróć</button></div>
@@ -1288,7 +1293,7 @@ body.guest-mode .progress-wrap{opacity:.4;}
   <div class="unit-subtitle" id="booksScreenSub">Z którego podręcznika chcesz ćwiczyć?</div>
   <div class="book-grid" id="bookGrid"></div>
   <div id="booksEmptyMsg" style="display:none;text-align:center;color:var(--muted);font-size:.85rem;font-weight:600;padding:28px 14px">
-    Brak podręczników w tej klasie.
+    Brak podręczników w tej kategorii.
   </div>
   <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;justify-content:center">
     <button class="btn-sm" id="booksBackBtn" onclick="navBackFromBooks()">← Wróć</button>
@@ -1313,7 +1318,8 @@ body.guest-mode .progress-wrap{opacity:.4;}
         <option value="">— szkoła —</option>
         <option value="primary">Szkoła Podstawowa</option>
         <option value="secondary">Szkoła Średnia</option>
-        <option value="other">Inne</option>
+        <option value="courses">Kursy tematyczne</option>
+        <option value="grammar">Gramatyka i dodatki</option>
       </select>
       <select id="reqAccessGrade" onchange="reqAccessUpdateBookList()" style="flex:1;padding:9px 11px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.82rem;font-weight:600;outline:none;font-family:inherit">
         <option value="">— klasa —</option>
@@ -3215,7 +3221,8 @@ szkoła	school"></textarea>
       <option value="">— wybierz —</option>
       <option value="primary">Szkoła Podstawowa</option>
       <option value="secondary">Szkoła Średnia</option>
-      <option value="other">Inne</option>
+      <option value="courses">Kursy tematyczne</option>
+      <option value="grammar">Gramatyka i dodatki</option>
     </select>
 
     <label style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px">Klasa</label>
@@ -3765,8 +3772,13 @@ function showScreen(id) {
 //  NAVIGATION STATE (język → szkoła → klasa → książki)
 // ══════════════════════════════════════════════
 let _navLanguage = null;    // 'en' | 'fr' | null
-let _navSchoolType = null;  // 'primary' | 'secondary' | 'other' | null
+let _navSchoolType = null;  // 'primary' | 'secondary' | 'courses' | 'grammar' | 'other' (legacy) | null
 let _navGrade = null;       // 1..8 | null
+
+// Typy szkoły, które nie mają podziału na klasy — przeskakują ekran sClass
+// i idą prosto do listy podręczników. 'other' zostaje dla wstecznej
+// kompatybilności (zestawy nauczycielskie z DB mogą mieć tę wartość).
+const _NO_GRADE_SCHOOL_TYPES = ['courses', 'grammar', 'other'];
 
 function selectLanguage(lang) {
   _navLanguage = lang;
@@ -3783,8 +3795,8 @@ function selectLanguage(lang) {
 function selectSchoolType(type) {
   _navSchoolType = type;
   _navGrade = null;
-  if (type === 'other') {
-    // „Inne" nie ma podziału na klasy — od razu książki
+  if (_NO_GRADE_SCHOOL_TYPES.includes(type)) {
+    // Kursy tematyczne / Gramatyka / (legacy) Inne — bez klas, od razu podręczniki
     showScreen('sBooks');
   } else {
     buildClassGrid(type);
@@ -3819,7 +3831,7 @@ function navBackFromBooks() {
   // Powrót z sBooks na odpowiedni poziom wyżej w hierarchii
   if (_navLanguage === 'fr') {
     showScreen('sLang');
-  } else if (_navSchoolType === 'other') {
+  } else if (_NO_GRADE_SCHOOL_TYPES.includes(_navSchoolType)) {
     showScreen('sSchool');
   } else {
     showScreen('sClass');
@@ -3998,7 +4010,14 @@ function refreshBooks() {
     if (_navLanguage === 'fr') {
       titleEl.textContent = 'Francuski 🇫🇷';
       subEl.textContent = 'Wybierz podręcznik';
+    } else if (_navSchoolType === 'courses') {
+      titleEl.textContent = 'Kursy tematyczne 💼';
+      subEl.textContent = 'Praktyczny angielski: praca, podróże, naturalne zwroty';
+    } else if (_navSchoolType === 'grammar') {
+      titleEl.textContent = 'Gramatyka i dodatki 🔤';
+      subEl.textContent = 'Powtórki gramatyczne i materiały pomocnicze';
     } else if (_navSchoolType === 'other') {
+      // legacy — zostawione dla starych zestawów / linków
       titleEl.textContent = 'Inne 📖';
       subEl.textContent = 'Dodatkowe materiały';
     } else if (_navSchoolType === 'primary') {
@@ -4039,7 +4058,7 @@ function refreshBooks() {
       if (_navLanguage && b.language !== _navLanguage) return false;
       if (_navLanguage === 'fr') return true; // francuski — bez dalszego filtra
       if (_navSchoolType && b.schoolType !== _navSchoolType) return false;
-      if (_navSchoolType === 'other') return true; // „Inne" — bez filtra klasy
+      if (_NO_GRADE_SCHOOL_TYPES.includes(_navSchoolType)) return true; // bez filtra klasy
       if (_navGrade != null && b.grade !== _navGrade) return false;
       return true;
     });
@@ -14014,7 +14033,8 @@ if ('serviceWorker' in navigator) {
       if (schoolType && typeof selectSchoolType === 'function' && lang !== 'fr') {
         selectSchoolType(schoolType);
         const grade = parseInt(segs[3], 10);
-        if (!isNaN(grade) && schoolType !== 'other' && typeof selectGrade === 'function') {
+        const noGrade = ['courses','grammar','other'].includes(schoolType);
+        if (!isNaN(grade) && !noGrade && typeof selectGrade === 'function') {
           selectGrade(grade);
         }
       }
@@ -15653,6 +15673,8 @@ if ('serviceWorker' in navigator) {
         const meta = [];
         if (s.school_type === 'primary')   meta.push('Podstawówka');
         if (s.school_type === 'secondary') meta.push('Średnia');
+        if (s.school_type === 'courses')   meta.push('Kursy tematyczne');
+        if (s.school_type === 'grammar')   meta.push('Gramatyka');
         if (s.school_type === 'other')     meta.push('Inne');
         if (s.grade) meta.push('Klasa ' + s.grade);
         if (s.topic) meta.push(s.topic);
@@ -15707,6 +15729,8 @@ if ('serviceWorker' in navigator) {
           const meta = [];
           if (s.school_type === 'primary')   meta.push('Podstawówka');
           if (s.school_type === 'secondary') meta.push('Średnia');
+          if (s.school_type === 'courses')   meta.push('Kursy tematyczne');
+          if (s.school_type === 'grammar')   meta.push('Gramatyka');
           if (s.school_type === 'other')     meta.push('Inne');
           if (s.grade) meta.push('Klasa ' + s.grade);
           if (s.topic) meta.push(s.topic);
@@ -15744,6 +15768,8 @@ if ('serviceWorker' in navigator) {
       const meta = [];
       if (s.school_type === 'primary')   meta.push('Podstawówka');
       if (s.school_type === 'secondary') meta.push('Średnia');
+      if (s.school_type === 'courses')   meta.push('Kursy tematyczne');
+      if (s.school_type === 'grammar')   meta.push('Gramatyka');
       if (s.school_type === 'other')     meta.push('Inne');
       if (s.grade) meta.push('Klasa ' + s.grade);
       if (s.topic) meta.push('Temat: ' + s.topic);
@@ -15987,7 +16013,7 @@ if ('serviceWorker' in navigator) {
       msgEl.style.color='var(--danger)'; msgEl.textContent='⚠️ Podaj imię i nazwisko.'; return;
     }
     if (!sc) { msgEl.style.color='var(--danger)'; msgEl.textContent='⚠️ Wybierz szkołę.'; return; }
-    if (sc !== 'other' && !grRaw) { msgEl.style.color='var(--danger)'; msgEl.textContent='⚠️ Wybierz klasę.'; return; }
+    if (!['other','courses','grammar'].includes(sc) && !grRaw) { msgEl.style.color='var(--danger)'; msgEl.textContent='⚠️ Wybierz klasę.'; return; }
     if (!book || book.length < 2) { msgEl.style.color='var(--danger)'; msgEl.textContent='⚠️ Wpisz nazwę podręcznika.'; return; }
     btn.disabled = true;
     msgEl.style.color='var(--muted)'; msgEl.textContent='⏳ Wysyłam prośbę…';
