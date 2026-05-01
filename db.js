@@ -170,6 +170,14 @@ const DB = (() => {
       _adminRequests = reqData || [];
     }
 
+    // Załaduj globalne ustawienia widoczności podręczników (book_access_overrides).
+    // Każdy user (anon, uczeń, nauczyciel, admin) potrzebuje znać te ustawienia,
+    // żeby filtrować listę podręczników. Graceful degradation gdy migracja
+    // #27 jeszcze nie została uruchomiona — pusta mapa, używamy defaultów z data.js.
+    try { await loadBookAccessOverrides(); } catch(e) {
+      console.warn('[loadProfile] book_access_overrides niedostępne:', e.message);
+    }
+
     return _profile;
   }
 
@@ -1972,6 +1980,74 @@ const DB = (() => {
     return (data || []).map(r => r.user_id);
   }
 
+  // ── BOOK ACCESS OVERRIDES (migracja #27) ─────────────────────
+  // Cache odczytany raz przy starcie sesji + odświeżany po zmianie.
+  // Mapa: book_id → { visible_to_guest, visible_to_student, ..., tier }
+  let _bookAccessOverrides = {};
+
+  function getBookAccessOverrides() { return _bookAccessOverrides || {}; }
+
+  async function loadBookAccessOverrides() {
+    try {
+      const { data, error } = await supabase
+        .from('book_access_overrides')
+        .select('book_id, visible_to_guest, visible_to_student, visible_to_teacher, visible_to_parent, tier');
+      if (error) {
+        // Tabela może jeszcze nie istnieć (przed uruchomieniem migracji #27)
+        // — w takim przypadku po prostu nie ma override'ów, używamy defaultów.
+        console.warn('[loadBookAccessOverrides] niedostępna:', error.message);
+        _bookAccessOverrides = {};
+        return _bookAccessOverrides;
+      }
+      const map = {};
+      (data || []).forEach(r => { map[r.book_id] = r; });
+      _bookAccessOverrides = map;
+      return map;
+    } catch (e) {
+      console.warn('[loadBookAccessOverrides] error:', e.message);
+      _bookAccessOverrides = {};
+      return _bookAccessOverrides;
+    }
+  }
+
+  // Zapisz/zaktualizuj override dla podręcznika. Tylko admin (RLS i tak
+  // odrzuci, ale sprawdzamy klienckim guardem dla lepszego komunikatu).
+  async function adminSaveBookAccessOverride(bookId, settings) {
+    if (!_profile?.isAdmin) throw new Error('Tylko administrator może zmieniać widoczność.');
+    if (!bookId) throw new Error('Brak book_id.');
+    const tier = (settings.tier === 'premium') ? 'premium' : 'free';
+    const payload = {
+      book_id: bookId,
+      visible_to_guest:   !!settings.visible_to_guest,
+      visible_to_student: !!settings.visible_to_student,
+      visible_to_teacher: !!settings.visible_to_teacher,
+      visible_to_parent:  !!settings.visible_to_parent,
+      tier,
+      updated_by: _userId,
+      updated_at: new Date().toISOString()
+    };
+    const { data, error } = await supabase
+      .from('book_access_overrides')
+      .upsert(payload, { onConflict: 'book_id' })
+      .select()
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (data) _bookAccessOverrides[bookId] = data;
+    return data;
+  }
+
+  // Usuń override (powrót do defaultu z data.js).
+  async function adminClearBookAccessOverride(bookId) {
+    if (!_profile?.isAdmin) throw new Error('Tylko administrator może zmieniać widoczność.');
+    if (!bookId) throw new Error('Brak book_id.');
+    const { error } = await supabase
+      .from('book_access_overrides')
+      .delete()
+      .eq('book_id', bookId);
+    if (error) throw new Error(error.message);
+    delete _bookAccessOverrides[bookId];
+  }
+
   async function adminCreateUser(username, password) {
     if (!_profile?.isAdmin && !_profile?.isTeacher) throw new Error('Brak uprawnień');
     const { data, error } = await supabase.rpc('admin_create_user', {
@@ -2239,6 +2315,10 @@ const DB = (() => {
     adminGrantBookAccess,
     adminRevokeBookAccess,
     adminListUsersWithBook,
+    getBookAccessOverrides,
+    loadBookAccessOverrides,
+    adminSaveBookAccessOverride,
+    adminClearBookAccessOverride,
     adminCreateUser,
     adminDeleteUser,
     // admin — klasy
