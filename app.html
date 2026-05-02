@@ -134,6 +134,10 @@ header{width:100%;display:flex;align-items:flex-start;justify-content:space-betw
 .book-edit-btn{position:absolute;top:7px;left:7px;background:rgba(255,209,102,.18);border:1.5px solid rgba(255,209,102,.45);border-radius:100px;width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;font-size:.78rem;cursor:pointer;z-index:5;transition:all .18s;line-height:1;user-select:none}
 .book-edit-btn:hover{background:var(--accent);border-color:var(--accent);transform:scale(1.08);}
 .book-edit-btn:active{transform:scale(.95);}
+/* Informacja „Na podstawie podręcznika [X]" — drobna, klikalna,
+   pokazywana tylko dla podręczników z PUBLISHERS map (Macmillan/Pearson/OUP/Egmont). */
+.book-publisher-info{font-size:.6rem;color:var(--muted);font-weight:600;margin-top:1px;padding:3px 8px;border-radius:100px;background:rgba(255,255,255,.04);border:1px dashed rgba(255,255,255,.1);cursor:pointer;transition:all .18s;line-height:1.3;display:inline-block;max-width:100%;}
+.book-publisher-info:hover{background:rgba(162,155,254,.12);border-color:rgba(162,155,254,.4);color:var(--purple);}
 /* Modal „🔓 Dostęp" — lista osób z checkboxami i akcje masowej selekcji */
 .aba-pick-btn{padding:3px 7px;border-radius:6px;border:1.5px solid var(--border);background:var(--surface);color:var(--muted);font-weight:700;font-size:.62rem;cursor:pointer;font-family:inherit;transition:all .16s;letter-spacing:.02em}
 .aba-pick-btn:hover{border-color:var(--purple);color:var(--purple);background:rgba(124,77,255,.07)}
@@ -1403,6 +1407,22 @@ body.guest-mode .progress-wrap{opacity:.4;}
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button class="btn-modal-cancel" onclick="closeRequestAccessModal()">Anuluj</button>
       <button class="btn-modal-save" id="btnSubmitReqAccess" onclick="submitRequestAccess()">Wyślij prośbę</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Info o pochodzeniu materiału (disclaimer + link do wydawnictwa) -->
+<div class="modal-overlay" id="publisherInfoModal" style="display:none" onclick="if(event.target===this)closePublisherInfoModal()">
+  <div class="modal-box" style="max-width:480px">
+    <div style="font-family:'Playfair Display',serif;font-size:1.15rem;color:var(--accent);margin-bottom:8px">📖 O materiale</div>
+    <div id="publisherInfoBookName" style="font-size:.85rem;font-weight:800;color:var(--text);margin-bottom:12px"></div>
+    <p id="publisherInfoText" style="font-size:.84rem;line-height:1.6;color:var(--text);font-weight:500;margin-bottom:14px;opacity:.92"></p>
+    <div id="publisherInfoLink" style="margin-bottom:14px"></div>
+    <div style="font-size:.7rem;color:var(--muted);font-weight:500;font-style:italic;line-height:1.5;border-top:1px dashed var(--border);padding-top:10px">
+      W razie pytań formalnych prosimy o kontakt: <a href="mailto:sowie.fiszki@gmail.com" style="color:var(--accent);font-weight:700">sowie.fiszki@gmail.com</a>
+    </div>
+    <div class="modal-btns" style="margin-top:14px">
+      <button class="btn-modal-save" onclick="closePublisherInfoModal()">OK, rozumiem</button>
     </div>
   </div>
 </div>
@@ -3992,6 +4012,68 @@ function showScreen(id) {
 }
 
 // ══════════════════════════════════════════════
+//  WYDAWNICTWA — mapa book.id → {name, url} dla disclaimerów
+//  „Na podstawie podręcznika [X] wydawnictwa [Y]". Pokazywane na kafelku
+//  i w modalu Info. Sowie Fiszki nie są oficjalnie powiązane z tymi
+//  wydawnictwami — listy słówek to materiały pomocnicze do nauki dla
+//  uczniów korzystających z odpowiedniego podręcznika.
+// ══════════════════════════════════════════════
+const PUBLISHERS = {
+  // Macmillan Polska
+  brainy6:    { name: 'Macmillan Polska', url: 'https://www.macmillan.pl' },
+  brainy7:    { name: 'Macmillan Polska', url: 'https://www.macmillan.pl' },
+  tiger1:     { name: 'Macmillan Polska', url: 'https://www.macmillan.pl' },
+  tiger2:     { name: 'Macmillan Polska', url: 'https://www.macmillan.pl' },
+  tiger3:     { name: 'Macmillan Polska', url: 'https://www.macmillan.pl' },
+  kidscan1:   { name: 'Macmillan Polska', url: 'https://www.macmillan.pl' },
+  newpassword:{ name: 'Macmillan Polska', url: 'https://www.macmillan.pl' },
+  // Pearson
+  together4:  { name: 'Pearson',          url: 'https://www.pearson.pl' },
+  together5:  { name: 'Pearson',          url: 'https://www.pearson.pl' },
+  together6:  { name: 'Pearson',          url: 'https://www.pearson.pl' },
+  bugsteam2:  { name: 'Pearson',          url: 'https://www.pearson.pl' },
+  bugsteam3:  { name: 'Pearson',          url: 'https://www.pearson.pl' },
+  englishA1:  { name: 'Pearson',          url: 'https://www.pearson.pl' },
+  // Oxford University Press (OUP)
+  stepsplus4: { name: 'Oxford University Press', url: 'https://elt.oup.com/?cc=pl' },
+  stepsplus5: { name: 'Oxford University Press', url: 'https://elt.oup.com/?cc=pl' },
+  // Egmont
+  beHappy2:   { name: 'Egmont',           url: 'https://www.egmont.pl' },
+};
+
+function getPublisherForBook(bookId) {
+  return PUBLISHERS[bookId] || null;
+}
+
+// Otwiera modal z disclaimerem o pochodzeniu materiału.
+// Tekst zgodnie z preferencją użytkownika (issue z 2 maja 2026).
+window.openPublisherInfoModal = function(bookId){
+  const book = (typeof BOOKS !== 'undefined') ? BOOKS[bookId] : null;
+  if (!book) return;
+  const pub = getPublisherForBook(bookId);
+  if (!pub) return;
+  const bookDisplay = `${book.icon || '📖'} ${book.name}`;
+  document.getElementById('publisherInfoBookName').textContent = bookDisplay;
+  // Tekst disclaimera — zgodny ze sformułowaniem ustalonym 2 maja 2026
+  document.getElementById('publisherInfoText').innerHTML =
+    '<strong>Zastrzeżenie:</strong> Sowie Fiszki nie są oficjalnie powiązane z wydawnictwami. ' +
+    'Listy słówek zostały opracowane na podstawie zakresu materiału z podręcznika ' +
+    `<strong>${escHtml(book.name)}</strong> wydawnictwa <strong>${escHtml(pub.name)}</strong> ` +
+    '— w celach edukacyjnych, jako pomoc do nauki dla uczniów korzystających z podręcznika. ' +
+    'Nazwy podręczników i wydawnictw są znakami towarowymi ich właścicieli.';
+  document.getElementById('publisherInfoLink').innerHTML =
+    `<a href="${escHtml(pub.url)}" target="_blank" rel="noopener noreferrer" ` +
+    'style="display:inline-flex;align-items:center;gap:6px;background:rgba(255,209,102,.15);border:1.5px solid rgba(255,209,102,.4);color:var(--accent);' +
+    'padding:8px 14px;border-radius:100px;text-decoration:none;font-weight:700;font-size:.82rem">' +
+    `🌐 Strona internetowa wydawnictwa: ${escHtml(pub.name)} ↗</a>`;
+  document.getElementById('publisherInfoModal').style.display = 'flex';
+};
+
+window.closePublisherInfoModal = function(){
+  document.getElementById('publisherInfoModal').style.display = 'none';
+};
+
+// ══════════════════════════════════════════════
 //  WIDOCZNOŚĆ PODRĘCZNIKÓW (data.js + book_access_overrides z migracji #27)
 //  Helper sumujący: jeśli admin ustawił override w DB — bierzemy go,
 //  inaczej wyprowadzamy wartości domyślne z flag w data.js (defaultAccess
@@ -4387,6 +4469,14 @@ function refreshBooks() {
         ${overrideMark}
       </div>`;
     }
+    // Disclaimer „Na podstawie..." dla podręczników opartych na publikacjach
+    // konkretnych wydawnictw (Macmillan / Pearson / OUP / Egmont). Klik
+    // (z stopPropagation) otwiera modal z pełnym tekstem zastrzeżenia
+    // i linkiem do strony wydawnictwa.
+    const pub = getPublisherForBook(book.id);
+    const publisherInfo = pub
+      ? `<div class="book-publisher-info" role="button" tabindex="0" title="O materiale: kliknij, aby zobaczyć zastrzeżenie i link do wydawnictwa" onclick="event.preventDefault();event.stopPropagation();openPublisherInfoModal('${escHtml(book.id)}');" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();openPublisherInfoModal('${escHtml(book.id)}');}">ⓘ Na podstawie: ${escHtml(pub.name)}</div>`
+      : '';
     d.innerHTML = `
       ${accessBtn}
       ${editBookBtn}
@@ -4394,6 +4484,7 @@ function refreshBooks() {
       <div class="book-icon">${book.icon}</div>
       <div class="book-name">${book.name}</div>
       <div class="book-desc">${book.description}</div>
+      ${publisherInfo}
       <div class="book-prog" style="color:${book.color}">${pct > 0 ? pct + '% opanowane' : 'Zacznij naukę!'}</div>
       <div class="book-bar-bg"><div class="book-bar-fill" style="width:${pct}%;background:${book.color}"></div></div>`;
     g.appendChild(d);
