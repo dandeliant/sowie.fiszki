@@ -789,6 +789,14 @@ body.guest-mode .progress-wrap{opacity:.4;}
 .btn-speak-xs:hover{color:var(--accent2);}
 .btn-edit-sentence{background:none;border:1.5px solid rgba(162,155,254,.25);color:var(--purple);border-radius:100px;padding:4px 12px;font-family:'Nunito',sans-serif;font-size:.7rem;font-weight:700;cursor:pointer;transition:all .2s;margin-top:8px;margin-left:auto;display:block;}
 .btn-edit-sentence:hover{background:rgba(162,155,254,.09);}
+/* Mały przycisk „✏️ Edytuj" w prawym górnym rogu fiszki — tylko dla
+   admina/nauczyciela. Klik (z stopPropagation) otwiera modal edycji
+   słówka — nie odwraca karty. */
+.btn-edit-word{position:absolute;top:10px;right:10px;background:rgba(162,155,254,.18);border:1.5px solid rgba(162,155,254,.45);color:var(--purple);border-radius:100px;padding:4px 11px;font-family:'Nunito',sans-serif;font-size:.66rem;font-weight:800;cursor:pointer;transition:all .18s;z-index:10;letter-spacing:.02em;line-height:1.2;display:inline-flex;align-items:center;gap:3px;backface-visibility:hidden}
+.btn-edit-word:hover{background:var(--purple);color:#fff;border-color:var(--purple);transform:scale(1.04);}
+.btn-edit-word:active{transform:scale(.95);}
+.btn-edit-word .bew-text{font-size:.6rem;text-transform:uppercase;}
+@media (max-width:420px){.btn-edit-word .bew-text{display:none;} .btn-edit-word{padding:5px 8px;}}
 /* ── SENTENCE EDIT MODAL ── */
 /* Notatka admina na ekranach podręcznika/unitu */
 .admin-note{background:var(--surface);border:1.5px solid rgba(162,155,254,.35);border-left:4px solid var(--purple);border-radius:10px;padding:10px 14px;margin:6px 0 12px;font-size:.85rem;line-height:1.55;color:var(--text);font-weight:500;position:relative;}
@@ -2234,7 +2242,9 @@ szkoła	school"></textarea>
   <div class="gameover-bar" id="gameoverBar">💀 Brak żyć! Ćwicz dalej! <button onclick="resetLives()">Resetuj</button></div>
 
   <!-- Karta -->
-  <div class="card-scene" id="cardScene" onclick="flipCard()">
+  <div class="card-scene" id="cardScene" style="position:relative" onclick="flipCard()">
+    <!-- „✏️ Edytuj" — tylko dla admina/nauczyciela, pokazywany przez JS po sprawdzeniu roli -->
+    <button class="btn-edit-word" id="btnEditWord" type="button" style="display:none" title="Edytuj słówko" onclick="event.stopPropagation();openWordEditor();">✏️ <span class="bew-text">Edytuj</span></button>
     <div class="card-inner">
       <div class="card-face card-front">
         <div class="card-label" id="cardFrontLabel">Polski</div>
@@ -2281,6 +2291,23 @@ szkoła	school"></textarea>
       <div class="modal-btns">
         <button class="btn-modal-cancel" onclick="closeSentenceEditor()">Anuluj</button>
         <button class="btn-modal-save" id="btnSentenceSave" onclick="saveSentenceEdit()">💾 Zapisz</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal edycji słówka (admin/nauczyciel) — otwierany z fiszki przyciskiem „✏️ Edytuj" -->
+  <div class="modal-overlay" id="wordEditModal" style="display:none" onclick="if(event.target===this)closeWordEditor()">
+    <div class="modal-box">
+      <div class="modal-title">✏️ Edytuj słówko</div>
+      <div class="modal-word-info" id="wordEditInfo">—</div>
+      <div class="modal-label">Polski *</div>
+      <input type="text" class="modal-textarea" id="wordEditPl" placeholder="np. głowa" autocomplete="off" style="height:auto;padding:8px 10px;font-size:.85rem;font-weight:600">
+      <div class="modal-label" id="wordEditTargetLabel">Język docelowy *</div>
+      <input type="text" class="modal-textarea" id="wordEditTarget" placeholder="np. head" autocomplete="off" autocorrect="off" style="height:auto;padding:8px 10px;font-size:.85rem;font-weight:600">
+      <div id="wordEditMsg" style="font-size:.78rem;font-weight:700;margin-top:8px;min-height:18px"></div>
+      <div class="modal-btns">
+        <button class="btn-modal-cancel" onclick="closeWordEditor()">Anuluj</button>
+        <button class="btn-modal-save" id="btnWordSave" onclick="saveWordEdit()">💾 Zapisz</button>
       </div>
     </div>
   </div>
@@ -5248,6 +5275,8 @@ function renderCard() {
   if (curIdx === null) return;
   const q = getQ(curIdx), a = getA(curIdx);
   hideAreas();
+  // Pokaż/ukryj przycisk „✏️ Edytuj" na fiszce (tylko admin/nauczyciel)
+  if (typeof refreshEditWordBtn === 'function') refreshEditWordBtn();
 
   if (mode === 'card') {
     const sc = document.getElementById('cardScene'); sc.style.display = '';
@@ -5546,6 +5575,114 @@ async function saveSentenceEdit() {
   } finally {
     btn.disabled = false; btn.textContent = '💾 Zapisz';
   }
+}
+
+// ══════════════════════════════════════════════
+//  EDYCJA SŁÓWKA Z FISZKI (admin/nauczyciel)
+//  Przycisk „✏️ Edytuj" w prawym górnym rogu karty otwiera modal
+//  z dwoma polami: Polski + Język docelowy. Save → DB.adminEditWord
+//  (admin_words override, idzie do tabeli admin_words w Supabase).
+// ══════════════════════════════════════════════
+function openWordEditor(){
+  if (curIdx === null) return;
+  if (!isCurrentUserAdmin() && !isCurrentUserTeacher()) return;
+  if (typeof DB.adminEditWord !== 'function') {
+    if (typeof toast === 'function') toast('Edycja słówek niedostępna.', 2400);
+    return;
+  }
+  const w = activeWords[curIdx];
+  const wordPl = w[0];
+  const wordTarget = w[1];
+  const book = (typeof BOOKS !== 'undefined') ? BOOKS[currentBookId] : null;
+  const langName = (book && book.language === 'fr') ? 'Francuski' : 'Angielski';
+  document.getElementById('wordEditInfo').textContent = wordPl + ' → ' + wordTarget;
+  document.getElementById('wordEditPl').value = wordPl;
+  document.getElementById('wordEditTarget').value = wordTarget;
+  document.getElementById('wordEditTargetLabel').textContent = langName + ' *';
+  const msg = document.getElementById('wordEditMsg');
+  msg.textContent = ''; msg.style.color = '';
+  document.getElementById('wordEditModal').style.display = 'flex';
+  setTimeout(() => document.getElementById('wordEditPl').focus(), 60);
+}
+
+function closeWordEditor(){
+  document.getElementById('wordEditModal').style.display = 'none';
+}
+
+async function saveWordEdit(){
+  if (curIdx === null) return;
+  const msg = document.getElementById('wordEditMsg');
+  const btn = document.getElementById('btnWordSave');
+  const originalPl = activeWords[curIdx][0];
+  const newPl     = document.getElementById('wordEditPl').value.trim();
+  const newTarget = document.getElementById('wordEditTarget').value.trim();
+  if (!newPl || !newTarget) {
+    msg.style.color = 'var(--danger)';
+    msg.textContent = '⚠️ Oba pola są wymagane.';
+    return;
+  }
+  if (newPl === originalPl && newTarget === activeWords[curIdx][1]) {
+    msg.style.color = 'var(--muted)';
+    msg.textContent = 'ℹ️ Nic nie zmieniłeś.';
+    return;
+  }
+  // Znajdź unitKey aktualnego słowa: szukamy w units{} aktualnej książki
+  const book = BOOKS[currentBookId];
+  if (!book) { msg.style.color='var(--danger)'; msg.textContent='❌ Brak podręcznika.'; return; }
+  let foundUnitKey = null;
+  for (const uk of Object.keys(book.units)) {
+    if (uk === 'all') continue; // virtualny unit „Wszystkie"
+    const idx = book.units[uk].words.findIndex(w => w[0] === originalPl);
+    if (idx !== -1) { foundUnitKey = uk; break; }
+  }
+  if (!foundUnitKey) {
+    msg.style.color = 'var(--danger)';
+    msg.textContent = '❌ Nie znaleziono słowa w żadnym unicie tego podręcznika.';
+    return;
+  }
+  btn.disabled = true; btn.textContent = '⏳ Zapisuję…';
+  msg.style.color = 'var(--muted)'; msg.textContent = '⏳ Zapisuję zmianę w bazie…';
+  try {
+    await DB.adminEditWord(currentBookId, foundUnitKey, originalPl, newPl, newTarget);
+    // Aktualizuj activeWords lokalnie żeby od razu zobaczyć zmianę bez reloadu
+    activeWords[curIdx] = [newPl, newTarget];
+    if (typeof activeAllWords !== 'undefined') {
+      const i = activeAllWords.findIndex(w => w[0] === originalPl);
+      if (i !== -1) activeAllWords[i] = [newPl, newTarget];
+    }
+    msg.style.color = 'var(--success)';
+    msg.textContent = '✓ Zapisano.';
+    if (typeof toast === 'function') toast('✏️ Zaktualizowano słówko.', 2200);
+    // Odśwież widok karty (jeśli aktualnie wyświetlana)
+    if (typeof renderCard === 'function') {
+      try { renderCard(); } catch(e) {}
+    } else {
+      // Fallback — uaktualnij teksty bezpośrednio
+      const elPl = document.getElementById('wPl');
+      const elEn = document.getElementById('wEn');
+      if (elPl) elPl.textContent = newPl;
+      if (elEn) elEn.textContent = newTarget;
+    }
+    setTimeout(closeWordEditor, 800);
+  } catch(e) {
+    console.error('[saveWordEdit]', e);
+    msg.style.color = 'var(--danger)';
+    msg.textContent = '❌ ' + e.message;
+  } finally {
+    btn.disabled = false; btn.textContent = '💾 Zapisz';
+  }
+}
+
+// Pokaż/ukryj przycisk „✏️ Edytuj" na fiszce — tylko dla admina/nauczyciela
+// (i tylko gdy karta jest aktywna, nie placeholder „Kliknij Generuj").
+function refreshEditWordBtn(){
+  const btn = document.getElementById('btnEditWord');
+  if (!btn) return;
+  const canEdit = !isGuest && (isCurrentUserAdmin() || isCurrentUserTeacher());
+  const haveWord = (typeof curIdx !== 'undefined' && curIdx !== null
+                    && typeof activeWords !== 'undefined' && Array.isArray(activeWords)
+                    && activeWords[curIdx]);
+  btn.style.display = (canEdit && haveWord) ? '' : 'none';
 }
 
 // ══════════════════════════════════════════════
