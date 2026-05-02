@@ -797,6 +797,20 @@ body.guest-mode .progress-wrap{opacity:.4;}
 .btn-edit-word:active{transform:scale(.95);}
 .btn-edit-word .bew-text{font-size:.6rem;text-transform:uppercase;}
 @media (max-width:420px){.btn-edit-word .bew-text{display:none;} .btn-edit-word{padding:5px 8px;}}
+/* Live search — dropdown z istniejącymi słówkami w panelu zestawów nauczyciela */
+.ts-dropdown{position:absolute;top:100%;left:0;right:0;margin-top:4px;background:var(--surface);border:1.5px solid var(--purple);border-radius:10px;max-height:280px;overflow-y:auto;z-index:200;box-shadow:0 8px 28px rgba(0,0,0,.5)}
+.ts-row{padding:8px 12px;cursor:pointer;border-bottom:1px dashed rgba(255,255,255,.06);transition:background-color .12s;display:flex;align-items:center;gap:8px}
+.ts-row:last-child{border-bottom:none}
+.ts-row:hover{background:rgba(124,77,255,.15)}
+.ts-row.disabled{opacity:.55;cursor:not-allowed}
+.ts-row-words{flex:1;min-width:0;font-size:.84rem;font-weight:700;color:var(--text);word-break:break-word;line-height:1.3}
+.ts-row-words .arrow{color:var(--muted);font-weight:400;margin:0 5px}
+.ts-row-words .target{color:var(--accent)}
+.ts-row-source{font-size:.62rem;color:var(--muted);font-weight:600;margin-top:2px;font-style:italic}
+.ts-row-tag{font-size:.58rem;font-weight:800;padding:2px 7px;border-radius:100px;letter-spacing:.04em;text-transform:uppercase;flex-shrink:0;line-height:1.2}
+.ts-row-tag.exists{background:rgba(255,118,117,.18);color:var(--danger)}
+.ts-row-tag.use{background:rgba(0,184,148,.18);color:var(--success)}
+.ts-empty{padding:14px 12px;color:var(--muted);font-size:.78rem;text-align:center;font-weight:600}
 /* ── SENTENCE EDIT MODAL ── */
 /* Notatka admina na ekranach podręcznika/unitu */
 .admin-note{background:var(--surface);border:1.5px solid rgba(162,155,254,.35);border-left:4px solid var(--purple);border-radius:10px;padding:10px 14px;margin:6px 0 12px;font-size:.85rem;line-height:1.55;color:var(--text);font-weight:500;position:relative;}
@@ -3113,9 +3127,13 @@ szkoła	school"></textarea>
           <button class="btn-sm" onclick="openBulkImportModal()" style="padding:4px 10px;font-size:.7rem">📥 Import CSV / wklejka</button>
         </div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-        <input type="text" id="newWordWord" placeholder="słowo (np. apple)" autocomplete="off" style="padding:9px 11px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.85rem;font-weight:600;outline:none">
-        <input type="text" id="newWordTrans" placeholder="tłumaczenie (np. jabłko)" autocomplete="off" style="padding:9px 11px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.85rem;font-weight:600;outline:none">
+      <div style="position:relative;margin-bottom:8px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <input type="text" id="newWordWord" placeholder="słowo (np. apple) — wpisz, aby wyszukać" autocomplete="off" oninput="teacherSearchExisting('word')" onfocus="teacherSearchExisting('word')" onblur="setTimeout(hideTeacherSearchResults,150)" style="padding:9px 11px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.85rem;font-weight:600;outline:none">
+          <input type="text" id="newWordTrans" placeholder="tłumaczenie (np. jabłko)" autocomplete="off" oninput="teacherSearchExisting('translation')" onfocus="teacherSearchExisting('translation')" onblur="setTimeout(hideTeacherSearchResults,150)" style="padding:9px 11px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.85rem;font-weight:600;outline:none">
+        </div>
+        <!-- Live search dropdown — pokazuje pasujące słówka z istniejących podręczników i zestawów. -->
+        <div id="teacherSearchDropdown" class="ts-dropdown" style="display:none"></div>
       </div>
       <input type="text" id="newWordExample" placeholder="przykład zdania (opcjonalnie)" autocomplete="off" style="width:100%;padding:9px 11px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.85rem;font-weight:600;outline:none;margin-bottom:8px">
       <button id="btnAddWord" class="btn-sm accent" onclick="handleAddWord()" style="width:100%;padding:9px 14px">✓ Dodaj słowo</button>
@@ -16135,10 +16153,15 @@ if ('serviceWorker' in navigator) {
     }
   }
 
+  // Cache słów w aktualnie otwartym zestawie — używane przez live search
+  // (oznaczanie „JUŻ W ZESTAWIE") i walidację duplikatów w handleAddWord.
+  let _currentSetWordsCache = [];
+
   async function refreshWordsList() {
     const el = document.getElementById('teacherWordsList');
     try {
       const words = await DB.teacherLoadWords(_currentSetId);
+      _currentSetWordsCache = words || [];
       document.getElementById('wordsHeader').textContent = `Słowa w zestawie (${words.length})`;
       if (!words.length) {
         el.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:.78rem;padding:18px 14px;font-weight:600">Ten zestaw jest jeszcze pusty. Dodaj słowa powyżej.</div>';
@@ -16163,6 +16186,131 @@ if ('serviceWorker' in navigator) {
     }
   }
 
+  // ═══════════════════════════════════════════════
+  //  LIVE SEARCH — istniejące słówka przed dodaniem (Phase B)
+  //  Cel: zanim nauczyciel kliknie „Dodaj słowo", widzi pasujące
+  //  słówka z BOOKS i z aktualnego zestawu — może kliknąć żeby
+  //  autouzupełnić oba pola lub dowiedzieć się że słowo już jest.
+  // ═══════════════════════════════════════════════
+  window.teacherSearchExisting = function(side){
+    const w = document.getElementById('newWordWord').value.trim();
+    const t = document.getElementById('newWordTrans').value.trim();
+    // Bierzemy aktualny input zależnie od strony
+    const query = (side === 'translation' ? t : w).toLowerCase();
+    if (query.length < 2) { hideTeacherSearchResults(); return; }
+
+    const results = [];
+    const seen = new Set();
+
+    // 1. Słowa z bieżącego zestawu — najpierw, oznaczone jako JUŻ W ZESTAWIE
+    (_currentSetWordsCache || []).forEach(cw => {
+      const wWord = (cw.word || '').toLowerCase();
+      const wTrans = (cw.translation || '').toLowerCase();
+      if (wWord.includes(query) || wTrans.includes(query)) {
+        const key = wWord + '|' + wTrans;
+        if (seen.has(key)) return;
+        seen.add(key);
+        results.push({
+          word: cw.word, translation: cw.translation,
+          source: 'Bieżący zestaw', inCurrentSet: true
+        });
+      }
+    });
+
+    // 2. Słowa z BOOKS — z całej biblioteki podręczników
+    if (typeof BOOKS !== 'undefined') {
+      Object.values(BOOKS).forEach(book => {
+        const units = book.units || {};
+        Object.entries(units).forEach(([uk, unit]) => {
+          if (uk === 'all') return;
+          (unit.words || []).forEach(arr => {
+            const pl = arr[0] || '', target = arr[1] || '';
+            if (!pl || !target) return;
+            const plL = pl.toLowerCase(), tgL = target.toLowerCase();
+            if (!plL.includes(query) && !tgL.includes(query)) return;
+            const key = tgL + '|' + plL;
+            if (seen.has(key)) return;
+            seen.add(key);
+            // Sprawdź czy w bieżącym zestawie jest już takie samo
+            const dup = (_currentSetWordsCache || []).some(cw =>
+              ((cw.word || '').toLowerCase() === tgL) ||
+              ((cw.translation || '').toLowerCase() === plL)
+            );
+            results.push({
+              // teacher_sets: word = obcojęzyczne, translation = polski
+              word: target, translation: pl,
+              source: (book.shortName || book.name) + ' · ' + (unit.name || uk),
+              inCurrentSet: dup
+            });
+          });
+        });
+      });
+    }
+
+    // Sortowanie: prefiks-match wyżej, potem po długości
+    results.sort((a, b) => {
+      const fA = (side === 'translation' ? a.translation : a.word).toLowerCase();
+      const fB = (side === 'translation' ? b.translation : b.word).toLowerCase();
+      const aPrefix = fA.startsWith(query) ? 0 : 1;
+      const bPrefix = fB.startsWith(query) ? 0 : 1;
+      if (aPrefix !== bPrefix) return aPrefix - bPrefix;
+      return fA.length - fB.length;
+    });
+
+    renderTeacherSearchResults(results.slice(0, 10));
+  };
+
+  function renderTeacherSearchResults(results){
+    const dd = document.getElementById('teacherSearchDropdown');
+    if (!dd) return;
+    if (!results.length) {
+      dd.innerHTML = '<div class="ts-empty">— brak pasujących słówek. Dodasz nowe.</div>';
+      dd.style.display = 'block';
+      return;
+    }
+    dd.innerHTML = results.map(r => {
+      const tag = r.inCurrentSet
+        ? '<span class="ts-row-tag exists">już w zestawie</span>'
+        : '<span class="ts-row-tag use">użyj</span>';
+      return `<div class="ts-row ${r.inCurrentSet ? 'disabled' : ''}"
+        data-word="${escHtml(r.word)}"
+        data-translation="${escHtml(r.translation)}"
+        data-incurrent="${r.inCurrentSet}"
+        onmousedown="event.preventDefault();teacherPickWord(this)">
+        <div style="flex:1;min-width:0">
+          <div class="ts-row-words">
+            <span class="target">${escHtml(r.word)}</span>
+            <span class="arrow">→</span>
+            <span>${escHtml(r.translation)}</span>
+          </div>
+          <div class="ts-row-source">${escHtml(r.source)}</div>
+        </div>
+        ${tag}
+      </div>`;
+    }).join('');
+    dd.style.display = 'block';
+  }
+
+  window.hideTeacherSearchResults = function(){
+    const dd = document.getElementById('teacherSearchDropdown');
+    if (dd) dd.style.display = 'none';
+  };
+
+  window.teacherPickWord = function(el){
+    const word = el.dataset.word || '';
+    const translation = el.dataset.translation || '';
+    const inCurrent = el.dataset.incurrent === 'true';
+    if (inCurrent) {
+      if (typeof toast === 'function') toast('ℹ️ To słowo jest już w zestawie.', 2400);
+      hideTeacherSearchResults();
+      return;
+    }
+    document.getElementById('newWordWord').value = word;
+    document.getElementById('newWordTrans').value = translation;
+    hideTeacherSearchResults();
+    document.getElementById('newWordExample').focus();
+  };
+
   window.handleAddWord = async function(){
     if (!_currentSetId) return;
     const w = document.getElementById('newWordWord');
@@ -16170,11 +16318,22 @@ if ('serviceWorker' in navigator) {
     const e = document.getElementById('newWordExample');
     const word = w.value.trim(), trans = t.value.trim(), example = e.value.trim();
     if (!word || !trans) { if (typeof toast==='function') toast('⚠️ Podaj słowo i tłumaczenie.', 2400); return; }
+    // Walidacja duplikatów — sprawdź czy już jest w bieżącym zestawie
+    const wL = word.toLowerCase(), tL = trans.toLowerCase();
+    const dup = (_currentSetWordsCache || []).find(cw =>
+      ((cw.word || '').toLowerCase() === wL) ||
+      ((cw.translation || '').toLowerCase() === tL)
+    );
+    if (dup) {
+      const ok = confirm('⚠️ Słowo „' + (dup.word || '') + ' → ' + (dup.translation || '') + '" już jest w zestawie. Dodać mimo to?');
+      if (!ok) return;
+    }
     const btn = document.getElementById('btnAddWord');
     btn.disabled = true; btn.textContent = '⏳…';
     try {
       await DB.teacherAddWord(_currentSetId, { word, translation: trans, example });
       w.value=''; t.value=''; e.value='';
+      hideTeacherSearchResults();
       w.focus();
       await refreshWordsList();
     } catch(err) {
