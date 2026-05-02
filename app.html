@@ -129,6 +129,11 @@ header{width:100%;display:flex;align-items:flex-start;justify-content:space-betw
 .book-access-btn:active{transform:scale(.95);}
 .book-access-btn .bab-text{font-size:.58rem;text-transform:uppercase;}
 @media (max-width:420px){.book-access-btn .bab-text{display:none;} .book-access-btn{padding:4px 7px;}}
+/* Przycisk „✏️ Edytuj" w lewym górnym rogu kafelka — TYLKO admin, TYLKO dla
+   podręczników dodanych przez panel admina (admin_books). */
+.book-edit-btn{position:absolute;top:7px;left:7px;background:rgba(255,209,102,.18);border:1.5px solid rgba(255,209,102,.45);border-radius:100px;width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;font-size:.78rem;cursor:pointer;z-index:5;transition:all .18s;line-height:1;user-select:none}
+.book-edit-btn:hover{background:var(--accent);border-color:var(--accent);transform:scale(1.08);}
+.book-edit-btn:active{transform:scale(.95);}
 /* Modal „🔓 Dostęp" — lista osób z checkboxami i akcje masowej selekcji */
 .aba-pick-btn{padding:3px 7px;border-radius:6px;border:1.5px solid var(--border);background:var(--surface);color:var(--muted);font-weight:700;font-size:.62rem;cursor:pointer;font-family:inherit;transition:all .16s;letter-spacing:.02em}
 .aba-pick-btn:hover{border-color:var(--purple);color:var(--purple);background:rgba(124,77,255,.07)}
@@ -3472,9 +3477,36 @@ szkoła	school"></textarea>
 <!-- Modal: dodaj podręcznik -->
 <div class="modal-overlay" id="adminBookModal" style="display:none" onclick="if(event.target===this)closeModal('adminBookModal')">
   <div class="modal-box">
-    <div class="modal-title">📚 Nowy podręcznik</div>
-    <div class="modal-label">ID (bez spacji, np. <code style="background:var(--surface2);padding:1px 5px;border-radius:4px;font-size:.75rem">moj_podrecznik</code>)</div>
+    <div class="modal-title" id="adminBookModalTitle">📚 Nowy podręcznik</div>
+    <div class="modal-label" id="aBookIdLabel">ID (bez spacji, np. <code style="background:var(--surface2);padding:1px 5px;border-radius:4px;font-size:.75rem">moj_podrecznik</code>)</div>
     <textarea class="modal-textarea" id="aBookId" rows="1" style="min-height:40px" placeholder="moj_podrecznik"></textarea>
+
+    <!-- Kategoria / język / klasa — meta-dane z migracji #29 -->
+    <div class="modal-label">Kategoria * (do którego kafelka trafia)</div>
+    <select id="aBookSchoolType" onchange="onAdminBookSchoolTypeChange()" style="width:100%;padding:9px 11px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.85rem;font-weight:600;outline:none;margin-bottom:10px;font-family:inherit">
+      <option value="primary">🎒 Szkoła Podstawowa (Klasy 1-8)</option>
+      <option value="secondary">🎓 Szkoła Średnia (liceum / technikum)</option>
+      <option value="courses" selected>💼 Kursy tematyczne</option>
+      <option value="grammar">🔤 Gramatyka i dodatki</option>
+    </select>
+
+    <div class="modal-label">Język</div>
+    <select id="aBookLanguage" style="width:100%;padding:9px 11px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.85rem;font-weight:600;outline:none;margin-bottom:10px;font-family:inherit">
+      <option value="en" selected>🇬🇧 Angielski</option>
+      <option value="fr">🇫🇷 Francuski</option>
+    </select>
+
+    <div id="aBookGradeWrap" style="display:none">
+      <div class="modal-label">Klasa (1-8 — tylko dla Szkoły Podstawowej; Średnia: 1)</div>
+      <select id="aBookGrade" style="width:100%;padding:9px 11px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.85rem;font-weight:600;outline:none;margin-bottom:10px;font-family:inherit">
+        <option value="">— wybierz —</option>
+        <option value="1">Klasa 1</option><option value="2">Klasa 2</option>
+        <option value="3">Klasa 3</option><option value="4">Klasa 4</option>
+        <option value="5">Klasa 5</option><option value="6">Klasa 6</option>
+        <option value="7">Klasa 7</option><option value="8">Klasa 8</option>
+      </select>
+    </div>
+
     <div class="modal-label">Nazwa wyświetlana</div>
     <textarea class="modal-textarea" id="aBookName" rows="1" style="min-height:40px" placeholder="Mój Podręcznik"></textarea>
     <div class="modal-label">Krótka nazwa (do odznaki)</div>
@@ -3487,7 +3519,10 @@ szkoła	school"></textarea>
     <textarea class="modal-textarea" id="aBookDesc" placeholder="Opis podręcznika…"></textarea>
     <div class="modal-label">Język TTS (np. <code style="background:var(--surface2);padding:1px 5px;border-radius:4px;font-size:.75rem">en-GB</code>, <code style="background:var(--surface2);padding:1px 5px;border-radius:4px;font-size:.75rem">fr-FR</code>, <code style="background:var(--surface2);padding:1px 5px;border-radius:4px;font-size:.75rem">de-DE</code>)</div>
     <textarea class="modal-textarea" id="aBookLang" rows="1" style="min-height:40px" placeholder="en-GB"></textarea>
+
+    <div id="aBookMsg" style="font-size:.78rem;font-weight:700;margin-top:6px;min-height:18px"></div>
     <div class="modal-btns">
+      <button class="btn-modal-cancel" id="btnAdminBookDelete" onclick="deleteAdminBookFromModal()" style="display:none;background:transparent;border:1.5px solid var(--danger);color:var(--danger)">🗑️ Usuń</button>
       <button class="btn-modal-cancel" onclick="closeModal('adminBookModal')">Anuluj</button>
       <button class="btn-modal-save" id="btnAdminBookSave" onclick="submitAdminBook()">💾 Utwórz</button>
     </div>
@@ -4319,6 +4354,11 @@ function refreshBooks() {
     const accessBtn = isStaffNow
       ? `<span class="book-access-btn" role="button" tabindex="0" title="Przydziel dostęp do tego podręcznika" onclick="event.preventDefault();event.stopPropagation();openAssignBookAccessModal('${escHtml(book.id)}');" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();openAssignBookAccessModal('${escHtml(book.id)}');}">🔓 <span class="bab-text">Dostęp</span></span>`
       : '';
+    // Przycisk „✏️ Edytuj podręcznik" — tylko admin, tylko dla podręczników
+    // dodanych przez panel admina (admin_books). Otwiera modal w trybie edycji.
+    const editBookBtn = (isAdminNow && book._isAdminBook)
+      ? `<span class="book-edit-btn" role="button" tabindex="0" title="Edytuj podręcznik (kategoria, język, nazwa)" onclick="event.preventDefault();event.stopPropagation();openAdminBookModal('${escHtml(book.id)}');" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();openAdminBookModal('${escHtml(book.id)}');}">✏️</span>`
+      : '';
     // Badges widoczne TYLKO dla admina: tier (Free/Premium) + role widoczne
     // (Gość/Uczeń/Nauczyciel/Opiekun). Klik w cały badge-row otwiera 3.
     // zakładkę modala (⚙️ Globalnie) gdzie admin może edytować ustawienia.
@@ -4344,6 +4384,7 @@ function refreshBooks() {
     }
     d.innerHTML = `
       ${accessBtn}
+      ${editBookBtn}
       ${badgesRow}
       <div class="book-icon">${book.icon}</div>
       <div class="book-name">${book.name}</div>
@@ -7148,41 +7189,151 @@ async function adminDeleteWordConfirm(wordPl, wordTarget) {
 
 // ── PODRĘCZNIKI ──────────────────────────────────
 
-function openAdminBookModal() {
-  document.getElementById('aBookId').value = '';
-  document.getElementById('aBookName').value = '';
-  document.getElementById('aBookShort').value = '';
-  document.getElementById('aBookIcon').value = '📖';
-  document.getElementById('aBookColor').value = '#a29bfe';
-  document.getElementById('aBookDesc').value = '';
-  document.getElementById('aBookLang').value = 'en-GB';
+// Tryb modala: 'create' (nowy) | 'edit' (istniejący admin-added)
+let _adminBookEditingId = null;
+
+// Pokaż/ukryj pole „Klasa" w zależności od kategorii.
+// Klasa jest widoczna tylko dla Szkoły Podstawowej (1-8) i Średniej (1).
+window.onAdminBookSchoolTypeChange = function(){
+  const st = document.getElementById('aBookSchoolType').value;
+  const wrap = document.getElementById('aBookGradeWrap');
+  if (!wrap) return;
+  wrap.style.display = (st === 'primary' || st === 'secondary') ? '' : 'none';
+};
+
+// openAdminBookModal(bookId?) — bez argumentu = tryb create; z bookId = edytuj
+function openAdminBookModal(bookId) {
+  const isEdit = !!bookId;
+  _adminBookEditingId = isEdit ? bookId : null;
+
+  const titleEl = document.getElementById('adminBookModalTitle');
+  const idLabel = document.getElementById('aBookIdLabel');
+  const idInput = document.getElementById('aBookId');
+  const btnSave = document.getElementById('btnAdminBookSave');
+  const btnDel  = document.getElementById('btnAdminBookDelete');
+  const msgEl   = document.getElementById('aBookMsg');
+  if (msgEl) { msgEl.textContent = ''; msgEl.style.color = ''; }
+
+  if (isEdit) {
+    const b = BOOKS[bookId];
+    if (!b) { toast('Nie znaleziono podręcznika.'); return; }
+    if (titleEl) titleEl.textContent = '✏️ Edytuj podręcznik';
+    idInput.value = bookId;
+    idInput.disabled = true;
+    if (idLabel) idLabel.textContent = 'ID (nie można zmienić — tylko podgląd)';
+    document.getElementById('aBookName').value  = b.name || '';
+    document.getElementById('aBookShort').value = b.shortName || '';
+    document.getElementById('aBookIcon').value  = b.icon || '📖';
+    document.getElementById('aBookColor').value = b.color || '#a29bfe';
+    document.getElementById('aBookDesc').value  = b.description || '';
+    document.getElementById('aBookLang').value  = b.lang || 'en-GB';
+    document.getElementById('aBookSchoolType').value = b.schoolType || 'courses';
+    document.getElementById('aBookLanguage').value   = b.language || 'en';
+    document.getElementById('aBookGrade').value      = (b.grade != null) ? String(b.grade) : '';
+    if (btnSave) btnSave.textContent = '💾 Zapisz zmiany';
+    if (btnDel)  btnDel.style.display = '';
+  } else {
+    if (titleEl) titleEl.textContent = '📚 Nowy podręcznik';
+    idInput.disabled = false;
+    if (idLabel) idLabel.innerHTML = 'ID (bez spacji, np. <code style="background:var(--surface2);padding:1px 5px;border-radius:4px;font-size:.75rem">moj_podrecznik</code>)';
+    document.getElementById('aBookId').value     = '';
+    document.getElementById('aBookName').value   = '';
+    document.getElementById('aBookShort').value  = '';
+    document.getElementById('aBookIcon').value   = '📖';
+    document.getElementById('aBookColor').value  = '#a29bfe';
+    document.getElementById('aBookDesc').value   = '';
+    document.getElementById('aBookLang').value   = 'en-GB';
+    document.getElementById('aBookSchoolType').value = 'courses';
+    document.getElementById('aBookLanguage').value   = 'en';
+    document.getElementById('aBookGrade').value      = '';
+    if (btnSave) btnSave.textContent = '💾 Utwórz';
+    if (btnDel)  btnDel.style.display = 'none';
+  }
+  onAdminBookSchoolTypeChange();
   document.getElementById('adminBookModal').style.display = 'flex';
-  setTimeout(() => document.getElementById('aBookId').focus(), 80);
+  setTimeout(() => document.getElementById(isEdit ? 'aBookName' : 'aBookId').focus(), 80);
 }
 
 async function submitAdminBook() {
-  const bookId = document.getElementById('aBookId').value.trim().replace(/\s+/g,'_').toLowerCase();
+  const isEdit = !!_adminBookEditingId;
+  const bookIdRaw = document.getElementById('aBookId').value.trim();
+  const bookId = isEdit ? _adminBookEditingId : bookIdRaw.replace(/\s+/g,'_').toLowerCase();
   const name   = document.getElementById('aBookName').value.trim();
   const sName  = document.getElementById('aBookShort').value.trim() || name;
   const icon   = document.getElementById('aBookIcon').value.trim() || '📖';
   const color  = document.getElementById('aBookColor').value.trim() || '#a29bfe';
   const desc   = document.getElementById('aBookDesc').value.trim();
   const lang   = document.getElementById('aBookLang').value.trim() || 'en-GB';
-  if (!bookId || !name) { toast('Wypełnij ID i nazwę! ⚠️'); return; }
-  if (BOOKS[bookId]) { toast('Podręcznik o tym ID już istnieje! ⚠️'); return; }
+  const schoolType = document.getElementById('aBookSchoolType').value || 'courses';
+  const language   = document.getElementById('aBookLanguage').value || 'en';
+  const gradeRaw   = document.getElementById('aBookGrade').value;
+  const grade = (schoolType === 'primary' || schoolType === 'secondary') && gradeRaw
+                ? parseInt(gradeRaw, 10) : null;
+  const msgEl = document.getElementById('aBookMsg');
+
+  if (!bookId || !name) {
+    if (msgEl) { msgEl.style.color = 'var(--danger)'; msgEl.textContent = '⚠️ Wypełnij ID i nazwę.'; }
+    return;
+  }
+  if (!isEdit && BOOKS[bookId]) {
+    if (msgEl) { msgEl.style.color = 'var(--danger)'; msgEl.textContent = '⚠️ Podręcznik o tym ID już istnieje.'; }
+    return;
+  }
+  if ((schoolType === 'primary' || schoolType === 'secondary') && !grade) {
+    if (msgEl) { msgEl.style.color = 'var(--danger)'; msgEl.textContent = '⚠️ Dla Szkoły Podstawowej / Średniej wybierz klasę.'; }
+    return;
+  }
+
   const btn = document.getElementById('btnAdminBookSave');
-  btn.disabled = true; btn.textContent = 'Tworzę…';
+  btn.disabled = true;
+  btn.textContent = isEdit ? '⏳ Zapisuję…' : '⏳ Tworzę…';
+  if (msgEl) { msgEl.style.color = 'var(--muted)'; msgEl.textContent = ''; }
   try {
-    await DB.adminAddBook(bookId, name, sName, icon, color, desc, lang);
-    closeModal('adminBookModal');
-    refreshBooks();
-    toast('✅ Podręcznik „' + name + '" utworzony!');
+    if (isEdit) {
+      await DB.adminEditBook(bookId, {
+        name, shortName: sName, icon, color, description: desc, lang,
+        schoolType, language, grade
+      });
+      closeModal('adminBookModal');
+      refreshBooks();
+      toast('✏️ Zaktualizowano podręcznik „' + name + '".');
+    } else {
+      await DB.adminAddBook(bookId, name, sName, icon, color, desc, lang, {
+        schoolType, language, grade
+      });
+      closeModal('adminBookModal');
+      refreshBooks();
+      toast('✅ Podręcznik „' + name + '" utworzony!');
+    }
   } catch(e) {
-    toast('❌ Błąd: ' + e.message, 3000);
+    if (msgEl) { msgEl.style.color = 'var(--danger)'; msgEl.textContent = '❌ ' + e.message; }
+    else toast('❌ Błąd: ' + e.message, 3000);
   } finally {
-    btn.disabled = false; btn.textContent = '💾 Utwórz';
+    btn.disabled = false;
+    btn.textContent = isEdit ? '💾 Zapisz zmiany' : '💾 Utwórz';
   }
 }
+
+window.deleteAdminBookFromModal = async function(){
+  if (!_adminBookEditingId) return;
+  const b = BOOKS[_adminBookEditingId];
+  const name = b ? b.name : _adminBookEditingId;
+  if (!confirm('Usunąć podręcznik „' + name + '" wraz ze wszystkimi rozdziałami i słówkami?\nTej operacji nie da się cofnąć.')) return;
+  const msgEl = document.getElementById('aBookMsg');
+  const btn = document.getElementById('btnAdminBookDelete');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Usuwam…'; }
+  if (msgEl) { msgEl.style.color = 'var(--muted)'; msgEl.textContent = '⏳ Usuwam…'; }
+  try {
+    await DB.adminDeleteBook(_adminBookEditingId);
+    closeModal('adminBookModal');
+    refreshBooks();
+    toast('🗑️ Usunięto „' + name + '".');
+  } catch(e) {
+    if (msgEl) { msgEl.style.color = 'var(--danger)'; msgEl.textContent = '❌ ' + e.message; }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🗑️ Usuń'; }
+  }
+};
 
 // ── ROZDZIAŁY ─────────────────────────────────────
 

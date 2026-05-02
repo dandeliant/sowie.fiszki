@@ -646,13 +646,20 @@ const DB = (() => {
   }
 
   function _applyAdminData() {
-    // 1. Nowe podręczniki → dodaj do BOOKS
+    // 1. Nowe podręczniki → dodaj do BOOKS (z meta-danymi: language, schoolType, grade)
+    //    Migracja #29 wprowadza kolumny school_type/language/grade.
+    //    Fallback dla starych wierszy bez tych kolumn: courses + en.
     _adminBooks.forEach(row => {
       if (!BOOKS[row.book_id]) {
         BOOKS[row.book_id] = {
           id: row.book_id, name: row.name, shortName: row.short_name || row.name,
           icon: row.icon || '📖', color: row.color || '#a29bfe',
-          description: row.description || '', lang: row.lang || 'en-GB',
+          description: row.description || '',
+          lang: row.lang || 'en-GB',
+          // Metadane do filtrowania w sSchool / refreshBooks (wprowadzone w migracji #29):
+          language:   row.language    || 'en',
+          schoolType: row.school_type || 'courses',
+          grade:      (row.grade != null) ? row.grade : undefined,
           units: {}, _isAdminBook: true
         };
       }
@@ -763,19 +770,104 @@ const DB = (() => {
 
   // ── Podręczniki ──────────────────────────────────────────────
 
-  async function adminAddBook(bookId, name, shortName, icon, color, description, lang) {
-    const { data, error } = await supabase.from('admin_books').insert({
+  // Tworzenie nowego podręcznika przez admina.
+  // `meta` (opcjonalny) zawiera: { schoolType, language, grade } — wymagane
+  // od migracji #29 dla poprawnego filtrowania w sSchool.
+  async function adminAddBook(bookId, name, shortName, icon, color, description, lang, meta) {
+    meta = meta || {};
+    const schoolType = meta.schoolType || 'courses';
+    const language   = meta.language   || 'en';
+    const grade      = (meta.grade != null) ? meta.grade : null;
+    const payload = {
       book_id: bookId, name, short_name: shortName || name,
-      icon: icon || '📖', color: color || '#a29bfe', description: description || '', lang: lang || 'en-GB',
+      icon: icon || '📖', color: color || '#a29bfe', description: description || '',
+      lang: lang || 'en-GB',
+      school_type: schoolType, language, grade,
       created_by: _userId, updated_at: new Date().toISOString()
-    }).select().single();
-    if (error) throw new Error(error.message);
-    _adminBooks.push(data);
+    };
+    const { data, error } = await supabase.from('admin_books').insert(payload).select().single();
+    if (error) {
+      // Jeśli migracja #29 nie została jeszcze uruchomiona, kolumny school_type/language/grade
+      // mogą nie istnieć — spróbuj fallback bez nich (z ostrzeżeniem do konsoli).
+      if (/column .* does not exist/i.test(error.message)) {
+        console.warn('[adminAddBook] kolumny meta brak — uruchom migrację #29. Fallback bez meta.');
+        const { data: data2, error: err2 } = await supabase.from('admin_books').insert({
+          book_id: bookId, name, short_name: shortName || name,
+          icon: icon || '📖', color: color || '#a29bfe', description: description || '',
+          lang: lang || 'en-GB',
+          created_by: _userId, updated_at: new Date().toISOString()
+        }).select().single();
+        if (err2) throw new Error(err2.message);
+        _adminBooks.push(data2);
+      } else {
+        throw new Error(error.message);
+      }
+    } else {
+      _adminBooks.push(data);
+    }
     BOOKS[bookId] = {
       id: bookId, name, shortName: shortName || name,
-      icon: icon || '📖', color: color || '#a29bfe', description: description || '', lang: lang || 'en-GB',
+      icon: icon || '📖', color: color || '#a29bfe', description: description || '',
+      lang: lang || 'en-GB',
+      language, schoolType, grade: (grade != null) ? grade : undefined,
       units: {}, _isAdminBook: true
     };
+  }
+
+  // Edycja istniejącego podręcznika admin-added (np. zmiana kategorii, nazwy, ikony).
+  // `fields`: częściowy obiekt — tylko pola które się zmieniają.
+  // Klucze obsługiwane: name, shortName, icon, color, description, lang,
+  //                      schoolType, language, grade.
+  async function adminEditBook(bookId, fields) {
+    if (!_profile?.isAdmin) throw new Error('Tylko administrator może edytować podręczniki.');
+    if (!bookId) throw new Error('Brak book_id.');
+    const existing = _adminBooks.find(b => b.book_id === bookId);
+    if (!existing) throw new Error('Podręcznik nie jest podręcznikiem dodanym przez admina (admin_books).');
+
+    const upd = { updated_at: new Date().toISOString() };
+    if (fields.name        !== undefined) upd.name        = fields.name;
+    if (fields.shortName   !== undefined) upd.short_name  = fields.shortName;
+    if (fields.icon        !== undefined) upd.icon        = fields.icon;
+    if (fields.color       !== undefined) upd.color       = fields.color;
+    if (fields.description !== undefined) upd.description = fields.description;
+    if (fields.lang        !== undefined) upd.lang        = fields.lang;
+    if (fields.schoolType  !== undefined) upd.school_type = fields.schoolType;
+    if (fields.language    !== undefined) upd.language    = fields.language;
+    if (fields.grade       !== undefined) upd.grade       = fields.grade;
+
+    const { data, error } = await supabase.from('admin_books')
+      .update(upd).eq('book_id', bookId).select().single();
+    if (error) throw new Error(error.message);
+
+    // Aktualizuj lokalny cache + obiekt BOOKS
+    Object.assign(existing, data);
+    const b = BOOKS[bookId];
+    if (b) {
+      if (data.name)        b.name        = data.name;
+      if (data.short_name)  b.shortName   = data.short_name;
+      if (data.icon)        b.icon        = data.icon;
+      if (data.color)       b.color       = data.color;
+      if (data.description !== undefined) b.description = data.description;
+      if (data.lang)        b.lang        = data.lang;
+      if (data.language)    b.language    = data.language;
+      if (data.school_type) b.schoolType  = data.school_type;
+      if (data.grade !== undefined) b.grade = (data.grade != null) ? data.grade : undefined;
+    }
+    return data;
+  }
+
+  // Usuń admin-added podręcznik (kasuje wpis w admin_books oraz wszystkie powiązane
+  // admin_units i admin_words). Tylko admin.
+  async function adminDeleteBook(bookId) {
+    if (!_profile?.isAdmin) throw new Error('Tylko administrator może usuwać podręczniki.');
+    if (!bookId) throw new Error('Brak book_id.');
+    // Usuń słówka i unity (jeśli istnieje cascade w DB to nadmiarowo, ale bezpieczniej)
+    await supabase.from('admin_words').delete().eq('book_id', bookId);
+    await supabase.from('admin_units').delete().eq('book_id', bookId);
+    const { error } = await supabase.from('admin_books').delete().eq('book_id', bookId);
+    if (error) throw new Error(error.message);
+    _adminBooks = _adminBooks.filter(b => b.book_id !== bookId);
+    delete BOOKS[bookId];
   }
 
   // ── Rozdziały ────────────────────────────────────────────────
@@ -2429,6 +2521,8 @@ const DB = (() => {
     adminEditWord,
     adminDeleteWord,
     adminAddBook,
+    adminEditBook,
+    adminDeleteBook,
     adminAddUnit,
     // admin — dostęp do podręczników
     getUserBooks,
