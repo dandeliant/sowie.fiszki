@@ -2241,6 +2241,75 @@ const DB = (() => {
     return audioUrl;
   }
 
+  // ── PUBLIC CONTACT FORM (migracja #30) ──────────────────────
+  // Wiadomości z publicznego formularza kontaktowego (home.html).
+  // INSERT przez anon (z RLS CHECK constraints). SELECT/UPDATE/DELETE
+  // wymaga admina.
+
+  // Wysyła wiadomość z formularza. Każdy (w tym anon, niezalogowany)
+  // może to wywołać. Zwraca submitted ID lub rzuca błąd.
+  // payload: { name, email, subject, message }
+  async function submitContactForm(payload) {
+    const name    = (payload.name || '').trim();
+    const email   = (payload.email || '').trim();
+    const subject = (payload.subject || '').trim() || null;
+    const message = (payload.message || '').trim();
+    if (name.length < 2 || name.length > 100) throw new Error('Imię musi mieć 2-100 znaków.');
+    if (email.length < 5 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Niepoprawny adres e-mail.');
+    if (message.length < 5 || message.length > 5000) throw new Error('Wiadomość musi mieć 5-5000 znaków.');
+    if (subject && subject.length > 200) throw new Error('Temat za długi (max 200 znaków).');
+    const ua = (typeof navigator !== 'undefined' && navigator.userAgent)
+      ? String(navigator.userAgent).substring(0, 300)
+      : null;
+    const { data, error } = await supabase.from('public_contact_messages').insert({
+      name, email, subject, message, user_agent: ua
+    }).select('id').maybeSingle();
+    if (error) throw new Error(error.message);
+    return data?.id || null;
+  }
+
+  async function adminLoadContactMessages(filter) {
+    if (!_profile?.isAdmin) throw new Error('Tylko administrator.');
+    let q = supabase.from('public_contact_messages')
+      .select('id, name, email, subject, message, is_read, is_replied, notes, user_agent, created_at')
+      .order('created_at', { ascending: false });
+    if (filter === 'unread')   q = q.eq('is_read', false);
+    if (filter === 'replied')  q = q.eq('is_replied', true);
+    if (filter === 'pending')  q = q.eq('is_replied', false);
+    const { data, error } = await q;
+    if (error) throw new Error(error.message);
+    return data || [];
+  }
+
+  async function adminUpdateContactMessage(messageId, fields) {
+    if (!_profile?.isAdmin) throw new Error('Tylko administrator.');
+    if (!messageId) throw new Error('Brak ID wiadomości.');
+    const upd = {};
+    if (fields.is_read !== undefined)    upd.is_read = !!fields.is_read;
+    if (fields.is_replied !== undefined) upd.is_replied = !!fields.is_replied;
+    if (fields.notes !== undefined)      upd.notes = fields.notes || null;
+    const { error } = await supabase.from('public_contact_messages')
+      .update(upd).eq('id', messageId);
+    if (error) throw new Error(error.message);
+  }
+
+  async function adminDeleteContactMessage(messageId) {
+    if (!_profile?.isAdmin) throw new Error('Tylko administrator.');
+    if (!messageId) throw new Error('Brak ID.');
+    const { error } = await supabase.from('public_contact_messages')
+      .delete().eq('id', messageId);
+    if (error) throw new Error(error.message);
+  }
+
+  async function countUnreadContactMessages() {
+    if (!_profile?.isAdmin) return 0;
+    try {
+      const { data, error } = await supabase.rpc('count_unread_contact_messages');
+      if (error) return 0;
+      return Number(data) || 0;
+    } catch(e) { return 0; }
+  }
+
   async function deleteWordAudio(bookId, unitKey, wordPl) {
     if (!_profile?.isAdmin && !_profile?.isTeacher) throw new Error('Brak uprawnień');
     if (!bookId || !unitKey || !wordPl) throw new Error('Niepełne dane.');
@@ -2540,6 +2609,11 @@ const DB = (() => {
     loadWordAudioCache,
     uploadWordAudio,
     deleteWordAudio,
+    submitContactForm,
+    adminLoadContactMessages,
+    adminUpdateContactMessage,
+    adminDeleteContactMessage,
+    countUnreadContactMessages,
     adminCreateUser,
     adminDeleteUser,
     // admin — klasy
