@@ -12,7 +12,7 @@
 | **Macmillan Polska** | Brainy 6, Brainy 7, Tiger and Friends 1, Tiger and Friends 2, Tiger and Friends 3, Kids Can 1, New Password A2+ B1 | 7 |
 | **Pearson** | Together 4, Together 5, Together 6, Bugs Team 2, Bugs Team 3, English Class A1 | 6 |
 | **Oxford University Press (OUP)** | Steps Plus 4, Steps Plus 5 | 2 |
-| **Egmont** | Be Happy! 2 | 1 |
+| **Grupa MAC (Wydawnictwo MAC Edukacja)** | Be Happy! 2 | 1 |
 
 **Razem:** 16 podręczników z 4 wydawnictw.
 
@@ -23,7 +23,7 @@
 1. **Macmillan Polska** (najwięcej książek — najszybszy ROI)
 2. **Pearson Polska** (drugi w kolejności)
 3. **Oxford University Press Polska**
-4. **Egmont** (najmniej, ostatni)
+4. **Grupa MAC** (najmniej, ostatni)
 
 Daj 2-3 tygodnie na odpowiedź każdemu, zanim eskalujesz.
 
@@ -36,7 +36,7 @@ Daj 2-3 tygodnie na odpowiedź każdemu, zanim eskalujesz.
 - **Macmillan Polska:** `infoeducation@macmillan.pl` lub formularz na [macmillan.pl](https://www.macmillan.pl)
 - **Pearson Polska:** `kontakt@pearson.pl` lub formularz na [pearson.pl](https://www.pearson.pl)
 - **Oxford University Press Polska:** `polska@oup.com` lub [elt.oup.com](https://elt.oup.com/?cc=pl)
-- **Egmont:** `kontakt@egmont.pl` lub [egmont.pl](https://www.egmont.pl)
+- **Grupa MAC:** formularz kontaktowy na [mac.pl](https://www.mac.pl) (Wydawnictwo MAC Edukacja, ul. Witosa 76, Kielce)
 
 Wysyłaj z `sowie.fiszki@gmail.com` z czytelną stopką (imię, nazwisko, link do platformy).
 
@@ -129,10 +129,10 @@ www: [sowiefiszki.com](https://sowiefiszki.com)
 [NAZWY_PODRĘCZNIKÓW] = Steps Plus (klasy 4 i 5)
 ```
 
-### Dla Egmont
+### Dla Grupy MAC
 
 ```
-[NAZWA_WYDAWNICTWA] = Wydawnictwo Egmont Polska
+[NAZWA_WYDAWNICTWA] = Wydawnictwo MAC Edukacja
 [NAZWY_PODRĘCZNIKÓW] = Be Happy! 2
 ```
 
