@@ -27,6 +27,21 @@
 
 **⚠️ Termin do pamiętania: kwiecień 2027** — sprawdzić stan karty w Vercel ~30 dni przed odnowieniem domeny. W razie problemów z auto-renew, domena może wygasnąć i przejść do bidu po grace period.
 
+### 📧 Skrzynka firmowa (planowana)
+
+Obecnie **brak skrzynki na własnej domenie** — kontakt idzie na `sowie.fiszki@gmail.com`.
+
+**Plan:** uruchomić `kontakt@sowiefiszki.com` przez **ForwardEmail.net** (forwarding na gmail, darmowe). Próba 2 maja 2026 nieudana — ForwardEmail blokuje świeżo zarejestrowane domeny przez ~30-90 dni jako anti-abuse policy (sowiefiszki.com kupiona 29.04.2026). 
+
+**Termin powtórnej próby: początek lipca 2026** (po ~60 dniach „dojrzewania" domeny). Wtedy:
+1. Sign up na forwardemail.net (przez Google `sowie.fiszki@gmail.com`)
+2. Add Domain `sowiefiszki.com` → Add Alias `kontakt` → `sowie.fiszki@gmail.com`
+3. W Vercel DNS: 2 rekordy MX (`mx1.forwardemail.net`, `mx2.forwardemail.net`, priority 10) + TXT (`forward-email=kontakt:sowie.fiszki@gmail.com`) + SPF (`v=spf1 a mx include:_spf.forwardemail.net -all`)
+4. (Opcjonalnie) Gmail „Send mail as" z App Password — żeby odpowiedzi wychodziły z `kontakt@sowiefiszki.com`
+5. Po potwierdzeniu działania → update we wszystkich plikach (`polityka.html` §13, `regulamin.html`, `home.html`/`faq.html`/`aktualnosci.html` stopki, `app.html` wzmianki, `LIST-DO-WYDAWNICTW.md`).
+
+**Alternatywy gdyby ForwardEmail nadal odmawiał po 90 dniach:** Zoho Mail Free (5 skrzynek, 5 GB, bez IMAP) lub Cloudflare Email Routing (wymaga przeniesienia DNS z Vercel do Cloudflare).
+
 ## 📂 Architektura
 
 ### Pliki główne
