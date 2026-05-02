@@ -14,6 +14,19 @@
 - **Charakter:** osoba fizyczna prowadząca Platformę; **model freemium** (7-dniowy trial Premium → Free / Premium po opłacie). Wcześniej projekt był non-commercial — od ~2026-04-29 przygotowywany do monetyzacji.
 - **Service Worker:** aktualnie `v50` (stan na 23 kwietnia 2026)
 
+## 💰 Koszty i terminy odnowienia
+
+| Pozycja | Koszt | Termin / Status |
+|---|---|---|
+| **Domena `sowiefiszki.com`** (zarejestrowana przez Vercel) | $11,25 USD ≈ **46 zł** / rok | **Odnowienie: 29 kwietnia 2027** (auto-renew z karty zapisanej w Vercel) |
+| **Hosting Vercel** (Free tier — 100 GB transferu/mies.) | 0 zł | Wystarczy do ~kilku tysięcy aktywnych użytkowników. Po przekroczeniu — Vercel Pro ~20 USD/mies. |
+| **Supabase** (Free tier — 500 MB DB + 1 GB Storage + 5 GB transfer) | 0 zł | Storage uważnie monitorować przy nagraniach wymowy (`word-audio` bucket). Po przekroczeniu — Supabase Pro ~25 USD/mies. |
+| **GitHub** (repo prywatne, Free tier) | 0 zł | Bez limitów dla małego repo |
+
+**Razem stałe koszty: ~46 zł / rok** (~3,80 zł / miesiąc). Wszystko inne na Free tierach do rozsądnego pułapu użycia.
+
+**⚠️ Termin do pamiętania: kwiecień 2027** — sprawdzić stan karty w Vercel ~30 dni przed odnowieniem domeny. W razie problemów z auto-renew, domena może wygasnąć i przejść do bidu po grace period.
+
 ## 📂 Architektura
 
 ### Pliki główne
