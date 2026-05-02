@@ -1324,6 +1324,21 @@ body.guest-mode .progress-wrap{opacity:.4;}
   </div>
   <!-- Panel administratora (widoczny tylko dla admina) -->
   <div id="adminPanel" style="display:none;width:100%;margin-bottom:20px;">
+    <!-- Banner powiadomień: pokazuje admin'owi co czeka na uwagę przy wejściu do panelu.
+         Liczniki: nieprzeczytane wiadomości z formularza, oczekujące prośby o dostęp,
+         zgłoszone błędy słówek, wiadomości od użytkowników. Klik w element prowadzi
+         bezpośrednio do odpowiedniego ekranu. Pokazywany tylko gdy cokolwiek > 0. -->
+    <div id="adminAttentionBanner" style="display:none;width:100%;background:linear-gradient(135deg,rgba(255,209,102,.16),rgba(255,107,157,.10));border:2px solid rgba(255,209,102,.45);border-radius:16px;padding:14px 18px;margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+        <span style="font-size:1.6rem">🔔</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-family:'Playfair Display',serif;font-size:1.05rem;color:var(--accent);font-weight:800">Wymagają Twojej uwagi</div>
+          <div style="font-size:.7rem;color:var(--muted);font-weight:600">Kliknij element, aby przejść do szczegółów</div>
+        </div>
+        <button onclick="dismissAdminAttention()" title="Schowaj na 4 godziny" style="background:transparent;border:1px solid var(--border);color:var(--muted);border-radius:100px;padding:3px 9px;font-size:.65rem;font-weight:700;cursor:pointer;font-family:inherit">✕ Schowaj</button>
+      </div>
+      <div id="adminAttentionItems" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+    </div>
     <!-- Nagłówek -->
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:6px">
       <div>
@@ -7519,6 +7534,9 @@ function renderAdminPanel() {
       window.refreshInactivityAlerts('admin');
     }
   } catch(e) { console.warn('[renderAdminPanel] refreshInactivityAlerts:', e.message || e); }
+  // Banner „Wymagają Twojej uwagi" — pokazuje liczniki rzeczy do rozpatrzenia.
+  // Best-effort: jeśli któreś wywołanie zawiedzie, banner się po prostu nie pojawi.
+  try { refreshAdminAttentionBanner(); } catch(e) { console.warn('[renderAdminPanel] attention banner:', e.message || e); }
   const reqs = DB.getAdminRequests().filter(r => r.status === 'pending');
   const pending = document.getElementById('pendingBadge');
   const notifDot = document.getElementById('adminNotifDot');
@@ -17527,6 +17545,81 @@ if ('serviceWorker' in navigator) {
     } catch(e) { badge.style.display='none'; }
   }
   window._refreshContactMsgBadge = refreshContactMsgBadge;
+
+  // ═══════════════════════════════════════════════
+  //  ADMIN ATTENTION BANNER (panel sBooks, dla admina/nauczyciela)
+  //  Pokazuje chipy z licznikami rzeczy wymagających uwagi:
+  //   - 📨 nowe wiadomości z formularza kontaktowego (admin only)
+  //   - 📩 prośby o dostęp do podręczników (admin only)
+  //   - 🐛 zgłoszone błędy słówek (admin only)
+  //   - 💬 wiadomości od użytkowników (admin only)
+  //  Każdy chip jest klikalny — prowadzi bezpośrednio do odpowiedniego ekranu.
+  //  Banner można schować przyciskiem „✕ Schowaj" na 4 godziny (localStorage).
+  // ═══════════════════════════════════════════════
+
+  const _ADMIN_ATTENTION_DISMISS_KEY = 'fiszki_admin_attn_dismiss';
+  const _ADMIN_ATTENTION_DISMISS_HOURS = 4;
+
+  function _isAdminAttentionDismissed(){
+    try {
+      const ts = parseInt(localStorage.getItem(_ADMIN_ATTENTION_DISMISS_KEY) || '0', 10);
+      if (!ts) return false;
+      const ageHours = (Date.now() - ts) / 3600000;
+      return ageHours < _ADMIN_ATTENTION_DISMISS_HOURS;
+    } catch(e) { return false; }
+  }
+
+  window.dismissAdminAttention = function(){
+    try { localStorage.setItem(_ADMIN_ATTENTION_DISMISS_KEY, String(Date.now())); } catch(e) {}
+    const banner = document.getElementById('adminAttentionBanner');
+    if (banner) banner.style.display = 'none';
+    if (typeof toast === 'function') toast('🔕 Banner schowany na ' + _ADMIN_ATTENTION_DISMISS_HOURS + 'h.', 2400);
+  };
+
+  async function refreshAdminAttentionBanner(){
+    const banner = document.getElementById('adminAttentionBanner');
+    const items  = document.getElementById('adminAttentionItems');
+    if (!banner || !items) return;
+    // Ukryj dla niezalogowanych / uczniów
+    if (isGuest || (!isCurrentUserAdmin() && !isCurrentUserTeacher())) {
+      banner.style.display = 'none';
+      return;
+    }
+    // Schowany przez użytkownika niedawno?
+    if (_isAdminAttentionDismissed()) {
+      banner.style.display = 'none';
+      return;
+    }
+    // Pobierz liczniki równolegle (każdy z fallback do 0 przy błędzie / braku uprawnień)
+    const safe = (p) => p.then(n => Number(n) || 0).catch(() => 0);
+    const isAdmin = isCurrentUserAdmin();
+    const [contactN, accessN, errorN, msgN] = await Promise.all([
+      isAdmin && typeof DB.countUnreadContactMessages    === 'function' ? safe(DB.countUnreadContactMessages())    : Promise.resolve(0),
+      isAdmin && typeof DB.countPendingBookAccessRequests === 'function' ? safe(DB.countPendingBookAccessRequests()) : Promise.resolve(0),
+      isAdmin && typeof DB.countPendingWordErrorReports  === 'function' ? safe(DB.countPendingWordErrorReports())  : Promise.resolve(0),
+      isAdmin && typeof DB.countOpenConversations        === 'function' ? safe(DB.countOpenConversations())        : Promise.resolve(0)
+    ]);
+    const total = contactN + accessN + errorN + msgN;
+    if (total === 0) {
+      banner.style.display = 'none';
+      return;
+    }
+    // Buduj chipsy
+    const chip = (icon, count, label, action) =>
+      `<button type="button" onclick="${action}" style="background:rgba(255,255,255,.06);border:1.5px solid rgba(255,209,102,.35);color:var(--text);border-radius:100px;padding:6px 12px;font-weight:700;font-size:.78rem;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px;transition:all .18s" onmouseover="this.style.background='rgba(255,209,102,.18)';this.style.borderColor='var(--accent)'" onmouseout="this.style.background='rgba(255,255,255,.06)';this.style.borderColor='rgba(255,209,102,.35)'">
+        <span>${icon}</span>
+        <strong style="color:var(--accent);font-size:.85rem">${count}</strong>
+        <span style="color:var(--muted);font-weight:600;font-size:.72rem">${escHtml(label)}</span>
+      </button>`;
+    const parts = [];
+    if (contactN > 0) parts.push(chip('📨', contactN, contactN === 1 ? 'wiadomość z formularza' : (contactN < 5 ? 'wiadomości z formularza' : 'wiadomości z formularza'), "openContactMessages()"));
+    if (msgN > 0)     parts.push(chip('💬', msgN,     msgN === 1     ? 'rozmowa z użytkownikiem' : 'rozmowy z użytkownikami', "openMessagesScreen()"));
+    if (accessN > 0)  parts.push(chip('📩', accessN,  accessN === 1  ? 'prośba o dostęp' : 'prośby o dostęp',                "openAccessRequests()"));
+    if (errorN > 0)   parts.push(chip('🐛', errorN,   errorN === 1   ? 'zgłoszenie błędu' : 'zgłoszenia błędów',             "openWordErrors()"));
+    items.innerHTML = parts.join('');
+    banner.style.display = '';
+  }
+  window.refreshAdminAttentionBanner = refreshAdminAttentionBanner;
 
   window.openContactMessages = async function(){
     if (!isCurrentUserAdmin()) {
