@@ -2247,8 +2247,13 @@ const DB = (() => {
   // wymaga admina.
 
   // Wysyła wiadomość z formularza. Każdy (w tym anon, niezalogowany)
-  // może to wywołać. Zwraca submitted ID lub rzuca błąd.
+  // może to wywołać. Rzuca błąd lub zwraca true.
   // payload: { name, email, subject, message }
+  //
+  // UWAGA: NIE używamy `.select()` po `.insert()` — anon nie ma uprawnień
+  // SELECT (RLS), a Supabase domyślnie wykonuje RETURNING po INSERT, co
+  // skutkuje błędem „new row violates RLS policy" mimo że INSERT się powiódł.
+  // Bez .select() insert idzie cicho i poprawnie.
   async function submitContactForm(payload) {
     const name    = (payload.name || '').trim();
     const email   = (payload.email || '').trim();
@@ -2261,11 +2266,11 @@ const DB = (() => {
     const ua = (typeof navigator !== 'undefined' && navigator.userAgent)
       ? String(navigator.userAgent).substring(0, 300)
       : null;
-    const { data, error } = await supabase.from('public_contact_messages').insert({
+    const { error } = await supabase.from('public_contact_messages').insert({
       name, email, subject, message, user_agent: ua
-    }).select('id').maybeSingle();
+    });
     if (error) throw new Error(error.message);
-    return data?.id || null;
+    return true;
   }
 
   async function adminLoadContactMessages(filter) {
