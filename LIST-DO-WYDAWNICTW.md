@@ -9,8 +9,8 @@
 
 | Wydawnictwo | Podręczniki w aplikacji | Liczba |
 |---|---|---|
-| **Macmillan Polska** | Brainy 6, Brainy 7, Tiger and Friends 1, Tiger and Friends 2, Tiger and Friends 3, Kids Can 1, New Password A2+ B1 | 7 |
-| **Pearson** | Together 4, Together 5, Together 6, Bugs Team 2, Bugs Team 3, English Class A1 | 6 |
+| **Macmillan Polska** | Brainy 6, Brainy 7, Tiger and Friends 1, Tiger and Friends 2, Tiger and Friends 3, Kids Can 1, New Password A2+ B1, Together 4, Together 5, Together 6, Bugs Team 2, Bugs Team 3 | 12 |
+| **Pearson** | English Class A1 | 1 |
 | **Oxford University Press (OUP)** | Steps Plus 4, Steps Plus 5 | 2 |
 | **Grupa MAC (Wydawnictwo MAC Edukacja)** | Be Happy! 2 | 1 |
 
@@ -20,10 +20,10 @@
 
 ## Sugerowana kolejność wysyłki
 
-1. **Macmillan Polska** (najwięcej książek — najszybszy ROI)
-2. **Pearson Polska** (drugi w kolejności)
-3. **Oxford University Press Polska**
-4. **Grupa MAC** (najmniej, ostatni)
+1. **Macmillan Polska** (12 z 16 podręczników — zdecydowany priorytet, najszybszy ROI)
+2. **Oxford University Press Polska** (2 podręczniki — Steps Plus)
+3. **Pearson Polska** (1 podręcznik — English Class A1)
+4. **Grupa MAC** (1 podręcznik — Be Happy! 2)
 
 Daj 2-3 tygodnie na odpowiedź każdemu, zanim eskalujesz.
 
@@ -111,15 +111,15 @@ www: [sowiefiszki.com](https://sowiefiszki.com)
 ```
 [NAZWA_WYDAWNICTWA] = Macmillan Polska
 [NAZWY_PODRĘCZNIKÓW] = Brainy (klasa 6 i 7), Tiger and Friends (klasy 1, 2, 3),
-                       Kids Can 1, New Password A2+ B1
+                       Kids Can 1, New Password A2+ B1,
+                       Together (klasy 4, 5, 6), Bugs Team (klasy 2 i 3)
 ```
 
 ### Dla Pearson Polska
 
 ```
 [NAZWA_WYDAWNICTWA] = Pearson Polska
-[NAZWY_PODRĘCZNIKÓW] = Together (klasy 4, 5, 6), Bugs Team (klasy 2 i 3),
-                       English Class A1
+[NAZWY_PODRĘCZNIKÓW] = English Class A1
 ```
 
 ### Dla Oxford University Press
