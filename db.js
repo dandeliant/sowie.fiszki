@@ -178,6 +178,13 @@ const DB = (() => {
       console.warn('[loadProfile] book_access_overrides niedostępne:', e.message);
     }
 
+    // Załaduj cache custom nagrań wymowy (word_audio, migracja #28).
+    // Używane do odtwarzania podczas nauki przez wszystkich (gość/uczeń/nauczyciel/admin).
+    // Graceful degradation gdy tabela jeszcze nie istnieje.
+    try { await loadWordAudioCache(); } catch(e) {
+      console.warn('[loadProfile] word_audio niedostępne:', e.message);
+    }
+
     return _profile;
   }
 
@@ -2048,6 +2055,121 @@ const DB = (() => {
     delete _bookAccessOverrides[bookId];
   }
 
+  // ── WORD AUDIO (migracja #28) ───────────────────────────────
+  // Custom nagrania wymowy słówek przez admina/nauczyciela z mikrofonu.
+  // Cache: book_id|unit_key|word_pl → audio_url
+  let _wordAudioCache = {};
+
+  function getWordAudioCache() { return _wordAudioCache || {}; }
+
+  function _waKey(bookId, unitKey, wordPl) {
+    return bookId + '|' + unitKey + '|' + wordPl;
+  }
+
+  // Sprawdza czy istnieje custom nagranie dla danego słowa.
+  // Zwraca URL audio lub null.
+  function getWordAudioUrl(bookId, unitKey, wordPl) {
+    if (!bookId || !unitKey || !wordPl) return null;
+    return _wordAudioCache[_waKey(bookId, unitKey, wordPl)] || null;
+  }
+
+  async function loadWordAudioCache() {
+    try {
+      const { data, error } = await supabase
+        .from('word_audio')
+        .select('book_id, unit_key, word_pl, audio_url');
+      if (error) {
+        // Tabela może jeszcze nie istnieć (przed migracją #28)
+        console.warn('[loadWordAudioCache] niedostępna:', error.message);
+        _wordAudioCache = {};
+        return _wordAudioCache;
+      }
+      const map = {};
+      (data || []).forEach(r => {
+        map[_waKey(r.book_id, r.unit_key, r.word_pl)] = r.audio_url;
+      });
+      _wordAudioCache = map;
+      return map;
+    } catch (e) {
+      console.warn('[loadWordAudioCache] error:', e.message);
+      _wordAudioCache = {};
+      return _wordAudioCache;
+    }
+  }
+
+  // Upload Blob (np. z MediaRecorder) do bucket „word-audio" + zapis URL
+  // do tabeli word_audio. Tylko admin / nauczyciel. Nadpisuje istniejące.
+  async function uploadWordAudio(blob, bookId, unitKey, wordPl) {
+    if (!_profile?.isAdmin && !_profile?.isTeacher) throw new Error('Brak uprawnień');
+    if (!blob || !bookId || !unitKey || !wordPl) throw new Error('Niepełne dane.');
+    if (blob.size === 0) throw new Error('Pusty plik audio.');
+    if (blob.size > 1024 * 1024) throw new Error('Plik za duży (>1MB). Skróć nagranie.');
+
+    // Najpierw skasuj stare nagranie jeśli istnieje (zwalnia miejsce w storage)
+    try {
+      const { data: oldRow } = await supabase.from('word_audio')
+        .select('audio_path')
+        .eq('book_id', bookId).eq('unit_key', unitKey).eq('word_pl', wordPl)
+        .maybeSingle();
+      if (oldRow && oldRow.audio_path) {
+        await supabase.storage.from('word-audio').remove([oldRow.audio_path]);
+      }
+    } catch(e) { /* ignoruj — kolejny upload nadpisze meta */ }
+
+    // Wygeneruj bezpieczną ścieżkę: bookId/unitKey/timestamp_normalized.webm
+    const safeWord = (wordPl || 'word').toLowerCase()
+      .replace(/[ąćęłńóśźż]/g, c => ({ą:'a',ć:'c',ę:'e',ł:'l',ń:'n',ó:'o',ś:'s',ź:'z',ż:'z'})[c] || c)
+      .replace(/[^a-z0-9]/g, '_').substring(0, 40);
+    const path = `${bookId}/${unitKey}/${Date.now()}_${safeWord}.webm`;
+
+    // Upload do Storage
+    const { error: upErr } = await supabase.storage
+      .from('word-audio')
+      .upload(path, blob, { contentType: blob.type || 'audio/webm', upsert: false });
+    if (upErr) throw new Error('Upload nieudany: ' + upErr.message);
+
+    // Pobierz publiczny URL
+    const { data: urlData } = supabase.storage.from('word-audio').getPublicUrl(path);
+    const audioUrl = urlData?.publicUrl;
+    if (!audioUrl) throw new Error('Nie udało się uzyskać publicznego URL.');
+
+    // Upsert do tabeli meta-danych
+    const { error: dbErr } = await supabase.from('word_audio').upsert({
+      book_id: bookId,
+      unit_key: unitKey,
+      word_pl: wordPl,
+      audio_url: audioUrl,
+      audio_path: path,
+      uploaded_by: _userId,
+      uploaded_at: new Date().toISOString()
+    }, { onConflict: 'book_id,unit_key,word_pl' });
+    if (dbErr) throw new Error('Zapis meta: ' + dbErr.message);
+
+    _wordAudioCache[_waKey(bookId, unitKey, wordPl)] = audioUrl;
+    return audioUrl;
+  }
+
+  async function deleteWordAudio(bookId, unitKey, wordPl) {
+    if (!_profile?.isAdmin && !_profile?.isTeacher) throw new Error('Brak uprawnień');
+    if (!bookId || !unitKey || !wordPl) throw new Error('Niepełne dane.');
+
+    // Pobierz path do usunięcia z storage
+    const { data: row } = await supabase.from('word_audio')
+      .select('audio_path')
+      .eq('book_id', bookId).eq('unit_key', unitKey).eq('word_pl', wordPl)
+      .maybeSingle();
+    if (row && row.audio_path) {
+      try { await supabase.storage.from('word-audio').remove([row.audio_path]); } catch(e) {}
+    }
+
+    const { error } = await supabase.from('word_audio')
+      .delete()
+      .eq('book_id', bookId).eq('unit_key', unitKey).eq('word_pl', wordPl);
+    if (error) throw new Error(error.message);
+
+    delete _wordAudioCache[_waKey(bookId, unitKey, wordPl)];
+  }
+
   async function adminCreateUser(username, password) {
     if (!_profile?.isAdmin && !_profile?.isTeacher) throw new Error('Brak uprawnień');
     const { data, error } = await supabase.rpc('admin_create_user', {
@@ -2319,6 +2441,11 @@ const DB = (() => {
     loadBookAccessOverrides,
     adminSaveBookAccessOverride,
     adminClearBookAccessOverride,
+    getWordAudioCache,
+    getWordAudioUrl,
+    loadWordAudioCache,
+    uploadWordAudio,
+    deleteWordAudio,
     adminCreateUser,
     adminDeleteUser,
     // admin — klasy

@@ -2318,6 +2318,24 @@ szkoła	school"></textarea>
       <input type="text" class="modal-textarea" id="wordEditPl" placeholder="np. głowa" autocomplete="off" style="height:auto;padding:8px 10px;font-size:.85rem;font-weight:600">
       <div class="modal-label" id="wordEditTargetLabel">Język docelowy *</div>
       <input type="text" class="modal-textarea" id="wordEditTarget" placeholder="np. head" autocomplete="off" autocorrect="off" style="height:auto;padding:8px 10px;font-size:.85rem;font-weight:600">
+
+      <!-- Sekcja nagrywania wymowy -->
+      <div class="modal-label" style="display:flex;align-items:center;justify-content:space-between;gap:6px">
+        <span>🎙️ Wymowa (nagranie)</span>
+        <span id="wordAudioStatus" style="font-size:.62rem;font-weight:600;color:var(--muted)">—</span>
+      </div>
+      <div id="wordAudioPanel" style="background:var(--surface2);border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:10px">
+        <div id="wordAudioControls" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <button type="button" id="btnRecStart" onclick="wordAudioStartRec()" style="background:var(--danger);color:#fff;border:none;border-radius:100px;padding:7px 14px;font-weight:800;font-size:.78rem;cursor:pointer;font-family:inherit">🎙️ Nagraj</button>
+          <button type="button" id="btnRecStop" onclick="wordAudioStopRec()" style="display:none;background:var(--accent);color:#1a1040;border:none;border-radius:100px;padding:7px 14px;font-weight:800;font-size:.78rem;cursor:pointer;font-family:inherit">⏹️ Stop <span id="recTimer" style="font-family:monospace">0:00</span></button>
+          <button type="button" id="btnRecPlay" onclick="wordAudioPreview()" style="display:none;background:transparent;border:1.5px solid var(--purple);color:var(--purple);border-radius:100px;padding:6px 12px;font-weight:700;font-size:.74rem;cursor:pointer;font-family:inherit">🔊 Odtwórz</button>
+          <button type="button" id="btnRecSave" onclick="wordAudioSaveRec()" style="display:none;background:var(--success);color:#fff;border:none;border-radius:100px;padding:6px 14px;font-weight:800;font-size:.74rem;cursor:pointer;font-family:inherit">💾 Zapisz nagranie</button>
+          <button type="button" id="btnRecCancel" onclick="wordAudioCancelRec()" style="display:none;background:transparent;border:1.5px solid var(--muted);color:var(--muted);border-radius:100px;padding:6px 12px;font-weight:700;font-size:.74rem;cursor:pointer;font-family:inherit">✗ Anuluj</button>
+          <button type="button" id="btnRecDelete" onclick="wordAudioDeleteExisting()" style="display:none;background:transparent;border:1.5px solid var(--danger);color:var(--danger);border-radius:100px;padding:6px 12px;font-weight:700;font-size:.74rem;cursor:pointer;font-family:inherit">🗑️ Usuń</button>
+        </div>
+        <div style="font-size:.62rem;color:var(--muted);font-weight:500;font-style:italic;margin-top:6px;line-height:1.4" id="wordAudioHint">Naciśnij 🎙️ Nagraj, wymów słowo wyraźnie (max 10 s), kliknij ⏹️ Stop, sprawdź odtworzeniem i zapisz.</div>
+      </div>
+
       <div id="wordEditMsg" style="font-size:.78rem;font-weight:700;margin-top:8px;min-height:18px"></div>
       <div class="modal-btns">
         <button class="btn-modal-cancel" onclick="closeWordEditor()">Anuluj</button>
@@ -5621,10 +5639,14 @@ function openWordEditor(){
   msg.textContent = ''; msg.style.color = '';
   document.getElementById('wordEditModal').style.display = 'flex';
   setTimeout(() => document.getElementById('wordEditPl').focus(), 60);
+  // Inicjalizacja sekcji nagrywania (Phase C) — pokazuje status istniejącego nagrania
+  if (typeof _waInitForCurrentWord === 'function') _waInitForCurrentWord();
 }
 
 function closeWordEditor(){
   document.getElementById('wordEditModal').style.display = 'none';
+  // Sprzątnij zasoby nagrywania (mikrofon, blob URLs)
+  if (typeof _wordAudioCleanup === 'function') _wordAudioCleanup();
 }
 
 async function saveWordEdit(){
@@ -5702,6 +5724,236 @@ function refreshEditWordBtn(){
                     && activeWords[curIdx]);
   btn.style.display = (canEdit && haveWord) ? '' : 'none';
 }
+
+// ══════════════════════════════════════════════
+//  NAGRYWANIE WYMOWY SŁÓWKA (Phase C)
+//  MediaRecorder API: getUserMedia (mikrofon) → MediaRecorder → Blob.
+//  Format: audio/webm;codecs=opus (mały, dobre wsparcie przeglądarek).
+//  Upload do Supabase Storage przez DB.uploadWordAudio.
+// ══════════════════════════════════════════════
+let _wordAudio = {
+  unitKey: null,         // znaleziony unit zawierający słowo (przy otwarciu modala)
+  wordPl: null,          // dla którego słowa nagrywamy
+  recorder: null,        // MediaRecorder instance
+  stream: null,          // MediaStream (do zamknięcia mic)
+  chunks: [],            // zebrane Blob fragmenty
+  recordedBlob: null,    // gotowy blob po stop
+  previewUrl: null,      // ObjectURL dla preview
+  timerInterval: null,
+  startedAt: 0,
+  maxSec: 10
+};
+
+function _waSetUI(state){
+  // state: 'idle' (nic) | 'idle-saved' (jest zapisane) | 'recording' | 'preview' | 'saving'
+  const ids = ['btnRecStart','btnRecStop','btnRecPlay','btnRecSave','btnRecCancel','btnRecDelete'];
+  ids.forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
+  if (state === 'idle') {
+    document.getElementById('btnRecStart').style.display = '';
+  } else if (state === 'idle-saved') {
+    document.getElementById('btnRecStart').style.display = '';
+    document.getElementById('btnRecStart').textContent = '🎙️ Nagraj ponownie';
+    document.getElementById('btnRecPlay').style.display = '';
+    document.getElementById('btnRecPlay').textContent = '🔊 Odtwórz zapisane';
+    document.getElementById('btnRecDelete').style.display = '';
+  } else if (state === 'recording') {
+    document.getElementById('btnRecStop').style.display = '';
+  } else if (state === 'preview') {
+    document.getElementById('btnRecStart').style.display = '';
+    document.getElementById('btnRecStart').textContent = '🎙️ Nagraj ponownie';
+    document.getElementById('btnRecPlay').style.display = '';
+    document.getElementById('btnRecPlay').textContent = '🔊 Odsłuchaj';
+    document.getElementById('btnRecSave').style.display = '';
+    document.getElementById('btnRecCancel').style.display = '';
+  }
+}
+
+function _waInitForCurrentWord(){
+  // Wywoływane po otwarciu modala — ustawia unitKey i status istniejącego nagrania
+  _wordAudioCleanup();
+  const status = document.getElementById('wordAudioStatus');
+  const hint   = document.getElementById('wordAudioHint');
+
+  if (curIdx === null || !activeWords || !activeWords[curIdx]) {
+    if (status) status.textContent = '—';
+    _waSetUI('idle');
+    return;
+  }
+  const wordPl = activeWords[curIdx][0];
+  _wordAudio.wordPl = wordPl;
+
+  // Znajdź unit zawierający to słowo
+  const book = (typeof BOOKS !== 'undefined') ? BOOKS[currentBookId] : null;
+  let foundUnit = null;
+  if (book) {
+    for (const uk of Object.keys(book.units)) {
+      if (uk === 'all') continue;
+      if (book.units[uk].words.some(w => w[0] === wordPl)) { foundUnit = uk; break; }
+    }
+  }
+  _wordAudio.unitKey = foundUnit;
+
+  if (!foundUnit) {
+    if (status) { status.textContent = '⚠️ Brak unitu'; status.style.color = 'var(--danger)'; }
+    if (hint) hint.textContent = 'Nie znaleziono słowa w żadnym unicie. Nagrywanie niedostępne.';
+    _waSetUI('idle');
+    document.getElementById('btnRecStart').disabled = true;
+    return;
+  }
+
+  // Czy istnieje już nagranie?
+  const url = (DB.getWordAudioUrl) ? DB.getWordAudioUrl(currentBookId, foundUnit, wordPl) : null;
+  if (url) {
+    if (status) { status.textContent = '✓ Zapisane nagranie'; status.style.color = 'var(--success)'; }
+    if (hint) hint.textContent = 'Możesz odsłuchać zapisane nagranie, nagrać ponownie (zastąpi stare) lub usunąć.';
+    _waSetUI('idle-saved');
+  } else {
+    if (status) { status.textContent = 'Brak nagrania (używa TTS)'; status.style.color = 'var(--muted)'; }
+    if (hint) hint.textContent = 'Naciśnij 🎙️ Nagraj, wymów słowo wyraźnie (max 10 s), kliknij ⏹️ Stop, sprawdź odtworzeniem i zapisz.';
+    _waSetUI('idle');
+  }
+  document.getElementById('btnRecStart').disabled = false;
+}
+
+function _wordAudioCleanup(){
+  if (_wordAudio.timerInterval) { clearInterval(_wordAudio.timerInterval); _wordAudio.timerInterval = null; }
+  if (_wordAudio.stream) {
+    try { _wordAudio.stream.getTracks().forEach(t => t.stop()); } catch(e){}
+    _wordAudio.stream = null;
+  }
+  if (_wordAudio.previewUrl) {
+    try { URL.revokeObjectURL(_wordAudio.previewUrl); } catch(e){}
+    _wordAudio.previewUrl = null;
+  }
+  _wordAudio.recorder = null;
+  _wordAudio.chunks = [];
+  _wordAudio.recordedBlob = null;
+}
+
+window.wordAudioStartRec = async function(){
+  const hint = document.getElementById('wordAudioHint');
+  if (!_wordAudio.unitKey) return;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    alert('Twoja przeglądarka nie obsługuje nagrywania audio.');
+    return;
+  }
+  try {
+    _wordAudio.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch(e) {
+    alert('Brak dostępu do mikrofonu: ' + e.message);
+    return;
+  }
+  // Wybór formatu — webm/opus jeśli dostępny, inaczej domyślny
+  let mime = 'audio/webm;codecs=opus';
+  if (typeof MediaRecorder.isTypeSupported === 'function' && !MediaRecorder.isTypeSupported(mime)) {
+    mime = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' :
+           MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : '';
+  }
+  try {
+    _wordAudio.recorder = mime ? new MediaRecorder(_wordAudio.stream, { mimeType: mime })
+                               : new MediaRecorder(_wordAudio.stream);
+  } catch(e) {
+    alert('Nie udało się uruchomić nagrywania: ' + e.message);
+    _wordAudioCleanup();
+    return;
+  }
+  _wordAudio.chunks = [];
+  _wordAudio.recorder.ondataavailable = (e) => { if (e.data.size > 0) _wordAudio.chunks.push(e.data); };
+  _wordAudio.recorder.onstop = () => {
+    const type = _wordAudio.recorder.mimeType || 'audio/webm';
+    _wordAudio.recordedBlob = new Blob(_wordAudio.chunks, { type });
+    if (_wordAudio.previewUrl) URL.revokeObjectURL(_wordAudio.previewUrl);
+    _wordAudio.previewUrl = URL.createObjectURL(_wordAudio.recordedBlob);
+    if (_wordAudio.stream) {
+      _wordAudio.stream.getTracks().forEach(t => t.stop());
+      _wordAudio.stream = null;
+    }
+    if (_wordAudio.timerInterval) { clearInterval(_wordAudio.timerInterval); _wordAudio.timerInterval = null; }
+    if (hint) hint.textContent = `Nagrano ${(_wordAudio.recordedBlob.size/1024).toFixed(1)} KB. Odsłuchaj i zapisz lub anuluj.`;
+    _waSetUI('preview');
+  };
+  _wordAudio.recorder.start();
+  _wordAudio.startedAt = Date.now();
+  if (hint) hint.textContent = '🔴 Nagrywam… mów wyraźnie. Kliknij ⏹️ Stop gdy skończysz.';
+  _waSetUI('recording');
+  // Timer
+  const tEl = document.getElementById('recTimer');
+  _wordAudio.timerInterval = setInterval(() => {
+    const sec = Math.floor((Date.now() - _wordAudio.startedAt) / 1000);
+    if (tEl) tEl.textContent = '0:' + String(sec).padStart(2, '0');
+    // Auto-stop po max
+    if (sec >= _wordAudio.maxSec) wordAudioStopRec();
+  }, 200);
+};
+
+window.wordAudioStopRec = function(){
+  if (_wordAudio.recorder && _wordAudio.recorder.state === 'recording') {
+    try { _wordAudio.recorder.stop(); } catch(e){}
+  }
+};
+
+window.wordAudioPreview = function(){
+  // Odtwórz: jeśli mamy świeże nagranie → preview blob; jeśli tylko zapisane → URL z DB
+  let url = _wordAudio.previewUrl;
+  if (!url && DB.getWordAudioUrl && _wordAudio.unitKey && _wordAudio.wordPl) {
+    url = DB.getWordAudioUrl(currentBookId, _wordAudio.unitKey, _wordAudio.wordPl);
+  }
+  if (!url) return;
+  const a = new Audio(url);
+  a.play().catch(e => alert('Nie udało się odtworzyć: ' + e.message));
+};
+
+window.wordAudioCancelRec = function(){
+  if (_wordAudio.previewUrl) { URL.revokeObjectURL(_wordAudio.previewUrl); _wordAudio.previewUrl = null; }
+  _wordAudio.recordedBlob = null;
+  // Wróć do stanu idle (z uwzględnieniem czy istnieje zapisane)
+  _waInitForCurrentWord();
+};
+
+window.wordAudioSaveRec = async function(){
+  if (!_wordAudio.recordedBlob) return;
+  if (!_wordAudio.unitKey || !_wordAudio.wordPl) return;
+  const status = document.getElementById('wordAudioStatus');
+  const hint = document.getElementById('wordAudioHint');
+  const btnSave = document.getElementById('btnRecSave');
+  btnSave.disabled = true; btnSave.textContent = '⏳ Zapisuję…';
+  if (status) { status.textContent = '⏳ Wysyłam…'; status.style.color = 'var(--muted)'; }
+  try {
+    await DB.uploadWordAudio(_wordAudio.recordedBlob, currentBookId, _wordAudio.unitKey, _wordAudio.wordPl);
+    if (status) { status.textContent = '✓ Zapisano'; status.style.color = 'var(--success)'; }
+    if (hint) hint.textContent = 'Nagranie zapisane. Od teraz fiszka odtworzy Twoją wersję zamiast TTS.';
+    if (typeof toast === 'function') toast('🎙️ Wymowa zapisana.', 2400);
+    // Cleanup preview, przejdź do idle-saved
+    if (_wordAudio.previewUrl) { URL.revokeObjectURL(_wordAudio.previewUrl); _wordAudio.previewUrl = null; }
+    _wordAudio.recordedBlob = null;
+    _waSetUI('idle-saved');
+  } catch(e) {
+    console.error('[wordAudioSaveRec]', e);
+    if (status) { status.textContent = '❌ Błąd zapisu'; status.style.color = 'var(--danger)'; }
+    if (hint) hint.textContent = '❌ ' + e.message;
+  } finally {
+    btnSave.disabled = false; btnSave.textContent = '💾 Zapisz nagranie';
+  }
+};
+
+window.wordAudioDeleteExisting = async function(){
+  if (!_wordAudio.unitKey || !_wordAudio.wordPl) return;
+  if (!confirm('Usunąć zapisane nagranie wymowy? Fiszka wróci do TTS.')) return;
+  const status = document.getElementById('wordAudioStatus');
+  const hint = document.getElementById('wordAudioHint');
+  if (status) { status.textContent = '⏳ Usuwam…'; status.style.color = 'var(--muted)'; }
+  try {
+    await DB.deleteWordAudio(currentBookId, _wordAudio.unitKey, _wordAudio.wordPl);
+    if (status) { status.textContent = 'Brak nagrania (TTS)'; status.style.color = 'var(--muted)'; }
+    if (hint) hint.textContent = 'Nagranie usunięte. Naciśnij 🎙️ Nagraj, aby dodać nowe.';
+    if (typeof toast === 'function') toast('🗑️ Nagranie usunięte.', 2400);
+    _waSetUI('idle');
+  } catch(e) {
+    console.error('[wordAudioDeleteExisting]', e);
+    if (status) { status.textContent = '❌ Błąd usuwania'; status.style.color = 'var(--danger)'; }
+    if (hint) hint.textContent = '❌ ' + e.message;
+  }
+};
 
 // ══════════════════════════════════════════════
 //  QUIZ
@@ -6091,10 +6343,42 @@ function spk(txt, lang, rate) {
   speechSynthesis.speak(u);
 }
 // Direction-aware TTS — używa języka aktywnego podręcznika
-function speakQCurr(e) { if (e) e.stopPropagation(); if (curIdx !== null) { if (studyDir==='pl_en') spkPl(activeWords[curIdx][0]); else spk(activeWords[curIdx][1], getBookLang()); } }
-function speakACurr(e) { if (e) e.stopPropagation(); if (curIdx !== null) { if (studyDir==='pl_en') spk(activeWords[curIdx][1], getBookLang()); else spkPl(activeWords[curIdx][0]); } }
-function speakQCurrDirect() { if (curIdx !== null) { if (studyDir==='pl_en') spkPl(activeWords[curIdx][0]); else spk(activeWords[curIdx][1], getBookLang()); } }
-function speakACurrDirect() { if (curIdx !== null) { if (studyDir==='pl_en') spk(activeWords[curIdx][1], getBookLang()); else spkPl(activeWords[curIdx][0]); } }
+function speakQCurr(e) { if (e) e.stopPropagation(); if (curIdx !== null) { if (studyDir==='pl_en') spkPl(activeWords[curIdx][0]); else _speakTargetCurr(); } }
+function speakACurr(e) { if (e) e.stopPropagation(); if (curIdx !== null) { if (studyDir==='pl_en') _speakTargetCurr(); else spkPl(activeWords[curIdx][0]); } }
+function speakQCurrDirect() { if (curIdx !== null) { if (studyDir==='pl_en') spkPl(activeWords[curIdx][0]); else _speakTargetCurr(); } }
+function speakACurrDirect() { if (curIdx !== null) { if (studyDir==='pl_en') _speakTargetCurr(); else spkPl(activeWords[curIdx][0]); } }
+
+// Próbuje odtworzyć custom nagranie wymowy aktywnego słowa (zapisane przez
+// admina/nauczyciela w word_audio + Storage). Jeśli go nie ma — fallback do TTS.
+// Używane do wymowy w języku DOCELOWYM (angielski/francuski).
+function _speakTargetCurr(){
+  if (curIdx === null || !activeWords || !activeWords[curIdx]) return;
+  const wordPl = activeWords[curIdx][0];
+  const wordTarget = activeWords[curIdx][1];
+  // Sprawdź czy w cache jest URL custom nagrania
+  if (typeof DB !== 'undefined' && DB.getWordAudioUrl) {
+    // Znajdź unitKey zawierający to słowo (potrzebny dla klucza cache)
+    const book = (typeof BOOKS !== 'undefined') ? BOOKS[currentBookId] : null;
+    if (book) {
+      for (const uk of Object.keys(book.units)) {
+        if (uk === 'all') continue;
+        if (book.units[uk].words.some(w => w[0] === wordPl)) {
+          const url = DB.getWordAudioUrl(currentBookId, uk, wordPl);
+          if (url) {
+            try {
+              const a = new Audio(url);
+              a.play().catch(() => spk(wordTarget, getBookLang())); // fallback
+              return;
+            } catch(e) { /* fallback do TTS */ }
+          }
+          break;
+        }
+      }
+    }
+  }
+  // Fallback — TTS
+  spk(wordTarget, getBookLang());
+}
 function speakTxt(t) { spk(t, getBookLang()); }
 function spkPl(t) { spk(t, 'pl-PL', 1); }
 
@@ -11980,18 +12264,24 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // Załaduj globalne ustawienia widoczności podręczników (book_access_overrides)
-// — fire-and-forget. Dla gościa robimy to ręcznie tutaj (nie ma loadProfile);
-// dla zalogowanego loadProfile sam to robi, ale wywołanie powtórne jest tanie.
+// + cache nagrań wymowy (word_audio) — fire-and-forget. Dla gościa robimy
+// to ręcznie tutaj (nie ma loadProfile); dla zalogowanego loadProfile sam
+// to robi, ale wywołanie powtórne jest tanie.
 // Po załadowaniu odśwież sBooks jeśli aktywny — to pokaże ewentualne zmiany
 // (np. admin po wprowadzeniu zmian zobaczy świeże dane bez reloadu).
 (function loadBookAccessOverridesEarly(){
-  if (typeof DB === 'undefined' || typeof DB.loadBookAccessOverrides !== 'function') return;
-  DB.loadBookAccessOverrides().then(() => {
-    const sBooks = document.getElementById('sBooks');
-    if (sBooks && sBooks.classList.contains('active') && typeof refreshBooks === 'function') {
-      refreshBooks();
-    }
-  }).catch(()=>{});
+  if (typeof DB === 'undefined') return;
+  if (typeof DB.loadBookAccessOverrides === 'function') {
+    DB.loadBookAccessOverrides().then(() => {
+      const sBooks = document.getElementById('sBooks');
+      if (sBooks && sBooks.classList.contains('active') && typeof refreshBooks === 'function') {
+        refreshBooks();
+      }
+    }).catch(()=>{});
+  }
+  if (typeof DB.loadWordAudioCache === 'function') {
+    DB.loadWordAudioCache().catch(()=>{});
+  }
 })();
 
 // ═══════════════════════════════════════════════════════════════
