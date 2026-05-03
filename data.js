@@ -1651,6 +1651,153 @@ const BOOKS = {
     }
   }
 
+  // ─── VOYAGE (FRANCUSKI) ───────────────────────────────
+  ,travelFr: {
+    id: 'travelFr',
+    language: 'fr', schoolType: 'courses',
+    name: 'Voyage (Podróż)',
+    shortName: 'Voyage',
+    icon: '✈️',
+    color: '#00cec9',
+    lang: 'fr-FR',
+    description: 'Praktyczny francuski w podróży: lotnisko',
+    units: {
+      unit1: {
+        name: 'Lotnisko (Aéroport)', icon: '✈️', color: '#74b9ff',
+        words: [
+          ['lotnisko', "l'aéroport"],
+          ['lot', 'le vol'],
+          ['samolot', "l'avion"],
+          ['terminal', 'le terminal'],
+          ['odprawa', "l'enregistrement"],
+          ['odprawić się', "s'enregistrer"],
+          ['brama (gate)', "la porte d'embarquement"],
+          ['wejście na pokład', "l'embarquement"],
+          ['karta pokładowa', "la carte d'embarquement"],
+          ['paszport', 'le passeport'],
+          ['wiza', 'le visa'],
+          ['bagaż', 'les bagages'],
+          ['bagaż podręczny', 'le bagage à main'],
+          ['nadbagaż', "l'excédent de bagages"],
+          ['taśma bagażowa', 'le tapis à bagages'],
+          ['odbiór bagażu', 'la livraison des bagages'],
+          ['opóźnienie', 'le retard'],
+          ['opóźniony', 'en retard'],
+          ['odwołany', 'annulé'],
+          ['przylot', "l'arrivée"],
+          ['odlot', 'le départ'],
+          ['tablica wylotów', 'le tableau des départs'],
+          ['przesiadka', 'la correspondance'],
+          ['kontrola bezpieczeństwa', 'le contrôle de sécurité'],
+          ['kontrola paszportowa', 'le contrôle des passeports'],
+          ['odprawa celna', 'la douane'],
+          ['strefa wolnocłowa', 'la boutique hors taxes'],
+          ['linie lotnicze', 'la compagnie aérienne'],
+          ['bilet w obie strony', 'le billet aller-retour'],
+          ['bilet w jedną stronę', 'le billet aller simple'],
+        ]
+      },
+    }
+  }
+
+  // ─── REISE (NIEMIECKI) ────────────────────────────────
+  ,travelDe: {
+    id: 'travelDe',
+    language: 'de', schoolType: 'courses',
+    name: 'Reise (Podróż)',
+    shortName: 'Reise',
+    icon: '✈️',
+    color: '#00cec9',
+    lang: 'de-DE',
+    description: 'Praktyczny niemiecki w podróży: lotnisko',
+    units: {
+      unit1: {
+        name: 'Lotnisko (Flughafen)', icon: '✈️', color: '#74b9ff',
+        words: [
+          ['lotnisko', 'der Flughafen'],
+          ['lot', 'der Flug'],
+          ['samolot', 'das Flugzeug'],
+          ['terminal', 'das Terminal'],
+          ['odprawa', 'der Check-in'],
+          ['odprawić się', 'einchecken'],
+          ['brama (gate)', 'das Gate'],
+          ['wejście na pokład', 'das Boarding'],
+          ['karta pokładowa', 'die Bordkarte'],
+          ['paszport', 'der Reisepass'],
+          ['wiza', 'das Visum'],
+          ['bagaż', 'das Gepäck'],
+          ['bagaż podręczny', 'das Handgepäck'],
+          ['nadbagaż', 'das Übergepäck'],
+          ['taśma bagażowa', 'das Gepäckband'],
+          ['odbiór bagażu', 'die Gepäckausgabe'],
+          ['opóźnienie', 'die Verspätung'],
+          ['opóźniony', 'verspätet'],
+          ['odwołany', 'abgesagt'],
+          ['przylot', 'die Ankunft'],
+          ['odlot', 'der Abflug'],
+          ['tablica wylotów', 'die Abflugtafel'],
+          ['przesiadka', 'der Anschluss'],
+          ['kontrola bezpieczeństwa', 'die Sicherheitskontrolle'],
+          ['kontrola paszportowa', 'die Passkontrolle'],
+          ['odprawa celna', 'die Zollkontrolle'],
+          ['strefa wolnocłowa', 'der Duty-free-Bereich'],
+          ['linie lotnicze', 'die Fluggesellschaft'],
+          ['bilet w obie strony', 'das Hin- und Rückflugticket'],
+          ['bilet w jedną stronę', 'das einfache Ticket'],
+        ]
+      },
+    }
+  }
+
+  // ─── ПУТЕШЕСТВИЕ (ROSYJSKI) ───────────────────────────
+  ,travelRu: {
+    id: 'travelRu',
+    language: 'ru', schoolType: 'courses',
+    name: 'Путешествие (Podróż)',
+    shortName: 'Путеш.',
+    icon: '✈️',
+    color: '#00cec9',
+    lang: 'ru-RU',
+    description: 'Praktyczny rosyjski w podróży: lotnisko',
+    units: {
+      unit1: {
+        name: 'Lotnisko (Аэропорт)', icon: '✈️', color: '#74b9ff',
+        words: [
+          ['lotnisko', 'аэропорт'],
+          ['lot', 'рейс'],
+          ['samolot', 'самолёт'],
+          ['terminal', 'терминал'],
+          ['odprawa', 'регистрация'],
+          ['odprawić się', 'зарегистрироваться'],
+          ['brama (gate)', 'выход на посадку'],
+          ['wejście na pokład', 'посадка'],
+          ['karta pokładowa', 'посадочный талон'],
+          ['paszport', 'паспорт'],
+          ['wiza', 'виза'],
+          ['bagaż', 'багаж'],
+          ['bagaż podręczny', 'ручная кладь'],
+          ['nadbagaż', 'перевес багажа'],
+          ['taśma bagażowa', 'багажная лента'],
+          ['odbiór bagażu', 'выдача багажа'],
+          ['opóźnienie', 'задержка'],
+          ['opóźniony', 'задержанный'],
+          ['odwołany', 'отменённый'],
+          ['przylot', 'прилёт'],
+          ['odlot', 'вылет'],
+          ['tablica wylotów', 'табло вылетов'],
+          ['przesiadka', 'пересадка'],
+          ['kontrola bezpieczeństwa', 'досмотр'],
+          ['kontrola paszportowa', 'паспортный контроль'],
+          ['odprawa celna', 'таможенный контроль'],
+          ['strefa wolnocłowa', 'дьюти-фри'],
+          ['linie lotnicze', 'авиакомпания'],
+          ['bilet w obie strony', 'билет туда и обратно'],
+          ['bilet w jedną stronę', 'билет в одну сторону'],
+        ]
+      },
+    }
+  }
+
   // ─── PHRASAL VERBS ────────────────────────────────────
   ,phrasalVerbs: {
     id: 'phrasalVerbs',
