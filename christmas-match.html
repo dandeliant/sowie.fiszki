@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Christmas Match — Sowie Fiszki 🦉</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700;900&family=Nunito:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-deep:    #060d1a;
+            --bg-card:    #0d1f35;
+            --bg-card-2:  #0a1828;
+            --border:     rgba(255,255,255,0.07);
+            --border-glow: rgba(212,175,55,0.35);
+            --gold:       #d4af37;
+            --gold-light: #f5d878;
+            --red:        #c0392b;
+            --red-light:  #e74c3c;
+            --green:      #1a7a4a;
+            --green-light:#27ae60;
+            --blue:       #1c6ea4;
+            --blue-light: #3498db;
+            --text:       #e8dcc8;
+            --text-dim:   #7a8a9a;
+            --snow:       rgba(255,255,255,0.85);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Nunito', sans-serif;
+            background-color: var(--bg-deep);
+            color: var(--text);
+            min-height: 100vh;
+            overflow-x: hidden;
+            position: relative;
+        }
+
+        /* ── Starfield / Snow canvas ───────────────────── */
+        #canvas-bg {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        /* ── Back link + Jak grać (Sowie Fiszki convention) ── */
+        .back-link {
+            position: fixed;
+            top: 12px;
+            left: 12px;
+            z-index: 50;
+            background: rgba(13, 31, 53, 0.85);
+            border: 1px solid rgba(212,175,55,0.35);
+            color: var(--gold-light);
+            padding: 8px 14px;
+            border-radius: 100px;
+            text-decoration: none;
+            font-weight: 700;
+            font-size: 0.85rem;
+            backdrop-filter: blur(6px);
+            transition: all .2s;
+        }
+        .back-link:hover {
+            background: rgba(212,175,55,0.15);
+            color: #fff;
+            border-color: var(--gold);
+        }
+        .htp-btn {
+            position: fixed;
+            top: 12px;
+            right: 12px;
+            z-index: 50;
+            background: rgba(13, 31, 53, 0.85);
+            border: 1px solid rgba(212,175,55,0.35);
+            color: var(--gold-light);
+            padding: 8px 14px;
+            border-radius: 100px;
+            font-family: 'Nunito', sans-serif;
+            font-weight: 700;
+            font-size: 0.85rem;
+            cursor: pointer;
+            backdrop-filter: blur(6px);
+            transition: all .2s;
+        }
+        .htp-btn:hover {
+            background: rgba(212,175,55,0.15);
+            color: #fff;
+            border-color: var(--gold);
+        }
+        .htp-modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.75);
+            backdrop-filter: blur(6px);
+            z-index: 200;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+        .htp-modal.show { display: flex; }
+        .htp-box {
+            background: var(--bg-card);
+            border: 1px solid var(--border-glow);
+            border-radius: 1.25rem;
+            padding: 2rem;
+            max-width: 28rem;
+            width: 100%;
+            color: var(--text);
+            box-shadow: 0 0 60px rgba(212,175,55,0.15);
+        }
+        .htp-box h2 {
+            font-family: 'Cinzel Decorative', cursive;
+            color: var(--gold-light);
+            font-size: 1.3rem;
+            margin-bottom: 1rem;
+            text-align: center;
+        }
+        .htp-box ol {
+            margin: 0 0 0 1.2rem;
+            font-size: 0.92rem;
+            line-height: 1.7;
+        }
+        .htp-box ol li { margin-bottom: 0.45rem; }
+        .htp-box .htp-close {
+            margin-top: 1.5rem;
+            width: 100%;
+            padding: 0.7rem;
+            background: rgba(212,175,55,0.15);
+            border: 1px solid rgba(212,175,55,0.4);
+            color: var(--gold-light);
+            font-family: 'Nunito', sans-serif;
+            font-weight: 700;
+            font-size: 0.9rem;
+            border-radius: 0.65rem;
+            cursor: pointer;
+            transition: all .2s;
+        }
+        .htp-box .htp-close:hover {
+            background: rgba(212,175,55,0.25);
+        }
+        @media print {
+            .back-link, .htp-btn, .htp-modal { display: none !important; }
+        }
+
+        /* ── Layout ─────────────────────────────────────── */
+        .page-wrap {
+            position: relative;
+            z-index: 1;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 4rem 1.25rem 4rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2rem;
+        }
+
+        /* ── Header ─────────────────────────────────────── */
+        header {
+            text-align: center;
+        }
+        header h1 {
+            font-family: 'Cinzel Decorative', cursive;
+            font-size: clamp(1.6rem, 5vw, 2.8rem);
+            font-weight: 900;
+            background: linear-gradient(135deg, var(--gold-light), var(--gold), #b8860b);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-shadow: none;
+            letter-spacing: 0.04em;
+            line-height: 1.2;
+            filter: drop-shadow(0 0 18px rgba(212,175,55,0.45));
+        }
+        header p {
+            margin-top: 0.5rem;
+            color: var(--text-dim);
+            font-weight: 600;
+            font-size: 0.95rem;
+            letter-spacing: 0.05em;
+        }
+
+        /* ── Main columns ───────────────────────────────── */
+        .main-row {
+            width: 100%;
+            display: flex;
+            gap: 1.5rem;
+            align-items: flex-start;
+            flex-direction: column;
+        }
+        @media (min-width: 900px) {
+            .main-row { flex-direction: row; }
+            .main-row > :first-child { order: 1; }
+            .sidebar { order: 2; }
+        }
+
+        /* ── Grid ───────────────────────────────────────── */
+        #game-grid {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 0.75rem;
+        }
+        @media (min-width: 560px) {
+            #game-grid { grid-template-columns: 1fr 1fr; }
+        }
+
+        .item-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 1rem;
+            padding: 0.9rem 1.1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.9rem;
+            transition: box-shadow 0.3s, border-color 0.3s;
+        }
+        .item-card:hover {
+            box-shadow: 0 0 22px rgba(212,175,55,0.08);
+        }
+
+        .item-icon {
+            width: 3.5rem;
+            height: 3.5rem;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255,255,255,0.04);
+            border-radius: 0.75rem;
+            font-size: 1.8rem;
+            border: 1px solid var(--border);
+        }
+
+        /* ── Drop zones ─────────────────────────────────── */
+        .drop-zone {
+            flex: 1;
+            height: 2.9rem;
+            border: 2px dashed rgba(255,255,255,0.15);
+            border-radius: 0.65rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-dim);
+            cursor: pointer;
+            transition: all 0.25s;
+            user-select: none;
+            letter-spacing: 0.02em;
+        }
+        .drop-zone:hover {
+            border-color: var(--gold);
+            color: var(--gold-light);
+            background: rgba(212,175,55,0.05);
+        }
+        .drop-zone.filled {
+            border-color: var(--blue-light);
+            border-style: solid;
+            color: var(--blue-light);
+            background: rgba(52,152,219,0.08);
+            font-size: 0.9rem;
+        }
+        .drop-zone.correct {
+            border-color: var(--green-light);
+            border-style: solid;
+            background: rgba(39,174,96,0.12);
+            color: #4ade80;
+            font-size: 0.9rem;
+        }
+        .drop-zone.incorrect {
+            border-color: var(--red-light);
+            border-style: solid;
+            background: rgba(231,76,60,0.1);
+            color: var(--red-light);
+            font-size: 0.9rem;
+        }
+
+        /* ── Sidebar ─────────────────────────────────────── */
+        .sidebar {
+            width: 100%;
+        }
+        @media (min-width: 900px) {
+            .sidebar { width: 17rem; flex-shrink: 0; position: sticky; top: 1.5rem; }
+        }
+
+        .sidebar-inner {
+            background: var(--bg-card-2);
+            border: 1px solid var(--border-glow);
+            border-radius: 1.25rem;
+            padding: 1.4rem;
+            box-shadow: 0 0 40px rgba(212,175,55,0.07), inset 0 1px 0 rgba(255,255,255,0.04);
+        }
+
+        .sidebar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+        .sidebar-title {
+            font-family: 'Cinzel Decorative', cursive;
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: var(--gold-light);
+            letter-spacing: 0.08em;
+        }
+        .progress-badge {
+            background: rgba(212,175,55,0.15);
+            color: var(--gold-light);
+            font-size: 0.7rem;
+            font-weight: 800;
+            padding: 0.2rem 0.6rem;
+            border-radius: 99px;
+            border: 1px solid rgba(212,175,55,0.3);
+        }
+
+        /* Attempts box */
+        .attempts-box {
+            background: rgba(192,57,43,0.12);
+            border: 1px solid rgba(192,57,43,0.3);
+            border-radius: 0.75rem;
+            padding: 0.65rem 1rem;
+            text-align: center;
+            margin-bottom: 1rem;
+        }
+        .attempts-label {
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: #f87171;
+            font-weight: 700;
+        }
+        .attempts-value {
+            font-size: 1.5rem;
+            font-weight: 800;
+            color: #fca5a5;
+        }
+
+        /* ── Word chips ──────────────────────────────────── */
+        #word-bank {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.45rem;
+        }
+        @media (min-width: 900px) {
+            #word-bank { flex-direction: column; }
+        }
+
+        .word-chip {
+            cursor: pointer;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 0.6rem;
+            padding: 0.45rem 0.85rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            transition: all 0.2s;
+            user-select: none;
+            width: 100%;
+        }
+        .word-chip:hover {
+            border-color: var(--gold);
+            background: rgba(212,175,55,0.07);
+            transform: translateX(2px);
+        }
+        .word-chip .w-name {
+            font-weight: 800;
+            font-size: 0.85rem;
+            color: var(--text);
+            letter-spacing: 0.02em;
+        }
+        .word-chip .w-ipa {
+            font-size: 0.68rem;
+            color: var(--text-dim);
+            font-family: monospace;
+        }
+        .word-chip.selected {
+            background: rgba(52,152,219,0.2);
+            border-color: var(--blue-light);
+            transform: translateX(4px);
+            box-shadow: 0 0 12px rgba(52,152,219,0.3);
+        }
+        .word-chip.selected .w-name { color: var(--blue-light); }
+        .word-chip.matched {
+            opacity: 0.3;
+            cursor: default;
+            pointer-events: none;
+            text-decoration: line-through;
+        }
+
+        /* ── Buttons ─────────────────────────────────────── */
+        .btn-check {
+            margin-top: 1.25rem;
+            width: 100%;
+            padding: 0.8rem;
+            background: linear-gradient(135deg, #1a7a4a, #0f5c37);
+            border: 1px solid rgba(39,174,96,0.4);
+            color: #a7f3d0;
+            font-family: 'Nunito', sans-serif;
+            font-weight: 800;
+            font-size: 0.9rem;
+            border-radius: 0.75rem;
+            cursor: pointer;
+            letter-spacing: 0.04em;
+            transition: all 0.25s;
+            box-shadow: 0 0 20px rgba(26,122,74,0.25);
+        }
+        .btn-check:hover {
+            background: linear-gradient(135deg, #27ae60, #1a8a50);
+            box-shadow: 0 0 30px rgba(39,174,96,0.4);
+            transform: translateY(-1px);
+        }
+        .btn-check:active { transform: translateY(0); }
+        .btn-check:disabled {
+            opacity: 0.35;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .btn-reset {
+            margin-top: 0.5rem;
+            width: 100%;
+            padding: 0.65rem;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: var(--text-dim);
+            font-family: 'Nunito', sans-serif;
+            font-weight: 700;
+            font-size: 0.85rem;
+            border-radius: 0.75rem;
+            cursor: pointer;
+            letter-spacing: 0.03em;
+            transition: all 0.2s;
+        }
+        .btn-reset:hover {
+            background: rgba(255,255,255,0.08);
+            color: var(--text);
+            border-color: rgba(255,255,255,0.2);
+        }
+        .btn-reset:disabled { opacity: 0.3; cursor: not-allowed; }
+
+        /* ── Modal ───────────────────────────────────────── */
+        #result-modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.75);
+            backdrop-filter: blur(6px);
+            z-index: 100;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+        #result-modal.show { display: flex; }
+
+        .modal-box {
+            background: var(--bg-card);
+            border: 1px solid var(--border-glow);
+            border-radius: 1.5rem;
+            padding: 2.5rem 2rem;
+            max-width: 22rem;
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 0 80px rgba(212,175,55,0.12), 0 0 0 1px rgba(255,255,255,0.04);
+            animation: modalIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        @keyframes modalIn {
+            from { opacity:0; transform: scale(0.88) translateY(20px); }
+            to   { opacity:1; transform: scale(1) translateY(0); }
+        }
+
+        .modal-emoji { font-size: 3.5rem; line-height: 1; margin-bottom: 0.75rem; }
+        .modal-title {
+            font-family: 'Cinzel Decorative', cursive;
+            font-size: 1.4rem;
+            color: var(--gold-light);
+            margin-bottom: 1.25rem;
+        }
+        .score-block { margin-bottom: 1rem; }
+        .score-label {
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: var(--text-dim);
+            font-weight: 700;
+        }
+        .score-number {
+            font-size: 3.5rem;
+            font-weight: 900;
+            color: var(--gold);
+            line-height: 1.1;
+        }
+        .score-total { font-size: 1.25rem; color: var(--text-dim); }
+        .score-pct { font-size: 1.1rem; font-weight: 800; color: var(--blue-light); }
+        .feedback { color: var(--text-dim); font-size: 0.9rem; margin: 0.5rem 0; }
+        .attempt-warn {
+            color: #fbbf24;
+            font-size: 0.8rem;
+            font-weight: 700;
+            margin: 0.5rem 0 1.25rem;
+        }
+
+        .btn-modal-try {
+            width: 100%;
+            padding: 0.8rem;
+            background: linear-gradient(135deg, #1a7a4a, #0f5c37);
+            border: 1px solid rgba(39,174,96,0.4);
+            color: #a7f3d0;
+            font-family: 'Nunito', sans-serif;
+            font-weight: 800;
+            font-size: 0.9rem;
+            border-radius: 0.75rem;
+            cursor: pointer;
+            letter-spacing: 0.04em;
+            transition: all 0.25s;
+            box-shadow: 0 0 20px rgba(26,122,74,0.25);
+        }
+        .btn-modal-try:hover {
+            background: linear-gradient(135deg, #27ae60, #1a8a50);
+            box-shadow: 0 0 30px rgba(39,174,96,0.4);
+        }
+
+        .game-over-msg {
+            display: none;
+            background: rgba(192,57,43,0.15);
+            border: 1px solid rgba(192,57,43,0.35);
+            border-radius: 0.65rem;
+            color: #f87171;
+            font-weight: 700;
+            padding: 0.65rem 1rem;
+            font-size: 0.85rem;
+        }
+
+        /* ── Divider ornament ────────────────────────────── */
+        .ornament-divider {
+            width: 100%;
+            text-align: center;
+            color: var(--gold);
+            opacity: 0.4;
+            font-size: 0.9rem;
+            letter-spacing: 0.3em;
+            margin: 0.25rem 0;
+        }
+
+        /* ── Scrollbar ───────────────────────────────────── */
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(212,175,55,0.3); border-radius: 4px; }
+    </style>
+</head>
+<body>
+
+<!-- Powrót do Sowie Fiszki (góra) -->
+<a href="app.html" class="back-link">← Powrót do Sowie Fiszki</a>
+
+<!-- Przycisk „Jak grać?" -->
+<button class="htp-btn" onclick="document.getElementById('htp-modal').classList.add('show')">ℹ️ Jak grać?</button>
+
+<!-- Modal „Jak grać?" -->
+<div class="htp-modal" id="htp-modal" onclick="if(event.target===this)this.classList.remove('show')">
+    <div class="htp-box">
+        <h2>🎄 Jak grać w Christmas Match?</h2>
+        <ol>
+            <li>Po prawej masz <strong>Bank Słów</strong> z angielskimi słówkami świątecznymi.</li>
+            <li>Kliknij w słowo (np. <em>Angel</em>) — zostanie podświetlone na niebiesko.</li>
+            <li>Kliknij w pasujący obrazek po lewej — słowo wskoczy do pola pod obrazkiem.</li>
+            <li>Pomyłka? Kliknij ponownie w wypełnione pole, by je wyczyścić.</li>
+            <li>Gdy dopasujesz wszystkie 10 słów, kliknij <strong>✦ Sprawdź Odpowiedzi ✦</strong>.</li>
+            <li>Masz <strong>3 próby</strong> dziennie — pomyłki będą oznaczone na czerwono, poprawne na zielono.</li>
+            <li>Pasek u góry pokazuje postęp (np. 7/10 dopasowanych).</li>
+            <li>Powodzenia i Wesołych Świąt! 🎅</li>
+        </ol>
+        <button class="htp-close" onclick="document.getElementById('htp-modal').classList.remove('show')">Zamknij</button>
+    </div>
+</div>
+
+<canvas id="canvas-bg"></canvas>
+
+<div class="page-wrap">
+    <header>
+        <h1>🎄 Christmas Match 🎄</h1>
+        <p>Dopasuj angielskie słowa do obrazków</p>
+    </header>
+
+    <div class="main-row">
+        <!-- Board -->
+        <div style="flex:1; min-width:0;">
+            <div id="game-grid"></div>
+        </div>
+
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-inner">
+                <div class="sidebar-header">
+                    <span class="sidebar-title">Bank Słów</span>
+                    <span class="progress-badge" id="progress-badge">0/10</span>
+                </div>
+
+                <div class="attempts-box">
+                    <div class="attempts-label">Wykorzystane próby</div>
+                    <div class="attempts-value" id="attempts-display">0 / 3</div>
+                </div>
+
+                <div id="word-bank"></div>
+
+                <button class="btn-check" id="check-btn" onclick="checkAnswers()">✦ Sprawdź Odpowiedzi ✦</button>
+                <button class="btn-reset" id="reset-btn" onclick="resetGame()">Resetuj</button>
+            </div>
+        </aside>
+    </div>
+
+    <!-- Powrót do Sowie Fiszki (dół) -->
+    <div style="text-align:center;margin:20px 0 10px">
+        <a href="app.html" class="back-link" style="position:static;display:inline-block">← Wróć do Sowie Fiszki</a>
+    </div>
+</div>
+
+<!-- Modal -->
+<div id="result-modal">
+    <div class="modal-box">
+        <div class="modal-emoji">🎅</div>
+        <div class="modal-title">Koniec Quizu!</div>
+        <div class="ornament-divider">✦ ✦ ✦</div>
+        <div class="score-block">
+            <div class="score-label">Twój Wynik</div>
+            <div class="score-number"><span id="score-number">0</span><span class="score-total">/10</span></div>
+            <div class="score-pct" id="score-percent">0%</div>
+        </div>
+        <p class="feedback" id="feedback-text">Dobra robota!</p>
+        <p class="attempt-warn" id="attempts-warning"></p>
+        <button class="btn-modal-try" id="try-again-btn">Spróbuj Ponownie</button>
+        <div class="game-over-msg" id="game-over-msg">Osiągnięto limit prób.</div>
+    </div>
+</div>
+
+<script>
+/* ── Data ─────────────────────────────────── */
+const vocabulary = [
+    { id:'angel',           word:'Angel',            ipa:'/ˈeɪndʒəl/',         icon:'👼' },
+    { id:'baubles',         word:'Baubles',          ipa:'/ˈbɔːbəlz/',         icon:'🔴' },
+    { id:'bell',            word:'Bell',             ipa:'/bɛl/',              icon:'🔔' },
+    { id:'candycane',       word:'Candy cane',       ipa:'/ˈkændi keɪn/',      icon:'🍬' },
+    { id:'christmaspudding',word:'Christmas Pudding',ipa:'/ˈkrɪsməs ˈpʊdɪŋ/', icon:'🍮' },
+    { id:'christmastree',   word:'Christmas Tree',   ipa:'/ˈkrɪsməs triː/',    icon:'🎄' },
+    { id:'holly',           word:'Holly',            ipa:'/ˈhɒli/',            icon:'🌿' },
+    { id:'snowflake',       word:'Snowflake',        ipa:'/ˈsnəʊfleɪk/',       icon:'❄️' },
+    { id:'stocking',        word:'Stocking',         ipa:'/ˈstɒkɪŋ/',          icon:'🧦' },
+    { id:'wreath',          word:'Wreath',           ipa:'/riːθ/',             icon:'🏵️' }
+];
+
+/* ── State ────────────────────────────────── */
+let selectedWordId = null;
+let matches = {};
+const MAX_ATTEMPTS = 3;
+let attemptsUsed = parseInt(localStorage.getItem('christmasQuizAttempts')) || 0;
+
+/* ── Snow / Star Canvas ───────────────────── */
+(function(){
+    const canvas = document.getElementById('canvas-bg');
+    const ctx = canvas.getContext('2d');
+    let W, H, flakes=[], stars=[];
+
+    function resize(){
+        W = canvas.width  = window.innerWidth;
+        H = canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    // Stars
+    for(let i=0;i<160;i++){
+        stars.push({
+            x: Math.random()*10000,
+            y: Math.random()*10000,
+            r: Math.random()*1.1+0.2,
+            a: Math.random()
+        });
+    }
+
+    // Snowflakes
+    function makeFlake(){
+        return {
+            x: Math.random()*W,
+            y: -8,
+            r: Math.random()*2.2+1,
+            s: Math.random()*0.5+0.3,
+            dx: (Math.random()-0.5)*0.5,
+            a: Math.random()
+        };
+    }
+    for(let i=0;i<80;i++){
+        flakes.push({...makeFlake(), y: Math.random()*H});
+    }
+
+    let t=0;
+    function draw(){
+        ctx.clearRect(0,0,W,H);
+
+        // Stars
+        stars.forEach(s=>{
+            const tw = (Math.sin(t*0.3 + s.a*6.28)*0.5+0.5)*0.7+0.15;
+            ctx.beginPath();
+            ctx.arc(s.x%W, s.y%H, s.r, 0, Math.PI*2);
+            ctx.fillStyle = `rgba(255,255,255,${tw})`;
+            ctx.fill();
+        });
+
+        // Snow
+        flakes.forEach((f,i)=>{
+            f.y += f.s;
+            f.x += f.dx + Math.sin(t*0.5+f.a*6.28)*0.25;
+            if(f.y > H+10){ flakes[i] = makeFlake(); }
+
+            ctx.beginPath();
+            ctx.arc(f.x, f.y, f.r, 0, Math.PI*2);
+            ctx.fillStyle = `rgba(255,255,255,${0.5+f.a*0.4})`;
+            ctx.fill();
+        });
+
+        t += 0.016;
+        requestAnimationFrame(draw);
+    }
+    draw();
+})();
+
+/* ── UI helpers ────────────────────────────── */
+function updateAttemptsDisplay(){
+    document.getElementById('attempts-display').textContent = `${attemptsUsed} / ${MAX_ATTEMPTS}`;
+    if(attemptsUsed >= MAX_ATTEMPTS){
+        const cb = document.getElementById('check-btn');
+        cb.disabled = true;
+        cb.textContent = "Brak prób";
+        document.getElementById('reset-btn').disabled = true;
+    }
+}
+
+function updateProgress(){
+    document.getElementById('progress-badge').textContent = `${Object.keys(matches).length}/10`;
+}
+
+/* ── Init ─────────────────────────────────── */
+function initGame(){
+    updateAttemptsDisplay();
+    if(attemptsUsed >= MAX_ATTEMPTS) return;
+
+    matches = {};
+    selectedWordId = null;
+    updateProgress();
+
+    const grid = document.getElementById('game-grid');
+    const bank = document.getElementById('word-bank');
+    grid.innerHTML = '';
+    bank.innerHTML = '';
+
+    const shuffGrid = [...vocabulary].sort(()=>Math.random()-0.5);
+    shuffGrid.forEach(item=>{
+        const card = document.createElement('div');
+        card.className = 'item-card';
+        card.innerHTML = `
+            <div class="item-icon">${item.icon}</div>
+            <div style="flex:1">
+                <div id="zone-${item.id}"
+                     onclick="handleZoneClick('${item.id}')"
+                     class="drop-zone">
+                    Dopasuj słowo
+                </div>
+            </div>
+        `;
+        grid.appendChild(card);
+    });
+
+    const shuffWords = [...vocabulary].sort(()=>Math.random()-0.5);
+    shuffWords.forEach(item=>{
+        const chip = document.createElement('div');
+        chip.id = `word-${item.id}`;
+        chip.className = 'word-chip';
+        chip.onclick = ()=> selectWord(item.id);
+        chip.innerHTML = `<span class="w-name">${item.word}</span><span class="w-ipa">${item.ipa}</span>`;
+        bank.appendChild(chip);
+    });
+}
+
+/* ── Select word ───────────────────────────── */
+function selectWord(id){
+    if(attemptsUsed >= MAX_ATTEMPTS) return;
+    const chip = document.getElementById(`word-${id}`);
+    if(chip.classList.contains('matched')) return;
+
+    if(selectedWordId){
+        document.getElementById(`word-${selectedWordId}`)?.classList.remove('selected');
+    }
+    if(selectedWordId === id){ selectedWordId = null; return; }
+    selectedWordId = id;
+    chip.classList.add('selected');
+}
+
+/* ── Zone click ────────────────────────────── */
+function handleZoneClick(targetId){
+    if(attemptsUsed >= MAX_ATTEMPTS) return;
+    const zone = document.getElementById(`zone-${targetId}`);
+
+    if(matches[targetId]){
+        const old = matches[targetId];
+        delete matches[targetId];
+        zone.className = 'drop-zone';
+        zone.textContent = 'Dopasuj słowo';
+        document.getElementById(`word-${old}`)?.classList.remove('matched');
+        updateProgress();
+        return;
+    }
+    if(selectedWordId){
+        matches[targetId] = selectedWordId;
+        const wordObj = vocabulary.find(v=>v.id===selectedWordId);
+        zone.textContent = wordObj.word;
+        zone.classList.add('filled');
+        document.getElementById(`word-${selectedWordId}`)?.classList.remove('selected');
+        document.getElementById(`word-${selectedWordId}`)?.classList.add('matched');
+        selectedWordId = null;
+        updateProgress();
+    }
+}
+
+/* ── Check ─────────────────────────────────── */
+function checkAnswers(){
+    if(attemptsUsed >= MAX_ATTEMPTS) return;
+    attemptsUsed++;
+    localStorage.setItem('christmasQuizAttempts', attemptsUsed);
+    updateAttemptsDisplay();
+
+    let correct = 0;
+    vocabulary.forEach(item=>{
+        const zone = document.getElementById(`zone-${item.id}`);
+        zone.classList.remove('correct','incorrect','filled');
+        if(matches[item.id] === item.id){
+            correct++;
+            zone.classList.add('correct');
+            zone.innerHTML = `${item.word} <span style="opacity:.7">✓</span>`;
+        } else if(matches[item.id]){
+            zone.classList.add('incorrect');
+        }
+    });
+
+    const pct = Math.round((correct/vocabulary.length)*100);
+    document.getElementById('score-number').textContent = correct;
+    document.getElementById('score-percent').textContent = `${pct}%`;
+
+    const fb = document.getElementById('feedback-text');
+    if(pct===100)      fb.textContent = "Perfekcyjnie! Wesołych Świąt! 🎄";
+    else if(pct>=70)   fb.textContent = "Świetnie! Prawie idealnie! ⭐";
+    else               fb.textContent = "Ćwicz dalej, dasz radę! 💪";
+
+    const tryBtn = document.getElementById('try-again-btn');
+    const goMsg  = document.getElementById('game-over-msg');
+    const warn   = document.getElementById('attempts-warning');
+
+    if(attemptsUsed >= MAX_ATTEMPTS){
+        tryBtn.style.display = 'none';
+        goMsg.style.display  = 'block';
+        warn.textContent     = "Wykorzystałeś wszystkie próby.";
+    } else {
+        tryBtn.style.display = '';
+        goMsg.style.display  = 'none';
+        warn.textContent     = `Pozostało prób: ${MAX_ATTEMPTS - attemptsUsed}`;
+    }
+
+    document.getElementById('result-modal').classList.add('show');
+}
+
+/* ── Modal / Reset ─────────────────────────── */
+function closeModal(){ document.getElementById('result-modal').classList.remove('show'); }
+document.getElementById('try-again-btn').onclick = ()=>{ closeModal(); initGame(); };
+
+function resetGame(){
+    if(attemptsUsed >= MAX_ATTEMPTS){ closeModal(); return; }
+    closeModal();
+    initGame();
+}
+
+/* ── Start ─────────────────────────────────── */
+initGame();
+</script>
+</body>
+</html>
