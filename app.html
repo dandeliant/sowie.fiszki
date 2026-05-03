@@ -6556,6 +6556,7 @@ function effectiveVoicePref() {
 
 function getV(lang) {
   if (!voices.length) voices = speechSynthesis.getVoices();
+  // Angielski — preferencje użytkownika (Premium może wybrać UK/US, M/F)
   if (lang === 'en-GB' || lang.startsWith('en')) {
     const pref = effectiveVoicePref();
     const opt = VOICE_OPTIONS.find(o => o.key === pref.voice) || VOICE_OPTIONS[0];
@@ -6565,9 +6566,19 @@ function getV(lang) {
     }
     return voices.find(v => v.lang === opt.lang) || voices.find(v => v.lang && v.lang.startsWith('en')) || null;
   }
+  // Francuski — preferowany głos Google
   if (lang === 'fr-FR' || lang.startsWith('fr'))
     return voices.find(v => v.lang==='fr-FR' && /google/i.test(v.name)) || voices.find(v => v.lang==='fr-FR') || voices.find(v => v.lang.startsWith('fr')) || null;
-  return voices.find(v => v.lang==='pl-PL') || voices.find(v => v.lang.startsWith('pl')) || null;
+  // Wszystkie pozostałe języki (DE/RU/PL/IT/ES/itd.) — uniwersalny dopasowywacz:
+  //   1. dokładny match (np. 'de-DE')
+  //   2. po prefiksie (np. dowolny voice z lang.startsWith('de'))
+  //   3. null — przeglądarka użyje wtedy wbudowanego głosu na podstawie utterance.lang
+  // KLUCZOWE: brak fallbacku do pl-PL dla nieznanych języków! Wcześniej DE/RU
+  // dostawały polski głos i były czytane po polsku.
+  const exact = voices.find(v => v.lang === lang);
+  if (exact) return exact;
+  const prefix = (lang || '').split('-')[0];
+  return voices.find(v => v.lang && v.lang.startsWith(prefix)) || null;
 }
 function spk(txt, lang, rate) {
   if (!('speechSynthesis' in window)) return;
@@ -15045,7 +15056,8 @@ if ('serviceWorker' in navigator) {
       if (typeof selectLanguage !== 'function') return;
       selectLanguage(lang);
       const schoolType = segs[2];
-      if (schoolType && typeof selectSchoolType === 'function' && lang !== 'fr') {
+      if (schoolType && typeof selectSchoolType === 'function') {
+        // Wszystkie języki (EN/FR/DE/RU) używają tego samego flow przez sSchool
         selectSchoolType(schoolType);
         const grade = parseInt(segs[3], 10);
         const noGrade = ['courses','grammar','other'].includes(schoolType);
