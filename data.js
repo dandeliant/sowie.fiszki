@@ -5367,12 +5367,12 @@ const BOOKS = {
   // ─── FRANÇAIS ─────────────────────────────────────────────
   francais: {
     id: 'francais',
-    language: 'fr',
-    name: 'Francuski',
+    language: 'fr', schoolType: 'courses',
+    name: 'Francuski — Słownictwo podstawowe',
     shortName: 'Franc.',
     icon: '🇫🇷',
     color: '#0055A4',
-    description: 'Język Francuski · Części ciała · Dom i kuchnia',
+    description: 'Słownictwo francuskie · Części ciała · Dom i kuchnia',
     lang: 'fr-FR',
     units: {
       unit1: {

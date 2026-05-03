@@ -1061,12 +1061,22 @@ body.guest-mode .progress-wrap{opacity:.4;}
     <a class="book-card" href="app.html#/lang/en" style="text-decoration:none;color:inherit">
       <div class="book-icon">🇬🇧</div>
       <div class="book-name">Angielski</div>
-      <div class="book-desc">Szkoła podstawowa · średnia · inne</div>
+      <div class="book-desc">Szkoła podstawowa · średnia · kursy</div>
     </a>
     <a class="book-card" href="app.html#/lang/fr" style="text-decoration:none;color:inherit">
       <div class="book-icon">🇫🇷</div>
       <div class="book-name">Francuski</div>
-      <div class="book-desc">Słownictwo podstawowe</div>
+      <div class="book-desc">Szkoła podstawowa · średnia · kursy</div>
+    </a>
+    <a class="book-card" href="app.html#/lang/de" style="text-decoration:none;color:inherit">
+      <div class="book-icon">🇩🇪</div>
+      <div class="book-name">Niemiecki</div>
+      <div class="book-desc">Szkoła podstawowa · średnia · kursy</div>
+    </a>
+    <a class="book-card" href="app.html#/lang/ru" style="text-decoration:none;color:inherit">
+      <div class="book-icon">🇷🇺</div>
+      <div class="book-name">Rosyjski</div>
+      <div class="book-desc">Szkoła podstawowa · średnia · kursy</div>
     </a>
   </div>
   <!-- Kafelek INNE (gry / dodatkowe aplikacje) -->
@@ -1275,27 +1285,27 @@ body.guest-mode .progress-wrap{opacity:.4;}
   <div style="margin-top:12px"><button class="btn-sm" onclick="navBackFromApps()">← Wróć</button></div>
 </div>
 
-<!-- ══ SCREEN: SCHOOL TYPE PICK (tylko dla angielskiego) ══ -->
+<!-- ══ SCREEN: SCHOOL TYPE PICK (dla każdego języka — tytuł i linki dynamiczne) ══ -->
 <div class="screen" id="sSchool">
-  <div class="unit-title">Angielski 🇬🇧</div>
+  <div class="unit-title" id="sSchoolTitle">Wybierz poziom 🌍</div>
   <div class="unit-subtitle">Wybierz poziom nauczania</div>
   <div class="book-grid" id="schoolGrid">
-    <a class="book-card" href="app.html#/lang/en/primary" style="text-decoration:none;color:inherit">
+    <a class="book-card" data-st="primary" href="app.html#/lang/en/primary" style="text-decoration:none;color:inherit">
       <div class="book-icon">🎒</div>
       <div class="book-name">Szkoła Podstawowa</div>
       <div class="book-desc">Klasy 1–8</div>
     </a>
-    <a class="book-card" href="app.html#/lang/en/secondary" style="text-decoration:none;color:inherit">
+    <a class="book-card" data-st="secondary" href="app.html#/lang/en/secondary" style="text-decoration:none;color:inherit">
       <div class="book-icon">🎓</div>
       <div class="book-name">Szkoła Średnia</div>
       <div class="book-desc">Liceum i technikum · matura podstawowa i rozszerzona</div>
     </a>
-    <a class="book-card" href="app.html#/lang/en/courses" style="text-decoration:none;color:inherit">
+    <a class="book-card" data-st="courses" href="app.html#/lang/en/courses" style="text-decoration:none;color:inherit">
       <div class="book-icon">💼</div>
       <div class="book-name">Kursy tematyczne</div>
-      <div class="book-desc">Praktyczny angielski: praca, podróże, naturalne zwroty</div>
+      <div class="book-desc">Praktyczne słownictwo: praca, podróże, naturalne zwroty</div>
     </a>
-    <a class="book-card" href="app.html#/lang/en/grammar" style="text-decoration:none;color:inherit">
+    <a class="book-card" data-st="grammar" href="app.html#/lang/en/grammar" style="text-decoration:none;color:inherit">
       <div class="book-icon">🔤</div>
       <div class="book-name">Gramatyka i dodatki</div>
       <div class="book-desc">Powtórki gramatyczne i materiały pomocnicze</div>
@@ -3570,6 +3580,8 @@ szkoła	school"></textarea>
     <select id="aBookLanguage" style="width:100%;padding:9px 11px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.85rem;font-weight:600;outline:none;margin-bottom:10px;font-family:inherit">
       <option value="en" selected>🇬🇧 Angielski</option>
       <option value="fr">🇫🇷 Francuski</option>
+      <option value="de">🇩🇪 Niemiecki</option>
+      <option value="ru">🇷🇺 Rosyjski</option>
     </select>
 
     <div id="aBookGradeWrap" style="display:none">
@@ -4172,16 +4184,40 @@ let _navGrade = null;       // 1..8 | null
 // kompatybilności (zestawy nauczycielskie z DB mogą mieć tę wartość).
 const _NO_GRADE_SCHOOL_TYPES = ['courses', 'grammar', 'other'];
 
+// Metadane języków — używane do dynamicznego budowania ekranu sSchool
+// (tytuł + linki) oraz tytułu w sBooks.
+const _LANG_META = {
+  en: { name: 'Angielski',  flag: '🇬🇧' },
+  fr: { name: 'Francuski',  flag: '🇫🇷' },
+  de: { name: 'Niemiecki',  flag: '🇩🇪' },
+  ru: { name: 'Rosyjski',   flag: '🇷🇺' },
+};
+
+function getLangMeta(lang){
+  return _LANG_META[lang] || { name: 'Język', flag: '🌍' };
+}
+
+// Aktualizuje sSchool dla aktualnego _navLanguage — tytuł + href-y kafelków.
+function updateSchoolScreen(){
+  const lang = _navLanguage || 'en';
+  const m = getLangMeta(lang);
+  const titleEl = document.getElementById('sSchoolTitle');
+  if (titleEl) titleEl.textContent = m.name + ' ' + m.flag;
+  // Linki kafelków: data-st='primary'/'secondary'/'courses'/'grammar'
+  document.querySelectorAll('#schoolGrid a.book-card').forEach(a => {
+    const st = a.getAttribute('data-st');
+    if (st) a.setAttribute('href', `app.html#/lang/${lang}/${st}`);
+  });
+}
+
 function selectLanguage(lang) {
   _navLanguage = lang;
   _navSchoolType = null;
   _navGrade = null;
-  if (lang === 'fr') {
-    // Dla francuskiego przeskakujemy szkołę/klasę — idziemy prosto do listy książek
-    showScreen('sBooks');
-  } else {
-    showScreen('sSchool');
-  }
+  // Wszystkie języki idą do sSchool z 4 kategoriami (zgodnie z user request).
+  // Dawniej francuski miał special case (sBooks bezpośrednio) — usunięto.
+  updateSchoolScreen();
+  showScreen('sSchool');
 }
 
 function selectSchoolType(type) {
@@ -4220,10 +4256,10 @@ function buildClassGrid(type) {
 }
 
 function navBackFromBooks() {
-  // Powrót z sBooks na odpowiedni poziom wyżej w hierarchii
-  if (_navLanguage === 'fr') {
-    showScreen('sLang');
-  } else if (_NO_GRADE_SCHOOL_TYPES.includes(_navSchoolType)) {
+  // Powrót z sBooks na odpowiedni poziom wyżej w hierarchii.
+  // Dla wszystkich języków (EN/FR/DE/RU) ten sam flow — sSchool dla
+  // kategorii bez klas, sClass dla primary/secondary.
+  if (_NO_GRADE_SCHOOL_TYPES.includes(_navSchoolType)) {
     showScreen('sSchool');
   } else {
     showScreen('sClass');
@@ -4397,29 +4433,30 @@ function refreshBooks() {
   // Przywróć przycisk Wróć gdy mamy kontekst
   const backBtn = document.getElementById('booksBackBtn');
   if (backBtn) backBtn.style.display = '';
-  // Ustaw dynamiczny tytuł wg poziomu nawigacji
+  // Ustaw dynamiczny tytuł wg poziomu nawigacji.
+  // Tytuł zawiera język + kategorię — dla wszystkich 4 języków (EN/FR/DE/RU)
+  // ten sam flow przez sSchool → kategorię → podręczniki.
   if (titleEl && subEl) {
-    if (_navLanguage === 'fr') {
-      titleEl.textContent = 'Francuski 🇫🇷';
-      subEl.textContent = 'Wybierz podręcznik';
-    } else if (_navSchoolType === 'courses') {
-      titleEl.textContent = 'Kursy tematyczne 💼';
-      subEl.textContent = 'Praktyczny angielski: praca, podróże, naturalne zwroty';
+    const langMeta = (typeof getLangMeta === 'function') ? getLangMeta(_navLanguage) : null;
+    const langPrefix = langMeta ? `${langMeta.name} ${langMeta.flag} · ` : '';
+    if (_navSchoolType === 'courses') {
+      titleEl.textContent = langPrefix + 'Kursy tematyczne 💼';
+      subEl.textContent = 'Praktyczne słownictwo: praca, podróże, naturalne zwroty';
     } else if (_navSchoolType === 'grammar') {
-      titleEl.textContent = 'Gramatyka i dodatki 🔤';
+      titleEl.textContent = langPrefix + 'Gramatyka i dodatki 🔤';
       subEl.textContent = 'Powtórki gramatyczne i materiały pomocnicze';
     } else if (_navSchoolType === 'other') {
       // legacy — zostawione dla starych zestawów / linków
-      titleEl.textContent = 'Inne 📖';
+      titleEl.textContent = langPrefix + 'Inne 📖';
       subEl.textContent = 'Dodatkowe materiały';
     } else if (_navSchoolType === 'primary') {
-      titleEl.textContent = `Klasa ${_navGrade} · Szkoła Podstawowa`;
+      titleEl.textContent = langPrefix + `Klasa ${_navGrade} · Szkoła Podstawowa`;
       subEl.textContent = 'Wybierz podręcznik';
     } else if (_navSchoolType === 'secondary') {
-      titleEl.textContent = `Klasa ${_navGrade} · Szkoła Średnia`;
+      titleEl.textContent = langPrefix + `Klasa ${_navGrade} · Szkoła Średnia`;
       subEl.textContent = 'Wybierz podręcznik';
     } else {
-      titleEl.textContent = 'Wybierz podręcznik 📖';
+      titleEl.textContent = langPrefix + 'Wybierz podręcznik 📖';
       subEl.textContent = 'Z którego podręcznika chcesz ćwiczyć?';
     }
   }
@@ -4459,11 +4496,12 @@ function refreshBooks() {
     if (eff.tier === 'premium' && !isPremium) return false;
     return true;
   });
-  // Filtr kontekstu nawigacji
+  // Filtr kontekstu nawigacji.
+  // Wszystkie języki (EN/FR/DE/RU) używają tej samej logiki:
+  // język → schoolType → (opcjonalnie) klasa.
   const visibleBooks = allowedBooks
     .filter(b => {
       if (_navLanguage && b.language !== _navLanguage) return false;
-      if (_navLanguage === 'fr') return true; // francuski — bez dalszego filtra
       if (_navSchoolType && b.schoolType !== _navSchoolType) return false;
       if (_NO_GRADE_SCHOOL_TYPES.includes(_navSchoolType)) return true; // bez filtra klasy
       if (_navGrade != null && b.grade !== _navGrade) return false;
