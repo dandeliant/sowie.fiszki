@@ -73,6 +73,7 @@ const DB = (() => {
       plan:          row.plan            || 'free',
       planExpiresAt: row.plan_expires_at || null,
       trialUsedAt:   row.trial_used_at   || null,
+      hidePremiumBanners: row.hide_premium_banners === true,
       unitProgress
     };
   }
@@ -560,6 +561,13 @@ const DB = (() => {
     if (_profile.isAdmin) return 'teacher'; // admin = pełny dostęp
     if (_profile.isTeacher) return _profile.plan === 'free' ? 'teacher' : _profile.plan;
     return _profile.plan || 'free';
+  }
+
+  // Czy bieżący użytkownik ma wyłączone bannery Premium (admin/nauczyciel
+  // ustawił mu flagę hide_premium_banners = TRUE w profiles).
+  // Używane przez maybeShowTrialWelcomeBanner / maybeShowPremiumExpiryBanner.
+  function getHidePremiumBanners() {
+    return _profile?.hidePremiumBanners === true;
   }
 
   async function setUserPlan(userId, plan) {
@@ -1214,6 +1222,17 @@ const DB = (() => {
     return data;
   }
 
+  // Admin/nauczyciel-twórca: ustaw flagę "ukryj bannery Premium" dla
+  // konkretnego ucznia. RPC sprawdza uprawnienia (admin → wszyscy,
+  // nauczyciel → tylko swoi created_by). Migracja #32.
+  async function adminSetHideBanners(userId, value) {
+    const { error } = await supabase.rpc('admin_set_hide_premium_banners', {
+      p_user_id: userId, p_value: !!value
+    });
+    if (error) throw new Error(error.message);
+    return true;
+  }
+
   // Pobierz dowolny profil po ID (uzywane przez opiekuna do widoku
   // postepu dziecka — RLS pozwala dzieki polityce prof_select_parent_child).
   async function fetchProfileById(userId) {
@@ -1799,7 +1818,7 @@ const DB = (() => {
     if (!_profile?.isAdmin && !_profile?.isTeacher) return [];
     let q = supabase
       .from('profiles')
-      .select('id, username, xp, level, streak, total_sessions, total_answers, correct_answers, last_study_date, is_admin, is_teacher, plan, created_by, created_at, generated_password');
+      .select('id, username, xp, level, streak, total_sessions, total_answers, correct_answers, last_study_date, is_admin, is_teacher, plan, created_by, created_at, generated_password, hide_premium_banners');
     if (!_profile.isAdmin && _profile.isTeacher) {
       q = q.eq('created_by', _userId);
     }
@@ -1882,7 +1901,7 @@ const DB = (() => {
     if (!username) return null;
     let q = supabase
       .from('profiles')
-      .select('id, username, xp, level, streak, total_sessions, total_answers, correct_answers, last_study_date, is_admin, is_teacher, plan, created_by')
+      .select('id, username, xp, level, streak, total_sessions, total_answers, correct_answers, last_study_date, is_admin, is_teacher, plan, created_by, hide_premium_banners')
       .eq('username', username);
     if (!_profile.isAdmin && _profile.isTeacher) {
       q = q.eq('created_by', _userId);
@@ -2579,6 +2598,7 @@ const DB = (() => {
     isAdmin,
     isTeacher,
     getUserPlan,
+    getHidePremiumBanners,
     setUserPlan,
     addAdminRequest,
     getAdminRequests,
@@ -2650,6 +2670,7 @@ const DB = (() => {
     activateTrialIfEligible,
     downgradePlanIfExpired,
     adminExtendPremium,
+    adminSetHideBanners,
     getFreeLimits,
     getDailyXpHistory,
     logStudyMinutes,

@@ -13639,10 +13639,15 @@ function buildAccessUserCard(u) {
     </div>
     <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
       <div style="font-size:.72rem;font-weight:700;color:var(--accent);padding:4px 8px;border-radius:8px;border:1px solid rgba(124,77,255,.3)" class="access-label-btn" title="Prywatna etykieta">✏️</div>
+      <div style="font-size:.72rem;font-weight:700;color:var(--accent);padding:4px 8px;border-radius:8px;border:1px solid rgba(124,77,255,.3)" class="access-settings-btn" title="Ustawienia konta (plan, bannery)">⚙️</div>
       <div style="font-size:.72rem;font-weight:700;color:var(--accent2)" class="access-manage-btn">📋 Zarządzaj</div>
       <div style="font-size:.72rem;font-weight:700;color:var(--danger);padding:4px 8px;border-radius:8px;border:1px solid rgba(255,118,117,.3)" class="access-delete-btn">🗑️</div>
     </div>`;
   card.querySelector('.access-label-btn').addEventListener('click', (e) => { e.stopPropagation(); openUserLabelModal(u.id, u.username, renderAccessUserList); });
+  card.querySelector('.access-settings-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    openUserSettingsModal(u.id, u.username, u.plan || 'free', u.hide_premium_banners === true, renderAccessUserList);
+  });
   card.querySelector('.access-manage-btn').addEventListener('click', (e) => { e.stopPropagation(); openAccessDetail(u.id, u.username); });
   card.querySelector('.access-delete-btn').addEventListener('click', (e) => { e.stopPropagation(); confirmDeleteUser(u.id, u.username); });
   card.addEventListener('click', () => openAccessDetail(u.id, u.username));
@@ -14158,6 +14163,7 @@ function renderClassStudents(memberIds, allProfiles) {
           <div class="student-card-name">${fmtNameWithLabel(profile.id, profile.username)}</div>
           <div style="display:flex;gap:5px">
             <button class="btn-sm" style="font-size:.65rem;padding:4px 9px" title="Prywatna etykieta" onclick="event.stopPropagation();openUserLabelModal('${profile.id}','${esc(profile.username)}',()=>renderClassStudents(_curClassMembers,_allProfiles))">✏️</button>
+            <button class="btn-sm" style="font-size:.65rem;padding:4px 9px" title="Ustawienia konta (plan, bannery)" onclick="event.stopPropagation();openUserSettingsModal('${profile.id}','${esc(profile.username)}','${profile.plan||'free'}',${profile.hide_premium_banners===true},()=>renderClassStudents(_curClassMembers,_allProfiles))">⚙️</button>
             <button class="btn-sm accent" style="font-size:.65rem;padding:4px 9px" onclick="event.stopPropagation();openStudentProgress('${profile.id}','${esc(profile.username)}')">📊 Postęp</button>
             ${profile.generated_password ? `<button class="btn-sm" style="font-size:.65rem;padding:4px 9px;background:rgba(80,200,120,.18);border-color:rgba(80,200,120,.6)" title="Pokaż zapisane hasło" onclick="event.stopPropagation();openShowPassModal('${profile.id}','${esc(profile.username)}')">🔓</button>` : ''}
             <button class="btn-sm" style="font-size:.65rem;padding:4px 9px" title="Resetuj hasło" onclick="event.stopPropagation();resetStudentPassword('${profile.id}','${esc(profile.username)}')">🔑</button>
@@ -15665,6 +15671,53 @@ if ('serviceWorker' in navigator) {
   </div>
 </div>
 
+<!-- ══ Modal: ⚙️ Ustawienia konta ucznia (plan + ukryj bannery) ══ -->
+<div class="modal-overlay" id="userSettingsModal" style="display:none" onclick="if(event.target===this)closeUserSettingsModal()">
+  <div class="modal-box" style="max-width:440px">
+    <div style="font-family:'Playfair Display',serif;font-size:1.15rem;color:var(--accent);margin-bottom:4px">⚙️ Ustawienia konta</div>
+    <div style="font-size:.72rem;color:var(--muted);margin-bottom:12px;font-weight:600;line-height:1.45">
+      Zarządzaj typem konta i widocznością bannerów Premium.
+    </div>
+    <label style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px">Użytkownik</label>
+    <div id="userSettingsTargetName" style="font-size:.82rem;font-weight:700;color:var(--text);padding:8px 10px;background:var(--surface2);border-radius:8px;margin-bottom:14px;word-break:break-word">—</div>
+
+    <!-- Plan konta — widoczny tylko adminowi -->
+    <div id="userSettingsPlanSection" style="display:none;margin-bottom:14px">
+      <label style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:6px">Typ konta</label>
+      <div style="display:flex;gap:6px">
+        <label style="flex:1;display:flex;align-items:center;gap:6px;padding:8px;border:1.5px solid var(--border);border-radius:8px;cursor:pointer" data-userset-plan-wrap="free">
+          <input type="radio" name="userSettingsPlan" value="free" style="accent-color:var(--accent2)">
+          <span style="font-size:.72rem;font-weight:700">Free</span>
+        </label>
+        <label style="flex:1;display:flex;align-items:center;gap:6px;padding:8px;border:1.5px solid var(--border);border-radius:8px;cursor:pointer" data-userset-plan-wrap="premium">
+          <input type="radio" name="userSettingsPlan" value="premium" style="accent-color:var(--accent)">
+          <span style="font-size:.72rem;font-weight:700">⭐ Premium</span>
+        </label>
+        <label style="flex:1;display:flex;align-items:center;gap:6px;padding:8px;border:1.5px solid var(--border);border-radius:8px;cursor:pointer" data-userset-plan-wrap="teacher">
+          <input type="radio" name="userSettingsPlan" value="teacher" style="accent-color:var(--purple)">
+          <span style="font-size:.72rem;font-weight:700">👩‍🏫 Teacher</span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Bannery Premium — admin lub nauczyciel-twórca -->
+    <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--surface2);border:1.5px solid var(--border);border-radius:10px;cursor:pointer">
+      <input type="checkbox" id="userSettingsHideBanners" style="accent-color:var(--accent);width:18px;height:18px;flex-shrink:0;cursor:pointer">
+      <div style="flex:1">
+        <div style="font-size:.82rem;font-weight:700;color:var(--text)">🔕 Ukryj bannery Premium</div>
+        <div style="font-size:.66rem;color:var(--muted);font-weight:600;margin-top:2px">Uczeń nie zobaczy „Masz 7 dni Premium" ani „Darmowy trial kończy się…"</div>
+      </div>
+    </label>
+
+    <div id="userSettingsMsg" style="font-size:.7rem;margin-top:10px;min-height:14px;font-weight:600"></div>
+
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;flex-wrap:wrap">
+      <button class="btn-modal-cancel" onclick="closeUserSettingsModal()">Anuluj</button>
+      <button class="btn-modal-save" id="userSettingsSaveBtn" onclick="saveUserSettings()">💾 Zapisz</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="wordErrorModal" style="display:none" onclick="if(event.target===this)closeWordErrorModal()">
   <div class="modal-box" style="max-width:440px">
     <div style="font-family:'Playfair Display',serif;font-size:1.15rem;color:var(--accent);margin-bottom:4px">🐛 Zgłoś błąd</div>
@@ -16616,6 +16669,117 @@ if ('serviceWorker' in navigator) {
       if (cb) try { cb(); } catch(e) {}
     } catch(e) {
       alert('❌ ' + (e.message || e));
+    }
+  };
+
+  // ─── ⚙️ Ustawienia konta ucznia (plan + ukryj bannery) ─────────
+  // Wspolny modal dla widoku Klasy (sClassDetail) i Dostepu (sAdminAccess).
+  // Migracja #32 dodala flage hide_premium_banners + RPC.
+  let _userSettingsTargetId = null;
+  let _userSettingsTargetUsername = '';
+  let _userSettingsAfterSave = null;
+  let _userSettingsInitialPlan = 'free';
+  let _userSettingsInitialHide = false;
+
+  window.openUserSettingsModal = function(userId, username, currentPlan, currentHide, afterSaveCb) {
+    _userSettingsTargetId = userId;
+    _userSettingsTargetUsername = username;
+    _userSettingsAfterSave = afterSaveCb || null;
+    _userSettingsInitialPlan = currentPlan || 'free';
+    _userSettingsInitialHide = currentHide === true;
+
+    document.getElementById('userSettingsTargetName').textContent = username || '—';
+
+    // Plan: tylko admin moze zmieniac
+    const planSection = document.getElementById('userSettingsPlanSection');
+    if (typeof isCurrentUserAdmin === 'function' && isCurrentUserAdmin()) {
+      planSection.style.display = '';
+      const radios = document.querySelectorAll('input[name="userSettingsPlan"]');
+      radios.forEach(r => { r.checked = (r.value === _userSettingsInitialPlan); });
+      // Podswietl wybrany wrap
+      document.querySelectorAll('[data-userset-plan-wrap]').forEach(w => {
+        const isActive = w.getAttribute('data-userset-plan-wrap') === _userSettingsInitialPlan;
+        w.style.borderColor = isActive ? 'var(--accent)' : 'var(--border)';
+        w.style.background  = isActive ? 'rgba(255,209,102,.08)' : 'transparent';
+      });
+      // Reaguj na zmianę
+      radios.forEach(r => {
+        r.onchange = () => {
+          document.querySelectorAll('[data-userset-plan-wrap]').forEach(w => {
+            const isActive = w.getAttribute('data-userset-plan-wrap') === r.value && r.checked;
+            if (r.checked && w.getAttribute('data-userset-plan-wrap') === r.value) {
+              w.style.borderColor = 'var(--accent)';
+              w.style.background  = 'rgba(255,209,102,.08)';
+            } else if (w.getAttribute('data-userset-plan-wrap') !== r.value) {
+              // ignoruj — petla po wszystkich wrapach
+            }
+          });
+          // Uproszczone: przejdz po wszystkich i ustaw aktywny
+          const v = document.querySelector('input[name="userSettingsPlan"]:checked')?.value;
+          document.querySelectorAll('[data-userset-plan-wrap]').forEach(w => {
+            const a = w.getAttribute('data-userset-plan-wrap') === v;
+            w.style.borderColor = a ? 'var(--accent)' : 'var(--border)';
+            w.style.background  = a ? 'rgba(255,209,102,.08)' : 'transparent';
+          });
+        };
+      });
+    } else {
+      planSection.style.display = 'none';
+    }
+
+    document.getElementById('userSettingsHideBanners').checked = _userSettingsInitialHide;
+    document.getElementById('userSettingsMsg').textContent = '';
+    document.getElementById('userSettingsModal').style.display = 'flex';
+  };
+
+  window.closeUserSettingsModal = function() {
+    document.getElementById('userSettingsModal').style.display = 'none';
+    _userSettingsTargetId = null;
+    _userSettingsTargetUsername = '';
+    _userSettingsAfterSave = null;
+  };
+
+  window.saveUserSettings = async function() {
+    if (!_userSettingsTargetId) return;
+    const btn = document.getElementById('userSettingsSaveBtn');
+    const msg = document.getElementById('userSettingsMsg');
+    btn.disabled = true; btn.textContent = '⏳ Zapisywanie…';
+    msg.textContent = ''; msg.style.color = 'var(--muted)';
+    try {
+      const newHide = document.getElementById('userSettingsHideBanners').checked;
+      const isAdmin = (typeof isCurrentUserAdmin === 'function') && isCurrentUserAdmin();
+      const newPlan = isAdmin
+        ? (document.querySelector('input[name="userSettingsPlan"]:checked')?.value || _userSettingsInitialPlan)
+        : _userSettingsInitialPlan;
+
+      // Plan: zmien tylko jeśli admin i wartosc sie zmienila
+      if (isAdmin && newPlan !== _userSettingsInitialPlan) {
+        await DB.setUserPlan(_userSettingsTargetId, newPlan);
+      }
+      // Bannery: zmien jesli wartosc sie zmienila
+      if (newHide !== _userSettingsInitialHide) {
+        if (!DB.adminSetHideBanners) {
+          throw new Error('RPC niedostępny — uruchom migrację #32 (add-hide-premium-banners.sql)');
+        }
+        await DB.adminSetHideBanners(_userSettingsTargetId, newHide);
+      }
+      const cb = _userSettingsAfterSave;
+      // Odswiez cache _allProfiles jesli istnieje
+      if (typeof _allProfiles !== 'undefined' && Array.isArray(_allProfiles)) {
+        const idx = _allProfiles.findIndex(p => p.id === _userSettingsTargetId);
+        if (idx >= 0) {
+          _allProfiles[idx].hide_premium_banners = newHide;
+          if (isAdmin) _allProfiles[idx].plan = newPlan;
+        }
+      }
+      if (typeof toast === 'function') toast('✅ Zapisano ustawienia konta', 1800);
+      closeUserSettingsModal();
+      if (cb) try { cb(); } catch(e) {}
+    } catch(e) {
+      msg.textContent = '❌ ' + (e.message || e);
+      msg.style.color = 'var(--danger)';
+    } finally {
+      btn.disabled = false; btn.textContent = '💾 Zapisz';
     }
   };
 
@@ -18084,6 +18248,8 @@ if ('serviceWorker' in navigator) {
   window.maybeShowTrialWelcomeBanner = function(){
     if (isGuest) return;
     if (isCurrentUserAdmin()) return;   // admin nie ma triala
+    // Admin/nauczyciel mógł wyłączyć bannery temu uczniowi (migracja #32)
+    if (DB.getHidePremiumBanners && DB.getHidePremiumBanners()) return;
     if (!DB.getPlanExpiryInfo) return;
     const info = DB.getPlanExpiryInfo();
     if (!info || !info.isTrial) return;
@@ -18106,6 +18272,8 @@ if ('serviceWorker' in navigator) {
 
   // Banner wygasania Premium — pokazywany codziennie w ciagu ostatnich 30 dni
   window.maybeShowPremiumExpiryBanner = function(){
+    // Admin/nauczyciel mógł wyłączyć bannery temu uczniowi (migracja #32)
+    if (DB.getHidePremiumBanners && DB.getHidePremiumBanners()) return;
     if (!DB.getPlanExpiryInfo) return;
     const info = DB.getPlanExpiryInfo();
     if (!info) return;
