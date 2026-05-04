@@ -3067,7 +3067,7 @@ szkoła	school"></textarea>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
         <button class="btn-sm accent" id="btnSaveAccess" onclick="saveUserAccess()">💾 Zapisz</button>
-        <button class="btn-sm" onclick="showScreen('sAdminAccess')">← Użytkownicy</button>
+        <button class="btn-sm" id="btnAccessBack" onclick="showScreen('sAdminAccess')">← Użytkownicy</button>
       </div>
     </div>
     <div style="font-size:.72rem;color:var(--muted);font-weight:600;margin-bottom:10px;padding:8px 12px;background:rgba(162,155,254,.07);border-radius:10px;border:1px solid var(--border)">
@@ -13760,11 +13760,25 @@ async function teacherSearchStudent() {
   }
 }
 
-async function openAccessDetail(userId, username) {
+async function openAccessDetail(userId, username, returnTo) {
   _accessUserId = userId;
   _accessUsername = username;
+  // Zapamiętaj kontekst powrotu — domyślnie 'access' (z listy użytkowników).
+  // Z renderClassStudents wywołujemy z 'class' → wracamy do sClassDetail.
+  if (returnTo === 'class' || returnTo === 'access') _accessReturnTo = returnTo;
   document.getElementById('accessDetailTitle').textContent = '📋 ' + username;
   document.getElementById('accessDetailSub').textContent = 'Zaznacz podręczniki, do których ma mieć dostęp';
+  // Dynamicznie ustaw przycisk powrotu zgodnie z kontekstem
+  const backBtn = document.getElementById('btnAccessBack');
+  if (backBtn) {
+    if (_accessReturnTo === 'class') {
+      backBtn.textContent = '← Klasa';
+      backBtn.setAttribute('onclick', "showScreen('sClassDetail')");
+    } else {
+      backBtn.textContent = '← Użytkownicy';
+      backBtn.setAttribute('onclick', "showScreen('sAdminAccess')");
+    }
+  }
   showScreen('sAdminAccessDetail');
 
   const listEl = document.getElementById('accessBookList');
@@ -13917,7 +13931,12 @@ async function saveUserAccess() {
       }
     }
     toast('✅ Zapisano dostęp i plan dla ' + _accessUsername + '!');
-    openAdminAccess();
+    // Wracaj do tego ekranu, z którego otwarto: 'class' → Klasa, 'access' → lista użytkowników
+    if (_accessReturnTo === 'class' && typeof openClassDetail === 'function' && _curClassId) {
+      openClassDetail(_curClassId, _curClassName);
+    } else {
+      openAdminAccess();
+    }
   } catch(e) {
     console.error('[saveUserAccess]', e);
     toast('❌ Błąd: ' + e.message, 3500);
@@ -13984,6 +14003,9 @@ let _curClassMembers = [];
 // Bulk action state — wspólny dla widoków Klasy + Dostępu (top-level by funkcje
 // poza IIFE, np. renderClassStudents/buildAccessUserCard, też miały dostęp).
 let _bulkSelected = new Set();
+// Skąd otwarto sAdminAccessDetail: 'access' (domyślnie z listy użytkowników)
+// lub 'class' (z widoku Klasy → wraca do sClassDetail).
+let _accessReturnTo = 'access';
 
 async function openAdminClasses() {
   showScreen('sAdminClasses');
@@ -14199,6 +14221,7 @@ function renderClassStudents(memberIds, allProfiles) {
           <div style="display:flex;gap:5px">
             <button class="btn-sm" style="font-size:.65rem;padding:4px 9px" title="Prywatna etykieta" onclick="event.stopPropagation();openUserLabelModal('${profile.id}','${esc(profile.username)}',()=>renderClassStudents(_curClassMembers,_allProfiles))">✏️</button>
             <button class="btn-sm" style="font-size:.65rem;padding:4px 9px" title="Ustawienia konta (plan, bannery)" onclick="event.stopPropagation();openUserSettingsModal('${profile.id}','${esc(profile.username)}','${profile.plan||'free'}',${profile.hide_premium_banners===true},()=>renderClassStudents(_curClassMembers,_allProfiles))">⚙️</button>
+            <button class="btn-sm" style="font-size:.65rem;padding:4px 9px" title="Zarządzaj podręcznikami ucznia" onclick="event.stopPropagation();openAccessDetail('${profile.id}','${esc(profile.username)}','class')">📋 Podręczniki</button>
             <button class="btn-sm accent" style="font-size:.65rem;padding:4px 9px" onclick="event.stopPropagation();openStudentProgress('${profile.id}','${esc(profile.username)}')">📊 Postęp</button>
             ${profile.generated_password ? `<button class="btn-sm" style="font-size:.65rem;padding:4px 9px;background:rgba(80,200,120,.18);border-color:rgba(80,200,120,.6)" title="Pokaż zapisane hasło" onclick="event.stopPropagation();openShowPassModal('${profile.id}','${esc(profile.username)}')">🔓</button>` : ''}
             <button class="btn-sm" style="font-size:.65rem;padding:4px 9px" title="Resetuj hasło" onclick="event.stopPropagation();resetStudentPassword('${profile.id}','${esc(profile.username)}')">🔑</button>
