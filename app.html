@@ -5018,9 +5018,30 @@ function saveEmojiStore(store) {
   localStorage.setItem('fiszki_emoji_' + currentBookId, JSON.stringify(store));
 }
 function getWordEmoji(pl) {
+  // 1) Emoji zaszyte w data.js (BOOKS) jako 3. element pary [pl, en, emoji]
+  if (currentBookId && BOOKS[currentBookId]) {
+    const book = BOOKS[currentBookId];
+    for (const uk in book.units) {
+      const w = book.units[uk].words.find(x => x[0] === pl);
+      if (w && w[2]) return '<span style="margin-right:4px">' + w[2] + '</span>';
+    }
+  }
+  // 2) Fallback — emoji ustawione przez admina w localStorage (per-book)
   const store = getEmojiStore();
   const em = store[pl];
   return em ? '<span style="margin-right:4px">' + em + '</span>' : '';
+}
+// Surowy znak emoji bez HTML — do druków, kart, alt-text itd.
+function getWordEmojiRaw(pl) {
+  if (currentBookId && BOOKS[currentBookId]) {
+    const book = BOOKS[currentBookId];
+    for (const uk in book.units) {
+      const w = book.units[uk].words.find(x => x[0] === pl);
+      if (w && w[2]) return w[2];
+    }
+  }
+  const store = getEmojiStore();
+  return store[pl] || '';
 }
 function showCardImage() {
   const wrap = document.getElementById('cardImg');
@@ -5043,7 +5064,7 @@ function getWordImg(pl) {
   return '<img src="' + esc(s.image_url) + '" style="width:22px;height:22px;object-fit:cover;border-radius:4px;margin-right:5px;vertical-align:middle" onerror="this.style.display=\'none\'">';
 }
 function setWordEmoji(pl) {
-  const current = getEmojiStore()[pl] || '';
+  const current = getWordEmojiRaw(pl);
   const emoji = prompt('Wpisz emoji dla "' + pl + '" (puste = usuń):', current);
   if (emoji === null) return; // anulowano
   const store = getEmojiStore();
@@ -5245,7 +5266,9 @@ function printWordList() {
     <table><thead><tr><th>#</th><th>Polski</th><th>English</th>${sentencesVisible ? '<th>Zdanie PL</th><th>Zdanie EN</th>' : ''}</tr></thead><tbody>
     ${u.words.map((w,i)=>{
       const s = sentencesVisible ? DB.getSentence(currentBookId, w[0]) : null;
-      return '<tr><td>'+(i+1)+'</td><td>'+esc(w[0])+'</td><td>'+esc(w[1])+'</td>'
+      const em = getWordEmojiRaw(w[0]);
+      const emPrefix = em ? em + ' ' : '';
+      return '<tr><td>'+(i+1)+'</td><td>'+emPrefix+esc(w[0])+'</td><td>'+esc(w[1])+'</td>'
         + (sentencesVisible ? '<td style="font-size:.8rem;color:#555">'+(s?.sentence_pl||'')+'</td><td style="font-size:.8rem;color:#2c6e49">'+(s?.sentence_target||'')+'</td>' : '')
         + '</tr>';
     }).join('')}
@@ -5292,7 +5315,9 @@ h2{text-align:center;font-size:9pt;color:#888;margin-bottom:4px;font-weight:400}
       if (w) {
         const s = sentencesVisible ? DB.getSentence(currentBookId, w[0]) : null;
         const sentHtml = s?.sentence_pl ? '<div class="sub">' + esc(s.sentence_pl) + '</div>' : '';
-        html += '<div class="card"><div class="num">' + (p*perPage+i+1) + '</div><div class="word">' + esc(w[0]) + '</div>' + sentHtml + '</div>';
+        const em = getWordEmojiRaw(w[0]);
+        const emHtml = em ? '<div style="font-size:18pt;line-height:1;margin-bottom:3pt">' + em + '</div>' : '';
+        html += '<div class="card"><div class="num">' + (p*perPage+i+1) + '</div>' + emHtml + '<div class="word">' + esc(w[0]) + '</div>' + sentHtml + '</div>';
       } else {
         html += '<div class="card"></div>';
       }
@@ -5315,7 +5340,9 @@ h2{text-align:center;font-size:9pt;color:#888;margin-bottom:4px;font-weight:400}
         const origIdx = (function(){ const r=Math.floor(i/cols); const c=i%cols; return r*cols+(cols-1-c); })();
         const s2 = sentencesVisible ? DB.getSentence(currentBookId, w[0]) : null;
         const sentHtml2 = s2?.sentence_target ? '<div class="sub">' + esc(s2.sentence_target) + '</div>' : '';
-        html += '<div class="card"><div class="num">' + (p*perPage+origIdx+1) + '</div><div class="word">' + esc(w[1]) + '</div>' + sentHtml2 + '</div>';
+        const em2 = getWordEmojiRaw(w[0]);
+        const emHtml2 = em2 ? '<div style="font-size:18pt;line-height:1;margin-bottom:3pt">' + em2 + '</div>' : '';
+        html += '<div class="card"><div class="num">' + (p*perPage+origIdx+1) + '</div>' + emHtml2 + '<div class="word">' + esc(w[1]) + '</div>' + sentHtml2 + '</div>';
       } else {
         html += '<div class="card"></div>';
       }
@@ -5601,7 +5628,7 @@ function renderCard() {
       document.getElementById('btnSpeakPl').style.display = 'none';
       sc.classList.remove('flipped');
       setTimeout(() => {
-        const em = getEmojiStore()[activeWords[curIdx][0]] || '';
+        const em = getWordEmojiRaw(activeWords[curIdx][0]);
         document.getElementById('wPl').textContent = (em ? em + ' ' : '') + q;
         document.getElementById('wEn').textContent = a;
         document.getElementById('btnSpeakPl').style.display = '';
@@ -5610,7 +5637,7 @@ function renderCard() {
       }, 680);
     } else {
       sc.classList.remove('flipped'); reAnim(sc);
-      const em = getEmojiStore()[activeWords[curIdx][0]] || '';
+      const em = getWordEmojiRaw(activeWords[curIdx][0]);
       document.getElementById('wPl').textContent = (em ? em + ' ' : '') + q;
       document.getElementById('wEn').textContent = a;
       showCardImage();
@@ -8213,7 +8240,10 @@ function cwRenderClues({clues}) {
     list.forEach(({num, clue, word}) => {
       const d = document.createElement('div');
       d.className = 'cw-clue';
-      d.innerHTML = `<span class="cw-cn">${num}.</span><span class="cw-ct">${esc(clue)}</span><span class="cw-len">(${word.length})</span>`;
+      // Emoji obok hasła PL — jeśli jest w data.js lub localStorage
+      const emCw = getWordEmojiRaw(clue);
+      const emCwHtml = emCw ? '<span style="margin-right:4px">' + emCw + '</span>' : '';
+      d.innerHTML = `<span class="cw-cn">${num}.</span><span class="cw-ct">${emCwHtml}${esc(clue)}</span><span class="cw-len">(${word.length})</span>`;
       div.appendChild(d);
     });
     con.appendChild(div);
@@ -8295,7 +8325,7 @@ function spellGenerate() {
   spellItems = chips.map(c => {
     const pl = c.dataset.pl, en = c.dataset.en;
     const s = DB.getSentence(currentBookId, pl);
-    const emoji = getEmojiStore()[pl] || '';
+    const emoji = getWordEmojiRaw(pl);
     const imgUrl = s?.image_url || '';
     return {pl, en, emoji, imgUrl};
   });
@@ -8514,7 +8544,7 @@ function sbGenerate() {
 
 function sbFormatWord(word, display) {
   if (display === 'emoji') {
-    const em = getEmojiStore()[word.pl];
+    const em = getWordEmojiRaw(word.pl);
     if (em) return em + ' ' + word.pl;
   }
   if (display === 'img') {
@@ -8624,7 +8654,7 @@ function cubesGetWordPool() {
   }
   return raw.map(([pl, en]) => {
     const s = DB.getSentence(currentBookId, pl);
-    const emoji = getEmojiStore()[pl] || '';
+    const emoji = getWordEmojiRaw(pl);
     const imgUrl = s?.image_url || '';
     const isSingle = !/\s/.test(en.trim()) && !/\s/.test(pl.trim());
     return {pl, en, emoji, imgUrl, isSingle};
@@ -11011,7 +11041,7 @@ function boardGenerate() {
     } else if (wordIdx < totalWords) {
       const [pl, en] = words[wordIdx];
       const s = DB.getSentence(currentBookId, pl);
-      const emoji = getEmojiStore()[pl] || '';
+      const emoji = getWordEmojiRaw(pl);
       const imgUrl = s?.image_url || '';
       boardCells.push({type: 'word', pl, en, emoji, imgUrl});
       wordIdx++;
@@ -11321,7 +11351,7 @@ function dobbleGenerate() {
 
   dobbleSymbols = selected.map(w => {
     const s = DB.getSentence(currentBookId, w.pl);
-    const emoji = getEmojiStore()[w.pl] || '';
+    const emoji = getWordEmojiRaw(w.pl);
     return { pl: w.pl, en: w.en, emoji, imgUrl: s?.image_url || '' };
   });
 
@@ -11553,7 +11583,9 @@ function hangStartRound() {
   hangGuessed = new Set();
   hangErrors = 0;
 
-  document.getElementById('hangClue').textContent = '💡 ' + pair.pl;
+  // Emoji obok PL hint (z data.js lub localStorage)
+  const hangEm = getWordEmojiRaw(pair.pl);
+  document.getElementById('hangClue').textContent = '💡 ' + (hangEm ? hangEm + ' ' : '') + pair.pl;
   document.getElementById('hangWrong').textContent = '';
   document.getElementById('hangResult').style.display = 'none';
   document.getElementById('hangScore').textContent = hangCorrectCount + ' / ' + hangWords.length;
@@ -11725,7 +11757,7 @@ function icNewGame() {
   const all = u.words.map(([pl, en]) => {
     const s = DB.getSentence(currentBookId, pl);
     const imgUrl = s?.image_url || '';
-    const emoji = getEmojiStore()[pl] || '';
+    const emoji = getWordEmojiRaw(pl);
     return {pl, en, imgUrl, emoji, matched: false};
   }).filter(p => p.imgUrl || p.emoji); // tylko te z obrazkiem lub emoji
 
@@ -11840,7 +11872,7 @@ function icPrint() {
   const pairs = u.words.map(([pl, en]) => {
     const s = DB.getSentence(currentBookId, pl);
     const imgUrl = s?.image_url || '';
-    const emoji = getEmojiStore()[pl] || '';
+    const emoji = getWordEmojiRaw(pl);
     return {pl, en, imgUrl, emoji};
   }).filter(p => p.imgUrl || p.emoji);
 
@@ -12052,7 +12084,10 @@ function snakeNewGame() {
       globalNum++;
       // Pokaż polskie słowo, linia na angielskie (lub odwrotnie)
       const shown = isEnSnake ? p.pl : p.en;
-      wsWrap.innerHTML += '<div class="snake-ws-row"><span class="snake-ws-num">' + globalNum + '.</span><span class="snake-ws-word">' + esc(shown) + '</span> — <span class="snake-ws-line"></span></div>';
+      // Emoji obok PL hint (z data.js / localStorage). Tylko gdy widoczne PL.
+      const emSnk = isEnSnake ? getWordEmojiRaw(p.pl) : '';
+      const emSnkPrefix = emSnk ? emSnk + ' ' : '';
+      wsWrap.innerHTML += '<div class="snake-ws-row"><span class="snake-ws-num">' + globalNum + '.</span><span class="snake-ws-word">' + emSnkPrefix + esc(shown) + '</span> — <span class="snake-ws-line"></span></div>';
     });
 
     // Separator między grupami
@@ -12411,7 +12446,9 @@ function memFlip(idx) {
   const card = memCards[idx];
   el.classList.remove('hidden');
   el.classList.add('revealed');
-  el.textContent = card.text;
+  // Emoji nad/przed słowem (z data.js lub localStorage)
+  const em = getWordEmojiRaw(card.word[0]);
+  el.innerHTML = (em ? '<span style="display:block;font-size:1.4em;line-height:1">' + em + '</span>' : '') + esc(card.text);
   if (card.lang === 'en') el.style.color = 'var(--accent)';
   else el.style.color = 'var(--text)';
 
@@ -13415,7 +13452,9 @@ function wsRenderWordList() {
     const item = document.createElement('div');
     item.className = 'ws-word-item';
     item.id = 'wswi-' + word;
-    item.innerHTML = `<span class="ws-word-en">${esc(word)}</span><span class="ws-word-pl">${esc(clue)}</span>`;
+    const emWs = getWordEmojiRaw(clue);
+    const emWsHtml = emWs ? '<span style="margin-right:4px">' + emWs + '</span>' : '';
+    item.innerHTML = `<span class="ws-word-en">${esc(word)}</span><span class="ws-word-pl">${emWsHtml}${esc(clue)}</span>`;
     container.appendChild(item);
   });
 }
