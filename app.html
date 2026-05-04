@@ -4082,6 +4082,11 @@ function showScreen(id) {
 
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
+  // Bulk action toolbar — ukryj gdy użytkownik wychodzi z Klasy/Dostępu
+  if (id !== 'sClassDetail' && id !== 'sAdminAccess') {
+    const tb = document.getElementById('bulkActionsToolbar');
+    if (tb) tb.style.display = 'none';
+  }
   if (id === 'sBooks') { refreshBooks(); if (isGuest) document.getElementById('guestBanner').style.display = 'flex'; if (isCurrentUserAdmin() || isCurrentUserTeacher()) renderAdminPanel(); }
   if (id === 'sLang') renderAssignedBooksOnLang();
   if (id === 'sApps') applyAppsLock();
@@ -13606,6 +13611,8 @@ let _accessUsername = '';
 
 async function openAdminAccess() {
   showScreen('sAdminAccess');
+  // Reset zaznaczeń bulk action dla nowego ekranu
+  if (typeof bulkResetForContext === 'function') bulkResetForContext('access');
   const listEl = document.getElementById('accessUserList');
   // Nauczyciel (nie-admin) nie widzi pełnej listy — musi znać login ucznia.
   if (!isCurrentUserAdmin() && isCurrentUserTeacher()) {
@@ -13628,7 +13635,11 @@ function buildAccessUserCard(u) {
   const created = u.created_at ? new Date(u.created_at).toLocaleDateString('pl-PL') : '—';
   const lastSeen = u.last_study_date
     ? new Date(u.last_study_date).toLocaleDateString('pl-PL') : '—';
+  const isSelected = _bulkSelected.has(u.id);
   card.innerHTML = `
+    <label style="display:flex;align-items:center;flex-shrink:0;cursor:pointer" onclick="event.stopPropagation()">
+      <input type="checkbox" ${isSelected?'checked':''} onchange="bulkToggleUser('${u.id}', this.checked)" style="accent-color:var(--accent2);width:16px;height:16px;cursor:pointer">
+    </label>
     <div style="min-width:0;flex:1">
       <div style="font-size:.88rem;font-weight:700;color:var(--text)">${fmtNameWithLabel(u.id, u.username)} ${u.is_teacher ? '<span style="font-size:.58rem;background:rgba(255,209,102,.15);color:var(--accent);padding:1px 6px;border-radius:100px;margin-left:4px">👩‍🏫 Nauczyciel</span>' : '<span style="font-size:.58rem;background:rgba(6,214,160,.1);color:var(--accent2);padding:1px 6px;border-radius:100px;margin-left:4px">🎓 Uczeń</span>'}</div>
       <div style="font-size:.65rem;color:var(--muted);display:flex;gap:10px;flex-wrap:wrap;margin-top:3px">
@@ -13670,8 +13681,17 @@ function renderAccessUserList() {
     const bT = b.created_at ? new Date(b.created_at).getTime() : 0;
     return bT - aT;
   });
-  el.innerHTML = '';
+  // Header z master checkbox dla bulk action
+  el.innerHTML = `<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;padding:6px 4px;border-bottom:1px solid var(--border)">
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer" title="Zaznacz/odznacz wszystkich widocznych">
+      <input type="checkbox" id="bulkMasterCheckbox" onchange="bulkToggleAll(this)" style="accent-color:var(--accent2);width:16px;height:16px;cursor:pointer">
+      <span style="font-size:.65rem;color:var(--muted);font-weight:700">Zaznacz wszystkich (${users.length})</span>
+    </label>
+  </div>`;
   users.forEach(u => el.appendChild(buildAccessUserCard(u)));
+  // Po renderze: zsynchronizuj master checkbox + toolbar
+  bulkSyncMasterCheckbox();
+  bulkRefreshToolbar();
 }
 
 // ── Tryb nauczyciela: wyszukaj ucznia po loginie ──────────────────────
@@ -14106,6 +14126,8 @@ async function openClassDetail(classId, className) {
   document.getElementById('classDetailTitle').textContent = '🏫 ' + className;
   document.getElementById('classDetailSub').textContent = 'Lista uczniów i ich postępy';
   showScreen('sClassDetail');
+  // Reset zaznaczeń bulk action dla nowego ekranu
+  if (typeof bulkResetForContext === 'function') bulkResetForContext('class');
 
   const listEl = document.getElementById('classStudentsList');
   listEl.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:.8rem;padding:24px;font-weight:600">⏳ Ładowanie uczniów…</div>';
@@ -14144,8 +14166,14 @@ function renderClassStudents(memberIds, allProfiles) {
   // Sortuj wg XP (ranking)
   members.sort((a, b) => (b.xp || 0) - (a.xp || 0));
 
-  // Nagłówek rankingu
-  el.innerHTML = '<div style="font-size:.75rem;font-weight:800;color:var(--accent);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;padding:6px 0;border-bottom:1px solid var(--border)">🏆 Ranking klasy wg XP</div>';
+  // Nagłówek rankingu + master checkbox dla bulk action
+  el.innerHTML = `<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;padding:6px 0;border-bottom:1px solid var(--border)">
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer" title="Zaznacz/odznacz wszystkich">
+      <input type="checkbox" id="bulkMasterCheckbox" onchange="bulkToggleAll(this)" style="accent-color:var(--accent2);width:16px;height:16px;cursor:pointer">
+      <span style="font-size:.65rem;color:var(--muted);font-weight:700">Zaznacz</span>
+    </label>
+    <div style="font-size:.75rem;font-weight:800;color:var(--accent);text-transform:uppercase;letter-spacing:.08em;flex:1">🏆 Ranking klasy wg XP</div>
+  </div>`;
   let rank = 0;
   members.forEach((profile, idx) => {
     const lastSeen = profile.last_study_date
@@ -14156,7 +14184,11 @@ function renderClassStudents(memberIds, allProfiles) {
       : 0;
     const card = document.createElement('div');
     card.className = 'student-card';
+    const isSelected = _bulkSelected.has(profile.id);
     card.innerHTML = `
+      <label style="display:flex;align-items:center;padding:0 4px;cursor:pointer" onclick="event.stopPropagation()">
+        <input type="checkbox" ${isSelected?'checked':''} onchange="bulkToggleUser('${profile.id}', this.checked)" style="accent-color:var(--accent2);width:16px;height:16px;cursor:pointer">
+      </label>
       <div class="student-card-avatar">${idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : '👤'}</div>
       <div class="student-card-body" style="flex:1">
         <div style="display:flex;align-items:center;justify-content:space-between">
@@ -14183,6 +14215,9 @@ function renderClassStudents(memberIds, allProfiles) {
     card.addEventListener('click', () => openStudentProgress(profile.id, profile.username));
     el.appendChild(card);
   });
+  // Po renderze: zsynchronizuj master checkbox z aktualnym stanem zaznaczeń
+  bulkSyncMasterCheckbox();
+  bulkRefreshToolbar();
 }
 
 async function removeStudentConfirm(userId, username) {
@@ -15671,6 +15706,110 @@ if ('serviceWorker' in navigator) {
   </div>
 </div>
 
+<!-- ══ Bulk actions: sticky toolbar (Klasy + Dostęp) ══ -->
+<div id="bulkActionsToolbar" style="display:none;position:fixed;left:50%;transform:translateX(-50%);bottom:16px;background:var(--surface);border:2px solid var(--accent);border-radius:14px;padding:10px 14px;box-shadow:0 8px 28px rgba(0,0,0,.35);z-index:8800;display:none;align-items:center;gap:10px;flex-wrap:wrap;max-width:96vw">
+  <span id="bulkSelectedCount" style="font-size:.78rem;font-weight:800;color:var(--accent);white-space:nowrap">0 zaznaczonych</span>
+  <button class="btn-sm" id="bulkBtnPlan" onclick="openBulkPlanModal()" title="Zmień typ konta zaznaczonym" style="font-size:.74rem">🎫 Typ konta</button>
+  <button class="btn-sm" onclick="openBulkBannersModal()" title="Włącz/wyłącz bannery Premium" style="font-size:.74rem">🔕 Bannery</button>
+  <button class="btn-sm" onclick="openBulkBooksModal()" title="Przydziel podręczniki" style="font-size:.74rem">📚 Podręczniki</button>
+  <button class="btn-sm" onclick="bulkClearSelection()" title="Wyczyść zaznaczenie" style="font-size:.74rem;color:var(--muted)">✕</button>
+</div>
+
+<!-- ══ Modal: Bulk — Typ konta ══ -->
+<div class="modal-overlay" id="bulkPlanModal" style="display:none" onclick="if(event.target===this)closeBulkPlanModal()">
+  <div class="modal-box" style="max-width:420px">
+    <div style="font-family:'Playfair Display',serif;font-size:1.15rem;color:var(--accent);margin-bottom:6px">🎫 Zmień typ konta</div>
+    <div style="font-size:.72rem;color:var(--muted);margin-bottom:14px;font-weight:600;line-height:1.45">
+      Akcja zostanie zastosowana do <b id="bulkPlanCount">0</b> zaznaczonych uczniów.
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
+      <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;cursor:pointer;background:var(--surface2)">
+        <input type="radio" name="bulkPlan" value="free" checked style="accent-color:var(--accent2)">
+        <span style="font-size:.86rem;font-weight:700">Free</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;cursor:pointer;background:var(--surface2)">
+        <input type="radio" name="bulkPlan" value="premium" style="accent-color:var(--accent)">
+        <span style="font-size:.86rem;font-weight:700">⭐ Premium</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;cursor:pointer;background:var(--surface2)">
+        <input type="radio" name="bulkPlan" value="teacher" style="accent-color:var(--purple)">
+        <span style="font-size:.86rem;font-weight:700">👩‍🏫 Teacher</span>
+      </label>
+    </div>
+    <div id="bulkPlanMsg" style="font-size:.72rem;min-height:14px;font-weight:600;margin-bottom:8px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn-modal-cancel" onclick="closeBulkPlanModal()">Anuluj</button>
+      <button class="btn-modal-save" id="bulkPlanApplyBtn" onclick="applyBulkPlan()">Zastosuj</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ Modal: Bulk — Bannery Premium ══ -->
+<div class="modal-overlay" id="bulkBannersModal" style="display:none" onclick="if(event.target===this)closeBulkBannersModal()">
+  <div class="modal-box" style="max-width:420px">
+    <div style="font-family:'Playfair Display',serif;font-size:1.15rem;color:var(--accent);margin-bottom:6px">🔕 Bannery Premium</div>
+    <div style="font-size:.72rem;color:var(--muted);margin-bottom:14px;font-weight:600;line-height:1.45">
+      Akcja zostanie zastosowana do <b id="bulkBannersCount">0</b> zaznaczonych uczniów.
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
+      <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;cursor:pointer;background:var(--surface2)">
+        <input type="radio" name="bulkBanners" value="show" checked style="accent-color:var(--accent2)">
+        <span style="font-size:.86rem;font-weight:700">🔔 Pokazuj bannery (domyślnie)</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;cursor:pointer;background:var(--surface2)">
+        <input type="radio" name="bulkBanners" value="hide" style="accent-color:var(--accent)">
+        <span style="font-size:.86rem;font-weight:700">🔕 Ukryj bannery Premium</span>
+      </label>
+    </div>
+    <div id="bulkBannersMsg" style="font-size:.72rem;min-height:14px;font-weight:600;margin-bottom:8px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn-modal-cancel" onclick="closeBulkBannersModal()">Anuluj</button>
+      <button class="btn-modal-save" id="bulkBannersApplyBtn" onclick="applyBulkBanners()">Zastosuj</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ Modal: Bulk — Podręczniki ══ -->
+<div class="modal-overlay" id="bulkBooksModal" style="display:none" onclick="if(event.target===this)closeBulkBooksModal()">
+  <div class="modal-box" style="max-width:560px;max-height:88vh;display:flex;flex-direction:column">
+    <div style="font-family:'Playfair Display',serif;font-size:1.15rem;color:var(--accent);margin-bottom:6px">📚 Przydziel podręczniki</div>
+    <div style="font-size:.72rem;color:var(--muted);margin-bottom:10px;font-weight:600;line-height:1.45">
+      Akcja zostanie zastosowana do <b id="bulkBooksCount">0</b> zaznaczonych uczniów.
+    </div>
+    <div style="font-size:.66rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Tryb działania</div>
+    <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">
+      <label style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;cursor:pointer;background:var(--surface2)">
+        <input type="radio" name="bulkBooksMode" value="add" checked style="accent-color:var(--accent2);margin-top:2px">
+        <div>
+          <div style="font-size:.78rem;font-weight:700;color:var(--text)">➕ Dodaj zaznaczone do listy ucznia</div>
+          <div style="font-size:.65rem;color:var(--muted);font-weight:600">Pozostawia istniejące przypisania, dokleja nowe.</div>
+        </div>
+      </label>
+      <label style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;cursor:pointer;background:var(--surface2)">
+        <input type="radio" name="bulkBooksMode" value="replace" style="accent-color:var(--accent);margin-top:2px">
+        <div>
+          <div style="font-size:.78rem;font-weight:700;color:var(--text)">🔄 Zastąp całą listę</div>
+          <div style="font-size:.65rem;color:var(--muted);font-weight:600">Usuwa wszystko co uczeń miał i ustawia tylko zaznaczone.</div>
+        </div>
+      </label>
+      <label style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;cursor:pointer;background:var(--surface2)">
+        <input type="radio" name="bulkBooksMode" value="remove" style="accent-color:var(--danger);margin-top:2px">
+        <div>
+          <div style="font-size:.78rem;font-weight:700;color:var(--text)">➖ Usuń zaznaczone z listy</div>
+          <div style="font-size:.65rem;color:var(--muted);font-weight:600">Cofnij dostęp do zaznaczonych podręczników.</div>
+        </div>
+      </label>
+    </div>
+    <div style="font-size:.66rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Podręczniki</div>
+    <div id="bulkBooksList" style="flex:1;overflow-y:auto;border:1px solid var(--border);border-radius:10px;padding:6px;background:var(--surface2);margin-bottom:10px;min-height:160px;max-height:40vh"></div>
+    <div id="bulkBooksMsg" style="font-size:.72rem;min-height:14px;font-weight:600;margin-bottom:8px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn-modal-cancel" onclick="closeBulkBooksModal()">Anuluj</button>
+      <button class="btn-modal-save" id="bulkBooksApplyBtn" onclick="applyBulkBooks()">Zastosuj</button>
+    </div>
+  </div>
+</div>
+
 <!-- ══ Modal: ⚙️ Ustawienia konta ucznia (plan + ukryj bannery) ══ -->
 <div class="modal-overlay" id="userSettingsModal" style="display:none" onclick="if(event.target===this)closeUserSettingsModal()">
   <div class="modal-box" style="max-width:440px">
@@ -16671,6 +16810,245 @@ if ('serviceWorker' in navigator) {
       alert('❌ ' + (e.message || e));
     }
   };
+
+  // ═══════════════════════════════════════════════════════════════
+  //  BULK ACTIONS — wspólne dla widoków Klasy (sClassDetail) i
+  //  Dostępu (sAdminAccess). Zaznacz uczniów → ustaw plan/bannery/
+  //  podręczniki grupowo.
+  // ═══════════════════════════════════════════════════════════════
+  const _bulkSelected = new Set();
+  // 'class' | 'access' — kontekst, żeby wiedzieć co odświeżyć po zapisie
+  let _bulkContext = null;
+
+  window.bulkResetForContext = function(ctx) {
+    _bulkSelected.clear();
+    _bulkContext = ctx || null;
+    bulkRefreshToolbar();
+  };
+  window.bulkClearSelection = function() {
+    _bulkSelected.clear();
+    bulkRefreshToolbar();
+    // Odśwież listę by odznaczyć checkboxy
+    if (_bulkContext === 'class' && typeof _curClassMembers !== 'undefined') {
+      renderClassStudents(_curClassMembers, _allProfiles);
+    } else if (_bulkContext === 'access') {
+      renderAccessUserList();
+    }
+  };
+  window.bulkToggleUser = function(userId, checked) {
+    if (checked) _bulkSelected.add(userId);
+    else _bulkSelected.delete(userId);
+    bulkRefreshToolbar();
+    // Odśwież master checkbox (jeśli istnieje)
+    bulkSyncMasterCheckbox();
+  };
+  window.bulkToggleAll = function(checkbox) {
+    const ids = bulkGetVisibleUserIds();
+    if (checkbox.checked) {
+      ids.forEach(id => _bulkSelected.add(id));
+    } else {
+      ids.forEach(id => _bulkSelected.delete(id));
+    }
+    bulkRefreshToolbar();
+    // Odśwież listę żeby zsynchronizować wszystkie checkboxy
+    if (_bulkContext === 'class' && typeof _curClassMembers !== 'undefined') {
+      renderClassStudents(_curClassMembers, _allProfiles);
+    } else if (_bulkContext === 'access') {
+      renderAccessUserList();
+    }
+  };
+  // Lista user_id widocznych w bieżącym ekranie (do master-checkbox)
+  function bulkGetVisibleUserIds() {
+    if (_bulkContext === 'class' && typeof _curClassMembers !== 'undefined') {
+      return _curClassMembers.slice();
+    }
+    if (_bulkContext === 'access') {
+      const myId = DB.getUserId();
+      return (_allProfiles || []).filter(p => p.id !== myId && !p.is_admin).map(p => p.id);
+    }
+    return [];
+  }
+  function bulkSyncMasterCheckbox() {
+    const master = document.getElementById('bulkMasterCheckbox');
+    if (!master) return;
+    const visible = bulkGetVisibleUserIds();
+    if (!visible.length) { master.checked = false; master.indeterminate = false; return; }
+    const selectedVisible = visible.filter(id => _bulkSelected.has(id)).length;
+    master.checked = selectedVisible === visible.length;
+    master.indeterminate = selectedVisible > 0 && selectedVisible < visible.length;
+  }
+  function bulkRefreshToolbar() {
+    const tb = document.getElementById('bulkActionsToolbar');
+    const cnt = _bulkSelected.size;
+    if (cnt > 0) {
+      tb.style.display = 'flex';
+      document.getElementById('bulkSelectedCount').textContent = cnt + ' zaznaczonych';
+      // Plan tylko dla admina
+      const planBtn = document.getElementById('bulkBtnPlan');
+      if (planBtn) planBtn.style.display = (typeof isCurrentUserAdmin === 'function' && isCurrentUserAdmin()) ? '' : 'none';
+    } else {
+      tb.style.display = 'none';
+    }
+  }
+  // Ukryj toolbar przy przejściu na inny ekran
+  window.addEventListener('click', () => { /* placeholder for future */ }, false);
+
+  // ── Modal: Plan ──
+  window.openBulkPlanModal = function() {
+    if (!_bulkSelected.size) return;
+    if (typeof isCurrentUserAdmin !== 'function' || !isCurrentUserAdmin()) {
+      if (typeof toast === 'function') toast('⚠️ Tylko admin może zmieniać typ konta.', 2200);
+      return;
+    }
+    document.getElementById('bulkPlanCount').textContent = _bulkSelected.size;
+    document.getElementById('bulkPlanMsg').textContent = '';
+    document.querySelectorAll('input[name="bulkPlan"]').forEach((r,i) => { r.checked = (i === 0); });
+    document.getElementById('bulkPlanModal').style.display = 'flex';
+  };
+  window.closeBulkPlanModal = function() { document.getElementById('bulkPlanModal').style.display = 'none'; };
+  window.applyBulkPlan = async function() {
+    const plan = document.querySelector('input[name="bulkPlan"]:checked')?.value || 'free';
+    const userIds = Array.from(_bulkSelected);
+    const btn = document.getElementById('bulkPlanApplyBtn');
+    const msg = document.getElementById('bulkPlanMsg');
+    btn.disabled = true;
+    let ok = 0, fail = 0;
+    for (const uid of userIds) {
+      msg.style.color = 'var(--muted)';
+      msg.textContent = '⏳ ' + (ok+fail+1) + '/' + userIds.length + '…';
+      try { await DB.setUserPlan(uid, plan); ok++; }
+      catch(e) { fail++; console.error('[bulkPlan]', uid, e); }
+    }
+    btn.disabled = false;
+    if (typeof toast === 'function') toast(`✅ Plan: ${ok} OK${fail?', '+fail+' błąd':''}`, 2400);
+    closeBulkPlanModal();
+    await bulkRefreshAfterApply();
+  };
+
+  // ── Modal: Bannery ──
+  window.openBulkBannersModal = function() {
+    if (!_bulkSelected.size) return;
+    document.getElementById('bulkBannersCount').textContent = _bulkSelected.size;
+    document.getElementById('bulkBannersMsg').textContent = '';
+    document.querySelectorAll('input[name="bulkBanners"]').forEach((r,i) => { r.checked = (i === 0); });
+    document.getElementById('bulkBannersModal').style.display = 'flex';
+  };
+  window.closeBulkBannersModal = function() { document.getElementById('bulkBannersModal').style.display = 'none'; };
+  window.applyBulkBanners = async function() {
+    const mode = document.querySelector('input[name="bulkBanners"]:checked')?.value || 'show';
+    const value = (mode === 'hide');
+    const userIds = Array.from(_bulkSelected);
+    const btn = document.getElementById('bulkBannersApplyBtn');
+    const msg = document.getElementById('bulkBannersMsg');
+    btn.disabled = true;
+    let ok = 0, fail = 0;
+    for (const uid of userIds) {
+      msg.style.color = 'var(--muted)';
+      msg.textContent = '⏳ ' + (ok+fail+1) + '/' + userIds.length + '…';
+      try { await DB.adminSetHideBanners(uid, value); ok++; }
+      catch(e) { fail++; console.error('[bulkBanners]', uid, e); }
+    }
+    btn.disabled = false;
+    if (typeof toast === 'function') toast(`✅ Bannery: ${ok} OK${fail?', '+fail+' błąd':''}`, 2400);
+    closeBulkBannersModal();
+    await bulkRefreshAfterApply();
+  };
+
+  // ── Modal: Podręczniki (3 tryby: add/replace/remove) ──
+  window.openBulkBooksModal = function() {
+    if (!_bulkSelected.size) return;
+    document.getElementById('bulkBooksCount').textContent = _bulkSelected.size;
+    document.getElementById('bulkBooksMsg').textContent = '';
+    document.querySelectorAll('input[name="bulkBooksMode"]').forEach((r,i) => { r.checked = (i === 0); });
+    // Renderuj listę podręczników z checkboxami
+    const listEl = document.getElementById('bulkBooksList');
+    listEl.innerHTML = '';
+    const myBooks = (typeof currentUserAccessibleBooks === 'function')
+      ? currentUserAccessibleBooks()
+      : Object.values(BOOKS);
+    // Sortuj po nazwie
+    const sorted = myBooks.slice().sort((a,b) => (a.name||'').localeCompare(b.name||'', 'pl'));
+    if (!sorted.length) {
+      listEl.innerHTML = '<div style="font-size:.72rem;color:var(--muted);padding:14px;text-align:center;font-weight:600">Brak dostępnych podręczników.</div>';
+    } else {
+      sorted.forEach(b => {
+        const row = document.createElement('label');
+        row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;cursor:pointer;background:var(--surface);border:1px solid var(--border);margin-bottom:4px';
+        row.innerHTML = `
+          <input type="checkbox" value="${esc(b.id)}" style="accent-color:var(--accent2);width:16px;height:16px;flex-shrink:0;cursor:pointer">
+          <span style="font-size:.8rem;font-weight:700;color:var(--text);flex:1">${b.icon || '📖'} ${esc(b.name)}</span>
+          <span style="font-size:.62rem;color:var(--muted);font-weight:600;font-family:monospace">${esc(b.id)}</span>`;
+        listEl.appendChild(row);
+      });
+    }
+    document.getElementById('bulkBooksModal').style.display = 'flex';
+  };
+  window.closeBulkBooksModal = function() { document.getElementById('bulkBooksModal').style.display = 'none'; };
+  window.applyBulkBooks = async function() {
+    const mode = document.querySelector('input[name="bulkBooksMode"]:checked')?.value || 'add';
+    const checked = Array.from(document.querySelectorAll('#bulkBooksList input[type="checkbox"]:checked')).map(c => c.value);
+    const userIds = Array.from(_bulkSelected);
+    const msg = document.getElementById('bulkBooksMsg');
+    const btn = document.getElementById('bulkBooksApplyBtn');
+    if (!checked.length) {
+      msg.style.color = 'var(--danger)';
+      msg.textContent = '⚠️ Zaznacz co najmniej jeden podręcznik.';
+      return;
+    }
+    btn.disabled = true;
+    msg.style.color = 'var(--muted)';
+    msg.textContent = '⏳ Przetwarzanie…';
+    try {
+      if (mode === 'add') {
+        // Dla każdego podręcznika — bulk grant dla wszystkich userów (1 zapytanie/podręcznik)
+        let totalAdded = 0;
+        for (const bid of checked) {
+          const r = await DB.adminGrantBookAccess(userIds, bid);
+          totalAdded += r.added;
+        }
+        if (typeof toast === 'function') toast(`✅ Dodano ${totalAdded} przypisań do ${userIds.length} uczniów`, 2800);
+      } else if (mode === 'remove') {
+        let totalRemoved = 0;
+        for (const bid of checked) {
+          const r = await DB.adminRevokeBookAccess(userIds, bid);
+          totalRemoved += r.removed;
+        }
+        if (typeof toast === 'function') toast(`🗑️ Usunięto ${totalRemoved} przypisań od ${userIds.length} uczniów`, 2800);
+      } else if (mode === 'replace') {
+        // Per-user: nadpisz całą listę (DELETE wszystkich + INSERT zaznaczonych)
+        let ok = 0, fail = 0;
+        for (let i = 0; i < userIds.length; i++) {
+          msg.textContent = '⏳ ' + (i+1) + '/' + userIds.length + '…';
+          try { await DB.adminSetUserBooks(userIds[i], checked); ok++; }
+          catch(e) { fail++; console.error('[bulkBooksReplace]', userIds[i], e); }
+        }
+        if (typeof toast === 'function') toast(`🔄 Zastąpiono: ${ok} OK${fail?', '+fail+' błąd':''}`, 2800);
+      }
+      closeBulkBooksModal();
+      await bulkRefreshAfterApply();
+    } catch(e) {
+      msg.style.color = 'var(--danger)';
+      msg.textContent = '❌ ' + (e.message || e);
+    } finally {
+      btn.disabled = false;
+    }
+  };
+
+  // Po wykonanej akcji bulk — odśwież listę i wyczyść zaznaczenie
+  async function bulkRefreshAfterApply() {
+    if (_bulkContext === 'class') {
+      // Reload _allProfiles żeby zaktualizować plan/hide_premium_banners
+      try { _allProfiles = await DB.loadAllProfiles(); } catch(e) {}
+      _bulkSelected.clear();
+      bulkRefreshToolbar();
+      if (typeof _curClassMembers !== 'undefined') renderClassStudents(_curClassMembers, _allProfiles);
+    } else if (_bulkContext === 'access') {
+      try { _allProfiles = await DB.loadAllProfiles(); } catch(e) {}
+      _bulkSelected.clear();
+      bulkRefreshToolbar();
+      renderAccessUserList();
+    }
+  }
 
   // ─── ⚙️ Ustawienia konta ucznia (plan + ukryj bannery) ─────────
   // Wspolny modal dla widoku Klasy (sClassDetail) i Dostepu (sAdminAccess).
