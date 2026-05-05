@@ -1320,6 +1320,215 @@ const BOOKS = {
     }
   }
 
+  // ─── LICZEBNIKI GŁÓWNE ───────────────────────────────
+  ,numbers: {
+    id: 'numbers',
+    language: 'en', schoolType: 'courses',
+    name: 'Liczebniki główne',
+    shortName: 'Liczebniki gł.',
+    icon: '🔢',
+    color: '#fdcb6e',
+    description: 'Cardinal numbers — od 0 do milionów',
+    units: {
+      unit1: {
+        name: '0–10', icon: '🔟', color: '#74b9ff',
+        words: [
+          ['0 (zero)', 'zero', '0️⃣'],
+          ['1 (jeden)', 'one', '1️⃣'],
+          ['2 (dwa)', 'two', '2️⃣'],
+          ['3 (trzy)', 'three', '3️⃣'],
+          ['4 (cztery)', 'four', '4️⃣'],
+          ['5 (pięć)', 'five', '5️⃣'],
+          ['6 (sześć)', 'six', '6️⃣'],
+          ['7 (siedem)', 'seven', '7️⃣'],
+          ['8 (osiem)', 'eight', '8️⃣'],
+          ['9 (dziewięć)', 'nine', '9️⃣'],
+          ['10 (dziesięć)', 'ten', '🔟'],
+        ]
+      },
+      unit2: {
+        name: '11–21', icon: '🔢', color: '#0984e3',
+        words: [
+          ['11 (jedenaście)', 'eleven'],
+          ['12 (dwanaście)', 'twelve'],
+          ['13 (trzynaście)', 'thirteen'],
+          ['14 (czternaście)', 'fourteen'],
+          ['15 (piętnaście)', 'fifteen'],
+          ['16 (szesnaście)', 'sixteen'],
+          ['17 (siedemnaście)', 'seventeen'],
+          ['18 (osiemnaście)', 'eighteen'],
+          ['19 (dziewiętnaście)', 'nineteen'],
+          ['20 (dwadzieścia)', 'twenty'],
+          ['21 (dwadzieścia jeden)', 'twenty-one'],
+        ]
+      },
+      unit3: {
+        name: 'Dziesiątki (10–100)', icon: '💯', color: '#00b894',
+        words: [
+          ['10 (dziesięć)', 'ten'],
+          ['20 (dwadzieścia)', 'twenty'],
+          ['30 (trzydzieści)', 'thirty'],
+          ['40 (czterdzieści)', 'forty'],
+          ['50 (pięćdziesiąt)', 'fifty'],
+          ['60 (sześćdziesiąt)', 'sixty'],
+          ['70 (siedemdziesiąt)', 'seventy'],
+          ['80 (osiemdziesiąt)', 'eighty'],
+          ['90 (dziewięćdziesiąt)', 'ninety'],
+          ['100 (sto)', 'one hundred'],
+        ]
+      },
+      unit4: {
+        name: 'Większe liczby', icon: '💎', color: '#a29bfe',
+        words: [
+          ['123 (sto dwadzieścia trzy)', 'one hundred and twenty-three'],
+          ['1000 (tysiąc)', 'one thousand'],
+          ['1345 (tysiąc trzysta czterdzieści pięć)', 'one thousand three hundred and forty-five'],
+          ['1 000 000 (milion)', 'one million'],
+          ['12 493 845 (dwanaście milionów czterysta dziewięćdziesiąt trzy tysiące osiemset czterdzieści pięć)', 'twelve million four hundred and ninety-three thousand eight hundred and forty-five'],
+        ]
+      },
+    }
+  }
+
+  // ─── LICZEBNIKI PORZĄDKOWE ───────────────────────────
+  ,ordinals: {
+    id: 'ordinals',
+    language: 'en', schoolType: 'courses',
+    name: 'Liczebniki porządkowe',
+    shortName: 'Liczebniki p.',
+    icon: '🥇',
+    color: '#e17055',
+    description: 'Ordinal numbers — pierwszy, drugi, trzeci…',
+    units: {
+      unit1: {
+        name: '1.–12.', icon: '🥇', color: '#74b9ff',
+        words: [
+          ['1. pierwszy', 'first (1st)'],
+          ['2. drugi', 'second (2nd)'],
+          ['3. trzeci', 'third (3rd)'],
+          ['4. czwarty', 'fourth (4th)'],
+          ['5. piąty', 'fifth (5th)'],
+          ['6. szósty', 'sixth (6th)'],
+          ['7. siódmy', 'seventh (7th)'],
+          ['8. ósmy', 'eighth (8th)'],
+          ['9. dziewiąty', 'ninth (9th)'],
+          ['10. dziesiąty', 'tenth (10th)'],
+          ['11. jedenasty', 'eleventh (11th)'],
+          ['12. dwunasty', 'twelfth (12th)'],
+        ]
+      },
+      unit2: {
+        name: '13.–24.', icon: '🥈', color: '#0984e3',
+        words: [
+          ['13. trzynasty', 'thirteenth (13th)'],
+          ['14. czternasty', 'fourteenth (14th)'],
+          ['15. piętnasty', 'fifteenth (15th)'],
+          ['16. szesnasty', 'sixteenth (16th)'],
+          ['17. siedemnasty', 'seventeenth (17th)'],
+          ['18. osiemnasty', 'eighteenth (18th)'],
+          ['19. dziewiętnasty', 'nineteenth (19th)'],
+          ['20. dwudziesty', 'twentieth (20th)'],
+          ['21. dwudziesty pierwszy', 'twenty-first (21st)'],
+          ['22. dwudziesty drugi', 'twenty-second (22nd)'],
+          ['23. dwudziesty trzeci', 'twenty-third (23rd)'],
+          ['24. dwudziesty czwarty', 'twenty-fourth (24th)'],
+        ]
+      },
+      unit3: {
+        name: 'Dziesiątki (10.–100.)', icon: '🥉', color: '#00b894',
+        words: [
+          ['10. dziesiąty', 'tenth (10th)'],
+          ['20. dwudziesty', 'twentieth (20th)'],
+          ['30. trzydziesty', 'thirtieth (30th)'],
+          ['40. czterdziesty', 'fortieth (40th)'],
+          ['50. pięćdziesiąty', 'fiftieth (50th)'],
+          ['60. sześćdziesiąty', 'sixtieth (60th)'],
+          ['70. siedemdziesiąty', 'seventieth (70th)'],
+          ['80. osiemdziesiąty', 'eightieth (80th)'],
+          ['90. dziewięćdziesiąty', 'ninetieth (90th)'],
+          ['100. setny', 'hundredth (100th)'],
+        ]
+      },
+    }
+  }
+
+  // ─── ZAIMKI OSOBOWE ──────────────────────────────────
+  ,pronouns: {
+    id: 'pronouns',
+    language: 'en', schoolType: 'courses',
+    name: 'Zaimki osobowe',
+    shortName: 'Zaimki',
+    icon: '👥',
+    color: '#a29bfe',
+    description: 'Personal pronouns — mianownik, dopełnienie, dzierżawcze, zwrotne',
+    units: {
+      unit1: {
+        name: 'Mianownik (Subject)', icon: '👤', color: '#74b9ff',
+        words: [
+          ['ja', 'I'],
+          ['ty', 'you (singular)'],
+          ['on', 'he'],
+          ['ona', 'she'],
+          ['to / ono', 'it'],
+          ['my', 'we'],
+          ['wy', 'you (plural)'],
+          ['oni / one', 'they'],
+        ]
+      },
+      unit2: {
+        name: 'Dopełnienie (Object)', icon: '🫵', color: '#0984e3',
+        words: [
+          ['mnie / mi', 'me'],
+          ['ciebie / ci / cię', 'you (singular)'],
+          ['jego / go / mu', 'him'],
+          ['ją / jej', 'her'],
+          ['to / temu', 'it'],
+          ['nas / nam', 'us'],
+          ['was / wam', 'you (plural)'],
+          ['ich / im', 'them'],
+        ]
+      },
+      unit3: {
+        name: 'Dzierżawcze (Possessive determiners)', icon: '🔑', color: '#00b894',
+        words: [
+          ['mój / moja / moje', 'my'],
+          ['twój / twoja / twoje', 'your (singular)'],
+          ['jego', 'his'],
+          ['jej', 'her'],
+          ['jego (rzeczy)', 'its'],
+          ['nasz / nasza / nasze', 'our'],
+          ['wasz / wasza / wasze', 'your (plural)'],
+          ['ich', 'their'],
+        ]
+      },
+      unit4: {
+        name: 'Dzierżawcze samodzielne (Possessive pronouns)', icon: '💎', color: '#fdcb6e',
+        words: [
+          ['mój / moja / moje (samodzielnie)', 'mine'],
+          ['twój / twoja / twoje (samodzielnie)', 'yours (singular)'],
+          ['jego (samodzielnie)', 'his'],
+          ['jej (samodzielnie)', 'hers'],
+          ['nasz / nasza / nasze (samodzielnie)', 'ours'],
+          ['wasz / wasza / wasze (samodzielnie)', 'yours (plural)'],
+          ['ich (samodzielnie)', 'theirs'],
+        ]
+      },
+      unit5: {
+        name: 'Zwrotne (Reflexive)', icon: '🔄', color: '#e17055',
+        words: [
+          ['siebie / sobie (ja)', 'myself'],
+          ['siebie / sobie (ty)', 'yourself'],
+          ['siebie / sobie (on)', 'himself'],
+          ['siebie / sobie (ona)', 'herself'],
+          ['siebie / sobie (to)', 'itself'],
+          ['siebie / sobie (my)', 'ourselves'],
+          ['siebie / sobie (wy)', 'yourselves'],
+          ['siebie / sobie (oni)', 'themselves'],
+        ]
+      },
+    }
+  }
+
   // ─── CZASOWNIKI NIEREGULARNE ──────────────────────────
   ,czasowniki: {
     id: 'czasowniki',
