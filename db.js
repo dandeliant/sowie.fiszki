@@ -1248,19 +1248,21 @@ const DB = (() => {
   }
 
   // Gracz (też anon): dołącza po PIN-ie z nickname
+  // Po fix-live-join-ambiguous.sql RETURNS TABLE używa prefiksu out_
   async function joinLiveGame(pin, nickname) {
     const { data, error } = await supabase.rpc('join_live_game', {
       p_pin: String(pin).trim(), p_nickname: String(nickname).trim()
     });
     if (error) throw new Error(error.message);
     if (!data || !data.length) throw new Error('Nie znaleziono gry.');
+    const row = data[0];
     return {
-      gameId: data[0].game_id,
-      playerId: data[0].player_id,
-      clientToken: data[0].client_token,
-      bookId: data[0].book_id,
-      unitKey: data[0].unit_key,
-      gameType: data[0].game_type
+      gameId:      row.out_game_id      || row.game_id,
+      playerId:    row.out_player_id    || row.player_id,
+      clientToken: row.out_client_token || row.client_token,
+      bookId:      row.out_book_id      || row.book_id,
+      unitKey:     row.out_unit_key     || row.unit_key,
+      gameType:    row.out_game_type    || row.game_type
     };
   }
 
