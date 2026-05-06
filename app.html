@@ -17393,8 +17393,15 @@ if ('serviceWorker' in navigator) {
     const allAnswers = [correct, ...distractors].sort(() => Math.random() - 0.5);
 
     if (_liveIsHost) {
-      // Host: pokazuje prawidłową odpowiedź + statystyki, czeka aż gracze odpowiedzą
-      document.getElementById('lqCorrectAnswer').textContent = correct;
+      // Host: prawidłowa odpowiedź jest UKRYTA aż wszyscy gracze odpowiedzą —
+      // żeby nauczyciel nie podpowiadał. Reveal ujawnia ją w _lqShowReveal.
+      const correctEl = document.getElementById('lqCorrectAnswer');
+      correctEl.textContent = '⏳ Czekamy na odpowiedzi…';
+      correctEl.style.color = 'var(--muted)';
+      correctEl.style.fontFamily = 'inherit';
+      correctEl.style.fontSize = '1rem';
+      correctEl.style.fontWeight = '600';
+      correctEl.dataset.correct = correct;  // zapamiętujemy do reveal
       document.getElementById('lqAnsweredCount').textContent = '0';
       document.getElementById('lqTotalPlayersCount').textContent = _livePlayers.length;
       document.getElementById('lqMiniLeaderboard').innerHTML = '<div style="text-align:center;color:var(--muted);font-size:.74rem;font-weight:600;padding:10px">Ranking pojawi się po pytaniu…</div>';
@@ -17528,11 +17535,28 @@ if ('serviceWorker' in navigator) {
     } catch(e) {}
   }
 
-  // Reveal phase u hosta — animowany leaderboard + counter punktów
+  // Reveal phase u hosta — ujawnij prawidłową odp. + animowany leaderboard
   async function _lqShowReveal() {
     try {
+      // Ujawnij prawidłową odpowiedź z animacją (była ukryta jako placeholder)
+      const correctEl = document.getElementById('lqCorrectAnswer');
+      if (correctEl) {
+        const correct = correctEl.dataset.correct || '';
+        correctEl.style.transition = 'opacity 240ms ease, transform 240ms ease';
+        correctEl.style.opacity = '0';
+        correctEl.style.transform = 'scale(.94)';
+        setTimeout(() => {
+          correctEl.textContent = '✅ ' + correct;
+          correctEl.style.color = 'var(--accent2)';
+          correctEl.style.fontFamily = "'Courier New',monospace";
+          correctEl.style.fontSize = '1.4rem';
+          correctEl.style.fontWeight = '900';
+          correctEl.style.opacity = '1';
+          correctEl.style.transform = 'scale(1)';
+        }, 240);
+      }
       const lb = await DB.getLiveLeaderboard(_liveGame.id);
-      _lqRenderHostLeaderboard(lb, true);  // true = animuj zmiany pozycji + counter
+      _lqRenderHostLeaderboard(lb, true);
     } catch(e) {}
   }
 
