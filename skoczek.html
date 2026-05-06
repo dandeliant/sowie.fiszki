@@ -3,11 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🏝️ Skoczek — wybierz słówka</title>
+<title>🏝️ Skoczek — Sowie Fiszki</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;700&family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
 <script src="data.js"></script>
+<script src="distractors.js"></script>
 <style>
 :root{
   --sky-1:#67e8f9; --sky-2:#06b6d4; --sand:#fbbf24; --palm:#10b981;
@@ -15,7 +16,7 @@
   --text:#fff; --muted:rgba(255,255,255,.75);
   --panel:rgba(12,30,53,.78);
   --border:rgba(255,255,255,.25);
-  --accent:#fcd34d; --ok:#10b981; --danger:#ef4444;
+  --accent:#fcd34d; --accent2:#10b981; --ok:#10b981; --danger:#ef4444; --pink:#ff6b9d;
 }
 *{box-sizing:border-box;margin:0;padding:0;}
 html,body{height:100%;}
@@ -39,7 +40,7 @@ body::before{
   text-decoration:none;backdrop-filter:blur(10px);transition:all .2s;
 }
 .back-link:hover{background:rgba(255,255,255,.28);}
-.wrap{max-width:520px;margin:0 auto;padding:74px 18px 40px;position:relative;z-index:1;}
+.wrap{max-width:560px;margin:0 auto;padding:74px 18px 40px;position:relative;z-index:1;}
 .title-card{
   background:var(--panel);backdrop-filter:blur(14px);
   border:2px solid var(--border);border-radius:28px;
@@ -74,14 +75,69 @@ select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(252,211,77,.3)
 }
 .info strong{color:var(--accent);}
 .footer{text-align:center;font-size:.7rem;color:rgba(255,255,255,.6);font-weight:600;margin-top:24px;padding:10px;}
+
+/* Game container */
+#gameScreen{display:none;width:100%;max-width:720px;margin:0 auto;padding:14px;position:relative;z-index:1}
+body.in-game .wrap{display:none;}
+body.in-game{padding:0;}
+body.live-mode .back-link{display:none;}
+.live-banner{
+  background:linear-gradient(135deg,rgba(255,209,102,.92),rgba(124,58,237,.92));
+  border-radius:14px;padding:10px 14px;margin-bottom:10px;
+  display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;
+  font-size:.85rem;font-weight:800;color:#fff;
+}
+.live-banner .lb-time{font-family:'Courier New',monospace;background:rgba(0,0,0,.18);padding:4px 10px;border-radius:8px}
+
+/* Jump game styles (copied from app.html) */
+.jump-block{
+  width:28%;max-width:120px;
+  background:linear-gradient(to bottom,#7bc67b 0%,#7bc67b 8px,#f5f0e0 8px,#fff 100%);
+  border:2.5px solid #999;border-radius:12px 12px 6px 6px;
+  padding:10px 4px;text-align:center;cursor:pointer;
+  transition:all .3s ease;position:relative;user-select:none;
+  box-shadow:0 6px 14px rgba(0,0,0,.15);
+}
+.jump-block::before{content:'🌿';position:absolute;top:-10px;left:50%;transform:translateX(-50%);font-size:.8rem;pointer-events:none;}
+.jump-block:hover{transform:translateY(-4px);box-shadow:0 10px 20px rgba(0,0,0,.2);}
+.jump-block:active{transform:translateY(0);}
+.jump-block .jb-text{font-size:.82rem;font-weight:800;color:#333;line-height:1.15;word-break:break-word;}
+.jump-block.jb-correct{border-color:var(--accent2);background:linear-gradient(to bottom,#2ecc71 0%,#2ecc71 8px,#d5f5e3 8px,#eafaf1 100%);}
+.jump-block.jb-wrong{border-color:var(--danger);}
+@keyframes jumpBlockFall{0%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(200px) rotate(15deg)}}
+@keyframes jumpGuyFall{0%{opacity:1;transform:translate(-50%,0)}100%{opacity:0;transform:translate(-50%,200px)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+
+/* End overlay */
+#endOverlay{
+  position:fixed;inset:0;background:rgba(12,30,53,.92);z-index:50;
+  display:none;flex-direction:column;align-items:center;justify-content:center;padding:20px;
+}
+#endOverlay.visible{display:flex;}
+#endOverlay .end-card{
+  background:rgba(12,30,53,.95);border:2px solid var(--accent);border-radius:24px;
+  padding:32px 28px;text-align:center;max-width:440px;width:100%;
+  box-shadow:0 30px 60px rgba(0,0,0,.5);
+}
+#endOverlay .end-emoji{font-size:4rem;margin-bottom:8px;line-height:1}
+#endOverlay .end-title{font-family:'Fredoka',sans-serif;font-size:1.5rem;color:var(--accent);margin-bottom:6px}
+#endOverlay .end-sub{font-size:.92rem;color:var(--muted);margin-bottom:18px;line-height:1.5}
+#endOverlay .btn-end{
+  display:inline-block;padding:12px 22px;background:linear-gradient(135deg,#fbbf24,#f59e0b);
+  border:none;border-radius:100px;color:var(--ink);font-weight:900;font-size:.95rem;
+  cursor:pointer;text-decoration:none;font-family:inherit;
+}
+
 @media print{.back-link{display:none!important;}body{background:#fff;color:#000;}}
 </style>
 </head>
 <body>
 <a href="app.html" class="back-link">← Powrót do Sowie Fiszki</a>
-<div class="wrap">
+
+<!-- ─── SETUP SCREEN (selektor podręcznika i unitu) ─── -->
+<div class="wrap" id="setupScreen">
   <div class="title-card">
-    <div class="icon">🏝️</div>
+    <div class="icon">🦘</div>
     <h1 class="title">Skoczek</h1>
     <div class="subtitle">Skacz na właściwy kwadrat z poprawnym tłumaczeniem!<br>3 życia · 5 sekund na rundę.</div>
 
@@ -95,7 +151,7 @@ select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(252,211,77,.3)
       <option value="">— Najpierw wybierz podręcznik —</option>
     </select>
 
-    <button class="btn-start" id="startBtn" onclick="startGame()" disabled>🏝️ START</button>
+    <button class="btn-start" id="startBtn" onclick="startGameFromSelector()" disabled>🏝️ START</button>
 
     <div class="info">
       💡 Pojawia się <strong>polskie słowo</strong> (i jest czytane na głos), a Ty wybierasz właściwy angielski kwadrat. <strong>3 błędy = koniec gry.</strong>
@@ -103,8 +159,211 @@ select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(252,211,77,.3)
   </div>
   <div class="footer">© 2026 Sowie Fiszki</div>
 </div>
+
+<!-- ─── GAME SCREEN ─── -->
+<div id="gameScreen">
+  <!-- Live banner (tylko w trybie Live) -->
+  <div class="live-banner" id="liveBanner" style="display:none">
+    <span>🎮 Gra Live · <span id="lbNick" style="font-weight:900">—</span></span>
+    <span class="lb-time" id="lbTime">∞</span>
+  </div>
+
+  <!-- HUD + plansza gry (skopiowane z app.html) -->
+  <div style="position:relative;width:100%;height:380px;border-radius:16px;overflow:hidden;background:linear-gradient(to bottom,#87CEEB 0%,#dff6ff 55%,#bff0b8 55%,#8ddb84 100%)" id="jumpGame">
+    <div style="position:absolute;top:8px;left:10px;z-index:20;display:flex;gap:4px" id="jumpLives">❤️❤️❤️</div>
+    <div style="position:absolute;top:8px;right:10px;z-index:20;background:rgba(0,0,0,.5);color:#fff;padding:4px 12px;border-radius:10px;font-size:.75rem;font-weight:800">⭐ <span id="jumpScore">0</span></div>
+    <div style="position:absolute;top:34px;left:10px;right:10px;height:6px;background:rgba(0,0,0,.15);border-radius:3px;z-index:20"><div id="jumpTimerBar" style="width:100%;height:100%;background:var(--accent);border-radius:3px;transition:width .1s linear"></div></div>
+    <div id="jumpGuyWrap" style="position:absolute;top:50px;left:50%;transform:translateX(-50%);z-index:15;text-align:center;pointer-events:none">
+      <div id="jumpGuy" style="font-size:2.8rem;line-height:1;position:relative;top:6px;z-index:2">🧍</div>
+      <div class="jump-block" id="jumpGuyPlatform" style="width:90px;padding:8px;pointer-events:none;position:relative;z-index:1"></div>
+    </div>
+    <div id="jumpWord" style="position:absolute;bottom:150px;left:50%;transform:translateX(-50%);background:rgba(255,255,255,.95);padding:8px 20px;border-radius:12px;font-size:1rem;font-weight:800;color:#333;z-index:5;box-shadow:0 2px 8px rgba(0,0,0,.12);text-align:center;min-width:140px">Kliknij Start</div>
+    <div id="jumpBlocks" style="position:absolute;bottom:30px;left:0;right:0;display:flex;justify-content:space-around;padding:0 12px;z-index:10"></div>
+    <div id="jumpOverlay" style="position:absolute;inset:0;background:rgba(0,0,0,.7);z-index:30;display:flex;align-items:center;justify-content:center">
+      <div style="background:rgba(0,0,0,.55);padding:18px 28px;border-radius:16px;text-align:center;color:#fff;border:2px solid var(--accent)">
+        <div style="font-size:2.2rem;margin-bottom:6px" id="jumpOverlayEmoji">🏝️</div>
+        <div style="font-size:1.2rem;font-weight:800;margin-bottom:4px" id="jumpOverlayTitle">Skocz na właściwy!</div>
+        <div style="font-size:.78rem;color:#ddd;margin-bottom:14px" id="jumpOverlayDesc">Wybierz kwadrat z poprawnym tłumaczeniem</div>
+        <button class="btn-start" onclick="jumpStart()" style="font-size:.95rem;padding:10px 24px;width:auto;margin:0">▶ Start</button>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top:14px;text-align:center">
+    <button class="btn-start" id="restartBtn" onclick="jumpStart()" style="display:none;width:auto;padding:10px 22px;margin:0 6px;font-size:.95rem">🔄 Zagraj ponownie</button>
+    <a href="app.html" class="btn-start" id="backToMenuBtn" style="display:none;width:auto;padding:10px 22px;margin:0 6px;font-size:.95rem;text-decoration:none;display:inline-block">← Menu</a>
+  </div>
+</div>
+
+<!-- ─── END OVERLAY (Live: czekamy na nauczyciela) ─── -->
+<div id="endOverlay">
+  <div class="end-card">
+    <div class="end-emoji" id="eoEmoji">⏳</div>
+    <div class="end-title" id="eoTitle">Koniec gry</div>
+    <div class="end-sub" id="eoSub">Twój wynik: 0 pkt</div>
+    <button class="btn-end" id="eoBtn" onclick="location.href='app.html'">← Powrót</button>
+  </div>
+</div>
+
 <script>
 'use strict';
+
+// ═══════════════════════════════════════════════════════════════
+//  LIVE MODE (gra dla wielu graczy z hostem-nauczycielem)
+// ═══════════════════════════════════════════════════════════════
+const LIVE = (function(){
+  try {
+    const p = new URLSearchParams(location.search);
+    const live = p.get('live');
+    if (!live) return null;
+    return {
+      gameId: live,
+      playerId: p.get('pid') || '',
+      token: p.get('token') || '',
+      bookId: p.get('book') || '',
+      unitKey: p.get('unit') || '',
+      timeLimit: parseInt(p.get('time') || '0', 10) || 0,
+      nick: p.get('nick') || ''
+    };
+  } catch(e) { return null; }
+})();
+const LIVE_SUPABASE_URL = 'https://kofenaaeleyhwhbkytcz.supabase.co';
+const LIVE_SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtvZmVuYWFlbGV5aHdoYmt5dGN6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU5MzM0NzMsImV4cCI6MjA5MTUwOTQ3M30.z0pzToDoK8NAEiyuKxeXhXnMvzEr5pfJjU7n6ActTU0';
+let _liveScorePushTimer = null;
+let _liveStatusPollTimer = null;
+let _liveLastSentScore = -1;
+let _liveGlobalTimerInterval = null;
+let _liveGameStartedAt = null;
+
+async function _livePushScore(s) {
+  if (!LIVE || s === _liveLastSentScore) return;
+  try {
+    await fetch(LIVE_SUPABASE_URL + '/rest/v1/rpc/update_live_player_score', {
+      method: 'POST',
+      headers: {
+        'apikey': LIVE_SUPABASE_KEY,
+        'Authorization': 'Bearer ' + LIVE_SUPABASE_KEY,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ p_player_id: LIVE.playerId, p_token: LIVE.token, p_score: Math.max(0, s) })
+    });
+    _liveLastSentScore = s;
+  } catch(e) {}
+}
+async function _liveCheckStatus() {
+  if (!LIVE) return null;
+  try {
+    const r = await fetch(LIVE_SUPABASE_URL + '/rest/v1/live_games?id=eq.' + encodeURIComponent(LIVE.gameId) + '&select=status', {
+      headers: { 'apikey': LIVE_SUPABASE_KEY, 'Authorization': 'Bearer ' + LIVE_SUPABASE_KEY }
+    });
+    const d = await r.json();
+    return d && d.length ? d[0].status : null;
+  } catch(e) { return null; }
+}
+function _liveStartPushers() {
+  if (_liveScorePushTimer) clearInterval(_liveScorePushTimer);
+  _liveScorePushTimer = setInterval(() => _livePushScore(jpScore), 3000);
+  if (_liveStatusPollTimer) clearInterval(_liveStatusPollTimer);
+  _liveStatusPollTimer = setInterval(async () => {
+    const st = await _liveCheckStatus();
+    if (st === 'finished') {
+      await _livePushScore(jpScore);
+      _liveStopAll();
+      location.href = 'app.html';
+    }
+  }, 5000);
+}
+function _liveStopAll() {
+  if (_liveScorePushTimer) { clearInterval(_liveScorePushTimer); _liveScorePushTimer = null; }
+  if (_liveStatusPollTimer) { clearInterval(_liveStatusPollTimer); _liveStatusPollTimer = null; }
+  if (_liveGlobalTimerInterval) { clearInterval(_liveGlobalTimerInterval); _liveGlobalTimerInterval = null; }
+}
+window.addEventListener('beforeunload', () => {
+  if (LIVE && navigator.sendBeacon) {
+    try {
+      const blob = new Blob([JSON.stringify({ p_player_id: LIVE.playerId, p_token: LIVE.token, p_score: Math.max(0, jpScore) })], { type: 'application/json' });
+      navigator.sendBeacon(LIVE_SUPABASE_URL + '/rest/v1/rpc/update_live_player_score?apikey=' + LIVE_SUPABASE_KEY, blob);
+    } catch(e) {}
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
+//  HELPERS (mini-bibilioteka, niezależna od app.html)
+// ═══════════════════════════════════════════════════════════════
+function shuffle(arr){
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
+
+// Web Audio dźwięki
+let _ac = null;
+function _ensureAc(){ if (!_ac) { try { _ac = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {} } return _ac; }
+function tone(freq, dur, type, gain){
+  const ac = _ensureAc(); if (!ac) return;
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = type || 'sine'; o.frequency.value = freq;
+  g.gain.value = gain || .07;
+  o.connect(g); g.connect(ac.destination);
+  o.start(); o.stop(ac.currentTime + (dur || .15));
+}
+function playOk(){ tone(660, .07); setTimeout(() => tone(880, .09), 80); }
+function playBad(){ tone(220, .12, 'square', .06); }
+
+// TTS (speechSynthesis)
+function _voiceFor(lang){
+  try {
+    const vs = window.speechSynthesis.getVoices();
+    return vs.find(v => v.lang && v.lang.toLowerCase().startsWith(lang.toLowerCase())) || null;
+  } catch(e) { return null; }
+}
+function spkPl(text){
+  try {
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'pl-PL'; const v = _voiceFor('pl'); if (v) u.voice = v;
+    u.rate = .95; window.speechSynthesis.cancel(); window.speechSynthesis.speak(u);
+  } catch(e) {}
+}
+function spkForeign(text){
+  try {
+    const u = new SpeechSynthesisUtterance(text);
+    const lang = (typeof bookLang === 'string' ? bookLang : 'en');
+    u.lang = lang === 'fr' ? 'fr-FR' : (lang === 'de' ? 'de-DE' : (lang === 'ru' ? 'ru-RU' : 'en-GB'));
+    const v = _voiceFor(u.lang); if (v) u.voice = v;
+    u.rate = .92; window.speechSynthesis.cancel(); window.speechSynthesis.speak(u);
+  } catch(e) {}
+}
+function particles(good){ /* no-op for standalone — można dodać confetti */ }
+function toast(msg, ms){ console.log('[toast]', msg); /* prosty fallback */ }
+
+// Distractor generator: jeśli distractors.js załadowany, użyj — inaczej fallback
+function _distractors(correct, all, count){
+  if (typeof generateDistractors === 'function') {
+    return generateDistractors(correct, all, count, 1);
+  }
+  return shuffle(all.filter(w => w[1] !== correct)).slice(0, count).map(w => w[1]);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  STATE GRY
+// ═══════════════════════════════════════════════════════════════
+let activeWords = [];
+let activeAllWords = [];
+let bookLang = 'en';
+let autoVoice = true;
+
+let jpRunning = false, jpScore = 0, jpLives = 3, jpLocked = false;
+let jpTimer = null, jpTimeLeft = 5;
+let jpWords = [], jpIdx = 0;
+let jpFloatFrame = null;
+
+// ═══════════════════════════════════════════════════════════════
+//  SETUP — selektor podręcznika i unitu
+// ═══════════════════════════════════════════════════════════════
 (function(){
   if (typeof BOOKS === 'undefined') return;
   const bs = document.getElementById('bookSel');
@@ -117,7 +376,31 @@ select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(252,211,77,.3)
       o.textContent = (b.icon||'📖') + ' ' + b.name;
       bs.appendChild(o);
     });
+
+  // Auto-start z URL params (book + unit, opcjonalnie LIVE)
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const bookParam = params.get('book');
+    const unitParam = params.get('unit');
+    if (bookParam && BOOKS[bookParam]) {
+      const backUrl = LIVE ? 'app.html'
+        : (unitParam ? 'app.html#/book/' + encodeURIComponent(bookParam) + '/' + encodeURIComponent(unitParam)
+                     : 'app.html#/book/' + encodeURIComponent(bookParam));
+      document.querySelectorAll('a[href="app.html"]').forEach(a => { a.href = backUrl; });
+      bs.value = bookParam;
+      onBookChange();
+      const us = document.getElementById('unitSel');
+      const targetUnit = (unitParam === 'all' || !unitParam) ? 'all' : unitParam;
+      if (BOOKS[bookParam].units?.[targetUnit] || targetUnit === 'all') us.value = targetUnit;
+      if (LIVE) {
+        document.body.classList.add('live-mode');
+        document.getElementById('lbNick').textContent = LIVE.nick || '—';
+      }
+      setTimeout(() => { try { startGameFromSelector(); } catch(e) {} }, 350);
+    }
+  } catch(e) {}
 })();
+
 function onBookChange(){
   const bId = document.getElementById('bookSel').value;
   const us = document.getElementById('unitSel');
@@ -137,11 +420,275 @@ function onBookChange(){
   });
   us.disabled = false; us.value = 'all'; lb.disabled = false;
 }
-function startGame(){
+
+function startGameFromSelector(){
   const bId = document.getElementById('bookSel').value;
   const uKey = document.getElementById('unitSel').value;
-  if (!bId || !uKey) { alert('Wybierz podręcznik i unit.'); return; }
-  window.location.href = 'app.html?game=jump&book=' + encodeURIComponent(bId) + '&unit=' + encodeURIComponent(uKey);
+  if (!bId || !BOOKS[bId] || !uKey) { alert('Wybierz podręcznik i unit.'); return; }
+  bookLang = BOOKS[bId].language || 'en';
+
+  const allWords = [];
+  if (uKey === 'all') {
+    Object.values(BOOKS[bId].units || {}).forEach(u => {
+      (u.words || []).forEach(w => allWords.push([w[0]||'', w[1]||'']));
+    });
+  } else if (BOOKS[bId].units?.[uKey]) {
+    (BOOKS[bId].units[uKey].words || []).forEach(w => allWords.push([w[0]||'', w[1]||'']));
+  }
+  const filtered = allWords.filter(w => w[0] && w[1] && !/\s/.test(w[0].trim()) && !/\s/.test(w[1].trim()));
+  if (filtered.length < 3) { alert('Ten unit ma za mało pojedynczych słówek (min 3).'); return; }
+
+  activeWords = filtered;
+  activeAllWords = filtered;
+
+  document.body.classList.add('in-game');
+  document.getElementById('gameScreen').style.display = '';
+  document.getElementById('setupScreen').style.display = 'none';
+
+  if (LIVE) {
+    document.getElementById('liveBanner').style.display = 'flex';
+    document.getElementById('restartBtn').style.display = 'none';
+    document.getElementById('backToMenuBtn').style.display = 'none';
+    _liveLastSentScore = -1;
+    _liveGameStartedAt = Date.now();
+    _liveStartPushers();
+    _liveStartGlobalTimer();
+  }
+  // Auto-start gry
+  jumpStart();
+}
+
+function _liveStartGlobalTimer(){
+  if (!LIVE || !LIVE.timeLimit) {
+    document.getElementById('lbTime').textContent = '∞';
+    return;
+  }
+  if (_liveGlobalTimerInterval) clearInterval(_liveGlobalTimerInterval);
+  function tick(){
+    const elapsed = (Date.now() - _liveGameStartedAt) / 1000;
+    const left = Math.max(0, Math.ceil(LIVE.timeLimit - elapsed));
+    const m = Math.floor(left / 60);
+    const s = left % 60;
+    document.getElementById('lbTime').textContent = '⏱️ ' + m + ':' + (s < 10 ? '0' : '') + s;
+    if (left <= 0) {
+      clearInterval(_liveGlobalTimerInterval); _liveGlobalTimerInterval = null;
+      // Wymuszony koniec — pokaż end overlay
+      jpRunning = false;
+      jpGameOver();
+    }
+  }
+  tick();
+  _liveGlobalTimerInterval = setInterval(tick, 1000);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  LOGIKA GRY (skopiowana z app.html, lekko zmodyfikowana)
+// ═══════════════════════════════════════════════════════════════
+function jumpStart() {
+  if (!activeWords || activeWords.length < 3) { toast('Brak słówek!'); return; }
+  jpRunning = true; jpScore = 0; jpLives = 3; jpIdx = 0; jpLocked = false;
+  jpWords = shuffle([...activeWords]);
+  document.getElementById('jumpScore').textContent = '0';
+  document.getElementById('jumpLives').textContent = '❤️❤️❤️';
+  document.getElementById('jumpOverlay').style.display = 'none';
+  document.getElementById('restartBtn').style.display = 'none';
+  jpNextRound();
+}
+
+function jpNextRound() {
+  if (!jpRunning) return;
+  if (jpIdx >= jpWords.length) jpIdx = 0;
+  jpLocked = false;
+
+  const [pl, en] = jpWords[jpIdx];
+  document.getElementById('jumpWord').textContent = '🇵🇱 ' + pl;
+  if (autoVoice) setTimeout(() => spkPl(pl), 100);
+
+  const guyWrap = document.getElementById('jumpGuyWrap');
+  guyWrap.style.animation = '';
+  guyWrap.style.transition = 'none';
+  guyWrap.style.left = '50%';
+  guyWrap.style.bottom = '';
+  guyWrap.style.top = '50px';
+  guyWrap.style.transform = 'translateX(-50%)';
+  guyWrap.style.opacity = '1';
+  document.getElementById('jumpGuy').style.fontSize = '2.8rem';
+
+  const wrong = _distractors(en, activeAllWords, 2);
+  const options = shuffle([{text: en, correct: true}, {text: wrong[0] || 'cat', correct: false}, {text: wrong[1] || 'dog', correct: false}]);
+
+  const blocksEl = document.getElementById('jumpBlocks');
+  blocksEl.innerHTML = '';
+  options.forEach((opt, i) => {
+    const block = document.createElement('div');
+    block.className = 'jump-block';
+    block.innerHTML = '<div class="jb-text">' + esc(opt.text) + '</div>';
+    block.dataset.correct = opt.correct ? '1' : '0';
+    block.addEventListener('click', () => jpChoose(block, opt, i));
+    block.style.animation = 'none';
+    block.style.transform = 'translateY(' + (Math.sin(i * 2) * 4) + 'px)';
+    blocksEl.appendChild(block);
+  });
+
+  jpAnimateBlocks();
+
+  jpTimeLeft = 5;
+  document.getElementById('jumpTimerBar').style.width = '100%';
+  clearInterval(jpTimer);
+  jpTimer = setInterval(() => {
+    jpTimeLeft -= 0.1;
+    document.getElementById('jumpTimerBar').style.width = Math.max(0, (jpTimeLeft / 5) * 100) + '%';
+    if (jpTimeLeft <= 0) {
+      clearInterval(jpTimer);
+      if (!jpLocked) jpTimeout();
+    }
+  }, 100);
+}
+
+function jpAnimateBlocks() {
+  const blocks = document.querySelectorAll('.jump-block:not(#jumpGuyPlatform)');
+  let t = 0;
+  function frame() {
+    t += 0.03;
+    blocks.forEach((b, i) => {
+      b.style.transform = 'translateY(' + (Math.sin(t + i * 2.1) * 5) + 'px)';
+    });
+    if (jpRunning && !jpLocked) jpFloatFrame = requestAnimationFrame(frame);
+  }
+  cancelAnimationFrame(jpFloatFrame);
+  frame();
+}
+
+function jpChoose(block, opt) {
+  if (jpLocked || !jpRunning) return;
+  jpLocked = true;
+  clearInterval(jpTimer);
+  cancelAnimationFrame(jpFloatFrame);
+
+  const guyWrap = document.getElementById('jumpGuyWrap');
+  const blocks = [...document.querySelectorAll('#jumpBlocks .jump-block')];
+  const blockRect = block.getBoundingClientRect();
+  const gameRect = document.getElementById('jumpGame').getBoundingClientRect();
+
+  const targetX = blockRect.left + blockRect.width / 2 - gameRect.left;
+  const targetY = blockRect.top - gameRect.top - 28;
+  guyWrap.style.transition = 'all .4s cubic-bezier(.34,1.56,.64,1)';
+  guyWrap.style.left = targetX + 'px';
+  guyWrap.style.bottom = 'auto';
+  guyWrap.style.top = targetY + 'px';
+
+  setTimeout(() => {
+    if (opt.correct) {
+      jpScore += 10;
+      document.getElementById('jumpScore').textContent = jpScore;
+      block.classList.add('jb-correct');
+      playOk(); spkForeign(opt.text);
+
+      blocks.forEach(b => {
+        if (b !== block) {
+          b.style.zIndex = '25';
+          b.style.animation = 'jumpBlockFall .6s ease-in forwards';
+        }
+      });
+
+      setTimeout(() => {
+        guyWrap.style.transition = 'none';
+        guyWrap.style.left = '50%';
+        guyWrap.style.bottom = '';
+        guyWrap.style.top = '50px';
+        guyWrap.style.transform = 'translateX(-50%)';
+        jpIdx++;
+        jpNextRound();
+      }, 1400);
+    } else {
+      jpLives--;
+      const hearts = '❤️'.repeat(Math.max(0, jpLives)) + '🖤'.repeat(3 - Math.max(0, jpLives));
+      document.getElementById('jumpLives').textContent = hearts;
+      block.classList.add('jb-wrong');
+      playBad();
+
+      guyWrap.style.animation = 'jumpGuyFall .7s ease-in forwards';
+      block.style.zIndex = '25';
+      block.style.animation = 'jumpBlockFall .6s ease-in forwards';
+
+      const correctBlock = blocks.find(b => b.dataset.correct === '1');
+      if (correctBlock) correctBlock.classList.add('jb-correct');
+
+      const correctWord = jpWords[jpIdx]?.[1];
+      setTimeout(() => { if (correctWord) spkForeign(correctWord); }, 800);
+
+      if (jpLives <= 0) {
+        setTimeout(() => jpGameOver(), 1800);
+      } else {
+        setTimeout(() => {
+          guyWrap.style.animation = '';
+          guyWrap.style.transition = 'none';
+          guyWrap.style.left = '50%';
+          guyWrap.style.bottom = '';
+          guyWrap.style.top = '50px';
+          guyWrap.style.transform = 'translateX(-50%)';
+          guyWrap.style.opacity = '1';
+          jpIdx++;
+          jpNextRound();
+        }, 2000);
+      }
+    }
+  }, 450);
+}
+
+function jpTimeout() {
+  jpLocked = true;
+  jpLives--;
+  const hearts = '❤️'.repeat(Math.max(0, jpLives)) + '🖤'.repeat(3 - Math.max(0, jpLives));
+  document.getElementById('jumpLives').textContent = hearts;
+  playBad();
+
+  const guyWrap = document.getElementById('jumpGuyWrap');
+  guyWrap.style.animation = 'jumpGuyFall .7s ease-in forwards';
+
+  const blocks = document.querySelectorAll('#jumpBlocks .jump-block');
+  blocks.forEach(b => { if (b.dataset.correct === '1') b.classList.add('jb-correct'); });
+
+  const correctWord = jpWords[jpIdx]?.[1];
+  setTimeout(() => { if (correctWord) spkForeign(correctWord); }, 600);
+
+  if (jpLives <= 0) {
+    setTimeout(() => jpGameOver(), 1800);
+  } else {
+    setTimeout(() => {
+      guyWrap.style.animation = '';
+      guyWrap.style.cssText = 'position:absolute;top:50px;left:50%;transform:translateX(-50%);z-index:15;text-align:center;pointer-events:none;opacity:1';
+      jpIdx++;
+      jpNextRound();
+    }, 2000);
+  }
+}
+
+function jpGameOver() {
+  jpRunning = false;
+  clearInterval(jpTimer);
+  cancelAnimationFrame(jpFloatFrame);
+
+  if (LIVE) {
+    // Tryb Live — finalny push score + komunikat "czekamy na nauczyciela"
+    _livePushScore(jpScore);
+    document.getElementById('eoEmoji').textContent = '⏳';
+    document.getElementById('eoTitle').textContent = 'Koniec rundy!';
+    document.getElementById('eoSub').textContent = 'Twój wynik: ' + jpScore + ' pkt · czekamy aż nauczyciel zakończy grę i pokaże ranking klasy.';
+    document.getElementById('eoBtn').style.display = 'none';
+    document.getElementById('endOverlay').classList.add('visible');
+    return;
+  }
+
+  // Tryb Solo — overlay z restartem
+  const ov = document.getElementById('jumpOverlay');
+  ov.style.display = 'flex';
+  document.getElementById('jumpOverlayEmoji').textContent = '💀';
+  document.getElementById('jumpOverlayTitle').textContent = 'Game Over!';
+  document.getElementById('jumpOverlayDesc').textContent = 'Wynik: ' + jpScore + ' punktów';
+  document.getElementById('jumpBlocks').innerHTML = '';
+  document.getElementById('restartBtn').style.display = 'inline-block';
+  document.getElementById('backToMenuBtn').style.display = 'inline-block';
 }
 </script>
 <script src="consent.js"></script>

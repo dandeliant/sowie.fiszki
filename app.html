@@ -1905,6 +1905,13 @@ body.guest-mode .progress-wrap{opacity:.4;}
           <div style="font-size:.7rem;color:var(--muted);font-weight:600;margin-top:2px">Każdy uczeń gra niezależnie u siebie. Pomagaj postaciom przejść po moście — punkty za poprawne tłumaczenia.</div>
         </div>
       </label>
+      <label class="lqt-opt" data-value="jump" style="display:flex;align-items:center;gap:12px;padding:14px;border:2px solid var(--border);border-radius:12px;cursor:pointer">
+        <input type="radio" name="liveGameType" value="jump" style="accent-color:var(--accent);width:20px;height:20px;flex-shrink:0">
+        <div style="flex:1">
+          <div style="font-size:1rem;font-weight:800;color:var(--text)">🦘 Skoczek</div>
+          <div style="font-size:.7rem;color:var(--muted);font-weight:600;margin-top:2px">Skacz na właściwy kwadrat z poprawnym tłumaczeniem. 5 sekund na rundę — punkty za szybkość i celność.</div>
+        </div>
+      </label>
     </div>
 
     <div style="font-size:.66rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Czas trwania</div>
@@ -15335,6 +15342,11 @@ if ('serviceWorker' in navigator) {
       // Wyczysc URL
       window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
       const targetUnit = (unitP === '__all__') ? 'all' : unitP;
+      // Skoczek (jump) — od v201 jest osobnym plikiem skoczek.html. Redirect.
+      if (game === 'jump') {
+        location.href = 'skoczek.html?book=' + encodeURIComponent(bookP) + '&unit=' + encodeURIComponent(targetUnit);
+        return;
+      }
       // Memory i Hangman maja wlasne ekrany (sMemory/sHangman) i nie
       // wymagaja chain selectBook->openWordList->startStudy->setMode.
       // Wystarczy selectBook i wywolanie openMemory/openHangman.
@@ -17310,21 +17322,17 @@ if ('serviceWorker' in navigator) {
         }
         // Lobby → playing przejście (gracz)
         if (g.status === 'playing' && prevStatus === 'waiting') {
-          // Quiz vs mini-gra
-          if (_liveGame.gameType === 'crossing') {
+          // Mini-gry samodzielne (osobne pliki HTML) — host idzie do rankingu, gracz redirect
+          if (_liveGame.gameType && _liveGame.gameType !== 'quiz') {
             _liveGame.timeLimitSeconds = g.time_limit_seconds || null;
             if (!_liveIsHost) {
-              _redirectPlayerToCrossing();
+              _redirectPlayerToMiniGame(_liveGame.gameType);
             } else {
               _enterLiveRanking();
             }
           } else {
-            // Quiz (default)
-            if (_liveIsHost) {
-              _enterLiveQuiz();
-            } else {
-              _enterLiveQuiz();
-            }
+            // Quiz (default — w app.html)
+            _enterLiveQuiz();
           }
           return;
         }
@@ -17549,9 +17557,17 @@ if ('serviceWorker' in navigator) {
     }
   };
 
-  // Gracz: po wykryciu status='playing' + gameType='crossing' — redirect na crossing.html
-  function _redirectPlayerToCrossing() {
+  // Mapowanie typu gry → ścieżka pliku mini-gry
+  const _LIVE_GAME_PATHS = {
+    crossing: 'crossing.html',
+    jump: 'skoczek.html'
+    // Kolejne gry: 'butterfly': 'motyle.html', 'bridge': 'most.html', ...
+  };
+
+  // Gracz: po wykryciu status='playing' + non-quiz gameType — redirect na właściwy plik mini-gry
+  function _redirectPlayerToMiniGame(gameType) {
     if (!_livePlayer || !_liveGame) return;
+    const path = _LIVE_GAME_PATHS[gameType] || 'crossing.html';
     const params = new URLSearchParams({
       live: _liveGame.id,
       pid: _livePlayer.id,
@@ -17561,10 +17577,11 @@ if ('serviceWorker' in navigator) {
       time: String(_liveGame.timeLimitSeconds || 0),
       nick: _livePlayer.nickname
     });
-    // Stop pollingów przed nawigacją
     if (_livePollTimer) { clearInterval(_livePollTimer); _livePollTimer = null; }
-    location.href = 'crossing.html?' + params.toString();
+    location.href = path + '?' + params.toString();
   }
+  // Wsteczna kompatybilność (stara nazwa, gdyby coś się odwoływało)
+  function _redirectPlayerToCrossing() { _redirectPlayerToMiniGame('crossing'); }
 
   // Wejście do ekranu quiz (host i gracz). Wywoływane po wykryciu status='playing'.
   function _enterLiveQuiz() {
