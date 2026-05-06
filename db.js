@@ -1332,6 +1332,95 @@ const DB = (() => {
     if (error) throw new Error(error.message);
   }
 
+  // ── FAZA 2: mechanika Quiz Live ─────────────────────────────
+
+  // Gracz: zapisuje odpowiedź i punkty (UNIQUE constraint zapobiega
+  // wielokrotnemu odpowiadaniu na to samo pytanie). Po INSERT host
+  // przez polling/Realtime zobaczy nowego respondera.
+  async function submitLiveAnswer(gameId, playerId, questionIndex, answer, isCorrect, responseTimeMs, pointsEarned) {
+    const { error } = await supabase.from('live_game_answers').insert({
+      game_id: gameId,
+      player_id: playerId,
+      question_index: questionIndex,
+      answer: answer,
+      is_correct: !!isCorrect,
+      response_time_ms: responseTimeMs,
+      points_earned: pointsEarned || 0
+    });
+    if (error) throw new Error(error.message);
+    // Update score gracza (best-effort — agregacja po stronie klienta wystarczy)
+    if (pointsEarned > 0) {
+      try {
+        const { data: cur } = await supabase
+          .from('live_game_players').select('score').eq('id', playerId).maybeSingle();
+        const newScore = (cur?.score || 0) + pointsEarned;
+        await supabase.from('live_game_players')
+          .update({ score: newScore }).eq('id', playerId);
+      } catch(e) { /* RLS może blokować update — nie szkodzi, leaderboard agregujemy z answers */ }
+    }
+  }
+
+  // Pobierz odpowiedzi dla konkretnego pytania (host monituje postęp)
+  async function getLiveAnswersForQuestion(gameId, questionIndex) {
+    const { data, error } = await supabase
+      .from('live_game_answers')
+      .select('player_id, answer, is_correct, points_earned, response_time_ms')
+      .eq('game_id', gameId)
+      .eq('question_index', questionIndex);
+    if (error) throw new Error(error.message);
+    return data || [];
+  }
+
+  // Leaderboard: agregacja punktów per gracz (sortowanie malejące)
+  async function getLiveLeaderboard(gameId) {
+    const { data: ans, error } = await supabase
+      .from('live_game_answers')
+      .select('player_id, points_earned')
+      .eq('game_id', gameId);
+    if (error) throw new Error(error.message);
+    const totals = {};
+    (ans || []).forEach(a => {
+      totals[a.player_id] = (totals[a.player_id] || 0) + (a.points_earned || 0);
+    });
+    const players = await getLiveGamePlayers(gameId);
+    const ranked = players.map(p => ({
+      id: p.id, nickname: p.nickname,
+      score: totals[p.id] || 0,
+      joinedAt: p.joined_at
+    })).sort((a, b) => b.score - a.score);
+    return ranked;
+  }
+
+  // Host: rozpocznij rundę — UPDATE z question_order + question_started_at
+  async function startLiveGameRound(gameId, questionOrder, timePerQuestion) {
+    const { error } = await supabase
+      .from('live_games').update({
+        status: 'playing',
+        question_order: questionOrder,
+        current_question: 0,
+        question_started_at: new Date().toISOString(),
+        time_per_question: timePerQuestion || 20
+      }).eq('id', gameId);
+    if (error) throw new Error(error.message);
+  }
+
+  // Host: następne pytanie
+  async function nextLiveQuestion(gameId, nextIndex) {
+    const { error } = await supabase
+      .from('live_games').update({
+        current_question: nextIndex,
+        question_started_at: new Date().toISOString()
+      }).eq('id', gameId);
+    if (error) throw new Error(error.message);
+  }
+
+  // Host: zakończ grę
+  async function finishLiveGame(gameId) {
+    const { error } = await supabase
+      .from('live_games').update({ status: 'finished' }).eq('id', gameId);
+    if (error) throw new Error(error.message);
+  }
+
   // Pobierz dowolny profil po ID (uzywane przez opiekuna do widoku
   // postepu dziecka — RLS pozwala dzieki polityce prof_select_parent_child).
   async function fetchProfileById(userId) {
@@ -2781,6 +2870,13 @@ const DB = (() => {
     updateLiveGameStatus,
     deleteLiveGame,
     kickLivePlayer,
+    // Live games — Faza 2 (mechanika Quiz)
+    submitLiveAnswer,
+    getLiveAnswersForQuestion,
+    getLiveLeaderboard,
+    startLiveGameRound,
+    nextLiveQuestion,
+    finishLiveGame,
     getFreeLimits,
     getDailyXpHistory,
     logStudyMinutes,

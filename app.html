@@ -1884,6 +1884,64 @@ body.guest-mode .progress-wrap{opacity:.4;}
   </div>
 </div>
 
+<!-- ══ SCREEN: LIVE QUIZ (faza 2 — mechanika Kahoot-like) ══ -->
+<div class="screen" id="sLiveQuiz">
+  <div style="width:100%;max-width:720px;margin:0 auto">
+    <!-- Pasek statusu: numer pytania + timer -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:10px;flex-wrap:wrap">
+      <div style="font-size:.78rem;font-weight:800;color:var(--accent)">
+        <span id="lqQuestionNum">Pytanie 1 / 10</span>
+      </div>
+      <div style="font-size:.74rem;font-weight:700;color:var(--text)">
+        ⏱️ <span id="lqTimerText">20</span>s
+      </div>
+      <button class="btn-sm" onclick="exitLiveLobby()">✕ Zakończ</button>
+    </div>
+    <!-- Pasek timera -->
+    <div style="height:8px;background:var(--surface2);border-radius:4px;overflow:hidden;margin-bottom:14px">
+      <div id="lqTimerBar" style="height:100%;width:100%;background:linear-gradient(90deg,var(--accent2),var(--accent));transition:width .25s linear;border-radius:4px"></div>
+    </div>
+
+    <!-- Pytanie -->
+    <div style="background:linear-gradient(135deg,rgba(255,209,102,.1),rgba(124,58,237,.1));border:2px solid var(--accent);border-radius:18px;padding:24px;text-align:center;margin-bottom:18px">
+      <div style="font-size:.66rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Tłumaczenie po angielsku:</div>
+      <div id="lqQuestionPl" style="font-family:'Playfair Display',serif;font-size:2rem;font-weight:900;color:var(--text);line-height:1.2">—</div>
+    </div>
+
+    <!-- Pytanie — widok GRACZA: 4 kolorowe przyciski (Kahoot-style) -->
+    <div id="lqPlayerView" style="display:none">
+      <div id="lqAnswerGrid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px">
+        <!-- Generowane dynamicznie: 4 kolorowe kafelki -->
+      </div>
+      <div id="lqPlayerStatus" style="text-align:center;font-size:.82rem;font-weight:700;color:var(--muted);min-height:24px"></div>
+    </div>
+
+    <!-- Pytanie — widok HOSTA: prawidłowa odp. + statystyki + przycisk Dalej -->
+    <div id="lqHostView" style="display:none">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:12px">
+        <div style="font-size:.66rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Prawidłowa odpowiedź:</div>
+        <div id="lqCorrectAnswer" style="font-family:'Courier New',monospace;font-size:1.4rem;font-weight:900;color:var(--accent2);text-align:center">—</div>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+        <div style="font-size:.82rem;font-weight:800;color:var(--text)">
+          📊 Odpowiedzieli: <span id="lqAnsweredCount">0</span> / <span id="lqTotalPlayersCount">0</span>
+        </div>
+        <button class="btn-sm accent" id="lqNextBtn" onclick="lqHostNext()" style="font-size:.86rem;padding:8px 18px">▶️ Następne pytanie</button>
+      </div>
+      <!-- Mini-leaderboard top 5 (po pytaniu) -->
+      <div id="lqMiniLeaderboard" style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:10px"></div>
+    </div>
+
+    <!-- FINAŁ — wspólny leaderboard -->
+    <div id="lqFinalView" style="display:none;text-align:center">
+      <div style="font-family:'Playfair Display',serif;font-size:2rem;color:var(--accent);margin-bottom:6px">🏆 Koniec gry!</div>
+      <div style="font-size:.82rem;color:var(--muted);font-weight:600;margin-bottom:14px">Oto finalny ranking:</div>
+      <div id="lqFinalLeaderboard" style="text-align:left;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:14px"></div>
+      <button class="btn-sm accent" onclick="exitLiveLobby()" style="font-size:.92rem;padding:10px 22px">Zakończ i wyjdź</button>
+    </div>
+  </div>
+</div>
+
 <!-- ══ SCREEN: DUEL (rywalizacja 2-4 graczy) ══ -->
 <div class="screen" id="sDuel">
   <div style="width:100%;position:relative">
@@ -17112,19 +17170,46 @@ if ('serviceWorker' in navigator) {
     _livePollTimer = setInterval(async () => {
       if (!_liveGame) { clearInterval(_livePollTimer); _livePollTimer = null; return; }
       try {
-        const fresh = await DB.getLiveGamePlayers(_liveGame.id);
-        if (fresh.length !== _livePlayers.length || fresh.some((p,i) => !_livePlayers[i] || _livePlayers[i].id !== p.id)) {
-          _livePlayers = fresh;
-          _renderLivePlayers();
-        }
-        // Sprawdź też status gry (czy host zaczął/zakończył)
-        const g = await DB.getLiveGame(_liveGame.id);
-        if (g && g.status !== _liveGame.status) {
-          _liveGame.status = g.status;
-          if (g.status === 'finished') {
-            if (typeof toast === 'function') toast('Gra zakończona przez gospodarza.', 3000);
-            exitLiveLobby();
+        // 1) Lista graczy — odświeżaj tylko w lobby (status='waiting')
+        if (_liveGame.status === 'waiting') {
+          const fresh = await DB.getLiveGamePlayers(_liveGame.id);
+          if (fresh.length !== _livePlayers.length || fresh.some((p,i) => !_livePlayers[i] || _livePlayers[i].id !== p.id)) {
+            _livePlayers = fresh;
+            _renderLivePlayers();
           }
+        }
+        // 2) Pełen stan gry (status, current_question, question_started_at)
+        const g = await DB.getLiveGame(_liveGame.id);
+        if (!g) return;
+        const prevStatus = _liveGame.status;
+        const prevQ = _liveGame.currentQuestion;
+        _liveGame.status = g.status;
+        _liveGame.currentQuestion = g.current_question;
+        _liveGame.questionOrder = g.question_order;
+        _liveGame.timePerQuestion = g.time_per_question;
+        _liveGame.questionStartedAt = g.question_started_at ? new Date(g.question_started_at).getTime() : null;
+
+        // Status finished → wszyscy widzą finalny leaderboard
+        if (g.status === 'finished') {
+          if (prevStatus !== 'finished') {
+            if (_liveIsHost) _showFinalLeaderboard();
+            else { if (typeof toast === 'function') toast('🏁 Koniec gry — zobacz wyniki!', 2400); _showFinalLeaderboard(); }
+          }
+          return;
+        }
+        // Lobby → quiz przejście (gracz)
+        if (g.status === 'playing' && prevStatus === 'waiting') {
+          _enterLiveQuiz();
+          return;
+        }
+        // Nowe pytanie (current_question się zmienił) — odśwież widok
+        if (g.status === 'playing' && prevQ !== g.current_question) {
+          _renderLiveQuestion();
+          return;
+        }
+        // Host: aktualizuj statystyki bieżącego pytania
+        if (g.status === 'playing' && _liveIsHost) {
+          _lqRefreshHostStats();
         }
       } catch(e) { console.warn('[live poll]', e); }
     }, 3000);
@@ -17196,16 +17281,251 @@ if ('serviceWorker' in navigator) {
     document.head.appendChild(s);
   }
 
-  // Host: rozpocznij rundę pytań — Faza 2 (placeholder)
+  // ── FAZA 2: mechanika Quiz Live ─────────────────────────────
+  let _lqWords = [];           // [[pl, en], ...] — słowa unitu (pojedyncze, do quiz)
+  let _lqOrder = [];           // tablica indeksów do _lqWords (kolejność pytań)
+  let _lqQuestionsCount = 10;  // ile pytań w jednej grze
+  let _lqTimePerQ = 20;        // sekund na pytanie
+  let _lqTimerInterval = null;
+  let _lqMyAnswer = null;      // gracz: {answer, isCorrect, points} po odpowiedzi
+  let _lqQuestionStartedClient = null;  // ms — kiedy klient zobaczył pytanie
+
+  // Host: rozpocznij rundę pytań
   window.startLiveGameRound = async function() {
     if (!_liveIsHost || !_liveGame) return;
-    if (typeof toast === 'function') toast('🚧 Faza 2 (mechanika Quiz) w przygotowaniu — wkrótce!', 3500);
-    // W Fazie 2 zamiast tego: DB.updateLiveGameStatus(_liveGame.id, 'playing', { current_question: 0, question_started_at: NOW })
+    const book = BOOKS[_liveGame.bookId];
+    const unit = book && book.units && book.units[_liveGame.unitKey];
+    if (!unit) { if (typeof toast === 'function') toast('❌ Brak unitu'); return; }
+    // Wybieramy tylko słowa POJEDYNCZE (bez spacji) — żeby dystraktory były czytelne
+    const single = unit.words.filter(w => w[0] && w[1] && !/\s/.test(w[0].trim()) && !/\s/.test(w[1].trim()));
+    if (single.length < 4) {
+      if (typeof toast === 'function') toast('⚠️ Za mało pojedynczych słówek w unicie (min 4).', 3000);
+      return;
+    }
+    _lqWords = single;
+    // Losowa kolejność pytań — max _lqQuestionsCount
+    const shuffled = single.map((_, i) => i).sort(() => Math.random() - 0.5);
+    _lqOrder = shuffled.slice(0, Math.min(_lqQuestionsCount, single.length));
+
+    try {
+      await DB.startLiveGameRound(_liveGame.id, _lqOrder, _lqTimePerQ);
+      // Lokalnie też ustawiamy stan (polling też to dociągnie)
+      _liveGame.status = 'playing';
+      _liveGame.currentQuestion = 0;
+      _liveGame.questionOrder = _lqOrder;
+      _liveGame.timePerQuestion = _lqTimePerQ;
+      _liveGame.questionStartedAt = Date.now();
+      _enterLiveQuiz();
+    } catch(e) {
+      if (typeof toast === 'function') toast('❌ ' + e.message, 3500);
+    }
   };
+
+  // Wejście do ekranu quiz (host i gracz). Wywoływane po wykryciu status='playing'.
+  function _enterLiveQuiz() {
+    // Załaduj słownictwo lokalnie (dla gracza, który nie ma jeszcze _lqWords)
+    if (!_lqWords.length) {
+      const book = BOOKS[_liveGame.bookId];
+      const unit = book && book.units && book.units[_liveGame.unitKey];
+      if (unit) {
+        _lqWords = unit.words.filter(w => w[0] && w[1] && !/\s/.test(w[0].trim()) && !/\s/.test(w[1].trim()));
+      }
+    }
+    if (typeof showScreen === 'function') showScreen('sLiveQuiz');
+    document.getElementById('lqPlayerView').style.display = _liveIsHost ? 'none' : '';
+    document.getElementById('lqHostView').style.display   = _liveIsHost ? '' : 'none';
+    document.getElementById('lqFinalView').style.display  = 'none';
+    _renderLiveQuestion();
+  }
+
+  // Renderuje aktualne pytanie (na podstawie _liveGame.currentQuestion + _liveGame.questionOrder)
+  function _renderLiveQuestion() {
+    if (!_liveGame || _liveGame.status !== 'playing') return;
+    const order = _liveGame.questionOrder || _lqOrder;
+    const idx = _liveGame.currentQuestion || 0;
+    if (idx >= order.length) {
+      _showFinalLeaderboard();
+      return;
+    }
+    const wordIdx = order[idx];
+    const w = _lqWords[wordIdx];
+    if (!w) return;
+    document.getElementById('lqQuestionNum').textContent = 'Pytanie ' + (idx + 1) + ' / ' + order.length;
+    document.getElementById('lqQuestionPl').textContent = w[0];
+
+    _lqMyAnswer = null;
+    _lqQuestionStartedClient = Date.now();
+
+    // Kolory Kahoot-style
+    const colors = [
+      { bg:'#e74c3c', ic:'🟥' },
+      { bg:'#3498db', ic:'🟦' },
+      { bg:'#f1c40f', ic:'🟨' },
+      { bg:'#2ecc71', ic:'🟩' }
+    ];
+    // Generuj 4 odpowiedzi: 1 prawidłowa + 3 dystraktory (z losowych innych słów)
+    const correct = w[1];
+    const others = _lqWords.filter((x, i) => i !== wordIdx).map(x => x[1]);
+    const distractors = [];
+    while (distractors.length < 3 && others.length) {
+      const j = Math.floor(Math.random() * others.length);
+      const cand = others.splice(j, 1)[0];
+      if (cand !== correct && !distractors.includes(cand)) distractors.push(cand);
+    }
+    while (distractors.length < 3) distractors.push('— — —');
+    const allAnswers = [correct, ...distractors].sort(() => Math.random() - 0.5);
+
+    if (_liveIsHost) {
+      // Host: pokazuje prawidłową odpowiedź + statystyki, czeka aż gracze odpowiedzą
+      document.getElementById('lqCorrectAnswer').textContent = correct;
+      document.getElementById('lqAnsweredCount').textContent = '0';
+      document.getElementById('lqTotalPlayersCount').textContent = _livePlayers.length;
+      document.getElementById('lqMiniLeaderboard').innerHTML = '<div style="text-align:center;color:var(--muted);font-size:.74rem;font-weight:600;padding:10px">Ranking pojawi się po pytaniu…</div>';
+      document.getElementById('lqNextBtn').textContent = (idx + 1 < order.length) ? '▶️ Następne pytanie' : '🏁 Zakończ grę';
+    } else {
+      // Gracz: 4 kolorowe przyciski
+      const grid = document.getElementById('lqAnswerGrid');
+      grid.innerHTML = '';
+      allAnswers.forEach((ans, i) => {
+        const c = colors[i];
+        const btn = document.createElement('button');
+        btn.style.cssText = 'background:' + c.bg + ';color:#fff;border:none;border-radius:14px;padding:24px 14px;font-size:1.05rem;font-weight:800;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.2);min-height:90px;line-height:1.2;font-family:inherit;transition:transform .12s';
+        btn.innerHTML = '<div style="font-size:1.4rem;margin-bottom:4px">' + c.ic + '</div>' + esc(ans);
+        btn.addEventListener('click', () => _lqHandlePlayerAnswer(ans, correct, btn));
+        btn.addEventListener('mouseenter', () => { if (!btn.disabled) btn.style.transform = 'scale(1.03)'; });
+        btn.addEventListener('mouseleave', () => { btn.style.transform = ''; });
+        grid.appendChild(btn);
+      });
+      document.getElementById('lqPlayerStatus').textContent = '';
+    }
+
+    _lqStartTimer();
+  }
+
+  // Timer odlicza od _lqTimePerQ. Po zerze: zatrzymanie i (gracz) auto-submit jako brak odp.
+  function _lqStartTimer() {
+    if (_lqTimerInterval) { clearInterval(_lqTimerInterval); _lqTimerInterval = null; }
+    const total = (_liveGame.timePerQuestion || _lqTimePerQ) * 1000;
+    const startedAt = _liveGame.questionStartedAt || _lqQuestionStartedClient || Date.now();
+    function tick() {
+      const elapsed = Date.now() - startedAt;
+      const left = Math.max(0, total - elapsed);
+      const pct = (left / total) * 100;
+      const sec = Math.ceil(left / 1000);
+      document.getElementById('lqTimerText').textContent = sec;
+      const bar = document.getElementById('lqTimerBar');
+      bar.style.width = pct + '%';
+      if (left <= 5000) bar.style.background = 'linear-gradient(90deg,#e74c3c,#e67e22)';
+      else if (left <= 10000) bar.style.background = 'linear-gradient(90deg,#f1c40f,#e67e22)';
+      else bar.style.background = 'linear-gradient(90deg,var(--accent2),var(--accent))';
+      if (left <= 0) {
+        clearInterval(_lqTimerInterval); _lqTimerInterval = null;
+        if (!_liveIsHost && !_lqMyAnswer) {
+          // Gracz nie zdążył — zarejestruj 0 punktów
+          _lqHandlePlayerAnswer(null, null, null, true);
+        }
+      }
+    }
+    tick();
+    _lqTimerInterval = setInterval(tick, 250);
+  }
+
+  // Gracz: kliknął odpowiedź (lub timer się skończył)
+  async function _lqHandlePlayerAnswer(answer, correctAnswer, btnEl, timeout) {
+    if (_lqMyAnswer) return;  // double-click guard
+    const total = (_liveGame.timePerQuestion || _lqTimePerQ) * 1000;
+    const startedAt = _liveGame.questionStartedAt || _lqQuestionStartedClient || Date.now();
+    const elapsed = Date.now() - startedAt;
+    const remaining = Math.max(0, total - elapsed);
+    const isCorrect = !timeout && answer === correctAnswer;
+    // Punkty Kahoot-style: 500 base + 500 za szybkość, 0 za błąd / brak odp.
+    const points = isCorrect ? Math.round(500 + 500 * (remaining / total)) : 0;
+
+    _lqMyAnswer = { answer, isCorrect, points };
+
+    // Zablokuj wszystkie przyciski + zaznacz wybór
+    document.querySelectorAll('#lqAnswerGrid button').forEach(b => {
+      b.disabled = true;
+      if (b !== btnEl) b.style.opacity = '0.4';
+    });
+    if (btnEl) btnEl.style.outline = '4px solid #fff';
+
+    document.getElementById('lqPlayerStatus').innerHTML = timeout
+      ? '⏰ Czas minął! 0 punktów.'
+      : (isCorrect ? '✅ Brawo! +' + points + ' pkt' : '❌ Niestety. 0 pkt');
+
+    try {
+      await DB.submitLiveAnswer(
+        _liveGame.id, _livePlayer.id,
+        _liveGame.currentQuestion || 0,
+        answer || '',
+        isCorrect,
+        elapsed,
+        points
+      );
+    } catch(e) { console.warn('[lq submit]', e); }
+  }
+
+  // Host: kliknął "Następne pytanie" / "Zakończ"
+  window.lqHostNext = async function() {
+    if (!_liveIsHost) return;
+    const order = _liveGame.questionOrder || _lqOrder;
+    const idx = _liveGame.currentQuestion || 0;
+    if (idx + 1 >= order.length) {
+      // Koniec gry
+      try {
+        await DB.finishLiveGame(_liveGame.id);
+      } catch(e) {}
+      _liveGame.status = 'finished';
+      _showFinalLeaderboard();
+      return;
+    }
+    try {
+      await DB.nextLiveQuestion(_liveGame.id, idx + 1);
+      _liveGame.currentQuestion = idx + 1;
+      _liveGame.questionStartedAt = Date.now();
+      _renderLiveQuestion();
+    } catch(e) { if (typeof toast==='function') toast('❌ ' + e.message, 3000); }
+  };
+
+  // Aktualizuj statystyki na widoku hosta (ile osób odpowiedziało + mini-leaderboard)
+  async function _lqRefreshHostStats() {
+    if (!_liveIsHost || !_liveGame) return;
+    try {
+      const ans = await DB.getLiveAnswersForQuestion(_liveGame.id, _liveGame.currentQuestion || 0);
+      document.getElementById('lqAnsweredCount').textContent = ans.length;
+      document.getElementById('lqTotalPlayersCount').textContent = _livePlayers.length;
+      // Mini leaderboard po pytaniu (top 5)
+      const lb = await DB.getLiveLeaderboard(_liveGame.id);
+      const top = lb.slice(0, 5);
+      const rows = top.map((p, i) => {
+        const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '🏅';
+        return '<div style="display:flex;justify-content:space-between;padding:6px 8px;border-bottom:1px solid var(--border);font-size:.82rem"><span><span style="font-weight:800">' + medal + ' ' + (i+1) + '.</span> ' + esc(p.nickname) + '</span><span style="font-weight:800;color:var(--accent)">' + p.score + ' pkt</span></div>';
+      }).join('');
+      document.getElementById('lqMiniLeaderboard').innerHTML = rows || '<div style="color:var(--muted);font-size:.74rem;padding:8px;text-align:center">Brak punktów</div>';
+    } catch(e) {}
+  }
+
+  async function _showFinalLeaderboard() {
+    document.getElementById('lqPlayerView').style.display = 'none';
+    document.getElementById('lqHostView').style.display = 'none';
+    document.getElementById('lqFinalView').style.display = '';
+    if (_lqTimerInterval) { clearInterval(_lqTimerInterval); _lqTimerInterval = null; }
+    try {
+      const lb = await DB.getLiveLeaderboard(_liveGame.id);
+      const html = lb.map((p, i) => {
+        const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '🏅';
+        const bg = i === 0 ? 'rgba(255,209,102,.18)' : i === 1 ? 'rgba(189,189,189,.15)' : i === 2 ? 'rgba(205,127,50,.15)' : 'transparent';
+        return '<div style="display:flex;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--border);font-size:.92rem;background:' + bg + ';border-radius:8px;margin-bottom:4px"><span><span style="font-weight:900;font-size:1.1rem">' + medal + '</span> <span style="font-weight:700;margin-left:6px">' + (i+1) + '. ' + esc(p.nickname) + '</span></span><span style="font-weight:900;color:var(--accent)">' + p.score + ' pkt</span></div>';
+      }).join('');
+      document.getElementById('lqFinalLeaderboard').innerHTML = html || '<div style="color:var(--muted);text-align:center;padding:14px">Brak graczy</div>';
+    } catch(e) { document.getElementById('lqFinalLeaderboard').innerHTML = '<div style="color:var(--danger)">Błąd: ' + esc(e.message) + '</div>'; }
+  }
 
   // Wyjście z lobby — host kasuje grę, gracz tylko unsubscribe
   window.exitLiveLobby = async function() {
     try { if (_livePollTimer) { clearInterval(_livePollTimer); _livePollTimer = null; } } catch(e) {}
+    try { if (_lqTimerInterval) { clearInterval(_lqTimerInterval); _lqTimerInterval = null; } } catch(e) {}
     try { if (_liveSubGame) DB.unsubscribeLive(_liveSubGame); } catch(e) {}
     try { if (_liveSubPlayers) DB.unsubscribeLive(_liveSubPlayers); } catch(e) {}
     _liveSubGame = null; _liveSubPlayers = null;
