@@ -17211,6 +17211,16 @@ if ('serviceWorker' in navigator) {
         if (g.status === 'playing' && _liveIsHost) {
           _lqRefreshHostStats();
         }
+        // Gracz: jeśli wszyscy odpowiedzieli — pokaż reveal lokalnie
+        if (g.status === 'playing' && !_liveIsHost && !_lqRevealActive) {
+          try {
+            const ans = await DB.getLiveAnswersForQuestion(_liveGame.id, _liveGame.currentQuestion || 0);
+            const players = await DB.getLiveGamePlayers(_liveGame.id);
+            if (players.length > 0 && ans.length >= players.length) {
+              _lqPlayerReveal();
+            }
+          } catch(e) {}
+        }
       } catch(e) { console.warn('[live poll]', e); }
     }, 3000);
 
@@ -17289,6 +17299,10 @@ if ('serviceWorker' in navigator) {
   let _lqTimerInterval = null;
   let _lqMyAnswer = null;      // gracz: {answer, isCorrect, points} po odpowiedzi
   let _lqQuestionStartedClient = null;  // ms — kiedy klient zobaczył pytanie
+  let _lqRevealActive = false;          // czy aktualnie pokazujemy reveal
+  let _lqAutoNextTimer = null;          // host: timer do auto-przejścia
+  let _lqLastLeaderboard = [];          // host: poprzedni stan dla FLIP animation
+  let _lqMyCorrectAnswer = null;        // gracz: zapamiętana prawidłowa odpowiedź dla reveal
 
   // Host: rozpocznij rundę pytań
   window.startLiveGameRound = async function() {
@@ -17355,6 +17369,9 @@ if ('serviceWorker' in navigator) {
 
     _lqMyAnswer = null;
     _lqQuestionStartedClient = Date.now();
+    _lqRevealActive = false;
+    _lqMyCorrectAnswer = w[1];
+    if (_lqAutoNextTimer) { clearTimeout(_lqAutoNextTimer); _lqAutoNextTimer = null; }
 
     // Kolory Kahoot-style
     const colors = [
@@ -17495,15 +17512,126 @@ if ('serviceWorker' in navigator) {
       const ans = await DB.getLiveAnswersForQuestion(_liveGame.id, _liveGame.currentQuestion || 0);
       document.getElementById('lqAnsweredCount').textContent = ans.length;
       document.getElementById('lqTotalPlayersCount').textContent = _livePlayers.length;
-      // Mini leaderboard po pytaniu (top 5)
-      const lb = await DB.getLiveLeaderboard(_liveGame.id);
-      const top = lb.slice(0, 5);
-      const rows = top.map((p, i) => {
-        const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '🏅';
-        return '<div style="display:flex;justify-content:space-between;padding:6px 8px;border-bottom:1px solid var(--border);font-size:.82rem"><span><span style="font-weight:800">' + medal + ' ' + (i+1) + '.</span> ' + esc(p.nickname) + '</span><span style="font-weight:800;color:var(--accent)">' + p.score + ' pkt</span></div>';
-      }).join('');
-      document.getElementById('lqMiniLeaderboard').innerHTML = rows || '<div style="color:var(--muted);font-size:.74rem;padding:8px;text-align:center">Brak punktów</div>';
+      const total = _livePlayers.length;
+      // Auto-reveal: gdy wszyscy odpowiedzieli i jeszcze nie pokazaliśmy
+      if (!_lqRevealActive && total > 0 && ans.length >= total) {
+        _lqRevealActive = true;
+        await _lqShowReveal();
+        // Auto-next po 4s
+        if (_lqAutoNextTimer) clearTimeout(_lqAutoNextTimer);
+        _lqAutoNextTimer = setTimeout(() => { _lqAutoNextTimer = null; lqHostNext(); }, 4000);
+      } else if (!_lqRevealActive) {
+        // Standardowy mini-leaderboard (przed revealem)
+        const lb = await DB.getLiveLeaderboard(_liveGame.id);
+        _lqRenderHostLeaderboard(lb, false);
+      }
     } catch(e) {}
+  }
+
+  // Reveal phase u hosta — animowany leaderboard + counter punktów
+  async function _lqShowReveal() {
+    try {
+      const lb = await DB.getLiveLeaderboard(_liveGame.id);
+      _lqRenderHostLeaderboard(lb, true);  // true = animuj zmiany pozycji + counter
+    } catch(e) {}
+  }
+
+  // Render leaderboard u hosta z opcjonalną animacją FLIP + counter
+  function _lqRenderHostLeaderboard(lb, animate) {
+    const top = lb.slice(0, 5);
+    const container = document.getElementById('lqMiniLeaderboard');
+
+    // Zapamiętaj poprzednie pozycje (do FLIP)
+    const prevPositions = {};
+    if (animate && container) {
+      container.querySelectorAll('[data-pid]').forEach(el => {
+        prevPositions[el.dataset.pid] = el.getBoundingClientRect();
+      });
+    }
+    // Mapowanie poprzednich punktów (do counter animation)
+    const prevScores = {};
+    _lqLastLeaderboard.forEach(p => { prevScores[p.id] = p.score; });
+
+    if (!top.length) {
+      container.innerHTML = '<div style="color:var(--muted);font-size:.74rem;padding:8px;text-align:center">Brak punktów</div>';
+      _lqLastLeaderboard = lb;
+      return;
+    }
+    const rows = top.map((p, i) => {
+      const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '🏅';
+      const prev = prevScores[p.id] || 0;
+      return '<div data-pid="' + esc(p.id) + '" style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;margin-bottom:4px;border-radius:8px;background:var(--surface);font-size:.86rem"><span><span style="font-weight:800">' + medal + ' ' + (i+1) + '.</span> ' + esc(p.nickname) + '</span><span class="lq-pts" data-prev="' + prev + '" data-target="' + p.score + '" style="font-weight:900;color:var(--accent);font-variant-numeric:tabular-nums">' + prev + ' pkt</span></div>';
+    }).join('');
+    container.innerHTML = rows;
+
+    // FLIP animation: przesuń wiersze z poprzednich pozycji do nowych
+    if (animate && Object.keys(prevPositions).length) {
+      container.querySelectorAll('[data-pid]').forEach(el => {
+        const old = prevPositions[el.dataset.pid];
+        if (!old) return;
+        const now = el.getBoundingClientRect();
+        const dy = old.top - now.top;
+        if (Math.abs(dy) > 0.5) {
+          el.style.transform = 'translateY(' + dy + 'px)';
+          el.style.transition = 'none';
+          void el.offsetHeight;  // force reflow
+          el.style.transition = 'transform 700ms cubic-bezier(.2,.8,.2,1)';
+          el.style.transform = '';
+        }
+      });
+    }
+
+    // Animacja counter dla punktów
+    if (animate) {
+      container.querySelectorAll('.lq-pts').forEach(el => {
+        const from = parseInt(el.dataset.prev, 10) || 0;
+        const to = parseInt(el.dataset.target, 10) || 0;
+        if (from === to) { el.textContent = to + ' pkt'; return; }
+        _lqAnimateCounter(el, from, to, 900);
+      });
+    }
+    _lqLastLeaderboard = lb;
+  }
+
+  // Counter animation: liczba leci od `from` do `to` przez `duration` ms
+  function _lqAnimateCounter(el, from, to, duration) {
+    const start = performance.now();
+    function step(t) {
+      const elapsed = t - start;
+      const k = Math.min(1, elapsed / duration);
+      const eased = 1 - Math.pow(1 - k, 3);  // easeOutCubic
+      const v = Math.round(from + (to - from) * eased);
+      el.textContent = v + ' pkt';
+      if (k < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
+  // Reveal u gracza — highlight prawidłowej i błędnej odpowiedzi
+  function _lqPlayerReveal() {
+    if (_lqRevealActive) return;
+    _lqRevealActive = true;
+    const correct = _lqMyCorrectAnswer;
+    const myAns = _lqMyAnswer ? _lqMyAnswer.answer : null;
+    document.querySelectorAll('#lqAnswerGrid button').forEach(btn => {
+      btn.disabled = true;
+      const txt = (btn.textContent || '').replace(/^[\u{1F7E5}\u{1F7E6}\u{1F7E8}\u{1F7E9}]\s*/u, '').trim();
+      if (txt === correct) {
+        btn.style.outline = '4px solid #2ecc71';
+        btn.style.opacity = '1';
+        btn.style.boxShadow = '0 0 24px rgba(46,204,113,.6)';
+      } else if (myAns && txt === myAns) {
+        btn.style.outline = '4px solid #e74c3c';
+        btn.style.opacity = '0.8';
+      } else {
+        btn.style.opacity = '0.35';
+      }
+    });
+    const status = document.getElementById('lqPlayerStatus');
+    if (status && correct) {
+      const extra = ' · Prawidłowo: <b style="color:#2ecc71">' + esc(correct) + '</b>';
+      status.innerHTML = (status.textContent || '') + extra;
+    }
   }
 
   async function _showFinalLeaderboard() {
@@ -17511,21 +17639,86 @@ if ('serviceWorker' in navigator) {
     document.getElementById('lqHostView').style.display = 'none';
     document.getElementById('lqFinalView').style.display = '';
     if (_lqTimerInterval) { clearInterval(_lqTimerInterval); _lqTimerInterval = null; }
+    if (_lqAutoNextTimer) { clearTimeout(_lqAutoNextTimer); _lqAutoNextTimer = null; }
     try {
       const lb = await DB.getLiveLeaderboard(_liveGame.id);
-      const html = lb.map((p, i) => {
-        const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '🏅';
-        const bg = i === 0 ? 'rgba(255,209,102,.18)' : i === 1 ? 'rgba(189,189,189,.15)' : i === 2 ? 'rgba(205,127,50,.15)' : 'transparent';
-        return '<div style="display:flex;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--border);font-size:.92rem;background:' + bg + ';border-radius:8px;margin-bottom:4px"><span><span style="font-weight:900;font-size:1.1rem">' + medal + '</span> <span style="font-weight:700;margin-left:6px">' + (i+1) + '. ' + esc(p.nickname) + '</span></span><span style="font-weight:900;color:var(--accent)">' + p.score + ' pkt</span></div>';
-      }).join('');
-      document.getElementById('lqFinalLeaderboard').innerHTML = html || '<div style="color:var(--muted);text-align:center;padding:14px">Brak graczy</div>';
-    } catch(e) { document.getElementById('lqFinalLeaderboard').innerHTML = '<div style="color:var(--danger)">Błąd: ' + esc(e.message) + '</div>'; }
+      const container = document.getElementById('lqFinalLeaderboard');
+      if (!lb.length) { container.innerHTML = '<div style="color:var(--muted);text-align:center;padding:14px">Brak graczy</div>'; return; }
+      const top3 = lb.slice(0, 3);
+      const rest = lb.slice(3);
+
+      // Podium HTML — kolejność wizualna: 2️⃣ 1️⃣ 3️⃣ (jak na olimpiadzie)
+      const podiumOrder = [];
+      if (top3[1]) podiumOrder.push({ pos: 2, p: top3[1], h: 110, color: '#bdc3c7', medal: '🥈', delay: 200 });
+      if (top3[0]) podiumOrder.push({ pos: 1, p: top3[0], h: 160, color: '#ffd166', medal: '🥇', delay: 700 });
+      if (top3[2]) podiumOrder.push({ pos: 3, p: top3[2], h: 80,  color: '#cd7f32', medal: '🥉', delay: 100 });
+
+      const podiumHtml = podiumOrder.map(o => `
+        <div class="lq-pod-col" data-delay="${o.delay}" style="display:flex;flex-direction:column;align-items:center;width:32%;max-width:160px">
+          <div style="font-size:2.4rem;margin-bottom:4px;opacity:0;transform:translateY(-20px);transition:all 600ms cubic-bezier(.2,.8,.2,1)" class="lq-pod-medal">${o.medal}</div>
+          <div style="font-weight:800;color:var(--text);font-size:.9rem;margin-bottom:2px;text-align:center;word-break:break-word;max-width:100%;opacity:0;transform:translateY(10px);transition:all 500ms ease 200ms" class="lq-pod-nick">${esc(o.p.nickname)}</div>
+          <div data-target="${o.p.score}" class="lq-pod-pts" style="font-weight:900;color:var(--accent);font-size:1.05rem;margin-bottom:8px;font-variant-numeric:tabular-nums;opacity:0;transition:opacity 400ms ease 400ms">0 pkt</div>
+          <div class="lq-pod-bar" style="width:100%;background:linear-gradient(180deg,${o.color},${o.color}cc);border-radius:10px 10px 0 0;height:0;transition:height 800ms cubic-bezier(.2,.8,.2,1);display:flex;align-items:flex-start;justify-content:center;padding-top:10px;color:#fff;font-weight:900;font-size:1.6rem;box-shadow:0 -4px 14px rgba(0,0,0,.15)" data-h="${o.h}">${o.pos}</div>
+        </div>`).join('');
+
+      // Lista pozostałych (4+) — zwijana, każdy element fade-in z delayem
+      const restHtml = rest.length ? `
+        <div style="margin-top:18px;text-align:left">
+          <div style="font-size:.74rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;text-align:center">Pozostałe miejsca</div>
+          ${rest.map((p, i) => `
+            <div class="lq-pod-row" style="display:flex;justify-content:space-between;padding:8px 12px;border-radius:8px;background:var(--surface);font-size:.86rem;margin-bottom:4px;opacity:0;transform:translateX(-20px);transition:all 350ms ease ${1500 + i * 90}ms">
+              <span><span style="font-weight:800;color:var(--muted)">${i + 4}.</span> <span style="font-weight:700;margin-left:6px">${esc(p.nickname)}</span></span>
+              <span style="font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums">${p.score} pkt</span>
+            </div>`).join('')}
+        </div>` : '';
+
+      container.innerHTML = `
+        <div style="display:flex;align-items:flex-end;justify-content:center;gap:8px;min-height:240px;padding:12px 4px">
+          ${podiumHtml}
+        </div>
+        ${restHtml}`;
+
+      // Trigger animacji (FOUC fix)
+      requestAnimationFrame(() => {
+        // Słupki podium — wjeżdżają z dołu po opóźnieniu
+        container.querySelectorAll('.lq-pod-col').forEach(col => {
+          const delay = parseInt(col.dataset.delay, 10) || 0;
+          const bar = col.querySelector('.lq-pod-bar');
+          const targetH = parseInt(bar.dataset.h, 10);
+          setTimeout(() => {
+            bar.style.height = targetH + 'px';
+            col.querySelector('.lq-pod-medal').style.opacity = '1';
+            col.querySelector('.lq-pod-medal').style.transform = 'translateY(0)';
+            col.querySelector('.lq-pod-nick').style.opacity = '1';
+            col.querySelector('.lq-pod-nick').style.transform = 'translateY(0)';
+            const pts = col.querySelector('.lq-pod-pts');
+            pts.style.opacity = '1';
+            // Counter animation
+            const target = parseInt(pts.dataset.target, 10) || 0;
+            _lqAnimateCounter(pts, 0, target, 1200);
+          }, delay);
+        });
+        // Lista pozostałych — fade-in z delayem
+        container.querySelectorAll('.lq-pod-row').forEach(r => {
+          requestAnimationFrame(() => {
+            r.style.opacity = '1';
+            r.style.transform = 'translateX(0)';
+          });
+        });
+        // Confetti gdy 1. miejsce zostanie odsłonięte (700ms + bar 800ms)
+        setTimeout(() => { try { confetti(); } catch(e) {} }, 1500);
+        setTimeout(() => { try { confetti(); } catch(e) {} }, 2300);
+      });
+    } catch(e) {
+      document.getElementById('lqFinalLeaderboard').innerHTML = '<div style="color:var(--danger)">Błąd: ' + esc(e.message) + '</div>';
+    }
   }
 
   // Wyjście z lobby — host kasuje grę, gracz tylko unsubscribe
   window.exitLiveLobby = async function() {
     try { if (_livePollTimer) { clearInterval(_livePollTimer); _livePollTimer = null; } } catch(e) {}
     try { if (_lqTimerInterval) { clearInterval(_lqTimerInterval); _lqTimerInterval = null; } } catch(e) {}
+    try { if (_lqAutoNextTimer) { clearTimeout(_lqAutoNextTimer); _lqAutoNextTimer = null; } } catch(e) {}
     try { if (_liveSubGame) DB.unsubscribeLive(_liveSubGame); } catch(e) {}
     try { if (_liveSubPlayers) DB.unsubscribeLive(_liveSubPlayers); } catch(e) {}
     _liveSubGame = null; _liveSubPlayers = null;
