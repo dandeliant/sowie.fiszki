@@ -728,6 +728,82 @@ let direction = 'pl_en';
 let bookLang = 'en';
 function langToBcp(l){ return l === 'fr' ? 'fr-FR' : 'en-GB'; }
 
+/* === LIVE MODE (gra dla wielu graczy z hostem-nauczycielem) === */
+const LIVE = (function(){
+  try {
+    const p = new URLSearchParams(location.search);
+    const live = p.get('live');
+    if (!live) return null;
+    return {
+      gameId: live,
+      playerId: p.get('pid') || '',
+      token: p.get('token') || '',
+      bookId: p.get('book') || '',
+      unitKey: p.get('unit') || '',
+      timeLimit: parseInt(p.get('time') || '0', 10) || 0,  // 0 = brak limitu
+      nick: p.get('nick') || ''
+    };
+  } catch(e) { return null; }
+})();
+const LIVE_SUPABASE_URL = 'https://kofenaaeleyhwhbkytcz.supabase.co';
+const LIVE_SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtvZmVuYWFlbGV5aHdoYmt5dGN6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU5MzM0NzMsImV4cCI6MjA5MTUwOTQ3M30.z0pzToDoK8NAEiyuKxeXhXnMvzEr5pfJjU7n6ActTU0';
+let _liveScorePushTimer = null;
+let _liveStatusPollTimer = null;
+let _liveLastSentScore = -1;
+
+async function _livePushScore(s) {
+  if (!LIVE || s === _liveLastSentScore) return;
+  try {
+    await fetch(LIVE_SUPABASE_URL + '/rest/v1/rpc/update_live_player_score', {
+      method: 'POST',
+      headers: {
+        'apikey': LIVE_SUPABASE_KEY,
+        'Authorization': 'Bearer ' + LIVE_SUPABASE_KEY,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ p_player_id: LIVE.playerId, p_token: LIVE.token, p_score: Math.max(0, s) })
+    });
+    _liveLastSentScore = s;
+  } catch(e) { /* offline / sieć — ponów przy następnym tick */ }
+}
+async function _liveCheckStatus() {
+  if (!LIVE) return null;
+  try {
+    const r = await fetch(LIVE_SUPABASE_URL + '/rest/v1/live_games?id=eq.' + encodeURIComponent(LIVE.gameId) + '&select=status', {
+      headers: { 'apikey': LIVE_SUPABASE_KEY, 'Authorization': 'Bearer ' + LIVE_SUPABASE_KEY }
+    });
+    const d = await r.json();
+    return d && d.length ? d[0].status : null;
+  } catch(e) { return null; }
+}
+function _liveStartPushers() {
+  if (_liveScorePushTimer) clearInterval(_liveScorePushTimer);
+  _liveScorePushTimer = setInterval(() => _livePushScore(score), 3000);
+  if (_liveStatusPollTimer) clearInterval(_liveStatusPollTimer);
+  _liveStatusPollTimer = setInterval(async () => {
+    const st = await _liveCheckStatus();
+    if (st === 'finished') {
+      // Host zakończył — finalny push i powrót do app.html
+      await _livePushScore(score);
+      _liveStopAll();
+      location.href = 'app.html';
+    }
+  }, 5000);
+}
+function _liveStopAll() {
+  if (_liveScorePushTimer) { clearInterval(_liveScorePushTimer); _liveScorePushTimer = null; }
+  if (_liveStatusPollTimer) { clearInterval(_liveStatusPollTimer); _liveStatusPollTimer = null; }
+}
+window.addEventListener('beforeunload', () => {
+  // Best-effort finalny push przed wyjściem (sendBeacon)
+  if (LIVE && navigator.sendBeacon) {
+    try {
+      const blob = new Blob([JSON.stringify({ p_player_id: LIVE.playerId, p_token: LIVE.token, p_score: Math.max(0, score) })], { type: 'application/json' });
+      navigator.sendBeacon(LIVE_SUPABASE_URL + '/rest/v1/rpc/update_live_player_score?apikey=' + LIVE_SUPABASE_KEY, blob);
+    } catch(e) {}
+  }
+});
+
 let timeLeft = 90, score = 0, helped = 0, mistakes = 0;
 let currentTarget = null;  // {pl, en}
 let animals = [];          // [{el, isCorrect, en, pl}]
@@ -763,15 +839,22 @@ let busy = false;
     const bookParam = params.get('book');
     const unitParam = params.get('unit');
     if (bookParam && BOOKS[bookParam]) {
-      const backUrl = unitParam
-        ? 'app.html#/book/' + encodeURIComponent(bookParam) + '/' + encodeURIComponent(unitParam)
-        : 'app.html#/book/' + encodeURIComponent(bookParam);
+      // W trybie LIVE wracamy do app.html bez hash — gracz po finished trafi na sLang
+      const backUrl = LIVE
+        ? 'app.html'
+        : (unitParam
+          ? 'app.html#/book/' + encodeURIComponent(bookParam) + '/' + encodeURIComponent(unitParam)
+          : 'app.html#/book/' + encodeURIComponent(bookParam));
       document.querySelectorAll('a[href="app.html"]').forEach(a => { a.href = backUrl; });
       bs.value = bookParam;
       onBookChange();
       const us = document.getElementById('unitSel');
       const targetUnit = (unitParam === 'all' || !unitParam) ? '__all__' : unitParam;
       if (BOOKS[bookParam].units?.[targetUnit] || targetUnit === '__all__') us.value = targetUnit;
+      // W LIVE: ukryj UI restartu/setupu i pokaż banner z PIN-em
+      if (LIVE) {
+        document.body.classList.add('live-mode');
+      }
       setTimeout(() => { try { startGame(); } catch(e) {} }, 350);
     }
   } catch(e) {}
@@ -816,8 +899,10 @@ function startGame(){
   pool = pool.filter(w => w[0] && w[1]);
   if (pool.length < 4) { alert('Ten unit ma za mało słówek (min. 4).'); return; }
 
-  timeLeft = 90; score = 0; helped = 0; mistakes = 0;
+  timeLeft = (LIVE && LIVE.timeLimit > 0) ? LIVE.timeLimit : 90;
+  score = 0; helped = 0; mistakes = 0;
   running = false; busy = false;
+  if (LIVE) { _liveLastSentScore = -1; _liveStartPushers(); }
 
   document.getElementById('setup').style.display = 'none';
   document.getElementById('end').classList.remove('active');
@@ -1039,7 +1124,16 @@ function endGame(){
   const titleEl = document.getElementById('endTitle');
   const iconEl = document.getElementById('endIcon');
   const subEl = document.getElementById('endSub');
-  if (helped >= 15) {
+  if (LIVE) {
+    // Tryb Live — finalny push score + komunikat "czekamy na nauczyciela"
+    iconEl.textContent = '⏳';
+    titleEl.textContent = 'Czas minął!';
+    subEl.textContent = 'Twój wynik: ' + score + ' pkt · czekamy aż nauczyciel zakończy grę i pokaże wyniki klasy.';
+    _livePushScore(score);
+    // Ukryj przyciski Restart i Powrót do menu — gracz nie wraca sam,
+    // tylko po finished od hosta lub manualnie zamyka kartę.
+    document.querySelectorAll('#end button').forEach(b => { b.style.display = 'none'; });
+  } else if (helped >= 15) {
     iconEl.textContent = '🏆'; titleEl.textContent = 'STRAŻNIK ROKU!';
     subEl.textContent = '🎉 Aż ' + helped + ' zwierzaków dotarło bezpiecznie!';
     sndWin();

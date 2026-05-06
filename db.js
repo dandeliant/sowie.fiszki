@@ -1238,13 +1238,32 @@ const DB = (() => {
   // ═══════════════════════════════════════════════════════════════
 
   // Host (Premium): tworzy nową sesję, zwraca {id, pin}
-  async function createLiveGame(bookId, unitKey, gameType) {
+  async function createLiveGame(bookId, unitKey, gameType, timeLimitSeconds) {
     const { data, error } = await supabase.rpc('create_live_game', {
       p_book_id: bookId, p_unit_key: unitKey, p_game_type: gameType || 'quiz'
     });
     if (error) throw new Error(error.message);
     if (!data || !data.length) throw new Error('Nie udało się utworzyć gry.');
-    return { id: data[0].id, pin: data[0].pin };
+    const id = data[0].id;
+    const pin = data[0].pin;
+    // Jeśli host wybrał limit czasu — zapisz go (RPC create_live_game obecnie nie
+    // przyjmuje tego parametru, więc UPDATE po stworzeniu — UPDATE działa dla hosta).
+    if (timeLimitSeconds && timeLimitSeconds > 0) {
+      try {
+        await supabase.from('live_games').update({ time_limit_seconds: timeLimitSeconds }).eq('id', id);
+      } catch(e) { console.warn('[createLiveGame] time_limit_seconds update failed:', e); }
+    }
+    return { id, pin };
+  }
+
+  // Gracz (anon, używa client_token z joinLiveGame): wyślij aktualny wynik
+  // do live_game_players. RLS zezwala tylko hostowi UPDATE — używamy RPC
+  // SECURITY DEFINER który weryfikuje token gracza.
+  async function updateLivePlayerScore(playerId, clientToken, score) {
+    const { error } = await supabase.rpc('update_live_player_score', {
+      p_player_id: playerId, p_token: clientToken, p_score: Math.max(0, parseInt(score, 10) || 0)
+    });
+    if (error) throw new Error(error.message);
   }
 
   // Gracz (też anon): dołącza po PIN-ie z nickname
@@ -2877,6 +2896,8 @@ const DB = (() => {
     startLiveGameRound,
     nextLiveQuestion,
     finishLiveGame,
+    // Live games — Faza 3 (mini-gry Live)
+    updateLivePlayerScore,
     getFreeLimits,
     getDailyXpHistory,
     logStudyMinutes,
