@@ -1233,6 +1233,103 @@ const DB = (() => {
     return true;
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  //  LIVE GAMES — multiplayer Kahoot-like (migracja #33)
+  // ═══════════════════════════════════════════════════════════════
+
+  // Host (Premium): tworzy nową sesję, zwraca {id, pin}
+  async function createLiveGame(bookId, unitKey, gameType) {
+    const { data, error } = await supabase.rpc('create_live_game', {
+      p_book_id: bookId, p_unit_key: unitKey, p_game_type: gameType || 'quiz'
+    });
+    if (error) throw new Error(error.message);
+    if (!data || !data.length) throw new Error('Nie udało się utworzyć gry.');
+    return { id: data[0].id, pin: data[0].pin };
+  }
+
+  // Gracz (też anon): dołącza po PIN-ie z nickname
+  async function joinLiveGame(pin, nickname) {
+    const { data, error } = await supabase.rpc('join_live_game', {
+      p_pin: String(pin).trim(), p_nickname: String(nickname).trim()
+    });
+    if (error) throw new Error(error.message);
+    if (!data || !data.length) throw new Error('Nie znaleziono gry.');
+    return {
+      gameId: data[0].game_id,
+      playerId: data[0].player_id,
+      clientToken: data[0].client_token,
+      bookId: data[0].book_id,
+      unitKey: data[0].unit_key,
+      gameType: data[0].game_type
+    };
+  }
+
+  // Pobierz pojedynczą grę
+  async function getLiveGame(gameId) {
+    const { data, error } = await supabase
+      .from('live_games').select('*').eq('id', gameId).maybeSingle();
+    if (error) throw new Error(error.message);
+    return data;
+  }
+
+  // Pobierz graczy dla gry
+  async function getLiveGamePlayers(gameId) {
+    const { data, error } = await supabase
+      .from('live_game_players')
+      .select('id, nickname, score, joined_at')
+      .eq('game_id', gameId)
+      .order('joined_at');
+    if (error) throw new Error(error.message);
+    return data || [];
+  }
+
+  // Realtime subscription: zmiany gry (np. status waiting→playing)
+  // callback(payload) gdzie payload.new = nowy wiersz
+  function subscribeLiveGame(gameId, callback) {
+    const ch = supabase.channel('live_game_' + gameId)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'live_games', filter: 'id=eq.' + gameId
+      }, callback)
+      .subscribe();
+    return ch;
+  }
+
+  // Realtime subscription: zmiany w live_game_players (dołącza/odłącza)
+  function subscribeLiveGamePlayers(gameId, callback) {
+    const ch = supabase.channel('live_players_' + gameId)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'live_game_players', filter: 'game_id=eq.' + gameId
+      }, callback)
+      .subscribe();
+    return ch;
+  }
+
+  // Odłącz subscription (best-effort)
+  function unsubscribeLive(channel) {
+    try { if (channel) supabase.removeChannel(channel); } catch(e) {}
+  }
+
+  // Host: zmień status gry (waiting → playing → finished)
+  async function updateLiveGameStatus(gameId, status, extra) {
+    const upd = { status, ...(extra || {}) };
+    const { error } = await supabase
+      .from('live_games').update(upd).eq('id', gameId);
+    if (error) throw new Error(error.message);
+  }
+
+  // Host: usuń grę (skasuje też graczy i odpowiedzi przez ON DELETE CASCADE)
+  async function deleteLiveGame(gameId) {
+    const { error } = await supabase.from('live_games').delete().eq('id', gameId);
+    if (error) throw new Error(error.message);
+  }
+
+  // Host: kick gracza
+  async function kickLivePlayer(playerId) {
+    const { error } = await supabase
+      .from('live_game_players').delete().eq('id', playerId);
+    if (error) throw new Error(error.message);
+  }
+
   // Pobierz dowolny profil po ID (uzywane przez opiekuna do widoku
   // postepu dziecka — RLS pozwala dzieki polityce prof_select_parent_child).
   async function fetchProfileById(userId) {
@@ -2671,6 +2768,17 @@ const DB = (() => {
     downgradePlanIfExpired,
     adminExtendPremium,
     adminSetHideBanners,
+    // Live games (multiplayer)
+    createLiveGame,
+    joinLiveGame,
+    getLiveGame,
+    getLiveGamePlayers,
+    subscribeLiveGame,
+    subscribeLiveGamePlayers,
+    unsubscribeLive,
+    updateLiveGameStatus,
+    deleteLiveGame,
+    kickLivePlayer,
     getFreeLimits,
     getDailyXpHistory,
     logStudyMinutes,
