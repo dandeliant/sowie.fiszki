@@ -16991,6 +16991,7 @@ if ('serviceWorker' in navigator) {
   let _liveSubGame = null;       // Realtime channel: zmiany live_games
   let _liveSubPlayers = null;    // Realtime channel: zmiany live_game_players
   let _livePlayers = [];         // bieżąca lista graczy
+  let _livePollTimer = null;     // safety-net polling (gdy Realtime nie włączony w Supabase)
 
   // Premium check helper
   function _canHostLiveGame() {
@@ -17100,10 +17101,35 @@ if ('serviceWorker' in navigator) {
     // Pobierz początkowy stan
     try {
       _livePlayers = await DB.getLiveGamePlayers(_liveGame.id);
+      console.log('[live] initial players fetch:', _livePlayers.length, 'graczy');
       _renderLivePlayers();
     } catch(e) { console.warn('[lobby getPlayers]', e); }
 
-    // Subscribe Realtime
+    // Safety-net polling co 3s — gwarantuje że lista graczy się odświeża
+    // nawet gdy Realtime nie jest włączony w Supabase Database → Replication
+    // dla tabel live_games + live_game_players. Tani query (max 50 wierszy).
+    if (_livePollTimer) { clearInterval(_livePollTimer); _livePollTimer = null; }
+    _livePollTimer = setInterval(async () => {
+      if (!_liveGame) { clearInterval(_livePollTimer); _livePollTimer = null; return; }
+      try {
+        const fresh = await DB.getLiveGamePlayers(_liveGame.id);
+        if (fresh.length !== _livePlayers.length || fresh.some((p,i) => !_livePlayers[i] || _livePlayers[i].id !== p.id)) {
+          _livePlayers = fresh;
+          _renderLivePlayers();
+        }
+        // Sprawdź też status gry (czy host zaczął/zakończył)
+        const g = await DB.getLiveGame(_liveGame.id);
+        if (g && g.status !== _liveGame.status) {
+          _liveGame.status = g.status;
+          if (g.status === 'finished') {
+            if (typeof toast === 'function') toast('Gra zakończona przez gospodarza.', 3000);
+            exitLiveLobby();
+          }
+        }
+      } catch(e) { console.warn('[live poll]', e); }
+    }, 3000);
+
+    // Subscribe Realtime — szybsze niż polling gdy zadziała
     _liveSubPlayers = DB.subscribeLiveGamePlayers(_liveGame.id, async (payload) => {
       try {
         _livePlayers = await DB.getLiveGamePlayers(_liveGame.id);
@@ -17179,6 +17205,7 @@ if ('serviceWorker' in navigator) {
 
   // Wyjście z lobby — host kasuje grę, gracz tylko unsubscribe
   window.exitLiveLobby = async function() {
+    try { if (_livePollTimer) { clearInterval(_livePollTimer); _livePollTimer = null; } } catch(e) {}
     try { if (_liveSubGame) DB.unsubscribeLive(_liveSubGame); } catch(e) {}
     try { if (_liveSubPlayers) DB.unsubscribeLive(_liveSubPlayers); } catch(e) {}
     _liveSubGame = null; _liveSubPlayers = null;
