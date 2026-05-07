@@ -5328,6 +5328,40 @@ const BOOKS = {
           ['Nie, nie możesz.', "No, you can't."],
           ['Możesz / nie możesz grać w gry z piłką w klasie.', "You can / can't play ball games in the classroom."],
         ]
+      },
+      unit5: {
+        name: 'Unit 5', icon: '🤒', color: '#ff7675',
+        words: [
+          ['ból głowy', 'headache'],
+          ['kaszel', 'cough'],
+          ['ból gardła', 'sore throat'],
+          ['ból ucha', 'earache'],
+          ['ból brzucha', 'tummy ache'],
+          ['przeziębienie', 'cold'],
+          ['ból zęba', 'toothache'],
+          ['skaleczenie, zacięcie', 'cut'],
+          ['Boli mnie głowa.', "I've got a headache."],
+          ['Mam kaszel.', "I've got a cough."],
+          ['Boli mnie gardło.', "I've got a sore throat."],
+          ['Boli mnie ucho.', "I've got an earache."],
+          ['Boli mnie brzuch.', "I've got a tummy ache."],
+          ['Boli mnie ząb.', "I've got a toothache."],
+          ['Czuję się chory/chora.', "I'm feeling ill."],
+          ['Czy boli cię głowa? Tak.', "Have you got a headache? Yes, I have."],
+          ['Czy boli cię ząb? Nie.', "Have you got a toothache? No, I haven't."],
+          ['pić wodę', 'drink water'],
+          ['myć', 'wash'],
+          ['ćwiczyć', 'do exercise'],
+          ['zdrowo się odżywiać', 'eat well'],
+          ['dobrze się wysypiać', 'sleep well'],
+          ['Musisz zdrowo się odżywiać.', 'You need to eat well.'],
+          ['Musisz ćwiczyć.', 'You need to do exercise.'],
+          ['Ćwiczę codziennie.', 'I do exercise every day.'],
+          ['Piję wodę codziennie.', 'I drink water every day.'],
+          ['Czy codziennie pijesz wodę? Tak.', "Do you drink water every day? Yes, I do."],
+          ['Czy ćwiczysz codziennie? Nie.', "Do you do exercise every day? No, I don't."],
+          ['bawić się', 'play'],
+        ]
       }
     }
   }
