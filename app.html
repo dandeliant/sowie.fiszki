@@ -120,6 +120,13 @@ header{width:100%;display:flex;align-items:flex-start;justify-content:space-betw
 .book-card:hover{transform:translateY(-3px);box-shadow:0 10px 28px rgba(0,0,0,.4);}
 .book-card:hover::before{opacity:1;}
 .book-card:active{transform:scale(.97);}
+.book-card.locked{opacity:.78;border-color:rgba(255,209,102,.32);background:linear-gradient(180deg,rgba(255,209,102,.05) 0%,transparent 55%),var(--surface);}
+.book-card.locked:hover{opacity:1;border-color:rgba(255,209,102,.6);box-shadow:0 10px 28px rgba(255,182,39,.18);}
+.book-card.locked .book-icon{filter:grayscale(.45);}
+.book-card.locked .book-name{color:var(--muted);}
+.book-card.locked .book-desc{color:var(--muted);}
+.book-card.locked .book-prog{color:var(--accent)!important;font-weight:800;}
+.book-card .lock-overlay{position:absolute;top:8px;left:8px;display:inline-flex;align-items:center;gap:4px;background:linear-gradient(135deg,#FFD166 0%,#FFB627 100%);color:#2A1F44;font-size:.65rem;font-weight:800;padding:4px 10px 4px 8px;border-radius:999px;box-shadow:0 4px 10px rgba(255,182,39,.35);letter-spacing:.03em;z-index:2;}
 .book-icon{font-size:2.6rem;}
 .book-name{font-family:'Playfair Display',serif;font-size:1.05rem;color:var(--accent);}
 .book-desc{font-size:.7rem;color:var(--muted);font-weight:600;}
@@ -4825,6 +4832,10 @@ function refreshBooks() {
   const isParent  = (typeof isCurrentUserParent === 'function') ? isCurrentUserParent() : false;
   const isPremium = (typeof hasPremiumAccess === 'function') ? hasPremiumAccess() : false;
   const assigned = new Set(Array.isArray(myBooks) ? myBooks : []);
+  // Podręczniki w kategoriach „Kursy tematyczne" (courses) i „Gramatyka i dodatki" (grammar),
+  // które byłyby ukryte tylko z powodu pakietu Premium — pokazujemy je
+  // zalogowanym użytkownikom z kłódką, żeby wiedzieli co można zakupić.
+  const lockedBooks = [];
   const allowedBooks = allBooks.filter(b => {
     if (isAdmin) return true;
     if (assigned.has(b.id)) return true; // wprost przydzielony — zawsze widoczny
@@ -4835,23 +4846,29 @@ function refreshBooks() {
     else if (isParent)  roleAllowed = eff.visibleToParent;
     else if (isTeacher) roleAllowed = eff.visibleToTeacher;
     else                roleAllowed = eff.visibleToStudent;
-    if (!roleAllowed) return false;
-    // Tier check — premium wymaga aktywnego Premium (lub staff)
-    if (eff.tier === 'premium' && !isPremium) return false;
-    return true;
+    const tierOk = (eff.tier !== 'premium') || isPremium;
+    if (roleAllowed && tierOk) return true;
+    // Niedostępne — ale dla kategorii „Kursy tematyczne" (courses) i
+    // „Gramatyka i dodatki" (grammar) pokazujemy zalogowanym nie-Premium
+    // użytkownikom kafelek z kłódką (możliwość zakupu/przydzielenia).
+    if (!isGuest && !isPremium && (b.schoolType === 'courses' || b.schoolType === 'grammar')) {
+      lockedBooks.push(b);
+    }
+    return false;
   });
   // Filtr kontekstu nawigacji.
   // Wszystkie języki (EN/FR/DE/RU) używają tej samej logiki:
   // język → schoolType → (opcjonalnie) klasa.
-  const visibleBooks = allowedBooks
-    .filter(b => {
-      if (_navLanguage && b.language !== _navLanguage) return false;
-      if (_navSchoolType && b.schoolType !== _navSchoolType) return false;
-      if (_NO_GRADE_SCHOOL_TYPES.includes(_navSchoolType)) return true; // bez filtra klasy
-      if (_navGrade != null && b.grade !== _navGrade) return false;
-      return true;
-    });
-  if (visibleBooks.length === 0 && emptyEl) {
+  const navFilter = (b) => {
+    if (_navLanguage && b.language !== _navLanguage) return false;
+    if (_navSchoolType && b.schoolType !== _navSchoolType) return false;
+    if (_NO_GRADE_SCHOOL_TYPES.includes(_navSchoolType)) return true; // bez filtra klasy
+    if (_navGrade != null && b.grade !== _navGrade) return false;
+    return true;
+  };
+  const visibleBooks = allowedBooks.filter(navFilter);
+  const visibleLocked = lockedBooks.filter(navFilter);
+  if (visibleBooks.length === 0 && visibleLocked.length === 0 && emptyEl) {
     emptyEl.style.display = 'block';
     return;
   }
@@ -4920,6 +4937,34 @@ function refreshBooks() {
       ${publisherInfo}
       <div class="book-prog" style="color:${book.color}">${pct > 0 ? pct + '% opanowane' : 'Zacznij naukę!'}</div>
       <div class="book-bar-bg"><div class="book-bar-fill" style="width:${pct}%;background:${book.color}"></div></div>`;
+    g.appendChild(d);
+  });
+  // Karty zablokowane (Premium) — kategorie courses + grammar dla nie-Premium uczniów.
+  // Klik otwiera modal Premium Lock z prośbą o przydzielenie pakietu.
+  visibleLocked.sort((a, b) => a.name.localeCompare(b.name, 'pl')).forEach(book => {
+    const d = document.createElement('div');
+    d.className = 'book-card locked';
+    d.style.cssText = 'cursor:pointer';
+    d.setAttribute('role', 'button');
+    d.setAttribute('tabindex', '0');
+    d.setAttribute('aria-label', 'Podręcznik Premium: ' + book.name + ' — kliknij, żeby zobaczyć jak odblokować');
+    d.innerHTML = `
+      <span class="lock-overlay">🔒 Premium</span>
+      <div class="book-icon">${book.icon}</div>
+      <div class="book-name">${book.name}</div>
+      <div class="book-desc">${book.description || ''}</div>
+      <div class="book-prog">⭐ Wykup, aby odblokować</div>`;
+    const open = () => {
+      openPremiumLockModal({
+        title: '🔒 ' + book.name,
+        text: 'Ten podręcznik jest dostępny w pakiecie Premium.\n\nPoproś rodzica, opiekuna lub nauczyciela o wykupienie lub przydzielenie pakietu Premium.',
+        showMessageBtn: !isGuest
+      });
+    };
+    d.addEventListener('click', open);
+    d.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); }
+    });
     g.appendChild(d);
   });
   // Kafelek "Dodaj podręcznik" dla admina
