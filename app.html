@@ -4502,6 +4502,22 @@ function getEffectiveBookAccess(book) {
   //   (brak flagi)                          → tylko przydzielony
   const isPublic    = book.defaultAccess === true && !book.adminOnly;
   const isAdminOnly = book.adminOnly === true;
+  // Domyślny tier dla kategorii „Kursy tematyczne" (courses) i
+  // „Gramatyka i dodatki" (grammar): Premium + widoczność dla wszystkich
+  // ról zalogowanych. Nie-Premium użytkownicy zobaczą kafelek z kłódką
+  // (refreshBooks renderuje je w lockedBooks). Admin może oczywiście
+  // nadpisać per-book przez book_access_overrides (3. zakładka „⚙️ Globalnie").
+  const isCoursesOrGrammar = !isAdminOnly && (book.schoolType === 'courses' || book.schoolType === 'grammar');
+  if (isCoursesOrGrammar) {
+    return {
+      visibleToGuest:   false,   // gość najpierw musi się zarejestrować
+      visibleToStudent: true,
+      visibleToTeacher: true,
+      visibleToParent:  true,
+      tier: 'premium',
+      hasOverride: false
+    };
+  }
   return {
     visibleToGuest:   isPublic,
     visibleToStudent: isPublic && !isAdminOnly,
