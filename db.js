@@ -668,6 +668,9 @@ const DB = (() => {
           language:   row.language    || 'en',
           schoolType: row.school_type || 'courses',
           grade:      (row.grade != null) ? row.grade : undefined,
+          // Migracja #33: tworca podrecznika (admin lub nauczyciel). Uzywane
+          // przez UI do pokazywania przyciskow edycji tylko dla wlasciciela.
+          createdBy:  row.created_by || null,
           units: {}, _isAdminBook: true
         };
       }
@@ -818,6 +821,7 @@ const DB = (() => {
       icon: icon || '📖', color: color || '#a29bfe', description: description || '',
       lang: lang || 'en-GB',
       language, schoolType, grade: (grade != null) ? grade : undefined,
+      createdBy: _userId,  // Migracja #33: tworca = obecny uzytkownik (admin/nauczyciel)
       units: {}, _isAdminBook: true
     };
   }
@@ -827,10 +831,17 @@ const DB = (() => {
   // Klucze obsługiwane: name, shortName, icon, color, description, lang,
   //                      schoolType, language, grade.
   async function adminEditBook(bookId, fields) {
-    if (!_profile?.isAdmin) throw new Error('Tylko administrator może edytować podręczniki.');
+    // Admin: edycja dowolnego podrecznika z admin_books.
+    // Nauczyciel: edycja tylko wlasnych (created_by = self).
+    if (!_profile?.isAdmin && !_profile?.isTeacher) {
+      throw new Error('Brak uprawnień do edycji podręczników.');
+    }
     if (!bookId) throw new Error('Brak book_id.');
     const existing = _adminBooks.find(b => b.book_id === bookId);
-    if (!existing) throw new Error('Podręcznik nie jest podręcznikiem dodanym przez admina (admin_books).');
+    if (!existing) throw new Error('Podręcznik nie jest podręcznikiem dodanym przez admina/nauczyciela (admin_books).');
+    if (!_profile.isAdmin && existing.created_by !== _userId) {
+      throw new Error('Możesz edytować tylko własne podręczniki.');
+    }
 
     const upd = { updated_at: new Date().toISOString() };
     if (fields.name        !== undefined) upd.name        = fields.name;
@@ -867,8 +878,19 @@ const DB = (() => {
   // Usuń admin-added podręcznik (kasuje wpis w admin_books oraz wszystkie powiązane
   // admin_units i admin_words). Tylko admin.
   async function adminDeleteBook(bookId) {
-    if (!_profile?.isAdmin) throw new Error('Tylko administrator może usuwać podręczniki.');
+    // Admin: kasuje dowolny podrecznik z admin_books.
+    // Nauczyciel: kasuje tylko wlasne (created_by = self) — RLS i tak
+    // wymusi to po stronie DB, ale walidujemy wczesniej dla lepszego komunikatu.
+    if (!_profile?.isAdmin && !_profile?.isTeacher) {
+      throw new Error('Brak uprawnień do usuwania podręczników.');
+    }
     if (!bookId) throw new Error('Brak book_id.');
+    if (!_profile.isAdmin) {
+      const existing = _adminBooks.find(b => b.book_id === bookId);
+      if (!existing || existing.created_by !== _userId) {
+        throw new Error('Możesz usuwać tylko własne podręczniki.');
+      }
+    }
     // Usuń słówka i unity (jeśli istnieje cascade w DB to nadmiarowo, ale bezpieczniej)
     await supabase.from('admin_words').delete().eq('book_id', bookId);
     await supabase.from('admin_units').delete().eq('book_id', bookId);

@@ -4474,6 +4474,17 @@ window.closePublisherInfoModal = function(){
 //  inaczej wyprowadzamy wartości domyślne z flag w data.js (defaultAccess
 //  i adminOnly). Wynik to zawsze pełny obiekt 5-polowy.
 // ══════════════════════════════════════════════
+// Czy aktualny uzytkownik moze edytowac dany podrecznik?
+// - admin: dowolny podrecznik z admin_books
+// - nauczyciel: tylko swoj wlasny (createdBy === aktualne userId)
+function canEditBook(book) {
+  if (!book || !book._isAdminBook) return false;
+  if (typeof isCurrentUserAdmin === 'function' && isCurrentUserAdmin()) return true;
+  if (typeof isCurrentUserTeacher !== 'function' || !isCurrentUserTeacher()) return false;
+  const myId = (typeof DB !== 'undefined' && DB.getUserId) ? DB.getUserId() : null;
+  return !!(myId && book.createdBy && book.createdBy === myId);
+}
+
 function getEffectiveBookAccess(book) {
   const overrides = (typeof DB !== 'undefined' && DB.getBookAccessOverrides)
     ? DB.getBookAccessOverrides() : {};
@@ -4899,9 +4910,9 @@ function refreshBooks() {
     const accessBtn = isStaffNow
       ? `<span class="book-access-btn" role="button" tabindex="0" title="Przydziel dostęp do tego podręcznika" onclick="event.preventDefault();event.stopPropagation();openAssignBookAccessModal('${escHtml(book.id)}');" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();openAssignBookAccessModal('${escHtml(book.id)}');}">🔓 <span class="bab-text">Dostęp</span></span>`
       : '';
-    // Przycisk „✏️ Edytuj podręcznik" — tylko admin, tylko dla podręczników
-    // dodanych przez panel admina (admin_books). Otwiera modal w trybie edycji.
-    const editBookBtn = (isAdminNow && book._isAdminBook)
+    // Przycisk „✏️ Edytuj podręcznik" — admin (dowolny admin_books) lub nauczyciel
+    // (tylko wlasny — created_by = self). Otwiera modal w trybie edycji.
+    const editBookBtn = canEditBook(book)
       ? `<span class="book-edit-btn" role="button" tabindex="0" title="Edytuj podręcznik (kategoria, język, nazwa)" onclick="event.preventDefault();event.stopPropagation();openAdminBookModal('${escHtml(book.id)}');" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();openAdminBookModal('${escHtml(book.id)}');}">✏️</span>`
       : '';
     // Badges widoczne TYLKO dla admina: tier (Free/Premium) + role widoczne
@@ -4975,8 +4986,10 @@ function refreshBooks() {
     });
     g.appendChild(d);
   });
-  // Kafelek "Dodaj podręcznik" dla admina
-  if (isCurrentUserAdmin()) {
+  // Kafelek "Dodaj podręcznik" — admin lub nauczyciel.
+  // Nauczyciel tworzy wlasne podreczniki (created_by = self), ktore widzi
+  // tylko on i jego uczniowie po przydzieleniu (migracja #33 + RLS).
+  if (isCurrentUserAdmin() || isCurrentUserTeacher()) {
     const d = document.createElement('div');
     d.className = 'admin-book-add-card';
     d.innerHTML = '<div style="font-size:2rem">➕</div><div style="font-size:.85rem;font-weight:800;color:var(--purple)">Nowy podręcznik</div>';
@@ -5040,8 +5053,8 @@ function refreshGrid() {
       <div class="unit-progress-bar"><div class="unit-progress-fill" style="width:${pct}%;background:${u.color||'#a29bfe'}"></div></div>`;
     g.appendChild(d);
   });
-  // Kafelek "Dodaj rozdział" dla admina
-  if (isCurrentUserAdmin()) {
+  // Kafelek "Dodaj rozdział" — admin lub nauczyciel-wlasciciel podrecznika.
+  if (canEditBook(book)) {
     const d = document.createElement('div');
     d.className = 'admin-unit-add-card';
     d.innerHTML = '➕ Nowy rozdział';
@@ -5455,9 +5468,12 @@ function openWordList(key) {
       noteEl.innerHTML = '';
     }
   }
-  const isAdmin = isCurrentUserAdmin();
+  // canEdit: admin (zawsze) LUB nauczyciel-wlasciciel danego admin_books podrecznika.
+  // Migracja #33 — nauczyciel moze edytowac tylko swoje wlasne podreczniki.
+  const canEdit = canEditBook(BOOKS[currentBookId]);
+  const isAdmin = canEdit; // alias dla istniejacego kodu w tym scope
 
-  // Nagłówek tabeli — z kolumną akcji dla admina
+  // Nagłówek tabeli — z kolumną akcji dla edytujacego
   const thead = document.getElementById('wlHead');
   const adminTh = isAdmin ? '<th></th>' : '';
   thead.innerHTML = `<th class="th-cb"><input type="checkbox" class="wl-cb" id="cbAll" title="Zaznacz/odznacz wszystkie" onchange="wlToggleAll(this.checked)"></th><th>#</th><th>Polski</th><th>🔊</th><th>Angielski</th><th>🔊</th><th title="🌱 Nowe · 🌿 Uczę się · 🌳 Opanowane · 🏆 Mistrzostwo">Stan</th>${adminTh}`;
