@@ -1186,7 +1186,7 @@ const DB = (() => {
     const exp = new Date(_profile.planExpiresAt);
     const diffMs = exp.getTime() - now.getTime();
     const daysLeft = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
-    // Trial: trial_used_at jest ustawiony i plan_expires_at = trial_used_at + ~7 dni (+/- 1h)
+    // Trial: trial_used_at jest ustawiony i plan_expires_at = trial_used_at + ~30 dni (+/- 1h)
     let isTrial = false;
     if (_profile.trialUsedAt) {
       const trialStart = new Date(_profile.trialUsedAt);
@@ -1199,7 +1199,7 @@ const DB = (() => {
 
   function hasUsedTrial() { return _profile?.trialUsedAt != null; }
 
-  // Aktywuje 7-dniowy trial (RPC). Zwraca nowa date wygasniecia lub null.
+  // Aktywuje 30-dniowy trial (RPC). Zwraca nowa date wygasniecia lub null.
   async function activateTrialIfEligible() {
     if (!_userId || !_profile) return null;
     if (_profile.isAdmin) return null;       // admin ma pelny dostep z racji roli

@@ -11,7 +11,7 @@
 - **Repo:** https://github.com/dandeliant/sowie.fiszki (branch `main`, **prywatne** od 29.04.2026)
 - **Hosting:** Vercel → **https://sowiefiszki.com** (custom domain, od 29.04.2026; wcześniej GitHub Pages)
 - **Backend:** Supabase (auth + Postgres + RLS), projekt `kofenaaeleyhwhbkytcz`
-- **Charakter:** osoba fizyczna prowadząca Platformę; **model freemium** (7-dniowy trial Premium → Free / Premium po opłacie). Wcześniej projekt był non-commercial — od ~2026-04-29 przygotowywany do monetyzacji.
+- **Charakter:** osoba fizyczna prowadząca Platformę; **model freemium** (30-dniowy trial Premium → Free / Premium po opłacie). Wcześniej projekt był non-commercial — od ~2026-04-29 przygotowywany do monetyzacji.
 - **Service Worker:** aktualnie `v50` (stan na 23 kwietnia 2026)
 
 ## 💰 Koszty i terminy odnowienia
@@ -111,12 +111,13 @@ Kolejność uruchamiania w SQL Editor (każda jest idempotentna — można ponow
 31. `add-language-ru.sql` — rozszerzenie `admin_books_language_check` z migracji #29 o `'ru'`. Po dodaniu kafelków języków w sLang (Angielski/Francuski/Niemiecki/Rosyjski) admin może tworzyć podręczniki rosyjskie przez modal „Nowy podręcznik". Idempotentna (DROP CONSTRAINT IF EXISTS + ADD). UI: select language w modalu admina ma teraz 4 opcje (EN/FR/DE/RU). `selectLanguage` w app.html zunifikowane — wszystkie języki idą przez sSchool z 4 kategoriami (Podstawowa/Średnia/Kursy/Gramatyka), tytuły dynamiczne przez `_LANG_META` i `getLangMeta()`. `francais` w data.js dostał `schoolType: 'courses'`, żeby pojawił się w kategorii „💼 Kursy tematyczne".
 32. `add-hide-premium-banners.sql` — kolumna `profiles.hide_premium_banners BOOLEAN NOT NULL DEFAULT FALSE` + RPC `admin_set_hide_premium_banners(p_user_id UUID, p_value BOOLEAN)` (`SECURITY DEFINER`). Pozwala adminowi/nauczycielowi-twórcy ukryć bannery Premium („🎁 Masz 7 dni Premium" + „🎁 Darmowy trial kończy się…") konkretnemu uczniowi. Reguły RPC: admin → wszystkim, nauczyciel → tylko `created_by = self`, sam uczeń nie zmienia (nie ma RPC w eksporcie do UI). API: `DB.getHidePremiumBanners()` (z lokalnego `_profile`), `DB.adminSetHideBanners(userId, value)`. UI: nowy modal `#userSettingsModal` „⚙️ Ustawienia konta" otwierany przyciskiem ⚙️ w widoku Klasy (`renderClassStudents`) i Dostępu (`buildAccessUserCard`) — pozwala ustawić plan (Free/Premium/Teacher, admin only) i ukryć bannery (admin lub nauczyciel-twórca). W `maybeShowTrialWelcomeBanner` i `maybeShowPremiumExpiryBanner` early-return na `DB.getHidePremiumBanners()`. `_rowToProfile` mapuje pole na `hidePremiumBanners`. `loadAllProfiles` i `findProfileByUsername` dociągają kolumnę.
 33. `add-teacher-books.sql` — **wlasne podreczniki nauczyciela** w tabelach `admin_books` / `admin_units` / `admin_words`. Kolumna `created_by` juz istnieje w schemacie (db.js zawsze ja wypelnia) — migracja zmienia tylko polityki RLS. Po migracji nauczyciel moze tworzyc/edytowac/usuwac wlasne podreczniki (gdzie `created_by = auth.uid()`), ich unity i slowa. Wlasne podreczniki nauczyciela sa **prywatne** — inni nauczyciele ich NIE widza. Uczen widzi je tylko po wprost przydzieleniu przez `user_books` (panel „🔓 Dostep" na karcie podrecznika lub w klasie). Tier: Free. Polityka SELECT na `admin_books` laczy 4 warunki: `_is_admin()` (admin widzi wszystko) OR `created_by = auth.uid()` (tworca) OR `EXISTS (profiles WHERE id=created_by AND is_admin=true)` (publiczne podreczniki admina) OR `EXISTS (user_books WHERE book_id=admin_books.book_id AND user_id=auth.uid())` (przydzielone). `admin_units` i `admin_words` dziedzicza widocznosc po podreczniku-rodzicu (EXISTS subquery). Polityka INSERT/UPDATE/DELETE: admin lub `created_by = auth.uid()` (lub na rodzicu dla unitow/slow). UI: kafelek „➕ Nowy podręcznik" pokazuje sie nauczycielowi (wczesniej tylko admin), kafelek „➕ Nowy rozdział" i ikona ✏️ na karcie podrecznika tylko dla wlasciciela (helper `canEditBook(book)` w app.html: `admin || (teacher && book.createdBy === DB.getUserId() && book._isAdminBook)`). `db.js`: `_applyAdminData` dodaje `createdBy` do BOOKS object, `adminAddBook` ustawia `createdBy = _userId` w lokalnym BOOKS, `adminEditBook` / `adminDeleteBook` wymagaja teraz admina LUB nauczyciela-wlasciciela (sprawdzaja `existing.created_by === _userId`). `adminAddUnit` / `adminAddWord` / `adminEditWord` / `adminDeleteWord` nie maja JS-level role check — RLS pilnuje na poziomie DB.
+34. `extend-trial-to-30-days.sql` — **trial Premium wydluzony z 7 do 30 dni**. Aktualizuje RPC `activate_trial()` — `INTERVAL '7 days'` → `INTERVAL '30 days'`. Zachowuje istniejaca logike admin-no-trial (admin nie dostaje triala). Istniejacy uzytkownicy ktorzy juz uzyli triala — bez zmian (admin moze przedluzyc per-user przez `admin_extend_premium`). Idempotentna. Po migracji aktualizacja tekstow w `app.html` (banner „🎁 Masz 30 dni Premium"), `db.js` (komentarze), `regulamin.html` (§5, §10), `polityka.html` (CTA), `home.html` (hero, FAQ, CTA, meta-tags), `faq.html` (FAQ), `consent.js` (consent text), `CLAUDE.md`.
 
 **Zawsze przypominaj użytkownikowi** o uruchomieniu nowej migracji w Supabase, kiedy tworzysz nową.
 
 ## 🎭 Role i uprawnienia
 
-**Rola** (`is_admin` / `is_teacher` / `is_parent`) × **Plan** (`free` / `premium` + `plan_expires_at`). Admin automatycznie traktowany jak Premium (pełny dostęp). Trial Premium 7 dni nadawany automatycznie nowemu kontu przy pierwszym logowaniu.
+**Rola** (`is_admin` / `is_teacher` / `is_parent`) × **Plan** (`free` / `premium` + `plan_expires_at`). Admin automatycznie traktowany jak Premium (pełny dostęp). Trial Premium 30 dni nadawany automatycznie nowemu kontu przy pierwszym logowaniu (migracja #34 — wcześniej było 7 dni).
 
 | Rola | Co widzi | Co może robić |
 |---|---|---|
@@ -231,7 +232,7 @@ Krzyżówka · Wordsearch · Memory · Snake (Wąż wyrazowy) · Hangman · Rozs
 - System wiadomości user ↔ admin (`conversations` / `conversation_messages`) + sMessages + modal wątku
 - Rola Rodzic/Opiekun: panel, dodaj dziecko po loginie, przydzielanie podręczników (Premium)
 - **Premium features:**
-  - 7-dniowy trial automatyczny (raz w życiu konta) + cennik (klik → prośba do admina)
+  - 30-dniowy trial automatyczny (raz w życiu konta) + cennik (klik → prośba do admina)
   - Banner wygasania 30 dni przed końcem (codziennie, dismiss-per-day) + welcome trial banner (raz)
   - Wybór głosu lektora (4 głosy UK/US × tempo) w modalu „Moje konto"
   - Export PDF karty postępów + dyplom PDF A4 landscape
