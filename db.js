@@ -1841,6 +1841,78 @@ const DB = (() => {
   }
 
   // ═══════════════════════════════════════════════════════════════
+  //  BULK CREATE NAUCZYCIELI (admin only)
+  //  Tworzy `count` kont nauczycieli z loginem `<slug>_NN`,
+  //  ustawia is_teacher=true (przez plan='teacher'), zapisuje haslo,
+  //  ustawia tworce (admin) i prywatna etykiete admina = nazwa grupy.
+  //  Zwraca { created: [{username, password, userId}], errors: [] }.
+  // ═══════════════════════════════════════════════════════════════
+  async function adminBulkCreateTeachers(groupName, count) {
+    if (!_profile?.isAdmin) throw new Error('Tylko administrator może tworzyć konta nauczycieli.');
+    if (!groupName || !groupName.trim()) throw new Error('Podaj nazwę grupy / szkoły.');
+    if (!count || count < 1 || count > 50) throw new Error('Podaj liczbę nauczycieli od 1 do 50.');
+
+    const slug = _slugifyClassName(groupName);
+    const groupLabel = groupName.trim().slice(0, 30);
+    const created = [];
+    const errors = [];
+
+    let offset = 1;
+    for (let i = 0; i < count; i++) {
+      let username = null, pass = null, userId = null;
+      for (let tries = 0; tries < 30; tries++) {
+        const num = String(offset).padStart(2, '0');
+        const candidate = `${slug}_${num}`;
+        offset++;
+        pass = _randomPassword(8);
+        try {
+          const { data, error } = await supabase.rpc('admin_create_user', {
+            p_username: candidate, p_password: pass
+          });
+          if (error) {
+            if (/exist|duplicat|zaj/i.test(error.message)) continue;
+            throw new Error(error.message);
+          }
+          username = candidate;
+          userId = (data && data.user_id) || data;
+          break;
+        } catch(e) {
+          if (/exist|duplicat|zaj/i.test(e.message)) continue;
+          throw e;
+        }
+      }
+      if (!username) { errors.push('Nie udało się utworzyć konta nauczyciela #' + (i+1)); continue; }
+
+      // Nadaj role nauczyciela (plan='teacher' automatycznie ustawia is_teacher=true).
+      if (userId) {
+        try { await setUserPlan(userId, 'teacher'); } catch(e) {
+          errors.push(`Konto ${username} utworzone, ale nie udało się nadać roli nauczyciela: ${e.message}`);
+        }
+      }
+
+      // Zapisz tworce konta (admin) — nauczyciel widzi tylko swoich uczniow,
+      // ale to konto bedzie ich tworzyc (created_by tutaj to admin, ktory go zalozyl).
+      if (userId) {
+        try { await supabase.rpc('set_profile_creator', { p_user_id: userId }); } catch(e) {}
+      }
+
+      // Zapisz wygenerowane haslo (best-effort — wymaga add-generated-passwords.sql).
+      if (userId && pass) {
+        try { await supabase.rpc('set_generated_password', { p_user_id: userId, p_password: pass }); } catch(e) {}
+      }
+
+      // Prywatna etykieta admina = nazwa grupy (np. „British Studio") —
+      // pozwala adminowi grupowac/sortowac wlasna lista nauczycieli.
+      if (userId) {
+        try { await setUserLabel(userId, groupLabel); } catch(e) {}
+      }
+
+      created.push({ username, password: pass, userId });
+    }
+    return { created, errors, groupLabel };
+  }
+
+  // ═══════════════════════════════════════════════════════════════
   //  TEACHER SETS — zestawy słów tworzone przez nauczyciela
   // ═══════════════════════════════════════════════════════════════
 
@@ -2949,6 +3021,7 @@ const DB = (() => {
     // bulk student creation
     bulkCreateStudentsForClass,
     createSingleStudentForClass,
+    adminBulkCreateTeachers,
     adminResetUserPassword,
     // activity tracking
     startActivity,

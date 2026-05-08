@@ -3763,6 +3763,54 @@ szkoła	school"></textarea>
 </div>
 
 <!-- ══ SCREEN: BULK STUDENT CREATION ══ -->
+<!-- ══ SCREEN: BULK CREATE NAUCZYCIELI (admin only) ══ -->
+<div class="screen" id="sBulkTeachers">
+  <div style="width:100%">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+      <div>
+        <div style="font-family:'Playfair Display',serif;font-size:1.3rem;color:var(--accent)">👩‍🏫 Generuj konta nauczycieli</div>
+        <div style="font-size:.7rem;color:var(--muted);font-weight:600;margin-top:2px">Konta z rolą nauczyciela, etykietą grupy i auto-generowanymi hasłami</div>
+      </div>
+      <div style="display:flex;gap:6px">
+        <button class="btn-sm" onclick="showScreen('sBooks')">← Wróć</button>
+      </div>
+    </div>
+
+    <!-- Formularz -->
+    <div id="bulkTeachersForm" style="background:var(--surface);border:1.5px solid var(--border);border-radius:14px;padding:14px 16px;margin-bottom:14px">
+      <label style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px">Nazwa szkoły / grupy *</label>
+      <input type="text" id="bulkTeachersGroup" placeholder="np. British Studio" autocomplete="off" maxlength="30" style="width:100%;padding:9px 11px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.95rem;font-weight:700;outline:none;margin-bottom:10px">
+
+      <label style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px">Ilu nauczycieli chcesz utworzyć? (1–50)</label>
+      <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+        <input type="number" id="bulkTeachersCount" min="1" max="50" value="5" style="flex:1;min-width:100px;padding:9px 11px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.95rem;font-weight:700;outline:none">
+        <button class="btn-sm accent" id="btnBulkTeachersAdd" onclick="handleBulkTeachersCreate()" style="padding:9px 18px;white-space:nowrap">✓ Generuj</button>
+      </div>
+      <div style="font-size:.66rem;color:var(--muted);font-weight:600;margin-top:6px;line-height:1.4">
+        Loginy będą wyglądać tak: <code style="background:var(--surface2);padding:1px 5px;border-radius:4px">british_studio_01</code>, <code style="background:var(--surface2);padding:1px 5px;border-radius:4px">british_studio_02</code>, … <br>
+        Każde konto dostanie rolę „👩‍🏫 Nauczyciel" oraz prywatną etykietę grupy widoczną tylko dla Ciebie.
+      </div>
+      <div id="bulkTeachersMsg" style="font-size:.7rem;color:var(--muted);margin-top:6px;font-weight:600;min-height:16px"></div>
+    </div>
+
+    <!-- Wynik: lista loginów i haseł -->
+    <div id="bulkTeachersResult" style="display:none">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px;flex-wrap:wrap">
+        <div style="font-size:.78rem;font-weight:800;color:var(--text)" id="bulkTeachersResultTitle">Utworzono konta</div>
+        <div style="display:flex;gap:6px">
+          <button class="btn-sm" onclick="printBulkTeachersCredentials()">🖨️ Drukuj</button>
+          <button class="btn-sm accent" onclick="downloadBulkTeachersPdf()">📄 PDF</button>
+        </div>
+      </div>
+      <div id="bulkTeachersWarnings" style="font-size:.72rem;color:var(--danger);font-weight:700;margin-bottom:6px"></div>
+      <div id="bulkTeachersCredentialsArea" style="background:var(--surface);border:1.5px solid var(--border);border-radius:12px;padding:12px"></div>
+      <div style="font-size:.68rem;color:var(--muted);font-weight:600;margin-top:10px;line-height:1.5;padding:10px 12px;border:1px dashed var(--border);border-radius:10px">
+        ⚠️ Zapisz lub wydrukuj te dane teraz — hasła są pokazywane tylko raz. Potem można je zresetować ręcznie z poziomu panelu Klasy / Dostęp.
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="screen" id="sBulkStudents">
   <div style="width:100%">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
@@ -15465,6 +15513,7 @@ if ('serviceWorker' in navigator) {
         contactMessages:  () => (typeof openContactMessages==='function')  && openContactMessages(),
         inactive:         () => (typeof openInactiveScreen==='function')   && openInactiveScreen('admin'),
         adminTeacherSets: () => (typeof openAdminTeacherSets==='function') && openAdminTeacherSets(),
+        bulkTeachers:     () => (typeof openBulkTeachers==='function')     && openBulkTeachers(),
         reports:          () => showScreen('sBooks'),
         worksheet:        () => (typeof openWorksheetModal==='function')   && openWorksheetModal(),
         premium:          () => (typeof openPremiumPricingModal==='function') && openPremiumPricingModal(),
@@ -21357,6 +21406,204 @@ ${bodyHtml}
       doc.save(('konta_' + _bulkClassName + '.pdf').replace(/\s+/g,'_'));
     } catch(e) {
       console.error('[downloadBulkCredentialsPdf]', e);
+      if (typeof toast==='function') toast('❌ Błąd generowania PDF: ' + e.message, 3600);
+    }
+  };
+
+  // ═══════════════════════════════════════════════
+  //  BULK CREATE NAUCZYCIELI (admin only)
+  // ═══════════════════════════════════════════════
+  let _bulkTeacherCredentials = [];
+  let _bulkTeacherGroup = '';
+
+  window.openBulkTeachers = function(){
+    if (!isCurrentUserAdmin()) {
+      if (typeof toast === 'function') toast('Dostępne tylko dla administratora.', 2600);
+      return;
+    }
+    _bulkTeacherCredentials = [];
+    _bulkTeacherGroup = '';
+    document.getElementById('bulkTeachersGroup').value = '';
+    document.getElementById('bulkTeachersCount').value = 5;
+    document.getElementById('bulkTeachersMsg').textContent = '';
+    document.getElementById('bulkTeachersResult').style.display = 'none';
+    document.getElementById('bulkTeachersCredentialsArea').innerHTML = '';
+    document.getElementById('bulkTeachersWarnings').textContent = '';
+    showScreen('sBulkTeachers');
+    setTimeout(() => document.getElementById('bulkTeachersGroup').focus(), 80);
+  };
+
+  window.handleBulkTeachersCreate = async function(){
+    if (!isCurrentUserAdmin()) return;
+    const groupInp = document.getElementById('bulkTeachersGroup');
+    const countInp = document.getElementById('bulkTeachersCount');
+    const msg = document.getElementById('bulkTeachersMsg');
+    const groupName = groupInp.value.trim();
+    const count = parseInt(countInp.value, 10);
+    if (!groupName) {
+      msg.style.color = 'var(--danger)';
+      msg.textContent = '⚠️ Podaj nazwę grupy / szkoły.';
+      groupInp.focus();
+      return;
+    }
+    if (!count || count < 1 || count > 50) {
+      msg.style.color = 'var(--danger)';
+      msg.textContent = '⚠️ Podaj liczbę od 1 do 50.';
+      return;
+    }
+    const btn = document.getElementById('btnBulkTeachersAdd');
+    btn.disabled = true; btn.textContent = '⏳ Tworzę…';
+    msg.style.color = 'var(--muted)';
+    msg.textContent = 'Trwa tworzenie kont — to może chwilę potrwać.';
+    try {
+      const { created, errors, groupLabel } = await DB.adminBulkCreateTeachers(groupName, count);
+      _bulkTeacherCredentials = created;
+      _bulkTeacherGroup = groupLabel || groupName;
+      msg.style.color = 'var(--success)';
+      msg.textContent = `✓ Utworzono ${created.length} z ${count} kont nauczycieli.`;
+      document.getElementById('bulkTeachersResult').style.display = '';
+      document.getElementById('bulkTeachersResultTitle').textContent =
+        `Utworzono ${created.length} kont nauczycieli — grupa „${_bulkTeacherGroup}"`;
+      const warn = document.getElementById('bulkTeachersWarnings');
+      warn.textContent = errors && errors.length ? ('⚠️ ' + errors.join('; ')) : '';
+      renderBulkTeachersCredentials();
+    } catch(e) {
+      console.error('[handleBulkTeachersCreate]', e);
+      msg.style.color = 'var(--danger)';
+      msg.textContent = '❌ ' + (e.message || e);
+    } finally {
+      btn.disabled = false; btn.textContent = '✓ Generuj';
+    }
+  };
+
+  function renderBulkTeachersCredentials(){
+    const area = document.getElementById('bulkTeachersCredentialsArea');
+    if (!_bulkTeacherCredentials.length) {
+      area.innerHTML = '<div style="color:var(--muted);font-size:.8rem;padding:10px;text-align:center">Brak utworzonych kont.</div>';
+      return;
+    }
+    let html = `<table style="width:100%;border-collapse:collapse;font-size:.82rem">
+      <thead>
+        <tr style="border-bottom:1.5px solid var(--border)">
+          <th style="text-align:left;padding:6px 8px;font-size:.68rem;color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.05em">#</th>
+          <th style="text-align:left;padding:6px 8px;font-size:.68rem;color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.05em">Login</th>
+          <th style="text-align:left;padding:6px 8px;font-size:.68rem;color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.05em">Hasło</th>
+        </tr>
+      </thead><tbody>`;
+    _bulkTeacherCredentials.forEach((c, i) => {
+      html += `<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
+        <td style="padding:6px 8px;color:var(--muted);font-weight:600">${i+1}</td>
+        <td style="padding:6px 8px;color:var(--text);font-weight:700;font-family:monospace"><span style="color:var(--muted);font-weight:400">login:</span> ${escHtml(c.username)}</td>
+        <td style="padding:6px 8px;color:var(--accent);font-weight:700;font-family:monospace"><span style="color:var(--muted);font-weight:400">hasło:</span> ${escHtml(c.password)}</td>
+      </tr>`;
+    });
+    html += '</tbody></table>';
+    area.innerHTML = html;
+  }
+
+  window.printBulkTeachersCredentials = function(){
+    if (!_bulkTeacherCredentials.length) return;
+    const w = window.open('', '_blank');
+    if (!w) { if (typeof toast==='function') toast('⚠️ Popup zablokowany przez przeglądarkę.', 3200); return; }
+    const instructionHtml = `
+      <b>Jak się zalogować:</b>
+      <ol style="margin:0;padding-left:18px">
+        <li>Otwórz w przeglądarce: <b style="font-family:'Courier New',monospace">sowiefiszki.com</b></li>
+        <li>Wpisz <b>Login</b> (z kolumny obok)</li>
+        <li>Wpisz <b>Hasło</b> (z kolumny obok)</li>
+        <li>Kliknij <b>„Zaloguj się"</b></li>
+        <li>Po zalogowaniu zarządzaj klasami i materiałami w panelu nauczyciela.</li>
+      </ol>`;
+    const rows = _bulkTeacherCredentials.map((c,i) =>
+      `<tr><td>${i+1}</td><td><span style="color:#888;font-weight:400">login:</span> ${escHtml(c.username)}</td><td><span style="color:#888;font-weight:400">hasło:</span> ${escHtml(c.password)}</td><td>${instructionHtml}</td></tr>`
+    ).join('');
+    const branding = (typeof getSchoolBranding === 'function') ? getSchoolBranding() : { name:'', logo:'' };
+    const brandingHtml = (branding.logo || branding.name) ? `
+      <div class="branding">
+        ${branding.logo ? `<img src="${escHtml(branding.logo)}" onerror="this.style.display='none'">` : ''}
+        ${branding.name ? `<div class="branding-name">${escHtml(branding.name)}</div>` : ''}
+      </div>` : '';
+    w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Konta nauczycieli — ${escHtml(_bulkTeacherGroup)}</title>
+      <style>
+        body{font-family:Arial,sans-serif;padding:24px;color:#111}
+        h1{font-size:18px;margin:0 0 4px}
+        h2{font-size:13px;color:#555;margin:0 0 16px;font-weight:normal}
+        .branding{display:flex;align-items:center;gap:12px;margin-bottom:12px;padding-bottom:10px;border-bottom:1px dashed #ccc}
+        .branding img{max-height:48px;max-width:140px;object-fit:contain}
+        .branding-name{font-weight:700;color:#333;font-size:.95rem}
+        table{border-collapse:collapse;width:100%;font-size:13px}
+        th,td{border:1px solid #aaa;padding:8px 10px;text-align:left;vertical-align:top}
+        th{background:#eee}
+        tr{page-break-inside:avoid}
+        td:nth-child(1){width:34px;text-align:center}
+        td:nth-child(2),td:nth-child(3){font-family:'Courier New',monospace;font-weight:700;width:130px}
+        td:nth-child(4){font-size:11px}
+        @media print{body{padding:12px}}
+      </style></head><body>
+      ${brandingHtml}
+      <h1>Sowie Fiszki — konta nauczycieli</h1>
+      <h2>Grupa: ${escHtml(_bulkTeacherGroup)} · utworzono ${_bulkTeacherCredentials.length} kont · ${new Date().toLocaleString('pl-PL')}</h2>
+      <table><thead><tr><th>#</th><th>Login</th><th>Hasło</th><th>Instrukcja logowania</th></tr></thead><tbody>${rows}</tbody></table>
+      <p style="font-size:11px;color:#666;margin-top:14px">⚠ Hasła są pokazywane tylko raz — zachowaj ten dokument w bezpiecznym miejscu. Możesz wyciąć poszczególne wiersze i przekazać każdemu nauczycielowi jego własny pasek.</p>
+      <script>window.onload=function(){window.print();};<\/script>
+      </body></html>`);
+    w.document.close();
+  };
+
+  window.downloadBulkTeachersPdf = function(){
+    if (!_bulkTeacherCredentials.length) return;
+    try {
+      const jsPDFConstructor = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+      if (!jsPDFConstructor) { if (typeof toast==='function') toast('❌ Biblioteka PDF niedostępna.', 3200); return; }
+      const doc = new jsPDFConstructor({ unit:'pt', format:'a4' });
+      const groupAscii = (_bulkTeacherGroup || '')
+        .replace(/[ąćęłńóśżź]/gi, m => ({'ą':'a','ć':'c','ę':'e','ł':'l','ń':'n','ó':'o','ś':'s','ż':'z','ź':'z',
+                                          'Ą':'A','Ć':'C','Ę':'E','Ł':'L','Ń':'N','Ó':'O','Ś':'S','Ż':'Z','Ź':'Z'}[m] || m));
+      const instrLines = [
+        '1. Otworz w przegladarce:',
+        '   sowiefiszki.com',
+        '2. Wpisz Login (z kolumny obok)',
+        '3. Wpisz Haslo (z kolumny obok)',
+        '4. Kliknij "Zaloguj sie"',
+        '5. Zarzadzaj klasami w panelu.'
+      ];
+      function drawHeader(){
+        doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.setTextColor(0);
+        doc.text('Sowie Fiszki — konta nauczycieli', 40, 50);
+        doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(90);
+        doc.text('Grupa: ' + groupAscii + '  ·  utworzono ' + _bulkTeacherCredentials.length + ' kont  ·  ' + new Date().toLocaleString('pl-PL'), 40, 68);
+        doc.setFontSize(11); doc.setTextColor(0); doc.setFont('helvetica','bold');
+        doc.text('#', 48, 96);
+        doc.text('Login', 78, 96);
+        doc.text('Haslo', 190, 96);
+        doc.text('Instrukcja logowania', 300, 96);
+        doc.setDrawColor(120); doc.line(40, 101, 555, 101);
+      }
+      drawHeader();
+      const startY = 118, rowH = 78, pageBottom = 800;
+      let y = startY;
+      _bulkTeacherCredentials.forEach((c, i) => {
+        if (y + rowH > pageBottom) { doc.addPage(); drawHeader(); y = startY; }
+        doc.setFont('helvetica','normal'); doc.setFontSize(11); doc.setTextColor(0);
+        doc.text(String(i+1), 48, y);
+        doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(140);
+        doc.text('login:', 78, y - 10);
+        doc.text('haslo:', 190, y - 10);
+        doc.setFont('courier','bold'); doc.setFontSize(11); doc.setTextColor(0);
+        doc.text(c.username, 78, y);
+        doc.text(c.password, 190, y);
+        doc.setFont('helvetica','normal'); doc.setFontSize(9.5);
+        instrLines.forEach((line, li) => doc.text(line, 300, y + li * 11));
+        doc.setDrawColor(220); doc.line(40, y + rowH - 12, 555, y + rowH - 12);
+        y += rowH;
+      });
+      doc.setFont('helvetica','italic'); doc.setFontSize(9); doc.setTextColor(120);
+      const footerY = Math.min(y + 8, pageBottom + 20);
+      doc.text('Hasla sa pokazywane tylko raz — zachowaj ten dokument. Wiersze mozna wyciac i przekazac kazdemu nauczycielowi osobno.', 40, footerY);
+      const filename = ('konta_nauczycieli_' + (groupAscii || 'grupa') + '.pdf').replace(/\s+/g,'_');
+      doc.save(filename);
+    } catch(e) {
+      console.error('[downloadBulkTeachersPdf]', e);
       if (typeof toast==='function') toast('❌ Błąd generowania PDF: ' + e.message, 3600);
     }
   };
