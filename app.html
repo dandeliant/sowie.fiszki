@@ -16406,6 +16406,13 @@ if ('serviceWorker' in navigator) {
       </label>
     </div>
 
+    <!-- Trial Premium — TYLKO admin (migracja #36 admin_grant_trial) -->
+    <div id="userSettingsTrialSection" style="display:none;margin-top:10px;padding:10px 12px;background:rgba(255,209,102,.06);border:1.5px solid rgba(255,209,102,.3);border-radius:10px">
+      <div style="font-size:.82rem;font-weight:700;color:var(--accent);margin-bottom:4px">🎁 Trial Premium</div>
+      <div id="userSettingsTrialInfo" style="font-size:.66rem;color:var(--muted);font-weight:600;line-height:1.45;margin-bottom:8px">Daj użytkownikowi 30 dni Premium (przedłuża aktywny plan lub aktywuje od dziś).</div>
+      <button type="button" class="btn-sm accent" id="userSettingsGrantTrialBtn" onclick="grantTrialFromSettings()" style="padding:7px 12px;font-size:.74rem">🎁 Aktywuj 30 dni Premium</button>
+    </div>
+
     <div id="userSettingsMsg" style="font-size:.7rem;margin-top:10px;min-height:14px;font-weight:600"></div>
 
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;flex-wrap:wrap">
@@ -18599,12 +18606,83 @@ if ('serviceWorker' in navigator) {
     document.getElementById('userSettingsHideBanners').checked = _userSettingsInitialHide;
     // Bannery Premium — TYLKO admin (nauczyciel/opiekun nie widzi tej sekcji)
     const hideBannersSection = document.getElementById('userSettingsHideBannersSection');
+    const isAdmin = (typeof isCurrentUserAdmin === 'function') && isCurrentUserAdmin();
     if (hideBannersSection) {
-      hideBannersSection.style.display =
-        (typeof isCurrentUserAdmin === 'function' && isCurrentUserAdmin()) ? '' : 'none';
+      hideBannersSection.style.display = isAdmin ? '' : 'none';
+    }
+    // Trial Premium — TYLKO admin. Pokazuje aktualny stan planu uzytkownika
+    // i przycisk „Aktywuj 30 dni Premium" (migracja #36).
+    const trialSection = document.getElementById('userSettingsTrialSection');
+    if (trialSection) {
+      trialSection.style.display = isAdmin ? '' : 'none';
+      if (isAdmin) {
+        // Zbierz aktualny stan z _allProfiles (jezeli dostepny)
+        const profile = (typeof _allProfiles !== 'undefined' && Array.isArray(_allProfiles))
+          ? _allProfiles.find(p => p.id === userId) : null;
+        const expiresAt = profile && profile.plan_expires_at ? new Date(profile.plan_expires_at) : null;
+        const now = new Date();
+        let stateLine = '';
+        if (profile && profile.is_admin) {
+          stateLine = '🛡️ Konto admina ma pełny dostęp niezależnie od trialu.';
+        } else if (expiresAt && expiresAt > now) {
+          const daysLeft = Math.ceil((expiresAt - now) / (1000*60*60*24));
+          stateLine = `Aktualny Premium: do <b>${expiresAt.toLocaleDateString('pl-PL')}</b> (za ${daysLeft} ${daysLeft===1?'dzień':'dni'}). Klik przedłuży o 30 dni.`;
+        } else if (profile && profile.plan === 'premium') {
+          stateLine = 'Plan Premium bez daty wygaśnięcia. Klik nada nowe 30 dni od dziś.';
+        } else {
+          stateLine = 'Plan Free / wygasły. Klik aktywuje 30 dni Premium od dziś.';
+        }
+        const infoEl = document.getElementById('userSettingsTrialInfo');
+        if (infoEl) infoEl.innerHTML = stateLine;
+        // Wylacz przycisk dla admina (sam siebie nie potrzebuje)
+        const btn = document.getElementById('userSettingsGrantTrialBtn');
+        if (btn) {
+          btn.disabled = !!(profile && profile.is_admin);
+          btn.style.opacity = btn.disabled ? '.5' : '';
+        }
+      }
     }
     document.getElementById('userSettingsMsg').textContent = '';
     document.getElementById('userSettingsModal').style.display = 'flex';
+  };
+
+  // Migracja #36: admin nadaje uzytkownikowi 30 dni Premium.
+  window.grantTrialFromSettings = async function() {
+    if (!_userSettingsTargetId) return;
+    if (!isCurrentUserAdmin()) return;
+    const username = _userSettingsTargetUsername || 'tego użytkownika';
+    if (!confirm(`Aktywować 30 dni Premium dla „${username}"?\nJeśli plan jest aktywny — przedłużymy o 30 dni od daty końcowej. W przeciwnym razie liczone od dziś.`)) return;
+    const btn = document.getElementById('userSettingsGrantTrialBtn');
+    const msg = document.getElementById('userSettingsMsg');
+    btn.disabled = true; btn.textContent = '⏳ Aktywuję…';
+    msg.style.color = 'var(--muted)'; msg.textContent = '';
+    try {
+      const newExpires = await DB.adminGrantTrial(_userSettingsTargetId, 30);
+      const dt = newExpires ? new Date(newExpires) : null;
+      const dateTxt = dt ? dt.toLocaleDateString('pl-PL') : '—';
+      msg.style.color = 'var(--success)';
+      msg.textContent = `✅ Premium aktywne do ${dateTxt}.`;
+      if (typeof toast === 'function') toast(`🎁 Premium do ${dateTxt}`, 2800);
+      // Odswiez cache _allProfiles dla widoku
+      if (typeof _allProfiles !== 'undefined' && Array.isArray(_allProfiles)) {
+        const idx = _allProfiles.findIndex(p => p.id === _userSettingsTargetId);
+        if (idx >= 0) {
+          _allProfiles[idx].plan = 'premium';
+          _allProfiles[idx].plan_expires_at = newExpires;
+        }
+      }
+      const cb = _userSettingsAfterSave;
+      setTimeout(() => {
+        closeUserSettingsModal();
+        if (cb) try { cb(); } catch(e) {}
+      }, 1200);
+    } catch(e) {
+      console.error('[grantTrialFromSettings]', e);
+      msg.style.color = 'var(--danger)';
+      msg.textContent = '❌ ' + (e.message || e);
+    } finally {
+      btn.disabled = false; btn.textContent = '🎁 Aktywuj 30 dni Premium';
+    }
   };
 
   window.closeUserSettingsModal = function() {

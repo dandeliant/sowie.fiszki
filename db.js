@@ -1256,6 +1256,19 @@ const DB = (() => {
     return data;
   }
 
+  // Migracja #36: admin nadaje uzytkownikowi N dni Premium (domyslnie 30).
+  // Uzywane np. gdy nauczycielowi/opiekunowi wygasl pierwotny 30-dniowy
+  // trial — admin moze przedluzyc o kolejne 30 dni. RPC ustawia takze
+  // trial_used_at = NOW() (semantycznie: nowy trial).
+  async function adminGrantTrial(userId, days) {
+    const d = (days == null) ? 30 : Math.max(1, Math.min(365, parseInt(days, 10) || 30));
+    const { data, error } = await supabase.rpc('admin_grant_trial', {
+      p_user_id: userId, p_days: d
+    });
+    if (error) throw new Error(error.message);
+    return data;
+  }
+
   // Admin/nauczyciel-twórca: ustaw flagę "ukryj bannery Premium" dla
   // konkretnego ucznia. RPC sprawdza uprawnienia (admin → wszyscy,
   // nauczyciel → tylko swoi created_by). Migracja #32.
@@ -2131,7 +2144,7 @@ const DB = (() => {
     if (!_profile?.isAdmin && !_profile?.isTeacher) return [];
     let q = supabase
       .from('profiles')
-      .select('id, username, xp, level, streak, total_sessions, total_answers, correct_answers, last_study_date, is_admin, is_teacher, plan, created_by, created_at, generated_password, hide_premium_banners');
+      .select('id, username, xp, level, streak, total_sessions, total_answers, correct_answers, last_study_date, is_admin, is_teacher, is_parent, plan, plan_expires_at, trial_used_at, created_by, created_at, generated_password, hide_premium_banners');
     if (!_profile.isAdmin && _profile.isTeacher) {
       q = q.eq('created_by', _userId);
     }
@@ -3006,6 +3019,7 @@ const DB = (() => {
     activateTrialIfEligible,
     downgradePlanIfExpired,
     adminExtendPremium,
+    adminGrantTrial,
     adminSetHideBanners,
     // Live games (multiplayer)
     createLiveGame,
