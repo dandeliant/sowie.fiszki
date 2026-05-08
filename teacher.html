@@ -70,8 +70,17 @@
     border-color: #7c4dff;
     transform: translateY(-2px);
   }
-  .tile.admin { border-style: dashed; }
-  .tile.admin::after {
+  /* Kafelki admin-only — domyslnie ukryte. Nauczyciel ich nie widzi.
+     Admin: po wykryciu roli skrypt dodaje body.is-admin → odslaniamy.
+     Dzieki temu nie ma flasha u nauczyciela (czyli najczestszego widza). */
+  .tile.admin { display: none; }
+  .info.admin-only { display: none; }
+  body.is-admin .tile.admin {
+    display: block;
+    border-style: dashed;
+  }
+  body.is-admin .info.admin-only { display: block; }
+  body.is-admin .tile.admin::after {
     content: '🛡️ admin';
     display: block;
     font-size: .58rem;
@@ -127,7 +136,7 @@
       <div class="name">Klasy</div>
       <div class="desc">Zarządzaj uczniami i grupami</div>
     </a>
-    <a href="app.html?go=adminAccess" class="tile">
+    <a href="app.html?go=adminAccess" class="tile admin">
       <div class="ico">📋</div>
       <div class="name">Dostęp</div>
       <div class="desc">Przydziel podręczniki uczniom</div>
@@ -184,12 +193,35 @@
     </a>
   </div>
 
-  <div class="info">
-    🛡️ Kafelki oznaczone <strong>admin</strong> wymagają uprawnień administratora. Nauczyciel zobaczy komunikat o braku dostępu po kliknięciu.
+  <div class="info admin-only">
+    🛡️ Kafelki oznaczone <strong>admin</strong> wymagają uprawnień administratora.
   </div>
 
   <div class="footer">© 2026 Sowie Fiszki</div>
 </div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase-config.js"></script>
+<script>
+/* Wykryj role uzytkownika i odsloń kafelki admin-only tylko dla admina.
+   Domyslnie .tile.admin sa ukryte (CSS), wiec nauczyciel nie widzi flasha. */
+(async function gateAdminTiles() {
+  try {
+    if (typeof supabase === 'undefined') return;
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session || !session.user) return;
+    const { data } = await supabase
+      .from('profiles')
+      .select('is_admin')
+      .eq('id', session.user.id)
+      .maybeSingle();
+    if (data && data.is_admin === true) {
+      document.body.classList.add('is-admin');
+    }
+  } catch (e) {
+    console.warn('[teacher.html] gateAdminTiles:', e && e.message || e);
+  }
+})();
+</script>
 <script src="consent.js"></script>
 </body>
 </html>

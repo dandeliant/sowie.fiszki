@@ -16152,7 +16152,7 @@ if ('serviceWorker' in navigator) {
 <div id="bulkActionsToolbar" style="display:none;position:fixed;left:50%;transform:translateX(-50%);bottom:16px;background:var(--surface);border:2px solid var(--accent);border-radius:14px;padding:10px 14px;box-shadow:0 8px 28px rgba(0,0,0,.35);z-index:8800;display:none;align-items:center;gap:10px;flex-wrap:wrap;max-width:96vw">
   <span id="bulkSelectedCount" style="font-size:.78rem;font-weight:800;color:var(--accent);white-space:nowrap">0 zaznaczonych</span>
   <button class="btn-sm" id="bulkBtnPlan" onclick="openBulkPlanModal()" title="Zmień typ konta zaznaczonym" style="font-size:.74rem">🎫 Typ konta</button>
-  <button class="btn-sm" onclick="openBulkBannersModal()" title="Włącz/wyłącz bannery Premium" style="font-size:.74rem">🔕 Bannery</button>
+  <button class="btn-sm" id="bulkBtnBanners" onclick="openBulkBannersModal()" title="Włącz/wyłącz bannery Premium" style="font-size:.74rem">🔕 Bannery</button>
   <button class="btn-sm" onclick="openBulkBooksModal()" title="Przydziel podręczniki" style="font-size:.74rem">📚 Podręczniki</button>
   <button class="btn-sm" onclick="bulkClearSelection()" title="Wyczyść zaznaczenie" style="font-size:.74rem;color:var(--muted)">✕</button>
 </div>
@@ -16281,14 +16281,16 @@ if ('serviceWorker' in navigator) {
       </div>
     </div>
 
-    <!-- Bannery Premium — admin lub nauczyciel-twórca -->
-    <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--surface2);border:1.5px solid var(--border);border-radius:10px;cursor:pointer">
-      <input type="checkbox" id="userSettingsHideBanners" style="accent-color:var(--accent);width:18px;height:18px;flex-shrink:0;cursor:pointer">
-      <div style="flex:1">
-        <div style="font-size:.82rem;font-weight:700;color:var(--text)">🔕 Ukryj bannery Premium</div>
-        <div style="font-size:.66rem;color:var(--muted);font-weight:600;margin-top:2px">Uczeń nie zobaczy „Masz 7 dni Premium" ani „Darmowy trial kończy się…"</div>
-      </div>
-    </label>
+    <!-- Bannery Premium — TYLKO admin -->
+    <div id="userSettingsHideBannersSection" style="display:none">
+      <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--surface2);border:1.5px solid var(--border);border-radius:10px;cursor:pointer">
+        <input type="checkbox" id="userSettingsHideBanners" style="accent-color:var(--accent);width:18px;height:18px;flex-shrink:0;cursor:pointer">
+        <div style="flex:1">
+          <div style="font-size:.82rem;font-weight:700;color:var(--text)">🔕 Ukryj bannery Premium</div>
+          <div style="font-size:.66rem;color:var(--muted);font-weight:600;margin-top:2px">Uczeń nie zobaczy „Masz 7 dni Premium" ani „Darmowy trial kończy się…"</div>
+        </div>
+      </label>
+    </div>
 
     <div id="userSettingsMsg" style="font-size:.7rem;margin-top:10px;min-height:14px;font-weight:600"></div>
 
@@ -18239,9 +18241,12 @@ if ('serviceWorker' in navigator) {
     if (cnt > 0) {
       tb.style.display = 'flex';
       document.getElementById('bulkSelectedCount').textContent = cnt + ' zaznaczonych';
-      // Plan tylko dla admina
+      // Plan + Bannery — tylko admin (nauczyciel widzi pozostale akcje bulk)
+      const isAdmin = typeof isCurrentUserAdmin === 'function' && isCurrentUserAdmin();
       const planBtn = document.getElementById('bulkBtnPlan');
-      if (planBtn) planBtn.style.display = (typeof isCurrentUserAdmin === 'function' && isCurrentUserAdmin()) ? '' : 'none';
+      if (planBtn) planBtn.style.display = isAdmin ? '' : 'none';
+      const bannersBtn = document.getElementById('bulkBtnBanners');
+      if (bannersBtn) bannersBtn.style.display = isAdmin ? '' : 'none';
     } else {
       tb.style.display = 'none';
     }
@@ -18284,6 +18289,10 @@ if ('serviceWorker' in navigator) {
   // ── Modal: Bannery ──
   window.openBulkBannersModal = function() {
     if (!_bulkSelected.size) return;
+    if (typeof isCurrentUserAdmin !== 'function' || !isCurrentUserAdmin()) {
+      if (typeof toast === 'function') toast('⚠️ Tylko admin może zarządzać bannerami Premium.', 2200);
+      return;
+    }
     document.getElementById('bulkBannersCount').textContent = _bulkSelected.size;
     document.getElementById('bulkBannersMsg').textContent = '';
     document.querySelectorAll('input[name="bulkBanners"]').forEach((r,i) => { r.checked = (i === 0); });
@@ -18462,6 +18471,12 @@ if ('serviceWorker' in navigator) {
     }
 
     document.getElementById('userSettingsHideBanners').checked = _userSettingsInitialHide;
+    // Bannery Premium — TYLKO admin (nauczyciel/opiekun nie widzi tej sekcji)
+    const hideBannersSection = document.getElementById('userSettingsHideBannersSection');
+    if (hideBannersSection) {
+      hideBannersSection.style.display =
+        (typeof isCurrentUserAdmin === 'function' && isCurrentUserAdmin()) ? '' : 'none';
+    }
     document.getElementById('userSettingsMsg').textContent = '';
     document.getElementById('userSettingsModal').style.display = 'flex';
   };
@@ -18480,8 +18495,11 @@ if ('serviceWorker' in navigator) {
     btn.disabled = true; btn.textContent = '⏳ Zapisywanie…';
     msg.textContent = ''; msg.style.color = 'var(--muted)';
     try {
-      const newHide = document.getElementById('userSettingsHideBanners').checked;
       const isAdmin = (typeof isCurrentUserAdmin === 'function') && isCurrentUserAdmin();
+      // Bannery Premium — flaga tylko dla admina; nauczyciel/opiekun nie zmienia
+      const newHide = isAdmin
+        ? document.getElementById('userSettingsHideBanners').checked
+        : _userSettingsInitialHide;
       const newPlan = isAdmin
         ? (document.querySelector('input[name="userSettingsPlan"]:checked')?.value || _userSettingsInitialPlan)
         : _userSettingsInitialPlan;
@@ -18490,8 +18508,8 @@ if ('serviceWorker' in navigator) {
       if (isAdmin && newPlan !== _userSettingsInitialPlan) {
         await DB.setUserPlan(_userSettingsTargetId, newPlan);
       }
-      // Bannery: zmien jesli wartosc sie zmienila
-      if (newHide !== _userSettingsInitialHide) {
+      // Bannery: zmien jesli admin i wartosc sie zmienila
+      if (isAdmin && newHide !== _userSettingsInitialHide) {
         if (!DB.adminSetHideBanners) {
           throw new Error('RPC niedostępny — uruchom migrację #32 (add-hide-premium-banners.sql)');
         }
