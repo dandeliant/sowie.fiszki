@@ -16238,15 +16238,19 @@ if ('serviceWorker' in navigator) {
 <!-- Modal: prywatna etykieta uzytkownika (widoczna tylko dla autora) -->
 <div class="modal-overlay" id="userLabelModal" style="display:none" onclick="if(event.target===this)closeUserLabelModal()">
   <div class="modal-box" style="max-width:420px">
-    <div style="font-family:'Playfair Display',serif;font-size:1.15rem;color:var(--accent);margin-bottom:4px">✏️ Etykieta użytkownika</div>
+    <div style="font-family:'Playfair Display',serif;font-size:1.15rem;color:var(--accent);margin-bottom:4px">✏️ Etykiety użytkownika</div>
     <div style="font-size:.72rem;color:var(--muted);margin-bottom:12px;font-weight:600;line-height:1.45">
-      Twoja prywatna notatka o tym użytkowniku — <strong>widoczna tylko dla Ciebie</strong>. Np. pierwsze litery imienia i nazwiska, numer z dziennika, grupa.
+      Dwa pola — oba <strong>widoczne tylko dla Ciebie</strong>. Grupa służy do organizacji w listach i widoku „Konta nauczycieli", prywatna etykieta wyświetla się obok loginu.
     </div>
     <label style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px">Użytkownik</label>
     <div id="userLabelTargetName" style="font-size:.82rem;font-weight:700;color:var(--text);padding:8px 10px;background:var(--surface2);border-radius:8px;margin-bottom:10px;word-break:break-word">—</div>
 
-    <label style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px">Etykieta (max 80 znaków)</label>
-    <input id="userLabelInput" type="text" maxlength="80" placeholder="np. Jan Kowa · nr 12 · gr. A" style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:.85rem;font-weight:600;outline:none;font-family:inherit">
+    <label style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px">🏷️ Grupa (max 80 znaków)</label>
+    <input id="userLabelInput" type="text" maxlength="80" placeholder="np. British Studio · grupa A · klasa 5b" style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:.85rem;font-weight:600;outline:none;font-family:inherit;margin-bottom:10px">
+    <div style="font-size:.62rem;color:var(--muted);font-weight:500;font-style:italic;line-height:1.4;margin-bottom:10px">Tym tekstem grupowani są nauczyciele/uczniowie w widoku „Konta nauczycieli" i innych listach.</div>
+
+    <label style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px">✏️ Prywatna etykieta (max 80 znaków)</label>
+    <input id="userPrivateNoteInput" type="text" maxlength="80" placeholder="np. Jan Kowa · nr 12 · szef IT" style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:.85rem;font-weight:600;outline:none;font-family:inherit">
 
     <div style="display:flex;gap:8px;justify-content:space-between;margin-top:12px;flex-wrap:wrap">
       <button class="btn-modal-cancel" id="userLabelDelBtn" style="color:var(--danger);border-color:var(--danger)" onclick="deleteUserLabelFromModal()">🗑️ Usuń</button>
@@ -17331,12 +17335,15 @@ if ('serviceWorker' in navigator) {
     _labelTargetUserId = targetUserId;
     _labelTargetUsername = targetUsername || '';
     _labelAfterSave = (typeof afterSave === 'function') ? afterSave : null;
-    const current = (typeof DB !== 'undefined' && DB.getUserLabel) ? (DB.getUserLabel(targetUserId) || '') : '';
+    const currentLabel = (typeof DB !== 'undefined' && DB.getUserLabel) ? (DB.getUserLabel(targetUserId) || '') : '';
+    const currentNote  = (typeof DB !== 'undefined' && DB.getUserPrivateNote) ? (DB.getUserPrivateNote(targetUserId) || '') : '';
     document.getElementById('userLabelTargetName').textContent = targetUsername || targetUserId;
     const inp = document.getElementById('userLabelInput');
-    inp.value = current;
+    inp.value = currentLabel;
+    const noteInp = document.getElementById('userPrivateNoteInput');
+    if (noteInp) noteInp.value = currentNote;
     const delBtn = document.getElementById('userLabelDelBtn');
-    if (delBtn) delBtn.style.display = current ? '' : 'none';
+    if (delBtn) delBtn.style.display = (currentLabel || currentNote) ? '' : 'none';
     document.getElementById('userLabelModal').style.display = 'flex';
     setTimeout(() => { inp.focus(); inp.select(); }, 60);
   };
@@ -17347,11 +17354,13 @@ if ('serviceWorker' in navigator) {
   window.saveUserLabelFromModal = async function() {
     if (!_labelTargetUserId) return;
     const txt = (document.getElementById('userLabelInput').value || '').trim();
-    if (!txt) { alert('Wpisz etykietę lub kliknij „Usuń", żeby ją skasować.'); return; }
+    const note = (document.getElementById('userPrivateNoteInput')?.value || '').trim();
+    if (!txt && !note) { alert('Wpisz Grupę lub Prywatną etykietę — albo kliknij „Usuń" żeby skasować oba.'); return; }
     try {
-      await DB.setUserLabel(_labelTargetUserId, txt);
+      // Zapis obu pol — pusty string oznacza brak (DB obsluguje to per-funkcja).
+      await DB.setUserLabel(_labelTargetUserId, txt, note);
       const cb = _labelAfterSave;
-      if (typeof toast === 'function') toast('✅ Etykieta zapisana', 1800);
+      if (typeof toast === 'function') toast('✅ Zapisano etykiety', 1800);
       closeUserLabelModal();
       if (cb) try { cb(); } catch(e) {}
     } catch(e) {
@@ -17360,11 +17369,11 @@ if ('serviceWorker' in navigator) {
   };
   window.deleteUserLabelFromModal = async function() {
     if (!_labelTargetUserId) return;
-    if (!confirm('Usunąć etykietę dla „' + _labelTargetUsername + '"?')) return;
+    if (!confirm('Usunąć obie etykiety (Grupa + Prywatna) dla „' + _labelTargetUsername + '"?')) return;
     try {
       await DB.deleteUserLabel(_labelTargetUserId);
       const cb = _labelAfterSave;
-      if (typeof toast === 'function') toast('🗑️ Etykieta usunięta', 1800);
+      if (typeof toast === 'function') toast('🗑️ Etykiety usunięte', 1800);
       closeUserLabelModal();
       if (cb) try { cb(); } catch(e) {}
     } catch(e) {
@@ -18655,12 +18664,17 @@ if ('serviceWorker' in navigator) {
   // Helper: sformatuj nazwe uzytkownika z etykieta (jesli jest).
   // Zwraca HTML — uzywaj z innerHTML (nie textContent).
   window.fmtNameWithLabel = function(userId, username, opts) {
-    const lbl = (typeof DB !== 'undefined' && DB.getUserLabel) ? DB.getUserLabel(userId) : null;
+    // Inline obok loginu: priorytet ma „Prywatna etykieta" (private_note),
+    // fallback do „Grupa" (label) gdy private_note pusty. Migracja #35.
+    const note = (typeof DB !== 'undefined' && DB.getUserPrivateNote) ? DB.getUserPrivateNote(userId) : null;
+    const lbl  = (typeof DB !== 'undefined' && DB.getUserLabel) ? DB.getUserLabel(userId) : null;
+    const display = note || lbl;
     const safeU = esc(username || '');
-    if (!lbl) return safeU;
-    const safeL = esc(lbl);
+    if (!display) return safeU;
+    const safeL = esc(display);
     const size = opts && opts.inline ? '.72rem' : '.68rem';
-    return `${safeU} <span style="font-size:${size};color:var(--accent2);font-weight:700;padding:1px 6px;border-radius:6px;background:rgba(6,214,160,.12);margin-left:4px" title="Twoja prywatna etykieta: ${safeL}">🏷️ ${safeL}</span>`;
+    const tip = note ? 'Twoja prywatna etykieta' : 'Grupa';
+    return `${safeU} <span style="font-size:${size};color:var(--accent2);font-weight:700;padding:1px 6px;border-radius:6px;background:rgba(6,214,160,.12);margin-left:4px" title="${tip}: ${safeL}">${note ? '✏️' : '🏷️'} ${safeL}</span>`;
   };
 
   // ── Zgłoś błąd w słówku ──
@@ -21531,7 +21545,8 @@ ${bodyHtml}
           generated_password: p.generated_password || '',
           created_at: p.created_at,
           last_study_date: p.last_study_date,
-          label: (DB.getUserLabel ? DB.getUserLabel(p.id) : '') || ''
+          label: (DB.getUserLabel ? DB.getUserLabel(p.id) : '') || '',
+          privateNote: (DB.getUserPrivateNote ? DB.getUserPrivateNote(p.id) : '') || ''
         }));
       renderAdminTeachersList();
     } catch(e) {
@@ -21547,7 +21562,7 @@ ${bodyHtml}
     const statsEl = document.getElementById('adminTeachersStats');
     const q = (document.getElementById('adminTeachersSearch').value || '').trim().toLowerCase();
     const filtered = !q ? _adminTeachersCache : _adminTeachersCache.filter(t =>
-      (t.username + ' ' + t.label).toLowerCase().includes(q)
+      (t.username + ' ' + t.label + ' ' + t.privateNote).toLowerCase().includes(q)
     );
     if (!filtered.length) {
       listEl.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:.85rem;padding:24px;font-weight:600;line-height:1.5">'
@@ -21588,9 +21603,12 @@ ${bodyHtml}
         const passBtn = t.generated_password
           ? `<button class="btn-sm" style="font-size:.65rem;padding:4px 9px" title="Pokaż hasło" onclick="event.stopPropagation();openShowPassModal('${t.id}','${escHtml(t.username)}')">🔑</button>`
           : '';
+        const noteBadge = t.privateNote
+          ? `<span style="font-size:.62rem;background:rgba(6,214,160,.12);color:var(--accent2);padding:1px 7px;border-radius:100px;margin-left:6px;font-family:Nunito,sans-serif;font-weight:700" title="Prywatna etykieta: ${escHtml(t.privateNote)}">✏️ ${escHtml(t.privateNote)}</span>`
+          : '';
         html += `<div style="display:flex;align-items:center;gap:8px;padding:8px 6px;border-bottom:1px dashed var(--border);flex-wrap:wrap">
           <div style="flex:1;min-width:160px">
-            <div style="font-size:.88rem;font-weight:700;color:var(--text);font-family:monospace;word-break:break-all">${escHtml(t.username)}${planBadge}</div>
+            <div style="font-size:.88rem;font-weight:700;color:var(--text);font-family:monospace;word-break:break-all">${escHtml(t.username)}${planBadge}${noteBadge}</div>
             <div style="font-size:.66rem;color:var(--muted);font-weight:600;margin-top:2px">${escHtml(lastSeen)}</div>
           </div>
           <div style="display:flex;gap:5px;flex-wrap:wrap">

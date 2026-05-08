@@ -24,7 +24,8 @@ const DB = (() => {
   let _adminBooks     = [];     // podręczniki dodane przez admina
   let _adminUnits     = [];     // rozdziały dodane przez admina
   let _myBooks        = null;   // null=brak ograniczeń, [bookId,...]=dozwolone podręczniki
-  let _myLabels       = {};     // prywatne etykiety: targetUserId -> label (tylko moje — admin/teacher/parent)
+  let _myLabels       = {};     // Grupa: targetUserId -> label (tylko moje — admin/teacher/parent)
+  let _myPrivateNotes = {};     // Prywatna etykieta: targetUserId -> private_note (migracja #35)
 
   // ─── Domyślny profil ─────────────────────────────────────────
   function emptyProfile(username) {
@@ -152,11 +153,22 @@ const DB = (() => {
     // nie ma zadnych wpisow jako labeler). Graceful degradation gdy
     // migracja add-user-labels.sql nie zostala uruchomiona.
     _myLabels = {};
+    _myPrivateNotes = {};
     try {
+      // Migracja #35 dodala kolumne private_note. Jezeli jeszcze nie zostala
+      // uruchomiona, fallback ponizej zaladuje sam label.
       const { data: lblData, error: lblErr } = await supabase
-        .from('user_labels').select('target_user_id, label').eq('labeler_id', _userId);
+        .from('user_labels').select('target_user_id, label, private_note').eq('labeler_id', _userId);
       if (!lblErr && lblData) {
-        lblData.forEach(r => { _myLabels[r.target_user_id] = r.label; });
+        lblData.forEach(r => {
+          if (r.label) _myLabels[r.target_user_id] = r.label;
+          if (r.private_note) _myPrivateNotes[r.target_user_id] = r.private_note;
+        });
+      } else if (lblErr && /column .* does not exist/i.test(lblErr.message)) {
+        // Migracja #35 jeszcze nieuruchomiona — fallback na sam label
+        const { data: fallback } = await supabase
+          .from('user_labels').select('target_user_id, label').eq('labeler_id', _userId);
+        if (fallback) fallback.forEach(r => { _myLabels[r.target_user_id] = r.label; });
       }
     } catch(e) {
       // tabela jeszcze nie istnieje — OK, pusta mapa
@@ -2293,18 +2305,40 @@ const DB = (() => {
   // Tylko admin/nauczyciel/opiekun. Widoczne tylko dla autora.
   function getMyUserLabels() { return _myLabels || {}; }
   function getUserLabel(targetUserId) { return (_myLabels || {})[targetUserId] || null; }
+  function getUserPrivateNote(targetUserId) { return (_myPrivateNotes || {})[targetUserId] || null; }
 
-  async function setUserLabel(targetUserId, label) {
+  // Migracja #35: setUserLabel przyjmuje opcjonalny 2. argument `privateNote`.
+  // Pusty string oznacza skasowanie danego pola; wartosc -> upsert.
+  // Wsteczna kompatybilnosc: setUserLabel(id, label) bez private_note dziala
+  // jak dotad — zapisuje tylko `label`.
+  async function setUserLabel(targetUserId, label, privateNote) {
     if (!_userId || !targetUserId) throw new Error('Brak ID uzytkownika');
-    const txt = (label || '').trim();
-    if (!txt) throw new Error('Etykieta nie moze byc pusta');
-    if (txt.length > 80) throw new Error('Etykieta moze miec max 80 znakow');
-    const { error } = await supabase
-      .from('user_labels')
-      .upsert({ labeler_id: _userId, target_user_id: targetUserId, label: txt, updated_at: new Date().toISOString() });
+    const lblTxt = (label == null) ? null : String(label).trim();
+    const noteTxt = (privateNote === undefined) ? undefined : String(privateNote || '').trim();
+    if (lblTxt && lblTxt.length > 80) throw new Error('Grupa moze miec max 80 znakow');
+    if (noteTxt && noteTxt.length > 80) throw new Error('Prywatna etykieta moze miec max 80 znakow');
+    if (!lblTxt && !noteTxt) throw new Error('Wpisz Grupe lub Prywatna etykiete');
+    const payload = {
+      labeler_id: _userId,
+      target_user_id: targetUserId,
+      label: lblTxt || null,
+      updated_at: new Date().toISOString()
+    };
+    // Dolacz private_note tylko gdy podany — inaczej zostaw obecna wartosc.
+    if (noteTxt !== undefined) payload.private_note = noteTxt || null;
+    let { error } = await supabase.from('user_labels').upsert(payload);
+    // Fallback dla bazy bez migracji #35 (kolumna private_note nie istnieje).
+    if (error && /private_note/i.test(error.message)) {
+      delete payload.private_note;
+      const r2 = await supabase.from('user_labels').upsert(payload);
+      error = r2.error;
+    }
     if (error) throw new Error(error.message);
-    _myLabels[targetUserId] = txt;
-    return txt;
+    if (lblTxt) _myLabels[targetUserId] = lblTxt; else delete _myLabels[targetUserId];
+    if (noteTxt !== undefined) {
+      if (noteTxt) _myPrivateNotes[targetUserId] = noteTxt; else delete _myPrivateNotes[targetUserId];
+    }
+    return { label: lblTxt, privateNote: noteTxt };
   }
 
   async function deleteUserLabel(targetUserId) {
@@ -2314,6 +2348,7 @@ const DB = (() => {
       .delete().eq('labeler_id', _userId).eq('target_user_id', targetUserId);
     if (error) throw new Error(error.message);
     delete _myLabels[targetUserId];
+    delete _myPrivateNotes[targetUserId];
   }
 
   // ── Admin: Zarządzanie dostępem do podręczników ──────────────
@@ -2997,6 +3032,7 @@ const DB = (() => {
     logStudyMinutes,
     getMyUserLabels,
     getUserLabel,
+    getUserPrivateNote,
     setUserLabel,
     deleteUserLabel,
     getInactiveStudents,
