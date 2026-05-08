@@ -4011,15 +4011,7 @@ szkoła	school"></textarea>
       <button class="btn-modal-cancel" onclick="closeImportBookWordsModal()" style="padding:5px 11px;font-size:.72rem">✕</button>
     </div>
     <div style="font-size:.72rem;color:var(--muted);margin-bottom:10px;font-weight:600;line-height:1.5">
-      Wybierz podręcznik i unit, a następnie zaznacz słówka, które chcesz dodać do swojego zestawu. Importowane są tłumaczenie + zdanie przykładowe (jeśli istnieje).
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-      <select id="ibwBook" onchange="ibwOnBookChange()" style="padding:9px 11px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.84rem;font-weight:600;outline:none;font-family:inherit">
-        <option value="">📚 Wybierz podręcznik…</option>
-      </select>
-      <select id="ibwUnit" onchange="ibwRender()" style="padding:9px 11px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.84rem;font-weight:600;outline:none;font-family:inherit">
-        <option value="">📑 Najpierw wybierz podręcznik</option>
-      </select>
+      Wpisz słowo po polsku lub angielsku, zaznacz pasujące, a potem dodaj do zestawu. Importowane są tłumaczenie + zdanie przykładowe (jeśli istnieje).
     </div>
     <input id="ibwSearch" type="text" placeholder="🔍 Szukaj po polsku, angielsku lub w zdaniu…" oninput="ibwRender()" style="width:100%;padding:9px 11px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.84rem;font-weight:600;outline:none;margin-bottom:8px;font-family:inherit">
     <div style="display:flex;gap:8px;align-items:center;font-size:.7rem;color:var(--muted);font-weight:700;margin-bottom:6px">
@@ -16855,88 +16847,85 @@ if ('serviceWorker' in navigator) {
   // Wybierasz podrecznik -> unit (lub wszystkie) -> filtrujesz/szukasz ->
   // zaznaczasz checkboxy -> potwierdzasz. Format zapisu zgodny z bulk:
   // { word: en, translation: pl, example: sentenceEn || '' }.
-  let _ibwSelected = new Set(); // klucze "bookId|unitKey|idx"
+  let _ibwSelected = new Set();   // klucze (lowercase pl|en) — wybrane slowa
+  let _ibwPool = [];              // pelny pool slow z BOOKS, dedup po pl|en
+  let _ibwPoolMap = new Map();    // key -> {pl, en, sentEn} (do ibwConfirm bez powtornego skanu BOOKS)
+  const _IBW_PAGE_LIMIT = 200;    // limit wyswietlanych wynikow (ochrona przed renderem 5000+)
+
+  function _ibwBuildPoolOnce() {
+    const out = [];
+    const seen = new Map(); // key (lowercase pl|en) -> indeks w out
+    Object.values(BOOKS || {}).forEach(book => {
+      Object.values(book.units || {}).forEach(u => {
+        (u.words || []).forEach(w => {
+          const pl = (w[0] || '').trim();
+          const en = (w[1] || '').trim();
+          if (!pl || !en) return;
+          const key = (pl + '|' + en).toLowerCase();
+          const sentEn = (w[3] || '').trim();
+          if (seen.has(key)) {
+            // Uzupelnij brakujace zdanie przykladowe, jesli juz istniejacy wpis go nie ma
+            const idx = seen.get(key);
+            if (!out[idx].sentEn && sentEn) out[idx].sentEn = sentEn;
+          } else {
+            seen.set(key, out.length);
+            out.push({ key: key, pl: pl, en: en, sentEn: sentEn });
+          }
+        });
+      });
+    });
+    out.sort((a, b) => a.pl.localeCompare(b.pl, 'pl'));
+    return out;
+  }
 
   window.openImportBookWordsModal = function() {
     if (!_currentSetId) { alert('Brak aktywnego zestawu.'); return; }
     _ibwSelected = new Set();
-    const sel = document.getElementById('ibwBook');
-    sel.innerHTML = '<option value="">📚 Wybierz podręcznik…</option>';
-    Object.values(BOOKS).forEach(b => {
-      const o = document.createElement('option');
-      o.value = b.id;
-      o.textContent = (b.icon || '📖') + ' ' + b.name;
-      sel.appendChild(o);
-    });
-    document.getElementById('ibwUnit').innerHTML = '<option value="">📑 Najpierw wybierz podręcznik</option>';
+    _ibwPool = _ibwBuildPoolOnce();
+    _ibwPoolMap = new Map();
+    _ibwPool.forEach(w => _ibwPoolMap.set(w.key, w));
     document.getElementById('ibwSearch').value = '';
-    document.getElementById('ibwList').innerHTML = '<div style="padding:18px;text-align:center;color:var(--muted);font-size:.78rem;font-weight:600">Wybierz podręcznik z listy powyżej.</div>';
-    document.getElementById('ibwStats').textContent = '';
+    document.getElementById('ibwList').innerHTML = '<div style="padding:18px;text-align:center;color:var(--muted);font-size:.78rem;font-weight:600">✍️ Zacznij pisać w polu wyszukiwania, żeby zobaczyć słówka.</div>';
+    document.getElementById('ibwStats').textContent = `${_ibwPool.length} słówek w bazie`;
     document.getElementById('importBookWordsModal').style.display = 'flex';
+    setTimeout(() => { document.getElementById('ibwSearch').focus(); }, 50);
   };
   window.closeImportBookWordsModal = function() {
     document.getElementById('importBookWordsModal').style.display = 'none';
     _ibwSelected.clear();
+    _ibwPool = [];
+    _ibwPoolMap = new Map();
   };
 
-  window.ibwOnBookChange = function() {
-    const bookId = document.getElementById('ibwBook').value;
-    const unitSel = document.getElementById('ibwUnit');
-    unitSel.innerHTML = '';
-    if (!bookId || !BOOKS[bookId]) {
-      unitSel.innerHTML = '<option value="">📑 Najpierw wybierz podręcznik</option>';
-      ibwRender();
-      return;
-    }
-    const allOpt = document.createElement('option');
-    allOpt.value = ''; allOpt.textContent = '🌍 Wszystkie unity';
-    unitSel.appendChild(allOpt);
-    Object.entries(BOOKS[bookId].units || {}).forEach(([uKey, u]) => {
-      const o = document.createElement('option');
-      o.value = uKey;
-      o.textContent = (u.icon || '📖') + ' ' + (u.name || uKey);
-      unitSel.appendChild(o);
-    });
-    ibwRender();
-  };
+  // Zachowane dla kompatybilnosci ze starym cache'em — modal nie ma juz selektow
+  window.ibwOnBookChange = function() {};
 
-  function ibwBuildPool() {
-    const bookId = document.getElementById('ibwBook').value;
-    const unitKey = document.getElementById('ibwUnit').value;
-    if (!bookId || !BOOKS[bookId]) return [];
-    const out = [];
-    const book = BOOKS[bookId];
-    Object.entries(book.units || {}).forEach(([uKey, u]) => {
-      if (unitKey && uKey !== unitKey) return;
-      (u.words || []).forEach((w, idx) => {
-        out.push({
-          key: bookId + '|' + uKey + '|' + idx,
-          unitName: u.name || uKey,
-          unitIcon: u.icon || '📖',
-          pl: w[0] || '',
-          en: w[1] || '',
-          sentPl: w[2] || '',
-          sentEn: w[3] || '',
-        });
-      });
-    });
-    return out;
+  function _ibwGetFiltered() {
+    const q = (document.getElementById('ibwSearch').value || '').trim().toLowerCase();
+    if (!q) return { filtered: [], shown: 0, total: _ibwPool.length, hasQuery: false };
+    const matches = _ibwPool.filter(w =>
+      (w.pl + ' ' + w.en + ' ' + w.sentEn).toLowerCase().includes(q)
+    );
+    return { filtered: matches, total: matches.length, hasQuery: true };
   }
 
   window.ibwRender = function() {
-    const q = (document.getElementById('ibwSearch').value || '').trim().toLowerCase();
-    const pool = ibwBuildPool();
-    const filtered = !q ? pool : pool.filter(w =>
-      (w.pl + ' ' + w.en + ' ' + w.sentPl + ' ' + w.sentEn).toLowerCase().includes(q)
-    );
+    const { filtered, total, hasQuery } = _ibwGetFiltered();
     const list = document.getElementById('ibwList');
-    if (!filtered.length) {
-      list.innerHTML = '<div style="padding:18px;text-align:center;color:var(--muted);font-size:.78rem;font-weight:600">' + (pool.length ? 'Brak wyników dla wyszukiwania.' : 'Wybierz podręcznik, żeby zobaczyć słówka.') + '</div>';
-      document.getElementById('ibwStats').textContent = '';
+    const stats = document.getElementById('ibwStats');
+    if (!hasQuery) {
+      list.innerHTML = '<div style="padding:18px;text-align:center;color:var(--muted);font-size:.78rem;font-weight:600">✍️ Zacznij pisać w polu wyszukiwania, żeby zobaczyć słówka.</div>';
+      stats.textContent = `${_ibwSelected.size} zaznaczono · ${_ibwPool.length} słówek w bazie`;
       return;
     }
+    if (!total) {
+      list.innerHTML = '<div style="padding:18px;text-align:center;color:var(--muted);font-size:.78rem;font-weight:600">Brak wyników dla wyszukiwania.</div>';
+      stats.textContent = `${_ibwSelected.size} zaznaczono`;
+      return;
+    }
+    const visible = filtered.slice(0, _IBW_PAGE_LIMIT);
     let html = '';
-    filtered.forEach(w => {
+    visible.forEach(w => {
       const checked = _ibwSelected.has(w.key) ? 'checked' : '';
       html += '<label style="display:flex;align-items:flex-start;gap:8px;padding:7px 9px;border-radius:8px;cursor:pointer;font-size:.78rem;font-weight:600;border-bottom:1px solid var(--border)" onmouseover="this.style.background=\'var(--surface2)\'" onmouseout="this.style.background=\'transparent\'">'
         + '<input type="checkbox" data-key="' + esc(w.key) + '" ' + checked + ' onchange="ibwToggle(this)" style="margin-top:3px;flex-shrink:0">'
@@ -16945,45 +16934,48 @@ if ('serviceWorker' in navigator) {
         +     '<span style="color:var(--text);font-weight:800">' + esc(w.pl) + '</span>'
         +     '<span style="color:var(--muted)">→</span>'
         +     '<span style="color:var(--accent);font-weight:800">' + esc(w.en) + '</span>'
-        +     '<span style="margin-left:auto;color:var(--muted);font-size:.66rem;font-weight:700">' + esc(w.unitIcon) + ' ' + esc(w.unitName) + '</span>'
         +   '</div>'
         + (w.sentEn ? '<div style="color:var(--muted);font-size:.7rem;margin-top:2px">' + esc(w.sentEn) + '</div>' : '')
         + '</div></label>';
     });
+    if (total > _IBW_PAGE_LIMIT) {
+      html += '<div style="padding:10px;text-align:center;color:var(--muted);font-size:.7rem;font-weight:700">… i jeszcze ' + (total - _IBW_PAGE_LIMIT) + ' wyników. Doprecyzuj wyszukiwanie.</div>';
+    }
     list.innerHTML = html;
-    document.getElementById('ibwStats').textContent = `${_ibwSelected.size} zaznaczono / ${filtered.length} pokazano (z ${pool.length})`;
+    stats.textContent = `${_ibwSelected.size} zaznaczono · ${Math.min(total, _IBW_PAGE_LIMIT)} pokazano${total > _IBW_PAGE_LIMIT ? ' z ' + total : ''}`;
   };
 
   window.ibwToggle = function(cb) {
     const k = cb.getAttribute('data-key');
     if (cb.checked) _ibwSelected.add(k); else _ibwSelected.delete(k);
-    document.getElementById('ibwStats').textContent = `${_ibwSelected.size} zaznaczono`;
+    const { total, hasQuery } = _ibwGetFiltered();
+    document.getElementById('ibwStats').textContent = hasQuery
+      ? `${_ibwSelected.size} zaznaczono · ${Math.min(total, _IBW_PAGE_LIMIT)} pokazano${total > _IBW_PAGE_LIMIT ? ' z ' + total : ''}`
+      : `${_ibwSelected.size} zaznaczono · ${_ibwPool.length} słówek w bazie`;
   };
 
   window.ibwSelectAll = function(on) {
-    const q = (document.getElementById('ibwSearch').value || '').trim().toLowerCase();
-    const pool = ibwBuildPool();
-    const filtered = !q ? pool : pool.filter(w =>
-      (w.pl + ' ' + w.en + ' ' + w.sentPl + ' ' + w.sentEn).toLowerCase().includes(q)
-    );
-    filtered.forEach(w => { if (on) _ibwSelected.add(w.key); else _ibwSelected.delete(w.key); });
+    const { filtered, hasQuery } = _ibwGetFiltered();
+    if (!hasQuery) {
+      if (typeof toast === 'function') toast('🔍 Najpierw wyszukaj słówka, żeby zaznaczyć grupę.', 2000);
+      return;
+    }
+    const visible = filtered.slice(0, _IBW_PAGE_LIMIT);
+    visible.forEach(w => { if (on) _ibwSelected.add(w.key); else _ibwSelected.delete(w.key); });
     ibwRender();
   };
 
   window.ibwConfirm = async function() {
     if (!_currentSetId) { alert('Brak aktywnego zestawu.'); return; }
     if (!_ibwSelected.size) { alert('Zaznacz przynajmniej jedno słówko.'); return; }
-    // Zbierz dane z BOOKS dla zaznaczonych kluczy
     const toAdd = [];
     _ibwSelected.forEach(k => {
-      const [bookId, unitKey, idxStr] = k.split('|');
-      const idx = parseInt(idxStr, 10);
-      const w = BOOKS[bookId]?.units?.[unitKey]?.words?.[idx];
+      const w = _ibwPoolMap.get(k);
       if (!w) return;
       toAdd.push({
-        word: w[1] || '',          // angielski
-        translation: w[0] || '',   // polski
-        example: w[3] || '',       // angielskie zdanie (jesli jest)
+        word: w.en,                // angielski
+        translation: w.pl,         // polski
+        example: w.sentEn || '',   // angielskie zdanie (jesli jest)
       });
     });
     if (!toAdd.length) { alert('Nie udało się odczytać słówek.'); return; }
@@ -16992,7 +16984,7 @@ if ('serviceWorker' in navigator) {
     try {
       await DB.teacherAddWordsBulk(_currentSetId, toAdd);
       closeImportBookWordsModal();
-      if (typeof toast === 'function') toast(`✅ Zaimportowano ${toAdd.length} słówek z podręcznika.`, 3000);
+      if (typeof toast === 'function') toast(`✅ Zaimportowano ${toAdd.length} słówek.`, 3000);
       await openTeacherSetEdit(_currentSetId);
     } catch(e) {
       alert('Błąd importu: ' + (e.message || e));
