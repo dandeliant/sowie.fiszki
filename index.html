@@ -258,7 +258,7 @@ input.err{border-color:rgba(255,118,117,.6);}
       <input type="checkbox" id="regAcceptTerms" style="margin-top:2px;flex-shrink:0;width:16px;height:16px;cursor:pointer">
       <span>Akceptuję <a href="#" onclick="event.preventDefault();openRegisterTerms()" style="color:var(--accent,#ffd166);text-decoration:underline">regulamin platformy</a> oraz <a href="#" onclick="event.preventDefault();openRegisterPrivacy()" style="color:var(--accent,#ffd166);text-decoration:underline">politykę prywatności</a>. Oświadczam, że nie będę dodawał(a) treści naruszających prawa autorskie.</span>
     </label>
-    <label style="display:flex;align-items:flex-start;gap:8px;font-size:.76rem;color:var(--muted,#9b8ec4);font-weight:600;line-height:1.4;margin:0 0 10px;cursor:pointer">
+    <label id="regAcceptGuardianLabel" style="display:flex;align-items:flex-start;gap:8px;font-size:.76rem;color:var(--muted,#9b8ec4);font-weight:600;line-height:1.4;margin:0 0 10px;cursor:pointer">
       <input type="checkbox" id="regAcceptGuardian" style="margin-top:2px;flex-shrink:0;width:16px;height:16px;cursor:pointer">
       <span>Mam ukończone 16 lat <strong>lub</strong> posiadam zgodę rodzica/opiekuna prawnego na korzystanie z platformy.</span>
     </label>
@@ -369,6 +369,12 @@ function selectRole(role) {
     const lbl = t.el.querySelector('div:last-child');
     if (lbl) lbl.style.color = active ? t.color : 'var(--muted)';
   });
+  // Checkbox „16 lat / zgoda opiekuna" — tylko dla ucznia.
+  // Nauczyciel i Rodzic/Opiekun to pelnoletni doroslе z definicji.
+  const guardianLbl = document.getElementById('regAcceptGuardianLabel');
+  const guardianCb  = document.getElementById('regAcceptGuardian');
+  if (guardianLbl) guardianLbl.style.display = (role === 'student') ? '' : 'none';
+  if (guardianCb && role !== 'student') guardianCb.checked = false;
 }
 
 // ─── REGISTER ────────────────────────────────────────────────
@@ -385,8 +391,10 @@ async function doRegister() {
   if (pass !== pass2)                      { showErr('Hasła nie są identyczne.'); return; }
   const acceptTerms = document.getElementById('regAcceptTerms');
   if (acceptTerms && !acceptTerms.checked) { showErr('Musisz zaakceptować regulamin i politykę prywatności.'); return; }
+  // Checkbox „16 lat / zgoda opiekuna" wymagany tylko przy rejestracji ucznia.
+  const roleNow = document.getElementById('regRole').value;
   const acceptGuardian = document.getElementById('regAcceptGuardian');
-  if (acceptGuardian && !acceptGuardian.checked) { showErr('Potwierdź, że masz ukończone 16 lat lub zgodę opiekuna.'); return; }
+  if (roleNow === 'student' && acceptGuardian && !acceptGuardian.checked) { showErr('Potwierdź, że masz ukończone 16 lat lub zgodę opiekuna.'); return; }
 
   setLoading(btn, true);
   try {
