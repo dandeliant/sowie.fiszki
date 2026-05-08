@@ -1571,14 +1571,16 @@ body.guest-mode .progress-wrap{opacity:.4;}
 
       <label style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:6px">Widoczne dla ról</label>
       <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-bottom:10px">
-        <label class="aba-row" style="border:1.5px solid var(--border);background:var(--surface2)"><input type="checkbox" id="abaVisGuest"><span class="aba-row-name">🚶 Gość</span></label>
-        <label class="aba-row" style="border:1.5px solid var(--border);background:var(--surface2)"><input type="checkbox" id="abaVisStudent"><span class="aba-row-name">🎓 Uczeń</span></label>
-        <label class="aba-row" style="border:1.5px solid var(--border);background:var(--surface2)"><input type="checkbox" id="abaVisTeacher"><span class="aba-row-name">👩‍🏫 Nauczyciel</span></label>
-        <label class="aba-row" style="border:1.5px solid var(--border);background:var(--surface2)"><input type="checkbox" id="abaVisParent"><span class="aba-row-name">👨‍👦 Opiekun</span></label>
+        <label class="aba-row" style="border:1.5px solid var(--border);background:var(--surface2)"><input type="checkbox" id="abaVisGuest" onchange="abaOnRoleChange()"><span class="aba-row-name">🚶 Gość</span></label>
+        <label class="aba-row" style="border:1.5px solid var(--border);background:var(--surface2)"><input type="checkbox" id="abaVisStudent" onchange="abaOnRoleChange()"><span class="aba-row-name">🎓 Uczeń</span></label>
+        <label class="aba-row" style="border:1.5px solid var(--border);background:var(--surface2)"><input type="checkbox" id="abaVisTeacher" onchange="abaOnRoleChange()"><span class="aba-row-name">👩‍🏫 Nauczyciel</span></label>
+        <label class="aba-row" style="border:1.5px solid var(--border);background:var(--surface2)"><input type="checkbox" id="abaVisParent" onchange="abaOnRoleChange()"><span class="aba-row-name">👨‍👦 Opiekun</span></label>
+        <label class="aba-row" style="border:1.5px solid var(--accent);background:rgba(255,209,102,.06);grid-column:1/-1" title="Tryb wyłączny — odznacza pozostałe role"><input type="checkbox" id="abaVisAdminOnly" onchange="abaOnAdminOnlyChange()"><span class="aba-row-name">🛡️ Admin <span style="font-size:.6rem;color:var(--muted);font-weight:600;font-style:italic;margin-left:6px">— tylko admin + osoby z przydzielonym dostępem</span></span></label>
       </div>
       <div style="font-size:.62rem;color:var(--muted);font-weight:500;font-style:italic;line-height:1.4;margin-bottom:6px">
         Admin zawsze ma dostęp do wszystkich podręczników (niezależnie od ustawień).
         Wprost przydzieleni przez „🔓 Dostęp" też zawsze widzą podręcznik.
+        Zaznaczenie „🛡️ Admin" wyłącza widoczność dla pozostałych ról (książka prywatna).
       </div>
       <div style="display:flex;gap:6px;margin-bottom:6px">
         <button type="button" id="abaResetGlobal" onclick="abaResetGlobalToDefaults()" style="background:var(--surface);border:1.5px solid var(--border);color:var(--muted);padding:6px 10px;border-radius:7px;font-weight:700;font-size:.72rem;cursor:pointer;font-family:inherit">↻ Domyślne (data.js)</button>
@@ -19392,11 +19394,51 @@ if ('serviceWorker' in navigator) {
     set('abaVisStudent', eff.visibleToStudent);
     set('abaVisTeacher', eff.visibleToTeacher);
     set('abaVisParent',  eff.visibleToParent);
+    // „Admin" derive: gdy zaden role-checkbox nie jest zaznaczony → admin-only
+    const adminOnly = !eff.visibleToGuest && !eff.visibleToStudent && !eff.visibleToTeacher && !eff.visibleToParent;
+    set('abaVisAdminOnly', adminOnly);
+    abaApplyAdminOnlyState();
     const tFree = document.getElementById('abaTierFree');
     const tPrem = document.getElementById('abaTierPremium');
     if (eff.tier === 'premium') { if (tPrem) tPrem.checked = true; }
     else { if (tFree) tFree.checked = true; }
   }
+
+  // Helpery exclusivity dla checkboxa „Admin" (admin-only mode).
+  // Zaznaczenie „Admin" odznacza i wylacza pozostale 4 role.
+  // Zaznaczenie ktoregokolwiek z 4 -> odznacza „Admin".
+  function abaApplyAdminOnlyState() {
+    const adminOnly = document.getElementById('abaVisAdminOnly').checked;
+    ['abaVisGuest','abaVisStudent','abaVisTeacher','abaVisParent'].forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (adminOnly) {
+        el.checked = false;
+        el.disabled = true;
+        const lbl = el.closest('label');
+        if (lbl) lbl.style.opacity = '.45';
+      } else {
+        el.disabled = false;
+        const lbl = el.closest('label');
+        if (lbl) lbl.style.opacity = '';
+      }
+    });
+  }
+  window.abaOnAdminOnlyChange = function(){
+    abaApplyAdminOnlyState();
+  };
+  window.abaOnRoleChange = function(){
+    // Zaznaczenie ktorejkolwiek roli wyklucza tryb admin-only
+    const anyChecked = ['abaVisGuest','abaVisStudent','abaVisTeacher','abaVisParent']
+      .some(id => { const el = document.getElementById(id); return el && el.checked; });
+    if (anyChecked) {
+      const adminEl = document.getElementById('abaVisAdminOnly');
+      if (adminEl && adminEl.checked) {
+        adminEl.checked = false;
+        abaApplyAdminOnlyState();
+      }
+    }
+  };
 
   // „↻ Domyślne (data.js)" — przywróć wartości wynikające z flag w data.js
   // (ignoruj override). Sam przycisk tylko UPDATE'uje formularz —
@@ -19554,11 +19596,15 @@ if ('serviceWorker' in navigator) {
     // Tryb Globalnie (admin only) — zapis ustawień widoczności + tier
     if (_assignAccessState.mode === 'global') {
       if (!isCurrentUserAdmin()) { msgEl.style.color='var(--danger)'; msgEl.textContent='⚠️ Tylko administrator.'; return; }
+      // Admin-only mode: gdy zaznaczone, wymusza false na wszystkich 4 rolach.
+      // Admin i tak widzi (short-circuit w refreshBooks), wprost przydzieleni
+      // przez user_books rowniez (zawsze widoczny).
+      const adminOnly = document.getElementById('abaVisAdminOnly').checked;
       const settings = {
-        visible_to_guest:   document.getElementById('abaVisGuest').checked,
-        visible_to_student: document.getElementById('abaVisStudent').checked,
-        visible_to_teacher: document.getElementById('abaVisTeacher').checked,
-        visible_to_parent:  document.getElementById('abaVisParent').checked,
+        visible_to_guest:   adminOnly ? false : document.getElementById('abaVisGuest').checked,
+        visible_to_student: adminOnly ? false : document.getElementById('abaVisStudent').checked,
+        visible_to_teacher: adminOnly ? false : document.getElementById('abaVisTeacher').checked,
+        visible_to_parent:  adminOnly ? false : document.getElementById('abaVisParent').checked,
         tier: (document.getElementById('abaTierPremium').checked) ? 'premium' : 'free'
       };
       btnGrant.disabled = true;
