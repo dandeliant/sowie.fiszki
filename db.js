@@ -329,6 +329,28 @@ const DB = (() => {
   //     nextDueDays: ile dni do najblizszej powtorki (gdy totalDue=0)
   //   }
   // Iteruje po wszystkich zapisanych unit_progress dla zalogowanego usera.
+  // Zwraca posortowana po nextReview (najbardziej spoznione pierwsze)
+  // tablice indeksow slow w danym unicie, ktore sa do powtorki teraz.
+  // Uzywane przez „Powtorki na dzis" do uruchomienia sesji nauki na
+  // dokladnie tych slowach (forcedPool w startStudy).
+  function getDueIndicesForUnit(bookId, unitKey) {
+    if (!_profile || !_profile.unitProgress) return [];
+    const key = bookId + '__' + unitKey;
+    const prog = _profile.unitProgress[key];
+    if (!prog || !prog.wordStates) return [];
+    const now = Date.now();
+    const due = [];
+    Object.entries(prog.wordStates).forEach(([idxStr, s]) => {
+      if (!s || typeof s !== 'object') return;
+      if ((s.reps || 0) < 1) return; // pomijamy nowe i pomylone
+      if (s.nextReview && s.nextReview <= now) {
+        due.push({ idx: parseInt(idxStr, 10), nextReview: s.nextReview });
+      }
+    });
+    due.sort((a, b) => a.nextReview - b.nextReview);
+    return due.map(d => d.idx);
+  }
+
   function getReviewQueue() {
     if (!_profile || !_profile.unitProgress) return { totalDue: 0, unitsDue: [], nextDueDays: null };
     const now = Date.now();
@@ -2929,6 +2951,7 @@ const DB = (() => {
     saveUnitProgress,
     getUnitProgress,
     getReviewQueue,
+    getDueIndicesForUnit,
     getBookProgress,
     // seria
     updateStreak,
