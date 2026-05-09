@@ -162,7 +162,7 @@ Krzyżówka · Wordsearch · Memory · Snake (Wąż wyrazowy) · Hangman · Rozs
 - **Nigdy nie używaj `--amend`** ani `git push --force` bez wyraźnej zgody.
 
 ### Deploy — bump Service Worker
-- **Po każdej zauważalnej zmianie** w `app.html`, `data.js`, `db.js`, `index.html` zbumpuj `CACHE_NAME` w `sw.js` (np. `v50` → `v51`).
+- **Po każdej zauważalnej zmianie** w `app.html`, `data.js`, `db.js`, `index.html` zbumpuj `CACHE_NAME` w `sw.js`. Format: `vMAJOR.MINOR` z zerem wiodącym, np. `v1.00` → `v1.01` → `v1.02` … `v1.99` → `v2.00`. (Wcześniej była luźna numeracja `v50`–`v233` — zresetowane do `v1.00` od maja 2026 dla porządku.)
 - Bez bumpa: przeglądarka nie wykryje nowej wersji → baner nie pojawi się u użytkowników.
 - Mechanizm: user dostaje baner „Nowa wersja dostępna. Kliknij OK, aby odświeżyć." → klik → `postMessage SKIP_WAITING` → `controllerchange` → `location.reload()`.
 
