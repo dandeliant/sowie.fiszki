@@ -16077,6 +16077,37 @@ if ('serviceWorker' in navigator) {
       <div id="brandingHint" style="font-size:.68rem;color:var(--muted);font-weight:600;margin-top:8px;line-height:1.4">💡 Logo i nazwa pojawią się w nagłówku PDF kart pracy i listy loginów uczniów.</div>
     </div>
 
+    <!-- Codzienne przypomnienia (PWA Notification API) -->
+    <div id="dailyReminderSection" style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:12px 16px;margin-bottom:14px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:8px;flex-wrap:wrap">
+        <div style="font-size:.82rem;font-weight:800;color:var(--text)">🔔 Codzienne przypomnienia</div>
+        <span id="reminderStatusBadge" style="font-size:.6rem;font-weight:800;color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:100px;padding:2px 9px">—</span>
+      </div>
+      <div style="font-size:.7rem;color:var(--muted);font-weight:600;line-height:1.45;margin-bottom:10px">
+        🦉 Dostaniesz powiadomienie o stałej porze — gdy będziesz mieć słówka do powtórki.
+      </div>
+      <label style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--surface);border:1px solid var(--border);border-radius:8px;cursor:pointer;margin-bottom:8px">
+        <input type="checkbox" id="reminderEnabled" onchange="toggleDailyReminder()" style="accent-color:var(--accent2);width:16px;height:16px;cursor:pointer">
+        <span style="flex:1;font-size:.78rem;font-weight:700;color:var(--text)">Włącz codzienne przypomnienie</span>
+      </label>
+      <div id="reminderHourWrap" style="display:none">
+        <label style="font-size:.65rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px">Godzina przypomnienia</label>
+        <select id="reminderHour" onchange="saveReminderPreference()" style="width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:.85rem;font-weight:600;outline:none;font-family:inherit;margin-bottom:6px">
+          <option value="7">07:00 — przed szkołą</option>
+          <option value="8">08:00</option>
+          <option value="14">14:00</option>
+          <option value="15">15:00</option>
+          <option value="16">16:00</option>
+          <option value="17" selected>17:00 — po obiedzie</option>
+          <option value="18">18:00</option>
+          <option value="19">19:00</option>
+          <option value="20">20:00 — przed snem</option>
+          <option value="21">21:00</option>
+        </select>
+        <div id="reminderHint" style="font-size:.66rem;color:var(--muted);font-weight:600;line-height:1.4">💡 Powiadomienia działają w Chrome / Edge / Firefox. Na iPhone wymaga PWA „Dodaj do ekranu początkowego".</div>
+      </div>
+    </div>
+
     <!-- Strefa niebezpieczna: usuwanie konta -->
     <div style="border:1.5px solid rgba(255,118,117,.3);border-radius:12px;padding:12px 14px;background:rgba(255,118,117,.05)">
       <div style="font-size:.78rem;font-weight:800;color:var(--danger);margin-bottom:5px">⚠️ Strefa niebezpieczna</div>
@@ -16584,6 +16615,8 @@ if ('serviceWorker' in navigator) {
     populateVoicePrefSelect();
     // Uzupelnij sekcje brandingu (Premium: nauczyciel/opiekun)
     if (typeof renderBrandingSection === 'function') renderBrandingSection();
+    // Uzupelnij sekcje codziennych przypomnien (Notification API)
+    if (typeof refreshReminderUI === 'function') refreshReminderUI();
     document.getElementById('accountModal').style.display = 'flex';
   };
   window.closeAccountModal = function(){ document.getElementById('accountModal').style.display='none'; };
@@ -17290,6 +17323,225 @@ if ('serviceWorker' in navigator) {
     updateBrandingPreview('');
     if (typeof toast==='function') toast('🗑️ Wyczyszczono.', 1800);
   };
+
+  // ═══════════════════════════════════════════════
+  //  CODZIENNE PRZYPOMNIENIA (PWA Notification API)
+  // ═══════════════════════════════════════════════
+  // Lokalne przypomnienia oparte o Notification API + Service Worker.
+  // Ograniczenia:
+  // - Dziala gdy aplikacja jest otwarta w karcie LUB gdy uzytkownik
+  //   wraca po zaplanowanej godzinie (dogonimy go „on next visit").
+  // - Pelny push notification (gdy karta zamknieta) wymaga VAPID +
+  //   serwerowej Edge Function — w roadmapie, na razie local-first.
+  //
+  // Klucze localStorage (per uzytkownik):
+  //   fiszki_reminder_enabled_<user> — '1' / '0'
+  //   fiszki_reminder_hour_<user>    — '7' .. '21'
+  //   fiszki_reminder_lastFired_<user> — '2026-05-09' (data ostatniego strzału)
+
+  function _reminderKey(field) {
+    const u = currentUser || 'guest';
+    return 'fiszki_reminder_' + field + '_' + u;
+  }
+  function _getReminderPref() {
+    try {
+      const enabled = localStorage.getItem(_reminderKey('enabled')) === '1';
+      const hour = parseInt(localStorage.getItem(_reminderKey('hour')) || '17', 10);
+      return { enabled, hour };
+    } catch(e) { return { enabled: false, hour: 17 }; }
+  }
+  function _setReminderPref(enabled, hour) {
+    try {
+      localStorage.setItem(_reminderKey('enabled'), enabled ? '1' : '0');
+      if (typeof hour === 'number') localStorage.setItem(_reminderKey('hour'), String(hour));
+    } catch(e) {}
+  }
+  function _todayStr() {
+    const d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  }
+
+  // Aktualizuje stan UI w modalu „Moje konto"
+  window.refreshReminderUI = function() {
+    const cb = document.getElementById('reminderEnabled');
+    const wrap = document.getElementById('reminderHourWrap');
+    const hourSel = document.getElementById('reminderHour');
+    const badge = document.getElementById('reminderStatusBadge');
+    if (!cb) return;
+    const pref = _getReminderPref();
+    cb.checked = pref.enabled;
+    if (hourSel) hourSel.value = String(pref.hour);
+    if (wrap) wrap.style.display = pref.enabled ? '' : 'none';
+    // Badge stanu
+    if (badge) {
+      if (!('Notification' in window)) {
+        badge.textContent = '⚠️ Niewspierane';
+        badge.style.color = 'var(--danger)';
+      } else if (Notification.permission === 'granted' && pref.enabled) {
+        badge.textContent = '✅ Aktywne';
+        badge.style.color = 'var(--accent2)';
+        badge.style.background = 'rgba(6,214,160,.1)';
+        badge.style.borderColor = 'rgba(6,214,160,.35)';
+      } else if (Notification.permission === 'denied') {
+        badge.textContent = '🚫 Zablokowane';
+        badge.style.color = 'var(--danger)';
+      } else {
+        badge.textContent = '⏸ Wyłączone';
+        badge.style.color = 'var(--muted)';
+      }
+    }
+  };
+
+  // Toggle przelacznika „Wlacz codzienne przypomnienie"
+  window.toggleDailyReminder = async function() {
+    const cb = document.getElementById('reminderEnabled');
+    const wrap = document.getElementById('reminderHourWrap');
+    if (!cb) return;
+    if (cb.checked) {
+      // Wlaczanie — sprawdz uprawnienia
+      if (!('Notification' in window)) {
+        alert('⚠️ Twoja przeglądarka nie wspiera powiadomień.');
+        cb.checked = false;
+        return;
+      }
+      if (Notification.permission === 'denied') {
+        alert('🚫 Powiadomienia są zablokowane w ustawieniach przeglądarki. Odblokuj je w pasku adresu (kłódka 🔒) i spróbuj ponownie.');
+        cb.checked = false;
+        return;
+      }
+      if (Notification.permission !== 'granted') {
+        try {
+          const result = await Notification.requestPermission();
+          if (result !== 'granted') {
+            cb.checked = false;
+            if (typeof toast === 'function') toast('🔕 Nie zezwolono na powiadomienia.', 2400);
+            refreshReminderUI();
+            return;
+          }
+        } catch(e) {
+          cb.checked = false;
+          alert('❌ Błąd: ' + e.message);
+          return;
+        }
+      }
+      _setReminderPref(true, parseInt(document.getElementById('reminderHour').value || '17', 10));
+      if (wrap) wrap.style.display = '';
+      if (typeof toast === 'function') toast('🔔 Przypomnienia włączone! Otrzymasz powiadomienie codziennie o wybranej godzinie.', 3200);
+      // Pokaz testowe powiadomienie zaraz
+      _showTestNotification();
+    } else {
+      _setReminderPref(false);
+      if (wrap) wrap.style.display = 'none';
+      if (typeof toast === 'function') toast('🔕 Przypomnienia wyłączone.', 2200);
+    }
+    refreshReminderUI();
+    _scheduleReminderCheck();
+  };
+
+  // Zapis godziny po zmianie selecta
+  window.saveReminderPreference = function() {
+    const cb = document.getElementById('reminderEnabled');
+    const sel = document.getElementById('reminderHour');
+    if (!cb || !sel) return;
+    if (!cb.checked) return;
+    _setReminderPref(true, parseInt(sel.value || '17', 10));
+    if (typeof toast === 'function') toast('💾 Zapisano godzinę przypomnienia.', 1800);
+    _scheduleReminderCheck();
+  };
+
+  function _showTestNotification() {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    try {
+      // Uzywamy SW.showNotification jezeli jest, fallback na new Notification
+      if (navigator.serviceWorker && navigator.serviceWorker.ready) {
+        navigator.serviceWorker.ready.then(reg => {
+          reg.showNotification('🦉 Sowie Fiszki', {
+            body: 'Przypomnienia działają! Codzienne powiadomienie pojawi się o wybranej godzinie.',
+            icon: '/manifest.json',
+            tag: 'sowie-test',
+            silent: false
+          });
+        }).catch(() => {});
+      } else {
+        new Notification('🦉 Sowie Fiszki', {
+          body: 'Przypomnienia działają!'
+        });
+      }
+    } catch(e) { console.warn('[reminder] test:', e); }
+  }
+
+  // Sprawdza czy nadszedl czas na przypomnienie + uzytkownik nie dostal
+  // jeszcze dzis. Jezeli tak — pokazuje powiadomienie z liczba slow do
+  // powtorki. Wywolywane przy logowaniu i co 5 minut gdy app jest otwarty.
+  window.checkAndFireReminder = function() {
+    if (isGuest) return;
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    const pref = _getReminderPref();
+    if (!pref.enabled) return;
+    const now = new Date();
+    if (now.getHours() < pref.hour) return; // za wczesnie
+    const today = _todayStr();
+    let lastFired;
+    try { lastFired = localStorage.getItem(_reminderKey('lastFired')); } catch(e) {}
+    if (lastFired === today) return; // juz dzis bylo
+    // Sprawdz liczbe slow do powtorki
+    if (!DB || typeof DB.getReviewQueue !== 'function') return;
+    const q = DB.getReviewQueue();
+    if (!q || q.totalDue <= 0) {
+      // Nawet bez slow do powtorki — nie spamujemy. Tylko gdy >0.
+      // (Mozemy w przyszlosci dodac „motywacyjne" powiadomienia gdy 0.)
+      return;
+    }
+    // Strzelaj powiadomienie
+    try {
+      const body = '📚 ' + q.totalDue + ' ' + plural(q.totalDue, 'słówko czeka', 'słówka czekają', 'słówek czeka') + ' na powtórkę!';
+      if (navigator.serviceWorker && navigator.serviceWorker.ready) {
+        navigator.serviceWorker.ready.then(reg => {
+          reg.showNotification('🦉 Sowie Fiszki — czas na powtórkę', {
+            body,
+            icon: '/manifest.json',
+            badge: '/manifest.json',
+            tag: 'sowie-daily-' + today,
+            requireInteraction: false,
+            data: { url: '/app.html', action: 'review' }
+          });
+        }).catch(() => {});
+      } else if (typeof Notification !== 'undefined') {
+        new Notification('🦉 Sowie Fiszki — czas na powtórkę', { body });
+      }
+      try { localStorage.setItem(_reminderKey('lastFired'), today); } catch(e) {}
+    } catch(e) { console.warn('[reminder] fire:', e); }
+  };
+
+  // Plan checkow: po 30s (dla on-load), potem co 5 min
+  let _reminderTimer = null;
+  function _scheduleReminderCheck() {
+    if (_reminderTimer) { clearInterval(_reminderTimer); _reminderTimer = null; }
+    const pref = _getReminderPref();
+    if (!pref.enabled) return;
+    // Pierwsze sprawdzenie po 30s (po pelnym zaladowaniu profilu)
+    setTimeout(() => { try { checkAndFireReminder(); } catch(e) {} }, 30 * 1000);
+    // Pozniej co 5 min
+    _reminderTimer = setInterval(() => {
+      try { checkAndFireReminder(); } catch(e) {}
+    }, 5 * 60 * 1000);
+  }
+  // Uruchom planowanie po zaladowaniu profilu (currentUser jest ustawiony)
+  window.addEventListener('load', () => {
+    setTimeout(() => _scheduleReminderCheck(), 2000);
+  });
+
+  // Listener wiadomosci od Service Workera (notification click w SW
+  // postuje OPEN_REVIEW_QUEUE — przekierowujemy do ekranu powtorek).
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('message', e => {
+      if (e.data && e.data.type === 'OPEN_REVIEW_QUEUE') {
+        if (typeof openReviewQueue === 'function') {
+          setTimeout(() => openReviewQueue(), 300);
+        }
+      }
+    });
+  }
 
   // ═══════════════════════════════════════════════
   //  E2: EXPORT CSV postepow ucznia (Premium)

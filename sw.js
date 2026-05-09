@@ -5,7 +5,7 @@
 //  cache-first dla fontow i CDN. Nowy SW czeka na zgode klienta
 //  (postMessage SKIP_WAITING) — pokaz banera "Nowa wersja dostepna".
 // ═══════════════════════════════════════════════════════
-const CACHE_NAME = 'sowie-fiszki-v1.01';
+const CACHE_NAME = 'sowie-fiszki-v1.02';
 
 const PRECACHE_ASSETS = [
   './',
@@ -55,6 +55,31 @@ self.addEventListener('message', event => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
   }
+});
+
+// Notification click — otwiera aplikacje (jezeli juz otwarta -> focus,
+// jezeli nie -> nowa karta z #/review). Uzywane przez „Codzienne
+// przypomnienia" — uczen klika powiadomienie i ladnie ladowane jest
+// na ekran „Powtorki na dzis".
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  const targetUrl = (event.notification.data && event.notification.data.url) || '/app.html';
+  event.waitUntil((async () => {
+    const allClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    // Jezeli karta z app.html juz otwarta -> focus
+    for (const c of allClients) {
+      if (c.url.includes('/app.html') && 'focus' in c) {
+        if (event.notification.data && event.notification.data.action === 'review') {
+          c.postMessage({ type: 'OPEN_REVIEW_QUEUE' });
+        }
+        return c.focus();
+      }
+    }
+    // W przeciwnym razie otworz nowa karte
+    if (self.clients.openWindow) {
+      return self.clients.openWindow(targetUrl);
+    }
+  })());
 });
 
 // Czy to zasob kodu aplikacji (musi byc zawsze swiezy gdy online)?
