@@ -5554,12 +5554,28 @@ function saveEmojiStore(store) {
   localStorage.setItem('fiszki_emoji_' + currentBookId, JSON.stringify(store));
 }
 // Heurystyka: czy ciąg wygląda jak zdanie (zawiera litery alfabetu / jest dłuższy)
-// vs emoji (krótki ciąg Unicode bez liter ASCII). Rozróżnia 2 formaty data.js:
-//   [pl, en, emoji]                     → w[2] = emoji      (Tiger 1, bugsteam2 itd.)
-//   [pl, en, sentencePl, sentenceEn]    → w[2] = zdanie PL  (klasa1-8, stepsplus5 U7)
+// vs emoji (krótki ciąg Unicode bez liter ASCII). Rozróżnia 4 formaty data.js:
+//   [pl, en]                                  → 2-elem, brak inline
+//   [pl, en, emoji]                           → 3-elem z emoji  (Tiger 1, bugsteam2 itd.)
+//   [pl, en, sentencePl, sentenceEn]          → 4-elem inline   (klasa1-8, stepsplus5 U7)
+//   [pl, en, emoji, sentencePl, sentenceEn]   → 5-elem z emoji + inline (po sync z DB)
 function isLikelySentence(s) {
   if (!s) return false;
   return /[a-zA-Z]/.test(s) || s.length > 4;
+}
+// Zwraca { sentPl, sentEn } z dowolnego formatu inline (4-elem lub 5-elem).
+// Pusty wynik gdy 2-elem lub 3-elem (zdania trzeba pobrac z DB.getSentence).
+function getInlineSentences(w) {
+  if (!w) return { sentPl: '', sentEn: '' };
+  // 5-elem: [pl, en, emoji, sentPl, sentEn]
+  if (w[2] && !isLikelySentence(w[2]) && (isLikelySentence(w[3]) || isLikelySentence(w[4]))) {
+    return { sentPl: w[3] || '', sentEn: w[4] || '' };
+  }
+  // 4-elem: [pl, en, sentPl, sentEn]
+  if (isLikelySentence(w[2]) || isLikelySentence(w[3])) {
+    return { sentPl: w[2] || '', sentEn: w[3] || '' };
+  }
+  return { sentPl: '', sentEn: '' };
 }
 function getWordEmoji(pl) {
   // 1) Emoji zaszyte w data.js (BOOKS) jako 3. element pary [pl, en, emoji]
@@ -6378,12 +6394,12 @@ function showCardSentence() {
   const word = activeWords[curIdx];
   const wordPl = word[0];
   const wordTarget = word[1];
-  // Źródło zdań — priorytet: wbudowane w słowo (word[2], word[3]), fallback: tabela word_sentences
-  // Heurystyka isLikelySentence: rozróżnia format [pl, en, emoji] od [pl, en, sentPl, sentEn]
-  // (bez tego dla Tiger 1 word[2]='🖊️' interpretowane było jako zdanie i DB nie sprawdzane).
+  // Źródło zdań — priorytet: inline w słowie (4-elem lub 5-elem), fallback: tabela word_sentences.
+  // getInlineSentences obsluguje wszystkie 4 formaty data.js (patrz definicja przy isLikelySentence).
   let s = null;
-  if (isLikelySentence(word[2]) || isLikelySentence(word[3])) {
-    s = { sentence_pl: word[2] || '', sentence_target: word[3] || '' };
+  const inline = getInlineSentences(word);
+  if (inline.sentPl || inline.sentEn) {
+    s = { sentence_pl: inline.sentPl, sentence_target: inline.sentEn };
   } else {
     s = DB.getSentence(currentBookId, wordPl);
   }
@@ -17114,8 +17130,8 @@ if ('serviceWorker' in navigator) {
           const en = (w[1] || '').trim();
           if (!pl || !en) return;
           const key = (pl + '|' + en).toLowerCase();
-          // Tylko gdy w[3] to faktyczne zdanie EN (nie pusty / nie emoji w starym formacie)
-          const sentEn = isLikelySentence(w[3]) ? w[3].trim() : '';
+          // Inline EN sentence z dowolnego formatu (4-elem lub 5-elem)
+          const sentEn = (getInlineSentences(w).sentEn || '').trim();
           if (seen.has(key)) {
             // Uzupelnij brakujace zdanie przykladowe, jesli juz istniejacy wpis go nie ma
             const idx = seen.get(key);
@@ -21709,9 +21725,10 @@ if ('serviceWorker' in navigator) {
       words.forEach(w => {
         const pl = w[0] || '';
         const en = w[1] || '';
-        // Tylko inline zdania (4-elementowy format). Dla [pl, en, emoji] pomijamy.
-        const sentPl = isLikelySentence(w[2]) ? w[2] : '';
-        const sentEn = isLikelySentence(w[3]) ? w[3] : '';
+        // Inline zdania z dowolnego formatu (4-elem lub 5-elem). Dla [pl, en, emoji] pomijamy.
+        const inline = getInlineSentences(w);
+        const sentPl = inline.sentPl;
+        const sentEn = inline.sentEn;
         // Skip slowek bez zdania angielskiego
         if (!sentEn) return;
         // Podmien slowo anglojezyczne na ______ (case-insensitive, cale slowo)

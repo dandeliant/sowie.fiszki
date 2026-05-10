@@ -267,12 +267,24 @@
   }
 
   // Heurystyka: czy ciag wyglada jak zdanie (litery alfabetu lub > 4 znakow)
-  // vs emoji (krotki Unicode bez liter ASCII). Rozróżnia 2 formaty data.js:
-  //   [pl, en, emoji]                  → w[2] = emoji      (Tiger 1, bugsteam2 itd.)
-  //   [pl, en, sentencePl, sentenceEn] → w[2] = zdanie PL  (klasa1-8, stepsplus5 U7)
+  // vs emoji (krotki Unicode bez liter ASCII). Rozróżnia 4 formaty data.js:
+  //   [pl, en]                                  → 2-elem
+  //   [pl, en, emoji]                           → 3-elem z emoji  (Tiger 1, bugsteam2 itd.)
+  //   [pl, en, sentencePl, sentenceEn]          → 4-elem inline   (klasa1-8 itp.)
+  //   [pl, en, emoji, sentencePl, sentenceEn]   → 5-elem z emoji + inline (po sync DB)
   function isLikelySentence(s) {
     if (!s) return false;
     return /[a-zA-Z]/.test(s) || s.length > 4;
+  }
+  function getInlineSentences(w) {
+    if (!w) return { sentPl: '', sentEn: '' };
+    if (w[2] && !isLikelySentence(w[2]) && (isLikelySentence(w[3]) || isLikelySentence(w[4]))) {
+      return { sentPl: w[3] || '', sentEn: w[4] || '' };
+    }
+    if (isLikelySentence(w[2]) || isLikelySentence(w[3])) {
+      return { sentPl: w[2] || '', sentEn: w[3] || '' };
+    }
+    return { sentPl: '', sentEn: '' };
   }
 
   const bookSel = document.getElementById('bookFilter');
@@ -306,8 +318,9 @@
     Object.values(BOOKS).forEach(b => {
       Object.entries(b.units || {}).forEach(([uKey, u]) => {
         (u.words || []).forEach(w => {
-          let sentPl = isLikelySentence(w[2]) ? w[2] : '';
-          let sentEn = isLikelySentence(w[3]) ? w[3] : '';
+          const inline = getInlineSentences(w);
+          let sentPl = inline.sentPl;
+          let sentEn = inline.sentEn;
           if ((!sentPl || !sentEn) && typeof DB !== 'undefined' && typeof DB.getSentence === 'function') {
             const s = DB.getSentence(b.id, w[0]);
             if (s) {
