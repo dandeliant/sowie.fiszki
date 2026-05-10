@@ -5553,13 +5553,24 @@ function getEmojiStore() {
 function saveEmojiStore(store) {
   localStorage.setItem('fiszki_emoji_' + currentBookId, JSON.stringify(store));
 }
+// Heurystyka: czy ciąg wygląda jak zdanie (zawiera litery alfabetu / jest dłuższy)
+// vs emoji (krótki ciąg Unicode bez liter ASCII). Rozróżnia 2 formaty data.js:
+//   [pl, en, emoji]                     → w[2] = emoji      (Tiger 1, bugsteam2 itd.)
+//   [pl, en, sentencePl, sentenceEn]    → w[2] = zdanie PL  (klasa1-8, stepsplus5 U7)
+function isLikelySentence(s) {
+  if (!s) return false;
+  return /[a-zA-Z]/.test(s) || s.length > 4;
+}
 function getWordEmoji(pl) {
   // 1) Emoji zaszyte w data.js (BOOKS) jako 3. element pary [pl, en, emoji]
+  //    Pomijamy gdy w[2] wygląda jak zdanie (4-elementowy format inline).
   if (currentBookId && BOOKS[currentBookId]) {
     const book = BOOKS[currentBookId];
     for (const uk in book.units) {
       const w = book.units[uk].words.find(x => x[0] === pl);
-      if (w && w[2]) return '<span style="margin-right:4px">' + w[2] + '</span>';
+      if (w && w[2] && !isLikelySentence(w[2])) {
+        return '<span style="margin-right:4px">' + w[2] + '</span>';
+      }
     }
   }
   // 2) Fallback — emoji ustawione przez admina w localStorage (per-book)
@@ -5573,7 +5584,7 @@ function getWordEmojiRaw(pl) {
     const book = BOOKS[currentBookId];
     for (const uk in book.units) {
       const w = book.units[uk].words.find(x => x[0] === pl);
-      if (w && w[2]) return w[2];
+      if (w && w[2] && !isLikelySentence(w[2])) return w[2];
     }
   }
   const store = getEmojiStore();
@@ -6362,8 +6373,10 @@ function showCardSentence() {
   const wordPl = word[0];
   const wordTarget = word[1];
   // Źródło zdań — priorytet: wbudowane w słowo (word[2], word[3]), fallback: tabela word_sentences
+  // Heurystyka isLikelySentence: rozróżnia format [pl, en, emoji] od [pl, en, sentPl, sentEn]
+  // (bez tego dla Tiger 1 word[2]='🖊️' interpretowane było jako zdanie i DB nie sprawdzane).
   let s = null;
-  if (word[2] || word[3]) {
+  if (isLikelySentence(word[2]) || isLikelySentence(word[3])) {
     s = { sentence_pl: word[2] || '', sentence_target: word[3] || '' };
   } else {
     s = DB.getSentence(currentBookId, wordPl);
@@ -17094,7 +17107,8 @@ if ('serviceWorker' in navigator) {
           const en = (w[1] || '').trim();
           if (!pl || !en) return;
           const key = (pl + '|' + en).toLowerCase();
-          const sentEn = (w[3] || '').trim();
+          // Tylko gdy w[3] to faktyczne zdanie EN (nie pusty / nie emoji w starym formacie)
+          const sentEn = isLikelySentence(w[3]) ? w[3].trim() : '';
           if (seen.has(key)) {
             // Uzupelnij brakujace zdanie przykladowe, jesli juz istniejacy wpis go nie ma
             const idx = seen.get(key);
@@ -21688,8 +21702,9 @@ if ('serviceWorker' in navigator) {
       words.forEach(w => {
         const pl = w[0] || '';
         const en = w[1] || '';
-        const sentPl = w[2] || '';
-        const sentEn = w[3] || '';
+        // Tylko inline zdania (4-elementowy format). Dla [pl, en, emoji] pomijamy.
+        const sentPl = isLikelySentence(w[2]) ? w[2] : '';
+        const sentEn = isLikelySentence(w[3]) ? w[3] : '';
         // Skip slowek bez zdania angielskiego
         if (!sentEn) return;
         // Podmien slowo anglojezyczne na ______ (case-insensitive, cale slowo)
