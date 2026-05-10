@@ -3,9 +3,14 @@
 -- ═══════════════════════════════════════════════════════════
 --
 -- Cel: kompletne, starannie napisane przyklady zdan dla wszystkich
--- 370 unikalnych slowek z English Class A1 (Pearson, klasa 4).
--- (W data.js jest 372 wpisow, ale 'papuga' i 'uroczy' powtarzaja sie
--- miedzy unitami — pominiete w SQL, UPSERT trzyma jedna wartosc.)
+-- 371 unikalnych slowek z English Class A1 (Pearson, klasa 4).
+--
+-- W data.js jest 372 wpisow:
+--  - 'papuga' powtarza sie (Unit 3.3 'parrot' + Unit 7.2 'parrot') — synonim
+--    EN, pominiete w SQL (UPSERT trzyma jedna wartosc — bez straty).
+--  - 'uroczy' rozni sie znaczeniem (Unit 1.2 'lovely' + Unit 7.5 'cute') —
+--    rozdzielone w data.js przez disambiguacje nawiasem:
+--    'uroczy (przyjemny)' / 'uroczy (slodki)' — oba zachowane w SQL.
 --
 -- Tematy unitow:
 --   Unit 1 (87): rodzina + znajomi + kraje + narodowosci + przedstawienie
@@ -25,7 +30,7 @@
 --   - Apostrof w "o'clock", "What's", "I've" escapowany jako '' (PostgreSQL).
 --
 -- UPSERT (INSERT ... ON CONFLICT DO UPDATE) — idempotentna.
--- Po uruchomieniu: 370 unikalnych zdan w word_sentences dla englishA1.
+-- Po uruchomieniu: 371 unikalnych zdan w word_sentences dla englishA1.
 
 INSERT INTO word_sentences (book_id, word_pl, sentence_pl, sentence_target) VALUES
 
@@ -69,7 +74,7 @@ INSERT INTO word_sentences (book_id, word_pl, sentence_pl, sentence_target) VALU
 ('englishA1', 'szczęśliwy', 'Jestem szczęśliwy dzisiaj.', 'I am happy today.'),
 ('englishA1', 'Wszystkiego najlepszego!', 'Wszystkiego najlepszego!', 'Happy birthday!'),
 ('englishA1', 'Zróbmy przerwę', 'Zróbmy przerwę.', 'Let us have a break.'),
-('englishA1', 'uroczy', 'Twój kotek jest uroczy.', 'Your kitten is lovely.'),
+('englishA1', 'uroczy (przyjemny)', 'Twój kotek jest uroczy.', 'Your kitten is lovely.'),
 ('englishA1', 'bałagan', 'W moim pokoju jest bałagan.', 'There is a mess in my room.'),
 ('englishA1', 'mój drogi / moja droga', 'Mój drogi, jestem zmęczona.', 'My darling, I am tired.'),
 ('englishA1', 'prezent', 'Dostałem prezent na urodziny.', 'I got a present for my birthday.'),
@@ -463,8 +468,7 @@ INSERT INTO word_sentences (book_id, word_pl, sentence_pl, sentence_target) VALU
 ('englishA1', 'Proszę, oto bilety', 'Proszę, oto bilety.', 'Here are your tickets.'),
 
 -- 7.5 Adjectives (3)
--- 'uroczy' pominiete tutaj — duplikat klucza word_pl z Unit 1.2 ('lovely').
--- W Unit 7 znaczenie to 'cute' (data.js), ale klucz word_pl ten sam.
+('englishA1', 'uroczy (słodki)', 'Twój kotek jest uroczy.', 'Your kitten is cute.'),
 ('englishA1', 'niebezpieczny', 'Krokodyl jest niebezpieczny.', 'A crocodile is dangerous.'),
 ('englishA1', 'wolny', 'Żółw jest wolny.', 'A tortoise is slow.'),
 
@@ -525,5 +529,5 @@ ON CONFLICT (book_id, word_pl) DO UPDATE SET
   updated_at      = NOW();
 
 DO $$ BEGIN
-  RAISE NOTICE 'OK — English Class A1: 370 unikalnych zdan zaktualizowanych/dodanych w word_sentences (372 wpisow w data.js, 2 duplikaty word_pl: papuga, uroczy zdedupedowane przez UPSERT).';
+  RAISE NOTICE 'OK — English Class A1: 371 unikalnych zdan zaktualizowanych/dodanych w word_sentences (372 wpisow w data.js, 1 duplikat synonimu papuga zdedupedowany przez UPSERT, uroczy rozdzielony disambiguacja nawiasem).';
 END $$;

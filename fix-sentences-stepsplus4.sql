@@ -3,12 +3,17 @@
 -- ═══════════════════════════════════════════════════════════
 --
 -- Cel: kompletne, starannie napisane przyklady zdan dla wszystkich
--- 668 unikalnych slowek z Steps Plus 4 (Pearson).
+-- 672 unikalnych slowek z Steps Plus 4 (Pearson).
 --
 -- Statystyki:
 --   - 678 wpisow w data.js (8 unitow x ~85 entries srednio)
---   - 10 duplikatow word_pl miedzy unitami → pominiete w SQL
---   - 668 unikalnych zdan w word_sentences
+--   - 4 pary roznych znaczen (miasto, skakac, godzina, przed) zostaly
+--     rozdzielone w data.js przez disambiguacje nawiasem (np.
+--     'miasto (duze)' / 'miasto (male)') — oba zachowane w SQL.
+--   - 6 duplikatow word_pl o identycznym/synonimicznym znaczeniu →
+--     pominiete w SQL (UPSERT trzymalby ostatnia wartosc).
+--   - 672 unikalnych zdan w word_sentences (4 pary disambiguacji
+--     dolozyly 4 wpisy do poprzednich 668).
 --
 -- Tematy unitow:
 --   Unit 1 (84): rodzina + znajomi + kraje + zawody
@@ -20,18 +25,21 @@
 --   Unit 7 (104): rutyna + jedzenie + dni + transport
 --   Unit 8 (64): czas wolny + plaza + zwierzeta wiejskie
 --
--- Pominiete duplikaty (PostgreSQL nie pozwala na duplikat klucza
--- w jednym INSERT z ON CONFLICT — UPSERT trzymalby ostatnia wartosc):
---   1. 'miasto' Unit 1 (city) + Unit 1 (town) → zachowane jedno
---   2. 'skakać' Unit 4 (hop) + Unit 4 (jump) → zachowane jedno
---   3. 'krótki' Unit 2 (short) + Unit 5 (short) → tylko Unit 2
---   4. 'godzina' Unit 2 (o'clock) + Unit 4 (hour) → tylko Unit 2
---   5. 'ogromny' Unit 3 (enormous) + Unit 5 (huge) → tylko Unit 3
---   6. 'telewizor' Unit 3 (TV) + Unit 4 (television) → tylko Unit 3
---   7. 'pływać' Unit 4 (swim) + Unit 7 (go swimming) → tylko Unit 4
---   8. 'przed' Unit 3 (in front of) + Unit 7 (before) → tylko Unit 3
---   9. 'szybko' Unit 3 (quickly) + Unit 7 (quickly) → tylko Unit 3
---  10. 'zaczynać' Unit 4 (begin) + Unit 7 (start) → tylko Unit 4
+-- Disambiguacja nawiasem (data.js zaktualizowany — oba znaczenia zachowane):
+--   1. 'miasto (duze)' (city, Unit 1) + 'miasto (male)' (town, Unit 1)
+--   2. 'skakac (krotko)' (hop, Unit 4) + 'skakac (wysoko)' (jump, Unit 4)
+--   3. 'godzina (zegar)' (o'clock, Unit 2) + 'godzina (jednostka)' (hour, Unit 4)
+--   4. 'przed (miejsce)' (in front of, Unit 3) + 'przed (czas)' (before, Unit 7)
+--
+-- Pominiete duplikaty word_pl (PostgreSQL nie pozwala na duplikat klucza
+-- w jednym INSERT z ON CONFLICT; UPSERT trzymalby ostatnia wartosc.
+-- Te przypadki to synonimy lub powtorzenia tego samego EN — bez straty info):
+--   1. 'krotki' Unit 2 (short) + Unit 5 (short) → tylko Unit 2 [ten sam EN]
+--   2. 'ogromny' Unit 3 (enormous) + Unit 5 (huge) → tylko Unit 3 [synonim]
+--   3. 'telewizor' Unit 3 (TV) + Unit 4 (television) → tylko Unit 3 [synonim]
+--   4. 'plywac' Unit 4 (swim) + Unit 7 (go swimming) → tylko Unit 4 [synonim]
+--   5. 'szybko' Unit 3 (quickly) + Unit 7 (quickly) → tylko Unit 3 [ten sam EN]
+--   6. 'zaczynac' Unit 4 (begin) + Unit 7 (start) → tylko Unit 4 [synonim]
 --
 -- Konwencje:
 --   - Krotkie zdania, 5-12 slow EN, poziom A1/A2 (klasa 4).
@@ -63,9 +71,8 @@ INSERT INTO word_sentences (book_id, word_pl, sentence_pl, sentence_target) VALU
 ('stepsplus4', 'kot', 'Mój kot jest czarny.', 'My cat is black.'),
 ('stepsplus4', 'ser', 'Lubię żółty ser.', 'I like yellow cheese.'),
 ('stepsplus4', 'dziecko (dzieci)', 'Dziecko śpi.', 'The child is sleeping.'),
--- 'miasto' Unit 1 (city) — pierwsze wystapienie
-('stepsplus4', 'miasto', 'Mieszkam w dużym mieście.', 'I live in a big city.'),
--- 'miasto' Unit 1 (town) — pominiete (duplikat klucza)
+-- 'miasto (duże)' / 'miasto (małe)' — disambiguacja nawiasem (data.js)
+('stepsplus4', 'miasto (duże)', 'Mieszkam w dużym mieście.', 'I live in a big city.'),
 ('stepsplus4', 'szczękać', 'Łańcuchy szczękały.', 'The chains were clanking.'),
 ('stepsplus4', 'klasa', 'Nasza klasa jest bardzo miła.', 'Our class is very nice.'),
 ('stepsplus4', 'sala lekcyjna', 'Sala lekcyjna jest jasna.', 'The classroom is bright.'),
@@ -120,6 +127,7 @@ INSERT INTO word_sentences (book_id, word_pl, sentence_pl, sentence_target) VALU
 ('stepsplus4', 'wtedy', 'Wtedy poszliśmy do parku.', 'Then we went to the park.'),
 ('stepsplus4', 'dziś', 'Dziś jest piękny dzień.', 'Today is a beautiful day.'),
 ('stepsplus4', 'też', 'Ja też lubię koty.', 'I like cats too.'),
+('stepsplus4', 'miasto (małe)', 'Idę do miasta jutro.', 'I am going to the town tomorrow.'),
 ('stepsplus4', 'bliźniak', 'On i jego bliźniak są podobni.', 'He and his twin look alike.'),
 ('stepsplus4', 'wujek', 'Mój wujek pracuje w fabryce.', 'My uncle works in a factory.'),
 ('stepsplus4', 'bardzo', 'Jestem bardzo szczęśliwy.', 'I am very happy.'),
@@ -175,7 +183,7 @@ INSERT INTO word_sentences (book_id, word_pl, sentence_pl, sentence_target) VALU
 ('stepsplus4', 'większość', 'Większość uczniów lubi szkołę.', 'Most students like school.'),
 ('stepsplus4', 'prawie', 'Prawie skończyłem pracę.', 'I have nearly finished my work.'),
 ('stepsplus4', 'zeszyt', 'Otwórz zeszyt do matematyki.', 'Open your maths notebook.'),
-('stepsplus4', 'godzina', 'Jest piąta godzina.', 'It is five o''clock.'),
+('stepsplus4', 'godzina (zegar)', 'Jest piąta godzina.', 'It is five o''clock.'),
 ('stepsplus4', 'oczywiście', 'Oczywiście, że pomogę ci.', 'Of course I will help you.'),
 ('stepsplus4', 'na / włączony', 'Telewizor jest włączony.', 'The TV is on.'),
 ('stepsplus4', 'spinacz', 'Daj mi spinacz, proszę.', 'Give me a paper clip, please.'),
@@ -246,7 +254,7 @@ INSERT INTO word_sentences (book_id, word_pl, sentence_pl, sentence_target) VALU
 ('stepsplus4', 'duch', 'W zamku jest duch.', 'There is a ghost in the castle.'),
 ('stepsplus4', 'iść', 'Idę do szkoły o ósmej.', 'I go to school at eight.'),
 ('stepsplus4', 'przedpokój', 'Buty są w przedpokoju.', 'The shoes are in the hall.'),
-('stepsplus4', 'przed', 'Auto jest przed domem.', 'The car is in front of the house.'),
+('stepsplus4', 'przed (miejsce)', 'Auto jest przed domem.', 'The car is in front of the house.'),
 ('stepsplus4', 'w środku', 'Pies jest w środku domu.', 'The dog is inside the house.'),
 ('stepsplus4', 'interesujący', 'Ta książka jest interesująca.', 'This book is interesting.'),
 ('stepsplus4', 'pokój dzienny', 'Telewizor jest w pokoju dziennym.', 'The TV is in the living room.'),
@@ -334,15 +342,15 @@ INSERT INTO word_sentences (book_id, word_pl, sentence_pl, sentence_target) VALU
 ('stepsplus4', 'gitara', 'Gram na gitarze.', 'I play the guitar.'),
 ('stepsplus4', 'kapelusz', 'Mam słomkowy kapelusz.', 'I have a straw hat.'),
 ('stepsplus4', 'hokej', 'Hokej to twardy sport.', 'Hockey is a tough sport.'),
-('stepsplus4', 'skakać', 'Króliki potrafią skakać.', 'Rabbits can hop.'),
--- 'godzina' Unit 4 (hour) — pominiete (duplikat klucza z Unit 2)
+('stepsplus4', 'skakać (krótko)', 'Króliki potrafią skakać.', 'Rabbits can hop.'),
+('stepsplus4', 'godzina (jednostka)', 'Czekam już godzinę.', 'I have been waiting for an hour.'),
 ('stepsplus4', 'Chyba tak.', 'Chyba tak.', 'I think so.'),
 ('stepsplus4', 'Tak mi przykro.', 'Tak mi przykro.', 'I am really sorry.'),
 ('stepsplus4', 'ważny', 'To ważny dzień.', 'This is an important day.'),
 ('stepsplus4', 'instruktor', 'Mój instruktor pływania jest miły.', 'My swimming instructor is nice.'),
 ('stepsplus4', 'kurtka', 'Mam nową kurtkę.', 'I have a new jacket.'),
 ('stepsplus4', 'żonglować', 'Klaun potrafi żonglować.', 'The clown can juggle.'),
--- 'skakać' Unit 4 (jump) — pominiete (duplikat klucza z 'skakać' wczesniej w tym unicie jako hop)
+('stepsplus4', 'skakać (wysoko)', 'Potrafię skakać wysoko.', 'I can jump high.'),
 ('stepsplus4', 'kangur', 'Kangur skacze wysoko.', 'A kangaroo jumps high.'),
 ('stepsplus4', 'karate', 'Trenuję karate.', 'I do karate.'),
 ('stepsplus4', 'kick-boxing', 'Mój brat trenuje kick-boxing.', 'My brother does kick-boxing.'),
@@ -585,7 +593,7 @@ INSERT INTO word_sentences (book_id, word_pl, sentence_pl, sentence_target) VALU
 ('stepsplus4', 'przybywać', 'Przybywam do szkoły o ósmej.', 'I arrive at school at eight.'),
 ('stepsplus4', 'o (godzinie)', 'Spotkamy się o piątej.', 'We will meet at five.'),
 ('stepsplus4', 'badminton', 'Lubię grać w badmintona.', 'I like to play badminton.'),
--- 'przed' Unit 7 (before) — pominiete (duplikat klucza z Unit 3 'in front of')
+('stepsplus4', 'przed (czas)', 'Spotkamy się przed lekcją.', 'We will meet before the lesson.'),
 ('stepsplus4', 'kierowca autobusu', 'Kierowca autobusu jest miły.', 'The bus driver is nice.'),
 ('stepsplus4', 'dzwonić', 'Telefon dzwoni.', 'The phone is ringing.'),
 ('stepsplus4', 'stołówka', 'Jemy obiad w stołówce.', 'We have lunch in the canteen.'),
@@ -760,5 +768,5 @@ ON CONFLICT (book_id, word_pl) DO UPDATE SET
   updated_at      = NOW();
 
 DO $$ BEGIN
-  RAISE NOTICE 'OK — Steps Plus 4: 668 unikalnych zdan zaktualizowanych/dodanych w word_sentences (678 wpisow w data.js, 10 duplikatow zdedupedowanych przez UPSERT).';
+  RAISE NOTICE 'OK — Steps Plus 4: 672 unikalnych zdan zaktualizowanych/dodanych w word_sentences (678 wpisow w data.js, 4 pary roznych znaczen rozdzielone disambiguacja nawiasem, 6 synonimicznych duplikatow zdedupedowanych przez UPSERT).';
 END $$;
