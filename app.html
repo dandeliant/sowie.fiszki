@@ -19803,7 +19803,13 @@ if ('serviceWorker' in navigator) {
       DB.loadAllProfiles(),
       DB.adminListUsersWithBook(bookId)
     ]).then(([all, withBook]) => {
-      const persons = (all || []).filter(p => !p.is_admin && !p.is_teacher && !p.is_parent);
+      // Admin widzi wszystkich (uczniow + nauczycieli + opiekunow + innych adminow)
+      // — moze przydzielic dostep do podrecznika dowolnemu uzytkownikowi.
+      // Nauczyciel widzi tylko uczniow (nie innych nauczycieli ani admina);
+      // RLS dodatkowo ogranicza do swoich uczniow (created_by = self).
+      const persons = isCurrentUserAdmin()
+        ? (all || [])
+        : (all || []).filter(p => !p.is_admin && !p.is_teacher && !p.is_parent);
       _assignAccessState.persons = persons;
       _assignAccessState.accessSet = new Set(withBook || []);
       renderAssignAccessUserList(persons);
