@@ -251,6 +251,30 @@
     console.warn('[words.html] loadAdminData:', e.message || e);
   }
 
+  // Zaladuj zdania z bazy (word_sentences) dla wszystkich podrecznikow.
+  // Bez tego dla ksiazek ze starym formatem [pl, en, emoji] (Tiger 1, bugsteam2 itd.)
+  // kolumny "Zdanie PL/EN" sa puste, a emoji wpadalo do "Zdanie PL" przed fixem ponizej.
+  // Best-effort, parallel — laczna liczba ksiazek to ~30, kazda ma 1 SELECT.
+  if (statsEl0) statsEl0.textContent = '⏳ Ładuję zdania…';
+  try {
+    if (typeof DB !== 'undefined' && typeof DB.loadSentences === 'function') {
+      await Promise.all(
+        Object.keys(BOOKS).map(id => DB.loadSentences(id).catch(() => {}))
+      );
+    }
+  } catch(e) {
+    console.warn('[words.html] loadSentences:', e.message || e);
+  }
+
+  // Heurystyka: czy ciag wyglada jak zdanie (litery alfabetu lub > 4 znakow)
+  // vs emoji (krotki Unicode bez liter ASCII). Rozróżnia 2 formaty data.js:
+  //   [pl, en, emoji]                  → w[2] = emoji      (Tiger 1, bugsteam2 itd.)
+  //   [pl, en, sentencePl, sentenceEn] → w[2] = zdanie PL  (klasa1-8, stepsplus5 U7)
+  function isLikelySentence(s) {
+    if (!s) return false;
+    return /[a-zA-Z]/.test(s) || s.length > 4;
+  }
+
   const bookSel = document.getElementById('bookFilter');
   const unitSel = document.getElementById('unitFilter');
   const searchInp = document.getElementById('searchInp');
@@ -271,12 +295,26 @@
   }
   rebuildBookSelect();
 
-  // Zbuduj plaska liste wszystkich slowek
+  // Zbuduj plaska liste wszystkich slowek.
+  // Zrodla zdan w kolejnosci priorytetu:
+  //   1) inline w[2]/w[3] (4-elementowy format [pl,en,sentPl,sentEn]) —
+  //      tylko gdy isLikelySentence (nie emoji w starym formacie).
+  //   2) DB.getSentence(bookId, pl) — fallback do tabeli word_sentences
+  //      (zdania zaladowane przez DB.loadSentences powyzej).
   function buildAll() {
     const all = [];
     Object.values(BOOKS).forEach(b => {
       Object.entries(b.units || {}).forEach(([uKey, u]) => {
         (u.words || []).forEach(w => {
+          let sentPl = isLikelySentence(w[2]) ? w[2] : '';
+          let sentEn = isLikelySentence(w[3]) ? w[3] : '';
+          if ((!sentPl || !sentEn) && typeof DB !== 'undefined' && typeof DB.getSentence === 'function') {
+            const s = DB.getSentence(b.id, w[0]);
+            if (s) {
+              if (!sentPl) sentPl = s.sentence_pl || '';
+              if (!sentEn) sentEn = s.sentence_target || '';
+            }
+          }
           all.push({
             bookId: b.id,
             bookName: b.shortName || b.name,
@@ -286,8 +324,8 @@
             unitIcon: u.icon || '📖',
             pl: w[0] || '',
             en: w[1] || '',
-            sentPl: w[2] || '',
-            sentEn: w[3] || '',
+            sentPl: sentPl,
+            sentEn: sentEn,
           });
         });
       });
@@ -304,6 +342,12 @@
     if (btn) { btn.disabled = true; btn.textContent = '⏳ Ładuję…'; }
     try {
       await DB.loadAdminData();
+      // Doladuj zdania z bazy (nowe ksiazki admina mogly sie pojawic)
+      if (typeof DB.loadSentences === 'function') {
+        await Promise.all(
+          Object.keys(BOOKS).map(id => DB.loadSentences(id).catch(() => {}))
+        );
+      }
       ALL = buildAll();
       rebuildBookSelect();
       // Jesli wybrany unit nie istnieje juz po odswiezeniu — wyczysc
