@@ -1200,10 +1200,25 @@ const DB = (() => {
   function getFreeLimits() { return FREE_LIMITS; }
 
   function isParent() { return _profile?.isParent === true; }
+
+  // PROMOCJA: do 31 sierpnia 2026 (wlacznie) wszyscy zalogowani uzytkownicy
+  // maja Premium za darmo. Po tym terminie wraca normalna logika trialu (30 dni
+  // dla nowych kont). Helper isPromoActive uzywany jest takze w UI do banera
+  // promocyjnego oraz wylaczenia trial/expiry-bannerow w okresie promocji.
+  const _PROMO_END = new Date('2026-09-01T00:00:00');
+  function isPromoActive() {
+    return Date.now() < _PROMO_END.getTime();
+  }
+  function getPromoEndDate() {
+    return new Date(_PROMO_END);
+  }
+
   function isPremium() {
     if (!_profile) return false;
     // Admin ma pelny dostep z racji roli — traktujemy jak permanentne premium
     if (_profile.isAdmin) return true;
+    // Promocja: do 31.08.2026 wszyscy zalogowani sa Premium
+    if (isPromoActive()) return true;
     if (_profile.plan !== 'premium') return false;
     // Bez daty wygasniecia = permanent premium (np. nadany recznie przez admina)
     if (!_profile.planExpiresAt) return true;
@@ -1215,6 +1230,9 @@ const DB = (() => {
     if (!_profile) return null;
     // Admin nie ma wygasania — rola daje pelny dostep
     if (_profile.isAdmin) return null;
+    // Promocja aktywna → ukrywamy istniejace banery trial/expiry. Promo banner
+    // jest osobnym mechanizmem (maybeShowPromoBanner w app.html).
+    if (isPromoActive()) return null;
     if (_profile.plan !== 'premium' || !_profile.planExpiresAt) return null;
     const now = new Date();
     const exp = new Date(_profile.planExpiresAt);
@@ -3037,6 +3055,8 @@ const DB = (() => {
     // parent/opiekun
     isParent,
     isPremium,
+    isPromoActive,
+    getPromoEndDate,
     getPlanExpiryInfo,
     hasUsedTrial,
     activateTrialIfEligible,

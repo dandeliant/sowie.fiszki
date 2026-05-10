@@ -15639,7 +15639,9 @@ if ('serviceWorker' in navigator) {
     openParentPanel();
   }
   // Banery Premium: welcome trial (raz) + wygasanie (codziennie w ciagu 30 dni)
+  // Promo banner ma priorytet — gdy aktywna promocja, pokazuje sie zamiast trial/expiry.
   if (!isGuest) {
+    setTimeout(maybeShowPromoBanner, 300);
     setTimeout(maybeShowTrialWelcomeBanner, 400);
     setTimeout(maybeShowPremiumExpiryBanner, 700);
   }
@@ -20621,6 +20623,35 @@ if ('serviceWorker' in navigator) {
     const body = 'Cześć, chciał(a)bym wykupić plan ' + p.label.replace(/^[^A-Za-z]+/, '').trim() +
       ' (' + p.price + '). Proszę o informacje dotyczące płatności.';
     openNewMessageModal(subject, body);
+  };
+
+  // Banner promocyjny — okres pelnego Premium dla wszystkich do 31.08.2026.
+  // Pokazywany raz dziennie (dismiss-per-day). Po koncu promocji wraca normalna
+  // logika (banner trialu/expiry). Skip dla goscia, admina i z hide_premium_banners.
+  window.maybeShowPromoBanner = function(){
+    if (isGuest) return;
+    if (isCurrentUserAdmin()) return;
+    if (DB.getHidePremiumBanners && DB.getHidePremiumBanners()) return;
+    if (!DB.isPromoActive || !DB.isPromoActive()) return;
+    const storageKey = 'fiszki_promo_banner_dismissed_' + currentUser;
+    const today = new Date().toDateString();
+    if (localStorage.getItem(storageKey) === today) return;
+    const promoEnd = DB.getPromoEndDate ? DB.getPromoEndDate() : new Date('2026-09-01');
+    // Wyswietlamy "31 sierpnia 2026" zamiast "1 wrzesnia 2026" — uzytkownik prosil
+    // o "do konca sierpnia". Promo wygasa o polnocy 1.09 → ostatni dzien dostepu = 31.08.
+    const lastDay = new Date(promoEnd.getTime() - 1);
+    const when = lastDay.toLocaleDateString('pl-PL', { day: 'numeric', month: 'long', year: 'numeric' });
+    const daysLeft = Math.max(0, Math.ceil((promoEnd.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+    const bar = document.createElement('div');
+    bar.id = 'promoBanner';
+    bar.style.cssText = 'position:fixed;top:0;left:0;right:0;background:linear-gradient(90deg,#06d6a0,#4d96ff,#7c4dff);color:#fff;padding:10px 16px;display:flex;align-items:center;justify-content:center;gap:12px;font-family:Nunito,sans-serif;font-weight:700;font-size:.84rem;box-shadow:0 4px 14px rgba(0,0,0,.18);z-index:8500;flex-wrap:wrap;text-align:center';
+    bar.innerHTML = `<span>🎁 <b>Premium za darmo dla wszystkich</b> — promocja do <b>${when}</b> (jeszcze ${daysLeft} ${daysLeft===1?'dzień':'dni'})</span>
+      <button id="pbCloseBtn" style="background:rgba(255,255,255,.2);color:#fff;border:1px solid rgba(255,255,255,.4);padding:3px 10px;border-radius:8px;cursor:pointer;font-family:inherit;font-size:.72rem;font-weight:800">Dzisiaj nie</button>`;
+    document.body.appendChild(bar);
+    document.getElementById('pbCloseBtn').addEventListener('click', ()=>{
+      localStorage.setItem(storageKey, today);
+      bar.remove();
+    });
   };
 
   // Banner trialu Premium — pokazywany RAZ dla danego trialu (nie codziennie)
