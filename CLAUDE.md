@@ -12,7 +12,8 @@
 - **Hosting:** Vercel → **https://sowiefiszki.com** (custom domain, od 29.04.2026; wcześniej GitHub Pages)
 - **Backend:** Supabase (auth + Postgres + RLS), projekt `kofenaaeleyhwhbkytcz`
 - **Charakter:** osoba fizyczna prowadząca Platformę; **model freemium** (30-dniowy trial Premium → Free / Premium po opłacie). Wcześniej projekt był non-commercial — od ~2026-04-29 przygotowywany do monetyzacji.
-- **Service Worker:** aktualnie `v50` (stan na 23 kwietnia 2026)
+- **Service Worker:** aktualnie `v1.15` (stan na 13 maja 2026). Format `vMAJOR.MINOR` z zerem wiodącym, od `v1.00` (zresetowane od maja 2026 dla porządku; wcześniej luźna numeracja `v50`–`v233`).
+- **Promocja Premium:** **wszyscy zalogowani użytkownicy mają Premium za darmo do 31.08.2026** (override po stronie kodu w `db.js isPremium()` — `isPromoActive()` zwraca `true` gdy `Date.now() < 2026-09-01 00:00`). Po 1.09.2026 promocja samoczynnie wygasa — wraca normalna logika: nowi użytkownicy mają 30-dniowy trial gratis, reszta przechodzi na Free.
 
 ## 💰 Koszty i terminy odnowienia
 
@@ -219,7 +220,7 @@ Krzyżówka · Wordsearch · Memory · Snake (Wąż wyrazowy) · Hangman · Rozs
 - Przy zmianach w `app.html` (widocznych w preview): informuj że „`app.html` jest widoczny w panelu Launch preview".
 - Przy niejasnościach pytaj przez `AskUserQuestion` zamiast zgadywać.
 
-## 📋 Status funkcji (stan na 23 kwietnia 2026, SW v50)
+## 📋 Status funkcji (stan na 13 maja 2026, SW v1.15)
 
 ✅ Działa:
 - Logowanie/rejestracja z Supabase Auth (3 role: Uczeń / Nauczyciel / Rodzic-Opiekun)
@@ -227,6 +228,7 @@ Krzyżówka · Wordsearch · Memory · Snake (Wąż wyrazowy) · Hangman · Rozs
 - Hierarchiczna nawigacja Język → Szkoła → Klasa → Podręcznik → Unit
 - Wszystkie tryby nauki (Fiszki, Quiz, Type, Spelling, Dyktando, Mów, 14 gier z listy unitów + virtualny „🌍 Wszystkie")
 - Masowe tworzenie kont uczniów + PDF/druk + 4. kolumna „Instrukcja logowania"
+- **🆕 Opcjonalne auto-konta opiekunów przy masowym tworzeniu uczniów** (migracja #38, checkbox `bulkWithParents`, login `{login_ucznia}_opiekun` z fallbackiem `_opiekun2`, PDF z 1 blokiem per uczeń + 2 kartami uczeń/opiekun do wycięcia)
 - Reset hasła uczniów przez admin/nauczyciela
 - Zestawy nauczycielskie (teacher_sets) + admin overview + import CSV/TSV/wklejka (Premium) + **import słówek z istniejących podręczników** (modal `#importBookWordsModal` w `sTeacherSetEdit`: wybór podręcznika → unitu → checkboxy → „Dodaj zaznaczone", używa `DB.teacherAddWordsBulk`)
 - Prośby o dostęp do podręczników (admin-only)
@@ -235,8 +237,11 @@ Krzyżówka · Wordsearch · Memory · Snake (Wąż wyrazowy) · Hangman · Rozs
 - Zgłaszanie błędów w słówkach → admin inbox (RLS) + ekran sWordErrors (filtr status, resolve/delete)
 - System wiadomości user ↔ admin (`conversations` / `conversation_messages`) + sMessages + modal wątku
 - Rola Rodzic/Opiekun: panel, dodaj dziecko po loginie, przydzielanie podręczników (Premium)
+- **🆕 Przykładowe zdania PL/EN dla wszystkich podręczników** (~5000 zdań w `word_sentences` po uruchomieniu SQL `fix-sentences-*.sql`). Tiger 1/2/3, Brainy 6/7, Bugs Team 2/3, Be Happy 2, Kids Can 1, English Class A1, Steps Plus 4, Together 4/5/6, Link 7/8, Klasa 1-8, New Password A2+/B1, Impuls 3. Klasa 1-8 + stepsplus5 Unit 7 ma zdania inline w data.js (4-elem format), reszta w DB (z fallbackiem inline po sync).
+- **🆕 Disambiguacja nawiasem w word_pl** dla par różnych znaczeń: `miasto (duże)`/`miasto (małe)`, `skakać (krótko)`/`skakać (wysoko)`, `godzina (zegar)`/`godzina (jednostka)`, `przed (miejsce)`/`przed (czas)`, `uroczy (przyjemny)`/`uroczy (słodki)`. Konwencja słownikowa — różne od „luźnych nawiasów" usuniętych w Tiger 1 (commit `5a7f0c0`).
 - **Premium features:**
   - 30-dniowy trial automatyczny (raz w życiu konta) + cennik (klik → prośba do admina)
+  - **🆕 Promocja Premium za darmo dla wszystkich do 31.08.2026** (override po stronie kodu — `DB.isPromoActive()` zwraca true, `isPremium()` short-circuit, `getPlanExpiryInfo()` zwraca null żeby ukryć trial/expiry banery, `maybeShowPromoBanner` w app.html — gradient pasek na górze)
   - Banner wygasania 30 dni przed końcem (codziennie, dismiss-per-day) + welcome trial banner (raz)
   - Wybór głosu lektora (4 głosy UK/US × tempo) w modalu „Moje konto"
   - Export PDF karty postępów + dyplom PDF A4 landscape
@@ -252,9 +257,19 @@ Krzyżówka · Wordsearch · Memory · Snake (Wąż wyrazowy) · Hangman · Rozs
 
 🚧 Zaplanowane / odłożone:
 - Widok ucznia dla `teacher_sets` — nauczyciel tworzy, uczeń jeszcze nie widzi
-- Płatności Premium — struktura jest, ale integracja (Stripe/PayU) nieaktywna (regulamin §10)
+- Płatności Premium — struktura jest, ale integracja (Stripe/PayU) nieaktywna (regulamin §10). Cennik po promocji: **24 zł/mies, 114 zł/6 mies, 180 zł/rok** (ogłoszone na home.html).
 - Turniej 4/8 graczy w Rywalizacji (single elimination bracket) — osobny commit
 - Heatmapa raportów (mamy tylko CSV export postępów)
+- Offline mode (PWA) — kafelek w home.html ukryty, FAQ poprawione. Wraca gdy gotowe.
+- Email kontaktowy na własnej domenie (`kontakt@sowiefiszki.com` przez ForwardEmail) — odłożone do lipca 2026 (anti-abuse policy, patrz wyżej)
+
+## 🔧 Skrypty deweloperskie
+
+- **`sync-supabase-to-datajs.js`** (Node.js, korzystam z global.fetch) — synchronizuje cały stan Supabase (admin_books + admin_units + admin_words + word_sentences) do lokalnego data.js. Tryby: safe (`data.js.new`) i `--in-place` (z backupem `.bak`). Po sync data.js zawiera SNAPSHOT — działa offline, w git history, niezależne od dostępności DB. Formaty słówek: `[pl, en]` / `[pl, en, emoji]` / `[pl, en, sentPl, sentEn]` (4-elem inline) / `[pl, en, emoji, sentPl, sentEn]` (5-elem z emoji + zdania). Aplikacja obsługuje wszystkie 4 przez helper `getInlineSentences(w)` + `isLikelySentence(s)` w app.html.
+
+## 📝 Konwencja nazewnictwa gry „karty z symbolami"
+
+Gra dawniej zwana **Dobble** została **przemianowana** na *„Karty do gry"* w UI ze względów prawnych — Dobble to znak towarowy Asmodee/Zygomatic (Spot It! to wersja amerykańska, też trademark). Mechanika (dopasowywanie symboli) nie jest opatentowana, ale **nazwa jest chroniona**. Zmiana w user-visible miejscach (`home.html`, `app.html` ekran sDobble, `aktualnosci.html`). **Wewnętrzne identyfikatory pozostają niezmienione** (CSS `.dobble-card`, JS `openDobble()`, `dobbleGenerate()`, ID `sDobble`, `dobbleTitle` itp. — nie powodują ryzyka prawnego, a rename wymagałby modyfikacji kilkudziesięciu miejsc). Jeśli dodajesz nowe user-visible string z odwołaniem do tej gry, użyj *„Karty do gry"* lub opisowo *„Karty wyrazowe/obrazkowe do dopasowywania"*.
 
 ## 🆘 Gdy coś się zepsuje
 
