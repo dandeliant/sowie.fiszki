@@ -7920,6 +7920,17 @@ const BOOKS = {
     },
   }
 
+  ,superheroes3: {
+    id: 'superheroes3',
+    language: 'en', schoolType: 'primary', grade: 3, defaultAccess: true,
+    name: 'Super Heroes 3',
+    shortName: 'Super Heroes 3',
+    icon: '🦸',
+    color: '#e63946',
+    description: 'Klasa 3 · Super Heroes 3 (Nowa Era)',
+    units: {},
+  }
+
   ,klasa4: {
     id: 'klasa4',
     language: 'en', schoolType: 'primary', grade: 4, defaultAccess: true,
