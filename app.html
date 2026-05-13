@@ -3880,6 +3880,12 @@ szkoła	school"></textarea>
         <input type="number" id="bulkCountInp" min="1" max="50" value="10" style="flex:1;min-width:100px;padding:9px 11px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.95rem;font-weight:700;outline:none">
         <button class="btn-sm accent" id="btnBulkAdd" onclick="handleBulkCreate()" style="padding:9px 18px;white-space:nowrap">✓ Dodaj</button>
       </div>
+      <label style="display:flex;align-items:flex-start;gap:8px;margin-top:10px;cursor:pointer;font-size:.78rem;font-weight:700;color:var(--text);line-height:1.4">
+        <input type="checkbox" id="bulkWithParents" style="margin-top:2px;width:16px;height:16px;cursor:pointer;accent-color:var(--accent)">
+        <span>👨‍👩‍👧 <strong>Stwórz także konta dla rodziców/opiekunów</strong>
+          <span style="display:block;font-size:.68rem;color:var(--muted);font-weight:600;margin-top:2px;line-height:1.5">Dla każdego ucznia powstanie powiązane konto opiekuna (login: <code style="font-family:monospace;background:var(--surface2);padding:1px 4px;border-radius:4px;font-size:.65rem">{login_ucznia}_opiekun</code>). Opiekun widzi postępy dziecka, może mu przydzielać podręczniki, otrzymuje powiadomienia o nieaktywności. Wydruk: 1 strona = 1 uczeń + 1 opiekun.</span>
+        </span>
+      </label>
       <div id="bulkStudentsMsg" style="font-size:.7rem;color:var(--muted);margin-top:6px;font-weight:600;min-height:16px"></div>
     </div>
 
@@ -21554,10 +21560,14 @@ if ('serviceWorker' in navigator) {
     }
     const btn = document.getElementById('btnBulkAdd');
     const msg = document.getElementById('bulkStudentsMsg');
+    const withParents = !!document.getElementById('bulkWithParents')?.checked;
     btn.disabled = true; btn.textContent = '⏳ Tworzę…';
-    msg.style.color = 'var(--muted)'; msg.textContent = 'Trwa tworzenie kont — to może chwilę potrwać.';
+    msg.style.color = 'var(--muted)';
+    msg.textContent = withParents
+      ? `Trwa tworzenie ${count * 2} kont (uczniowie + opiekunowie) — to może chwilę potrwać.`
+      : 'Trwa tworzenie kont — to może chwilę potrwać.';
     try {
-      const { created, errors } = await DB.bulkCreateStudentsForClass(_bulkClassId, _bulkClassName, count);
+      const { created, errors } = await DB.bulkCreateStudentsForClass(_bulkClassId, _bulkClassName, count, withParents);
       _bulkLastCredentials = created;
       msg.style.color = 'var(--success)';
       msg.textContent = `✓ Utworzono ${created.length} z ${count} kont.`;
@@ -21582,22 +21592,39 @@ if ('serviceWorker' in navigator) {
   function renderBulkCredentials(){
     const area = document.getElementById('bulkCredentialsArea');
     if (!_bulkLastCredentials.length) { area.innerHTML = '<div style="color:var(--muted);font-size:.8rem;padding:10px;text-align:center">Brak utworzonych kont.</div>'; return; }
+    const hasParents = _bulkLastCredentials.some(c => c.parentUsername);
     let html = `<table style="width:100%;border-collapse:collapse;font-size:.82rem">
       <thead>
         <tr style="border-bottom:1.5px solid var(--border)">
           <th style="text-align:left;padding:6px 8px;font-size:.68rem;color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.05em">#</th>
+          <th style="text-align:left;padding:6px 8px;font-size:.68rem;color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.05em">Rola</th>
           <th style="text-align:left;padding:6px 8px;font-size:.68rem;color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.05em">Login</th>
           <th style="text-align:left;padding:6px 8px;font-size:.68rem;color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.05em">Hasło</th>
         </tr>
       </thead><tbody>`;
     _bulkLastCredentials.forEach((c, i) => {
-      html += `<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
-        <td style="padding:6px 8px;color:var(--muted);font-weight:600">${i+1}</td>
-        <td style="padding:6px 8px;color:var(--text);font-weight:700;font-family:monospace"><span style="color:var(--muted);font-weight:400">login:</span> ${escHtml(c.username)}</td>
-        <td style="padding:6px 8px;color:var(--accent);font-weight:700;font-family:monospace"><span style="color:var(--muted);font-weight:400">hasło:</span> ${escHtml(c.password)}</td>
+      // Wiersz ucznia
+      html += `<tr style="border-bottom:${c.parentUsername ? '1px dashed rgba(255,255,255,.06)' : '1px solid rgba(255,255,255,.04)'}">
+        <td style="padding:6px 8px;color:var(--muted);font-weight:600" rowspan="${c.parentUsername ? 2 : 1}">${i+1}</td>
+        <td style="padding:6px 8px;font-size:.7rem;color:var(--accent2);font-weight:800">🎓 Uczeń</td>
+        <td style="padding:6px 8px;color:var(--text);font-weight:700;font-family:monospace">${escHtml(c.username)}</td>
+        <td style="padding:6px 8px;color:var(--accent);font-weight:700;font-family:monospace">${escHtml(c.password)}</td>
       </tr>`;
+      // Wiersz opiekuna (jesli powiazany)
+      if (c.parentUsername) {
+        html += `<tr style="border-bottom:1px solid rgba(255,255,255,.04);background:rgba(255,255,255,.015)">
+          <td style="padding:6px 8px;font-size:.7rem;color:var(--pink, #e91e63);font-weight:800">👨‍👩‍👧 Opiekun</td>
+          <td style="padding:6px 8px;color:var(--text);font-weight:700;font-family:monospace">${escHtml(c.parentUsername)}</td>
+          <td style="padding:6px 8px;color:var(--accent);font-weight:700;font-family:monospace">${escHtml(c.parentPassword || '—')}</td>
+        </tr>`;
+      }
     });
     html += '</tbody></table>';
+    if (hasParents) {
+      html += `<div style="font-size:.68rem;color:var(--muted);font-weight:600;margin-top:8px;padding:8px 10px;border:1px dashed var(--border);border-radius:8px;line-height:1.5">
+        ℹ️ Konto opiekuna jest powiązane z kontem ucznia. Opiekun po zalogowaniu od razu widzi postępy dziecka, może mu przydzielać podręczniki (Premium) i otrzymuje powiadomienia o nieaktywności.
+      </div>`;
+    }
     area.innerHTML = html;
   }
 
@@ -21605,21 +21632,67 @@ if ('serviceWorker' in navigator) {
     if (!_bulkLastCredentials.length) return;
     const w = window.open('', '_blank');
     if (!w) { if (typeof toast==='function') toast('⚠️ Popup zablokowany przez przeglądarkę.', 3200); return; }
-    const instructionHtml = `
-      <ol style="margin:0;padding-left:18px;font-size:11px;line-height:1.45;color:#222">
-        <li>Otwórz w przeglądarce <b style="font-family:'Courier New',monospace">sowiefiszki.com/login.html</b></li>
-        <li>Wpisz <b>Login</b> (Z kolumny obok)</li>
-        <li>Wpisz <b>Hasło</b> (Z kolumny obok)</li>
-        <li>Kliknij przycisk <b>„Zaloguj się"</b></li>
-        <li>Wybierz podręcznik i ucz się.</li>
-      </ol>`;
-    const rows = _bulkLastCredentials.map((c,i)=>`<tr><td>${i+1}</td><td><span style="color:#888;font-weight:400">login:</span> ${escHtml(c.username)}</td><td><span style="color:#888;font-weight:400">hasło:</span> ${escHtml(c.password)}</td><td>${instructionHtml}</td></tr>`).join('');
+    const hasParents = _bulkLastCredentials.some(c => c.parentUsername);
     const branding = (typeof getSchoolBranding === 'function') ? getSchoolBranding() : { name:'', logo:'' };
     const brandingHtml = (branding.logo || branding.name) ? `
       <div class="branding">
         ${branding.logo ? `<img src="${escHtml(branding.logo)}" onerror="this.style.display='none'">` : ''}
         ${branding.name ? `<div class="branding-name">${escHtml(branding.name)}</div>` : ''}
       </div>` : '';
+    const instrUczen = `
+      <ol style="margin:0;padding-left:16px;font-size:10px;line-height:1.4;color:#222">
+        <li>Otwórz <b style="font-family:'Courier New',monospace">sowiefiszki.com</b></li>
+        <li>Wpisz <b>Login</b> i <b>Hasło</b> (powyżej)</li>
+        <li>Wybierz podręcznik i ucz się!</li>
+      </ol>`;
+    const instrOpiekun = `
+      <ol style="margin:0;padding-left:16px;font-size:10px;line-height:1.4;color:#222">
+        <li>Otwórz <b style="font-family:'Courier New',monospace">sowiefiszki.com</b></li>
+        <li>Wpisz <b>Login</b> i <b>Hasło</b> (powyżej)</li>
+        <li>Po zalogowaniu zobaczysz postępy dziecka, raporty i powiadomienia.</li>
+      </ol>`;
+
+    let bodyHtml = '';
+    if (hasParents) {
+      // Tryb karty per uczeń: każdy uczeń ma blok z dwiema kartami (uczeń + opiekun)
+      // page-break-inside: avoid trzyma blok razem; flex gap+border tworzy linię cięcia.
+      bodyHtml = _bulkLastCredentials.map((c,i) => `
+        <div class="student-block">
+          <div class="block-header">${i+1}. Karta logowania — ${escHtml(c.username)}</div>
+          <div class="card-row">
+            <div class="card card-student">
+              <div class="card-role">🎓 KONTO UCZNIA</div>
+              <div class="card-creds">
+                <div><span class="lbl">Login:</span> <b>${escHtml(c.username)}</b></div>
+                <div><span class="lbl">Hasło:</span> <b>${escHtml(c.password)}</b></div>
+              </div>
+              <div class="card-instr">${instrUczen}</div>
+            </div>
+            ${c.parentUsername ? `
+            <div class="card card-parent">
+              <div class="card-role">👨‍👩‍👧 KONTO OPIEKUNA</div>
+              <div class="card-creds">
+                <div><span class="lbl">Login:</span> <b>${escHtml(c.parentUsername)}</b></div>
+                <div><span class="lbl">Hasło:</span> <b>${escHtml(c.parentPassword || '—')}</b></div>
+              </div>
+              <div class="card-instr">${instrOpiekun}</div>
+            </div>` : ''}
+          </div>
+        </div>
+      `).join('');
+    } else {
+      // Klasyczny tryb tabeli — bez opiekunow
+      const instructionHtml = `
+        <ol style="margin:0;padding-left:18px;font-size:11px;line-height:1.45;color:#222">
+          <li>Otwórz w przeglądarce <b style="font-family:'Courier New',monospace">sowiefiszki.com/login.html</b></li>
+          <li>Wpisz <b>Login</b> (Z kolumny obok)</li>
+          <li>Wpisz <b>Hasło</b> (Z kolumny obok)</li>
+          <li>Kliknij przycisk <b>„Zaloguj się"</b></li>
+          <li>Wybierz podręcznik i ucz się.</li>
+        </ol>`;
+      const rows = _bulkLastCredentials.map((c,i)=>`<tr><td>${i+1}</td><td><span style="color:#888;font-weight:400">login:</span> ${escHtml(c.username)}</td><td><span style="color:#888;font-weight:400">hasło:</span> ${escHtml(c.password)}</td><td>${instructionHtml}</td></tr>`).join('');
+      bodyHtml = `<table><thead><tr><th>#</th><th>Login</th><th>Hasło</th><th>Instrukcja logowania (dla rodzica i dziecka)</th></tr></thead><tbody>${rows}</tbody></table>`;
+    }
     w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Konta — ${escHtml(_bulkClassName)}</title>
       <style>
         body{font-family:Arial,sans-serif;padding:24px;color:#111}
@@ -21628,6 +21701,19 @@ if ('serviceWorker' in navigator) {
         .branding{display:flex;align-items:center;gap:12px;margin-bottom:12px;padding-bottom:10px;border-bottom:1px dashed #ccc}
         .branding img{max-height:48px;max-width:140px;object-fit:contain}
         .branding-name{font-weight:700;color:#333;font-size:.95rem}
+        /* Tryb karty (z opiekunem) */
+        .student-block{page-break-inside:avoid;margin-bottom:16px;padding-bottom:8px;border-bottom:2px dashed #999}
+        .student-block:last-child{border-bottom:none}
+        .block-header{font-size:11px;color:#666;font-weight:700;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em}
+        .card-row{display:flex;gap:10px;flex-wrap:wrap}
+        .card{flex:1;min-width:280px;border:1.5px solid #aaa;border-radius:6px;padding:10px 12px}
+        .card-student{background:#f7f9ff;border-color:#7c4dff}
+        .card-parent{background:#fff7f9;border-color:#e91e63}
+        .card-role{font-size:9px;font-weight:800;letter-spacing:.08em;color:#555;margin-bottom:6px}
+        .card-creds{font-family:'Courier New',monospace;font-size:12px;line-height:1.7;margin-bottom:6px}
+        .card-creds .lbl{color:#888;font-weight:400;font-family:Arial,sans-serif}
+        .card-instr{border-top:1px dashed #ccc;padding-top:6px;margin-top:4px}
+        /* Tryb tabeli (bez opiekunow) */
         table{border-collapse:collapse;width:100%;font-size:13px}
         th,td{border:1px solid #aaa;padding:8px 10px;text-align:left;vertical-align:top}
         th{background:#eee}
@@ -21638,10 +21724,10 @@ if ('serviceWorker' in navigator) {
         @media print{body{padding:12px}}
       </style></head><body>
       ${brandingHtml}
-      <h1>Sowie Fiszki — konta uczniów</h1>
-      <h2>Klasa: ${escHtml(_bulkClassName)} · utworzono ${_bulkLastCredentials.length} kont · ${new Date().toLocaleString('pl-PL')}</h2>
-      <table><thead><tr><th>#</th><th>Login</th><th>Hasło</th><th>Instrukcja logowania (dla rodzica i dziecka)</th></tr></thead><tbody>${rows}</tbody></table>
-      <p style="font-size:11px;color:#666;margin-top:14px">⚠ Hasła są pokazywane tylko raz — zachowaj ten dokument w bezpiecznym miejscu. Możesz wyciąć poszczególne wiersze i przekazać każdemu dziecku jego własny pasek.</p>
+      <h1>Sowie Fiszki — konta uczniów${hasParents ? ' i opiekunów' : ''}</h1>
+      <h2>Klasa: ${escHtml(_bulkClassName)} · utworzono ${_bulkLastCredentials.length}${hasParents ? ' par (uczeń+opiekun)' : ' kont'} · ${new Date().toLocaleString('pl-PL')}</h2>
+      ${bodyHtml}
+      <p style="font-size:11px;color:#666;margin-top:14px">⚠ Hasła są pokazywane tylko raz — zachowaj ten dokument w bezpiecznym miejscu. ${hasParents ? 'Wytnij każdy blok wzdłuż przerywanej linii i przekaż uczniowi (rodzic dostanie swoją kartę razem z dzieckiem).' : 'Możesz wyciąć poszczególne wiersze i przekazać każdemu dziecku jego własny pasek.'}</p>
       ${_printFooterHtml()}
       <script>window.onload=function(){window.print();};<\/script>
       </body></html>`);

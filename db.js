@@ -1756,7 +1756,32 @@ const DB = (() => {
   }
 
   // Tworzy `count` kont uczniów, dodaje ich do klasy, zwraca listę {username, password}
-  async function bulkCreateStudentsForClass(classId, className, count) {
+  // Wrapper RPC admin_link_parent_to_student (migracja #38)
+  // Ustawia is_parent=TRUE na profilu opiekuna + INSERT do parent_children.
+  async function adminLinkParentToStudent(parentId, studentId) {
+    if (!_profile?.isAdmin && !_profile?.isTeacher) throw new Error('Brak uprawnień');
+    if (!parentId || !studentId) throw new Error('Brak parent_id lub student_id');
+    if (parentId === studentId) throw new Error('parent_id i student_id musza byc rozne');
+    const { error } = await supabase.rpc('admin_link_parent_to_student', {
+      p_parent_id: parentId,
+      p_student_id: studentId
+    });
+    if (error) throw new Error(error.message);
+  }
+
+  /**
+   * Masowe tworzenie kont uczniow w klasie.
+   * @param {string} classId — id klasy
+   * @param {string} className — nazwa klasy (uzywana do slugifikacji loginu)
+   * @param {number} count — ile uczniow (1-50)
+   * @param {boolean} withParents — jesli true, tworzymy tez konto opiekuna
+   *   dla kazdego ucznia i linkujemy je przez parent_children. Login opiekuna:
+   *   {login_ucznia}_opiekun (np. klasa4a_01_opiekun). Wymaga migracji #38.
+   * @returns {Promise<{created: Array, errors: Array}>}
+   *   created[i] = { username, password, userId,
+   *                  parentUsername?, parentPassword?, parentId? }
+   */
+  async function bulkCreateStudentsForClass(classId, className, count, withParents) {
     if (!_profile?.isAdmin && !_profile?.isTeacher) throw new Error('Brak uprawnień');
     if (!classId) throw new Error('Brak ID klasy.');
     if (!count || count < 1 || count > 50) throw new Error('Podaj liczbę uczniów od 1 do 50.');
@@ -1821,7 +1846,53 @@ const DB = (() => {
         if (userId) await addClassMember(classId, userId);
       } catch(e) { /* nie blokuj reszty */ }
 
-      created.push({ username, password: pass, userId });
+      // Opcjonalnie: stworz konto opiekuna i powiaz przez parent_children
+      let parentUsername = null, parentPassword = null, parentId = null;
+      if (withParents && userId) {
+        const parentCandidate = username + '_opiekun';
+        const parentPass = _randomPassword(8);
+        try {
+          const { data: pData, error: pErr } = await supabase.rpc('admin_create_user', {
+            p_username: parentCandidate, p_password: parentPass
+          });
+          if (pErr) {
+            // jesli login zajety — sprobuj _opiekun2 (rzadkie, ale mozliwe)
+            if (/exist|duplicat|zaj/i.test(pErr.message)) {
+              const alt = parentCandidate + '2';
+              const { data: pData2, error: pErr2 } = await supabase.rpc('admin_create_user', {
+                p_username: alt, p_password: parentPass
+              });
+              if (!pErr2) {
+                parentUsername = alt;
+                parentId = (pData2 && pData2.user_id) || pData2;
+              } else {
+                errors.push(`Nie udalo sie utworzyc konta opiekuna dla ${username}: ${pErr2.message}`);
+              }
+            } else {
+              errors.push(`Nie udalo sie utworzyc konta opiekuna dla ${username}: ${pErr.message}`);
+            }
+          } else {
+            parentUsername = parentCandidate;
+            parentId = (pData && pData.user_id) || pData;
+          }
+          if (parentId) {
+            parentPassword = parentPass;
+            // creator + zapisane haslo (best-effort)
+            try { await supabase.rpc('set_profile_creator', { p_user_id: parentId }); } catch(e) {}
+            try { await supabase.rpc('set_generated_password', { p_user_id: parentId, p_password: parentPass }); } catch(e) {}
+            // Powiaz opiekuna z uczniem (is_parent=TRUE + parent_children)
+            try {
+              await adminLinkParentToStudent(parentId, userId);
+            } catch(e) {
+              errors.push(`Nie udalo sie powiazac opiekuna ${parentCandidate} z uczniem ${username}: ${e.message}`);
+            }
+          }
+        } catch(e) {
+          errors.push(`Blad tworzenia opiekuna dla ${username}: ${e.message}`);
+        }
+      }
+
+      created.push({ username, password: pass, userId, parentUsername, parentPassword, parentId });
     }
     return { created, errors };
   }
@@ -3113,6 +3184,7 @@ const DB = (() => {
     countOpenConversations,
     // bulk student creation
     bulkCreateStudentsForClass,
+    adminLinkParentToStudent,
     createSingleStudentForClass,
     adminBulkCreateTeachers,
     adminResetUserPassword,
