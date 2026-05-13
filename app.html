@@ -875,6 +875,15 @@ body.guest-mode .progress-wrap{opacity:.4;}
 .admin-note .admin-note-actions{position:absolute;top:6px;right:8px;display:flex;gap:4px;}
 .admin-note .admin-note-actions .btn-sm{padding:2px 7px;font-size:.68rem;}
 .admin-note.admin-note-empty{background:transparent;border:1.5px dashed rgba(162,155,254,.3);border-left:3px dashed var(--purple);color:var(--muted);font-style:italic;font-size:.78rem;padding:8px 12px;}
+/* Wrapper na 1-2 notatki (publiczna + prywatna) — bez własnego stylu, układ poziomy */
+.admin-note-wrap{display:flex;flex-direction:column;gap:0;margin:0;}
+/* Wariant: notatka prywatna (widoczna tylko dla admina / nauczyciela-opiekuna Premium) */
+.admin-note.admin-note-private{border-color:rgba(255,170,80,.35);border-left-color:#ffaa50;background:linear-gradient(180deg,rgba(255,170,80,.06),var(--surface));}
+.admin-note.admin-note-private .admin-note-body strong{color:#ffaa50;}
+.admin-note.admin-note-private.admin-note-empty{border-color:rgba(255,170,80,.3);border-left-color:#ffaa50;background:transparent;}
+/* Mały badge widoczności (pokazywany w prywatnej notatce, opcjonalnie w publicznej u admina) */
+.admin-note-vis-badge{display:inline-flex;align-items:center;gap:4px;font-size:.62rem;font-weight:800;text-transform:uppercase;letter-spacing:.04em;padding:1px 7px;border-radius:999px;margin-bottom:6px;background:rgba(162,155,254,.18);color:var(--purple);border:1px solid rgba(162,155,254,.32);}
+.admin-note.admin-note-private .admin-note-vis-badge{background:rgba(255,170,80,.18);color:#ffaa50;border-color:rgba(255,170,80,.32);}
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;}
 .modal-box{background:var(--surface);border:2px solid rgba(162,155,254,.3);border-radius:var(--r);padding:22px 22px 18px;width:100%;max-width:460px;box-shadow:0 24px 60px rgba(0,0,0,.5);max-height:calc(100vh - 40px);overflow-y:auto;overflow-x:hidden;}
 /* Subtelny scrollbar wewnątrz długich modali (np. edycji podręcznika z wieloma polami) */
@@ -1668,8 +1677,8 @@ body.guest-mode .progress-wrap{opacity:.4;}
     </div>
     <button class="btn-sm" onclick="showScreen('sBooks')" style="flex-shrink:0">← Podręczniki</button>
   </div>
-  <!-- Notatka admina na poziomie podręcznika -->
-  <div id="bookNoteUnits" class="admin-note" style="display:none"></div>
+  <!-- Notatki admina na poziomie podręcznika (publiczna + prywatna; renderowane jako .admin-note wewnątrz) -->
+  <div id="bookNoteUnits" class="admin-note-wrap" style="display:none"></div>
   <div class="unit-grid" id="unitGrid"></div>
   <div class="cw-row" id="liveRow" style="border-color:rgba(255,209,102,.4);background:linear-gradient(135deg,rgba(255,209,102,.06),rgba(124,58,237,.06))">
     <span class="cw-row-label" style="color:var(--accent)">🎮 Gramy wszyscy (Live) <span style="font-size:.55rem;background:rgba(255,209,102,.15);color:var(--accent);padding:1px 6px;border-radius:100px;margin-left:4px;font-weight:800">⭐ PREMIUM</span>:</span>
@@ -2585,8 +2594,8 @@ body.guest-mode .progress-wrap{opacity:.4;}
       <button class="btn-sm" onclick="showScreen('sUnits')">← Wróć</button>
     </div>
   </div>
-  <!-- Notatka admina na poziomie unitu -->
-  <div id="bookNoteUnit" class="admin-note" style="display:none"></div>
+  <!-- Notatki admina na poziomie unitu (publiczna + prywatna; renderowane jako .admin-note wewnątrz) -->
+  <div id="bookNoteUnit" class="admin-note-wrap" style="display:none"></div>
   <div class="wl-sel-bar" id="wlSelBar">
     <span class="wl-sel-count" id="wlSelCount">Wybrano: 0</span>
     <button class="btn-sel-all" onclick="wlSelectAll()">Zaznacz wszystkie</button>
@@ -15908,7 +15917,7 @@ if ('serviceWorker' in navigator) {
 <div class="modal-overlay" id="bookNoteModal" style="display:none" onclick="if(event.target===this)closeBookNoteModal()">
   <div class="modal-box" style="max-width:520px">
     <div style="font-family:'Playfair Display',serif;font-size:1.15rem;color:var(--accent);margin-bottom:4px" id="bookNoteModalTitle">📝 Notatka</div>
-    <div style="font-size:.7rem;color:var(--muted);margin-bottom:10px;font-weight:600;line-height:1.45">
+    <div id="bookNoteModalHelper" style="font-size:.7rem;color:var(--muted);margin-bottom:10px;font-weight:600;line-height:1.45">
       Notatka widoczna dla wszystkich użytkowników na tej stronie. Obsługa:
       <code>[tekst](url)</code> dla linków, <code>**pogrubienie**</code>, zwykłe linki <code>https://…</code> i <code>plik.html</code> są automatycznie zamieniane na klikalne.
     </div>
@@ -22505,35 +22514,62 @@ ${bodyHtml}
     return html;
   }
 
-  // currentBookNoteCtx: { type: 'book'|'unit', bookId, unitKey }
+  // currentBookNoteCtx: { type: 'book'|'unit', bookId, unitKey, visibility: 'public'|'private' }
   let _noteCtx = null;
+
+  // Po migracji #39: dwie kategorie notatek per (book_id, unit_key):
+  //   public  → widoczne dla wszystkich (uczeń, gość, nauczyciel, opiekun, admin)
+  //   private → tylko admin + nauczyciel/opiekun z Premium
+  // Renderujemy oba w jednym wrapperze (.admin-note-wrap) jako oddzielne .admin-note divy.
+  function _renderSingleNote(type, bookId, unitKey, visibility, note, isAdmin){
+    const isPrivate = visibility === 'private';
+    const cls = 'admin-note' + (isPrivate ? ' admin-note-private' : '');
+    const emptyCls = cls + ' admin-note-empty';
+    const safeUnit = (unitKey || '').replace(/'/g, '&#39;');
+    const safeBook = (bookId || '').replace(/'/g, '&#39;');
+    const editArgs = "'" + type + "','" + safeBook + "','" + safeUnit + "','" + visibility + "'";
+    const badge = isPrivate
+      ? '<div class="admin-note-vis-badge">🔒 prywatna — tylko nauczyciel</div>'
+      : (isAdmin ? '<div class="admin-note-vis-badge">📢 publiczna — widzi ją uczeń</div>' : '');
+    if (note && note.content){
+      return '<div class="' + cls + '">'
+        + badge
+        + '<div class="admin-note-body">' + renderNoteHtml(note.content) + '</div>'
+        + (isAdmin ? '<div class="admin-note-actions"><button class="btn-sm" onclick="openBookNoteEditor(' + editArgs + ')">✏️ Edytuj</button></div>' : '')
+        + '</div>';
+    }
+    if (isAdmin){
+      const label = isPrivate ? 'prywatnej notatki' : 'publicznej notatki';
+      return '<div class="' + emptyCls + '">'
+        + '📝 <em>Brak ' + label + ' ' + (type === 'book' ? 'dla podręcznika' : 'dla tego unitu') + '.</em> '
+        + '<button class="btn-sm" style="margin-left:8px;padding:2px 10px;font-size:.7rem" onclick="openBookNoteEditor(' + editArgs + ')">➕ Dodaj</button>'
+        + '</div>';
+    }
+    return '';
+  }
 
   async function loadAndShowBookNote(type, bookId, unitKey){
     if (!bookId) return;
     const isAdmin = (typeof isCurrentUserAdmin === 'function') && isCurrentUserAdmin();
-    // Notatki sa dostepne: admin (zawsze edytor); nauczyciel/opiekun z planem Premium (tylko widok).
-    // Uczen/Gosc: ukryte.
     const isTeacher = (typeof isCurrentUserTeacher === 'function') && isCurrentUserTeacher();
     const isParent  = (typeof isCurrentUserParent  === 'function') && isCurrentUserParent();
     const isPremium = (typeof isCurrentUserPremium === 'function') && isCurrentUserPremium();
-    const canView = isAdmin || ((isTeacher || isParent) && isPremium);
+    const canSeePrivate = isAdmin || ((isTeacher || isParent) && isPremium);
     const containerId = type === 'book' ? 'bookNoteUnits' : 'bookNoteUnit';
     const el = document.getElementById(containerId);
     if (!el) return;
-    if (!canView) { el.style.display = 'none'; el.innerHTML = ''; return; }
     const effectiveUnit = type === 'book' ? '' : (unitKey || '');
     try {
-      const note = await DB.loadBookNote(bookId, effectiveUnit);
-      if (note && note.content) {
-        el.classList.remove('admin-note-empty');
-        el.innerHTML = '<div class="admin-note-body">' + renderNoteHtml(note.content) + '</div>'
-          + (isAdmin ? '<div class="admin-note-actions"><button class="btn-sm" onclick="openBookNoteEditor(\'' + type + '\',\'' + bookId + '\',\'' + effectiveUnit + '\')">✏️ Edytuj</button></div>' : '');
-        el.style.display = 'block';
-      } else if (isAdmin) {
-        el.classList.add('admin-note-empty');
-        el.innerHTML = '📝 <em>Brak notatki ' + (type === 'book' ? 'dla podręcznika' : 'dla tego unitu') + '.</em> '
-          + '<button class="btn-sm" style="margin-left:8px;padding:2px 10px;font-size:.7rem" onclick="openBookNoteEditor(\'' + type + '\',\'' + bookId + '\',\'' + effectiveUnit + '\')">➕ Dodaj</button>';
-        el.style.display = 'block';
+      const both = await DB.loadBookNotesBoth(bookId, effectiveUnit);
+      const parts = [];
+      parts.push(_renderSingleNote(type, bookId, effectiveUnit, 'public', both.public, isAdmin));
+      if (canSeePrivate){
+        parts.push(_renderSingleNote(type, bookId, effectiveUnit, 'private', both.private, isAdmin));
+      }
+      const html = parts.filter(Boolean).join('');
+      if (html){
+        el.innerHTML = html;
+        el.style.display = 'flex';
       } else {
         el.style.display = 'none';
         el.innerHTML = '';
@@ -22545,16 +22581,25 @@ ${bodyHtml}
   }
   window.loadAndShowBookNote = loadAndShowBookNote;
 
-  window.openBookNoteEditor = async function(type, bookId, unitKey){
+  window.openBookNoteEditor = async function(type, bookId, unitKey, visibility){
     if (!isCurrentUserAdmin()) return;
-    _noteCtx = { type: type, bookId: bookId, unitKey: unitKey || '' };
-    const title = type === 'book'
-      ? '📝 Notatka — podręcznik'
-      : '📝 Notatka — Unit (' + (unitKey || '?') + ')';
-    document.getElementById('bookNoteModalTitle').textContent = title;
+    const vis = visibility === 'private' ? 'private' : 'public';
+    _noteCtx = { type: type, bookId: bookId, unitKey: unitKey || '', visibility: vis };
+    const visIcon = vis === 'private' ? '🔒' : '📢';
+    const visLabel = vis === 'private' ? 'prywatna' : 'publiczna';
+    const where = type === 'book' ? 'podręcznik' : 'Unit (' + (unitKey || '?') + ')';
+    document.getElementById('bookNoteModalTitle').textContent = '📝 Notatka ' + visIcon + ' ' + visLabel + ' — ' + where;
     document.getElementById('bookNoteModalMsg').textContent = '';
+    const helper = document.getElementById('bookNoteModalHelper');
+    if (helper){
+      if (vis === 'private'){
+        helper.innerHTML = '<strong style="color:#ffaa50">🔒 Prywatna</strong> — widoczna <strong>tylko</strong> dla nauczyciela/opiekuna (z Premium) oraz administratora. Uczeń ani gość jej nie zobaczy. Obsługa: <code>[tekst](url)</code>, <code>**pogrubienie**</code>, linki <code>https://…</code> i <code>plik.html</code> klikalne.';
+      } else {
+        helper.innerHTML = '<strong style="color:var(--purple)">📢 Publiczna</strong> — widoczna dla <strong>wszystkich</strong> użytkowników (uczeń, gość, nauczyciel, opiekun, admin) na tej stronie. Obsługa: <code>[tekst](url)</code>, <code>**pogrubienie**</code>, linki <code>https://…</code> i <code>plik.html</code> klikalne.';
+      }
+    }
     try {
-      const existing = await DB.loadBookNote(bookId, unitKey || '');
+      const existing = await DB.loadBookNote(bookId, unitKey || '', vis);
       document.getElementById('bookNoteText').value = existing?.content || '';
     } catch(e) {
       document.getElementById('bookNoteText').value = '';
@@ -22575,9 +22620,9 @@ ${bodyHtml}
     try {
       if (!content) {
         // pusta treść = usuń notatkę
-        await DB.deleteBookNote(_noteCtx.bookId, _noteCtx.unitKey);
+        await DB.deleteBookNote(_noteCtx.bookId, _noteCtx.unitKey, _noteCtx.visibility);
       } else {
-        await DB.saveBookNote(_noteCtx.bookId, _noteCtx.unitKey, content);
+        await DB.saveBookNote(_noteCtx.bookId, _noteCtx.unitKey, content, _noteCtx.visibility);
       }
       msg.style.color = 'var(--success)'; msg.textContent = '✓ Zapisano.';
       const ctx = _noteCtx;
@@ -22593,11 +22638,12 @@ ${bodyHtml}
 
   window.deleteBookNoteInModal = async function(){
     if (!_noteCtx) return;
-    if (!confirm('Usunąć tę notatkę?')) return;
+    const visLabel = _noteCtx.visibility === 'private' ? 'prywatną' : 'publiczną';
+    if (!confirm('Usunąć tę ' + visLabel + ' notatkę?')) return;
     const msg = document.getElementById('bookNoteModalMsg');
     msg.style.color = 'var(--muted)'; msg.textContent = '⏳ Usuwanie…';
     try {
-      await DB.deleteBookNote(_noteCtx.bookId, _noteCtx.unitKey);
+      await DB.deleteBookNote(_noteCtx.bookId, _noteCtx.unitKey, _noteCtx.visibility);
       msg.style.color = 'var(--success)'; msg.textContent = '✓ Usunięto.';
       const ctx = _noteCtx;
       setTimeout(() => {

@@ -2269,49 +2269,124 @@ const DB = (() => {
   // ═══════════════════════════════════════════════════════════════
   //  BOOK NOTES — notatki administratora przy podręcznikach / unitach
   // ═══════════════════════════════════════════════════════════════
-  // unitKey: '' (lub null/undefined) → notatka na poziomie podręcznika
-  //          'unit5'                 → notatka na poziomie unitu
-  async function loadBookNote(bookId, unitKey) {
+  // unitKey:    '' (lub null/undefined) → notatka na poziomie podręcznika
+  //             'unit5'                 → notatka na poziomie unitu
+  // visibility: 'public'  (default) — widoczna dla wszystkich (uczeń, gość, nauczyciel, opiekun, admin)
+  //             'private'           — tylko admin + nauczyciel/opiekun z Premium
+  // Po migracji #39: UNIQUE(book_id, unit_key, visibility) — 2 notatki per miejsce.
+  // Fallback dla bazy bez migracji: jeśli kolumna nie istnieje, traktujemy
+  // istniejącą jedną notatkę jako 'public'.
+  async function loadBookNote(bookId, unitKey, visibility) {
     if (!bookId) return null;
     const key = unitKey || '';
-    const { data, error } = await supabase
+    const vis = visibility || 'public';
+    // Próba z kolumną visibility
+    let { data, error } = await supabase
       .from('book_notes')
-      .select('id, book_id, unit_key, content, updated_at, updated_by')
+      .select('id, book_id, unit_key, content, visibility, updated_at, updated_by')
       .eq('book_id', bookId)
       .eq('unit_key', key)
+      .eq('visibility', vis)
       .maybeSingle();
+    if (error && /column .*visibility.* does not exist/i.test(error.message)) {
+      // Stary schemat — bez migracji #39. Tylko 'public' jest dostępne.
+      if (vis !== 'public') return null;
+      const r = await supabase
+        .from('book_notes')
+        .select('id, book_id, unit_key, content, updated_at, updated_by')
+        .eq('book_id', bookId)
+        .eq('unit_key', key)
+        .maybeSingle();
+      if (r.error) throw new Error(r.error.message);
+      return r.data ? { ...r.data, visibility: 'public' } : null;
+    }
     if (error) throw new Error(error.message);
     return data;
   }
 
-  async function saveBookNote(bookId, unitKey, content) {
+  // Załaduj obie notatki naraz (public + private). Zwraca {public, private},
+  // wartości to obiekty notatek lub null. Klient zdecyduje co pokazać.
+  async function loadBookNotesBoth(bookId, unitKey) {
+    if (!bookId) return { public: null, private: null };
+    const key = unitKey || '';
+    let { data, error } = await supabase
+      .from('book_notes')
+      .select('id, book_id, unit_key, content, visibility, updated_at, updated_by')
+      .eq('book_id', bookId)
+      .eq('unit_key', key);
+    if (error && /column .*visibility.* does not exist/i.test(error.message)) {
+      // Stary schemat — jedna notatka traktowana jako publiczna.
+      const r = await supabase
+        .from('book_notes')
+        .select('id, book_id, unit_key, content, updated_at, updated_by')
+        .eq('book_id', bookId)
+        .eq('unit_key', key)
+        .maybeSingle();
+      if (r.error) throw new Error(r.error.message);
+      return { public: r.data ? { ...r.data, visibility: 'public' } : null, private: null };
+    }
+    if (error) throw new Error(error.message);
+    const out = { public: null, private: null };
+    (data || []).forEach(n => { if (n.visibility === 'private') out.private = n; else out.public = n; });
+    return out;
+  }
+
+  async function saveBookNote(bookId, unitKey, content, visibility) {
     if (!_profile?.isAdmin) throw new Error('Tylko administrator może edytować notatki.');
     if (!bookId) throw new Error('Brak book_id.');
     const key = unitKey || '';
+    const vis = visibility || 'public';
+    if (vis !== 'public' && vis !== 'private') throw new Error('Nieprawidłowa widoczność.');
     const payload = {
       book_id: bookId,
       unit_key: key,
+      visibility: vis,
       content: content || '',
       updated_by: _userId
     };
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('book_notes')
-      .upsert(payload, { onConflict: 'book_id,unit_key' })
+      .upsert(payload, { onConflict: 'book_id,unit_key,visibility' })
       .select()
       .maybeSingle();
+    if (error && /column .*visibility.* does not exist/i.test(error.message)) {
+      // Stary schemat — bez migracji #39. Tylko 'public' jest możliwe.
+      if (vis !== 'public') throw new Error('Migracja #39 (book-notes-add-visibility.sql) wymagana, aby zapisywać prywatne notatki.');
+      const legacy = { book_id: bookId, unit_key: key, content: content || '', updated_by: _userId };
+      const r = await supabase
+        .from('book_notes')
+        .upsert(legacy, { onConflict: 'book_id,unit_key' })
+        .select()
+        .maybeSingle();
+      if (r.error) throw new Error(r.error.message);
+      return r.data ? { ...r.data, visibility: 'public' } : null;
+    }
     if (error) throw new Error(error.message);
     return data;
   }
 
-  async function deleteBookNote(bookId, unitKey) {
+  async function deleteBookNote(bookId, unitKey, visibility) {
     if (!_profile?.isAdmin) throw new Error('Tylko administrator może usuwać notatki.');
     if (!bookId) throw new Error('Brak book_id.');
     const key = unitKey || '';
-    const { error } = await supabase
+    const vis = visibility || 'public';
+    let q = supabase
       .from('book_notes')
       .delete()
       .eq('book_id', bookId)
       .eq('unit_key', key);
+    // Z visibility (po migracji #39); jeśli kolumny nie ma, próbujemy bez.
+    let { error } = await q.eq('visibility', vis);
+    if (error && /column .*visibility.* does not exist/i.test(error.message)) {
+      if (vis !== 'public') return; // stary schemat nie ma private
+      const r = await supabase
+        .from('book_notes')
+        .delete()
+        .eq('book_id', bookId)
+        .eq('unit_key', key);
+      if (r.error) throw new Error(r.error.message);
+      return;
+    }
     if (error) throw new Error(error.message);
   }
 
@@ -3106,8 +3181,9 @@ const DB = (() => {
     loadAllProfiles,
     findProfileByUsername,
     deleteOwnAccount,
-    // book notes (admin)
+    // book notes (admin) — od migracji #39 wspierają argument visibility ('public'/'private')
     loadBookNote,
+    loadBookNotesBoth,
     saveBookNote,
     deleteBookNote,
     // book access requests
