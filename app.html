@@ -2,10 +2,18 @@
 <html lang="pl">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Sowie Fiszki 🦉</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#1a1040">
+<!-- PWA — instalacja na ekran glowny smartfona -->
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Sowie Fiszki">
+<meta name="application-name" content="Sowie Fiszki">
+<link rel="icon" type="image/svg+xml" href="icon.svg">
+<link rel="apple-touch-icon" href="icon.svg">
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
 <style>
 :root{
@@ -15626,6 +15634,119 @@ if ('serviceWorker' in navigator) {
     });
   }
 }
+
+// ══════════════════════════════════════════════
+//  PWA INSTALL PROMPT (beforeinstallprompt + przycisk)
+//  Android Chrome wystrzela beforeinstallprompt automatycznie gdy
+//  spelnione sa kryteria PWA. iOS Safari NIE wspiera tego API —
+//  uzytkownik musi kliknac Share -> Dodaj do ekranu glownego, wiec
+//  pokazujemy mu osobna podpowiedz.
+// ══════════════════════════════════════════════
+(function _initPwaInstall(){
+  if (typeof window === 'undefined') return;
+
+  // Czy aplikacja juz dziala jako PWA (zainstalowana)?
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+                     || window.matchMedia('(display-mode: minimal-ui)').matches
+                     || window.navigator.standalone === true; // iOS
+  if (isStandalone) {
+    document.documentElement.classList.add('pwa-installed');
+    return; // juz zainstalowane — banner niepotrzebny
+  }
+
+  const DISMISS_KEY = 'fiszki_pwa_install_dismissed_at';
+  const DISMISS_DAYS = 7;
+  function isDismissed(){
+    try {
+      const ts = parseInt(localStorage.getItem(DISMISS_KEY) || '0', 10);
+      if (!ts) return false;
+      return (Date.now() - ts) < DISMISS_DAYS * 24 * 60 * 60 * 1000;
+    } catch { return false; }
+  }
+  function markDismissed(){
+    try { localStorage.setItem(DISMISS_KEY, String(Date.now())); } catch {}
+  }
+
+  let _deferredPrompt = null;
+  // Wyplata standardowego promptu przegladarki (Android Chrome)
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    _deferredPrompt = e;
+    if (!isDismissed()) showInstallBanner('chrome');
+  });
+
+  // Sukces instalacji (Android Chrome)
+  window.addEventListener('appinstalled', () => {
+    _deferredPrompt = null;
+    const b = document.getElementById('pwaInstallBanner');
+    if (b) b.remove();
+    document.documentElement.classList.add('pwa-installed');
+  });
+
+  // iOS Safari nie wspiera beforeinstallprompt — pokazujemy instrukcje recznie.
+  // Detekcja iOS: iPad/iPhone/iPod w UA + standalone == false.
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  const isSafari = /^((?!chrome|android|crios|fxios).)*safari/i.test(navigator.userAgent);
+  if (isIOS && isSafari && !isDismissed()) {
+    // Czekamy az user troche posiedzi, zeby nie atakowac na starcie
+    setTimeout(() => {
+      if (!document.getElementById('pwaInstallBanner')) showInstallBanner('ios');
+    }, 8000);
+  }
+
+  function showInstallBanner(mode){
+    if (document.getElementById('pwaInstallBanner')) return;
+    const b = document.createElement('div');
+    b.id = 'pwaInstallBanner';
+    b.style.cssText = 'position:fixed;left:16px;right:16px;bottom:16px;background:linear-gradient(135deg,#2a1d6e,#1a1040);color:#fff;padding:14px 18px;border-radius:14px;display:flex;align-items:center;justify-content:space-between;gap:12px;font-family:Nunito,system-ui,sans-serif;font-weight:600;font-size:.92rem;box-shadow:0 8px 32px rgba(0,0,0,.45);z-index:99998;max-width:540px;margin:0 auto;border:1.5px solid rgba(255,209,102,.4);';
+    if (mode === 'chrome') {
+      b.innerHTML =
+        '<div style="display:flex;align-items:center;gap:12px;flex:1;min-width:0">'
+        + '<span style="font-size:1.8rem;flex-shrink:0">🦉</span>'
+        + '<span style="line-height:1.35"><b style="color:#ffd166">Zainstaluj jako aplikację</b><br><span style="font-size:.78rem;color:rgba(255,255,255,.75);font-weight:500">Otwieraj Sowie Fiszki jednym kliknięciem z ekranu głównego.</span></span>'
+        + '</div>'
+        + '<div style="display:flex;gap:6px;flex-shrink:0">'
+        + '<button id="pwaInstallNo" aria-label="Później" style="background:transparent;color:#fff;border:1px solid rgba(255,255,255,.25);padding:8px 12px;border-radius:8px;font-weight:700;cursor:pointer;font-family:inherit;font-size:.82rem">Później</button>'
+        + '<button id="pwaInstallYes" style="background:#ffd166;color:#1a1040;border:none;padding:8px 16px;border-radius:8px;font-weight:800;cursor:pointer;font-family:inherit;font-size:.88rem">Zainstaluj</button>'
+        + '</div>';
+    } else if (mode === 'ios') {
+      b.innerHTML =
+        '<div style="display:flex;align-items:center;gap:12px;flex:1;min-width:0">'
+        + '<span style="font-size:1.8rem;flex-shrink:0">🦉</span>'
+        + '<span style="line-height:1.35"><b style="color:#ffd166">Dodaj do ekranu głównego</b><br><span style="font-size:.78rem;color:rgba(255,255,255,.75);font-weight:500">Stuknij <b>⎙</b> (Udostępnij) na dole Safari → <b>„Dodaj do ekranu głównego"</b>.</span></span>'
+        + '</div>'
+        + '<button id="pwaInstallNo" aria-label="Zamknij" style="background:transparent;color:#fff;border:1px solid rgba(255,255,255,.25);padding:8px 14px;border-radius:8px;font-weight:700;cursor:pointer;font-family:inherit;font-size:.82rem;flex-shrink:0">OK</button>';
+    }
+    document.body.appendChild(b);
+
+    document.getElementById('pwaInstallNo')?.addEventListener('click', () => {
+      markDismissed();
+      b.remove();
+    });
+    document.getElementById('pwaInstallYes')?.addEventListener('click', async () => {
+      if (!_deferredPrompt) { b.remove(); return; }
+      b.remove();
+      _deferredPrompt.prompt();
+      const choice = await _deferredPrompt.userChoice.catch(() => ({ outcome: 'dismissed' }));
+      if (choice.outcome !== 'accepted') markDismissed();
+      _deferredPrompt = null;
+    });
+  }
+
+  // Globalna funkcja: kazdy moze zawolac do "rebanneruje", np. z modala konta.
+  window.showInstallPromptNow = function(){
+    if (_deferredPrompt) {
+      _deferredPrompt.prompt();
+      _deferredPrompt.userChoice.finally(() => { _deferredPrompt = null; });
+    } else if (isIOS && isSafari) {
+      try { localStorage.removeItem(DISMISS_KEY); } catch {}
+      showInstallBanner('ios');
+    } else {
+      // Inne przegladarki / juz zainstalowane — pokaz krotki info
+      if (typeof toast === 'function') toast('ℹ️ Otwórz menu przeglądarki i wybierz „Zainstaluj aplikację" lub „Dodaj do ekranu głównego".', 4200);
+    }
+  };
+})();
 
 // ══════════════════════════════════════════════
 //  BOOT

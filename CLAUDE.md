@@ -12,7 +12,7 @@
 - **Hosting:** Vercel → **https://sowiefiszki.com** (custom domain, od 29.04.2026; wcześniej GitHub Pages)
 - **Backend:** Supabase (auth + Postgres + RLS), projekt `kofenaaeleyhwhbkytcz`
 - **Charakter:** osoba fizyczna prowadząca Platformę; **model freemium** (30-dniowy trial Premium → Free / Premium po opłacie). Wcześniej projekt był non-commercial — od ~2026-04-29 przygotowywany do monetyzacji.
-- **Service Worker:** aktualnie `v1.23` (stan na 13 maja 2026). Format `vMAJOR.MINOR` z zerem wiodącym, od `v1.00` (zresetowane od maja 2026 dla porządku; wcześniej luźna numeracja `v50`–`v233`).
+- **Service Worker:** aktualnie `v1.32` (stan na 15 maja 2026). Format `vMAJOR.MINOR` z zerem wiodącym, od `v1.00` (zresetowane od maja 2026 dla porządku; wcześniej luźna numeracja `v50`–`v233`).
 - **Promocja Premium:** **wszyscy zalogowani użytkownicy mają Premium za darmo do 31.08.2026** (override po stronie kodu w `db.js isPremium()` — `isPromoActive()` zwraca `true` gdy `Date.now() < 2026-09-01 00:00`). Po 1.09.2026 promocja samoczynnie wygasa — wraca normalna logika: nowi użytkownicy mają 30-dniowy trial gratis, reszta przechodzi na Free.
 
 ## 💰 Koszty i terminy odnowienia
@@ -54,7 +54,9 @@ Obecnie **brak skrzynki na własnej domenie** — kontakt idzie na `sowie.fiszki
 - `db.js` — warstwa Supabase (sesja, auth, profile, postępy, klasy, user_books, RLS helpers). Funkcje eksportowane przez globalny obiekt `DB`.
 - `supabase-config.js` — URL + anon key.
 - `sw.js` — Service Worker (network-first dla HTML/JS + cache-first dla fontów/CDN). Bypass dla Supabase REST API.
-- `manifest.json` — PWA manifest.
+- `manifest.json` — PWA manifest. `id: "/"`, `start_url: "/app"`, `scope: "/"`, `display: standalone`, 2 ikony SVG (regular + maskable), shortcuts (App / Nauczyciel / Home). Po `start_url` Chrome ląduje od razu w app.html (auth gate przekieruje na `/login` jeśli niezalogowany).
+- `icon.svg` / `icon-maskable.svg` — wektorowe ikony PWA. `icon.svg` ma zaokrąglone rogi (`rx=96`) i napis „Sowie Fiszki" pod owlem, używany jako `purpose: any` + `apple-touch-icon` + `<link rel="icon">`. `icon-maskable.svg` jest pełnoekranowy (Android maskuje go do okręgu/squircle) z owlem w strefie bezpiecznej (inner 60%). Oba używają emoji 🦉 renderowanego przez Apple Color / Noto Color / Segoe UI Emoji w zależności od platformy.
+- **PWA install** — `app.html` (sekcja `_initPwaInstall`) wyłapuje `beforeinstallprompt` (Android Chrome) i pokazuje banner z przyciskiem „Zainstaluj". Dla iOS Safari (które nie wspiera tego API) pokazuje osobny banner z instrukcją „⎙ → Dodaj do ekranu głównego". Dismiss zapamiętywany w `localStorage['fiszki_pwa_install_dismissed_at']` na 7 dni. Globalna funkcja `window.showInstallPromptNow()` dla wywołania z modala konta. Banner ukrywa się gdy `display-mode: standalone` (apka już zainstalowana).
 
 ### Kluczowe ekrany w `app.html`
 `sLang`, `sSchool`, `sClass`, `sBooks` (panel staff), `sUnits`, `sWordList`, `sStudy`, `sCrossword`, `sWordsearch`, `sSnake`, `sMemory`, `sHangman`, `sScrGame`, `sSentScrGame`, `sBoardGame`, `sDobble`, `sImageCard`, `sCubes`, `sDuel` (Rywalizacja), `sSpeed`, `sStats`, `sApps`, `sDone`, `sAdminAccess`, `sAdminClasses`, `sClassDetail`, `sStudentProgress`, `sTeacherSets`, `sTeacherSetEdit`, `sAdminTeacherSets`, `sAccessRequests`, `sWordErrors`, `sMessages`, `sParentPanel`, `sAddChild`, `sChildBooks`, `sInactive`, `sBulkStudents`.
