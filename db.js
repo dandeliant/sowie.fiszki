@@ -1606,6 +1606,26 @@ const DB = (() => {
     if (error) throw new Error(error.message);
   }
 
+  // Dla admina/nauczyciela: zwraca tablicę {parent_id, child_id} dla podanych dzieci.
+  // Używane m.in. przy wydruku haseł klasy — żeby uwzględnić powiązane konta opiekunów.
+  // Polityka RLS: admin/teacher widzą relacje uczniów których utworzyli (przez _is_admin/_is_teacher
+  // helpery z migracji #20). Jeśli brak uprawnień, zwraca [].
+  async function loadParentChildLinksForChildren(childIds) {
+    if (!Array.isArray(childIds) || !childIds.length) return [];
+    if (!_profile?.isAdmin && !_profile?.isTeacher) return [];
+    try {
+      const { data, error } = await supabase
+        .from('parent_children')
+        .select('parent_id, child_id')
+        .in('child_id', childIds);
+      if (error) { console.warn('[loadParentChildLinksForChildren]', error.message); return []; }
+      return data || [];
+    } catch(e) {
+      console.warn('[loadParentChildLinksForChildren]', e.message || e);
+      return [];
+    }
+  }
+
   async function parentAssignBookToChild(childId, bookId) {
     const { error } = await supabase.rpc('parent_assign_book_to_child', {
       p_child_id: childId, p_book_id: bookId
@@ -3247,6 +3267,7 @@ const DB = (() => {
     findUserByUsername,
     addChild,
     removeChild,
+    loadParentChildLinksForChildren,
     parentAssignBookToChild,
     parentUnassignBookFromChild,
     getChildUserBooks,

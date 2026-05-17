@@ -21590,7 +21590,7 @@ if ('serviceWorker' in navigator) {
   // ═══════════════════════════════════════════════
   //  DRUKUJ HASŁA CAŁEJ KLASY
   // ═══════════════════════════════════════════════
-  window.printClassPasswords = function(){
+  window.printClassPasswords = async function(){
     const members = (_allProfiles || []).filter(p =>
       _curClassMembers.includes(p.id) && p.generated_password
     );
@@ -21598,10 +21598,39 @@ if ('serviceWorker' in navigator) {
       toast('ℹ️ Żaden uczeń tej klasy nie ma zapisanego hasła.', 3200);
       return;
     }
+
+    // Pobierz powiązane konta opiekunów (parent_children) — żeby pojawiły się
+    // w wydruku obok ucznia (tryb karty z 2 polami). Wymaga zapisanego
+    // generated_password na profilu opiekuna (czyli opiekun musiał zostać
+    // utworzony przez bulk z checkboxem „także konta opiekunów").
+    const childIds = members.map(m => m.id);
+    let parentByChild = {}; // child_id → parent profile
+    try {
+      const links = await DB.loadParentChildLinksForChildren(childIds);
+      if (links && links.length) {
+        const parentIds = [...new Set(links.map(l => l.parent_id))];
+        const parentsById = {};
+        (_allProfiles || []).forEach(p => { if (parentIds.includes(p.id)) parentsById[p.id] = p; });
+        links.forEach(l => {
+          if (parentByChild[l.child_id]) return; // pierwszy znaleziony opiekun
+          const p = parentsById[l.parent_id];
+          if (p && p.generated_password) parentByChild[l.child_id] = p;
+        });
+      }
+    } catch(e) { console.warn('[printClassPasswords] parents lookup failed:', e); }
+
     // Skopiuj _bulkLastCredentials i _bulkClassName na czas wywołania printBulkCredentials
     const savedCreds = _bulkLastCredentials;
     const savedName = _bulkClassName;
-    _bulkLastCredentials = members.map(m => ({ username: m.username, password: m.generated_password }));
+    _bulkLastCredentials = members.map(m => {
+      const entry = { username: m.username, password: m.generated_password };
+      const parent = parentByChild[m.id];
+      if (parent) {
+        entry.parentUsername = parent.username;
+        entry.parentPassword = parent.generated_password;
+      }
+      return entry;
+    });
     _bulkClassName = _curClassName || '';
     try { printBulkCredentials(); } finally {
       _bulkLastCredentials = savedCreds;
