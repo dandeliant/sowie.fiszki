@@ -4471,8 +4471,9 @@ function getUnitsWithCustom(bId) {
   return units;
 }
 function getBookAllWordsCustom(bId) {
+  if (!bId || !BOOKS[bId] || !BOOKS[bId].units) return [];
   return Object.keys(BOOKS[bId].units)
-    .flatMap(k => [...BOOKS[bId].units[k].words, ...getCustomWords(bId, k)]);
+    .flatMap(k => [...(BOOKS[bId].units[k].words || []), ...getCustomWords(bId, k)]);
 }
 
 // ══════════════════════════════════════════════
@@ -6616,10 +6617,31 @@ window.openGlobalHardWords = function() {
   html += '</div>';
   html += '<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">';
   html += '<button class="btn-modal-cancel" onclick="closeGenericModal()">Zamknij</button>';
-  html += '<button class="btn-modal-save" style="background:var(--danger)" onclick="closeGenericModal();startHardWordsSession(window._lastGlobalHardWords||[])">🎯 Ucz się trudnych słów</button>';
+  html += '<button class="btn-modal-save" style="background:var(--danger)" onclick="closeGenericModal();startGlobalHardWordsSession()">🎯 Ucz się trudnych słów</button>';
   html += '</div></div>';
   window._lastGlobalHardWords = words;
+  // Zapamiętaj pierwszy podręcznik z trudnymi słowami — potrzebny do
+  // ustawienia currentBookId przed startHardWordsSession (inaczej crash
+  // w getBookAllWordsCustom).
+  window._lastGlobalHardWordsFirstBook = Object.keys(byBook)[0] || null;
   openGenericModal('🔥 Powtórka błędów', html);
+};
+
+// Wrapper który ustawia currentBookId przed sesją (kontekst dla
+// nawigacji i wyświetlania w sStudy). Hard-words mogą pochodzić
+// z różnych podręczników — bierzemy pierwszy jako "kotwicę".
+window.startGlobalHardWordsSession = function(){
+  const words = window._lastGlobalHardWords || [];
+  if (!words.length) { toast('Brak trudnych słówek! 🎉'); return; }
+  const firstBook = window._lastGlobalHardWordsFirstBook;
+  if (firstBook && BOOKS[firstBook]) {
+    currentBookId = firstBook;
+  } else if (!currentBookId || !BOOKS[currentBookId]) {
+    // Fallback: pierwszy dostępny podręcznik użytkownika
+    const accessible = (typeof currentUserAccessibleBooks === 'function') ? currentUserAccessibleBooks() : [];
+    if (accessible.length) currentBookId = accessible[0].id;
+  }
+  startHardWordsSession(words);
 };
 
 // Odświeża baner globalnych trudnych słów w sBooks (pokazuje lub chowa).
