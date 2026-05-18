@@ -1538,6 +1538,38 @@ body.guest-mode .progress-wrap{opacity:.4;}
 </div>
 
 <!-- Modal: Uczeń — poproś o dostęp do podręcznika -->
+<!-- Modal: Trening wymowy — porownanie nagrania ucznia z TTS/custom audio -->
+<div class="modal-overlay" id="pronComparModal" style="display:none" onclick="if(event.target===this)closePronComparModal()">
+  <div class="modal-box" style="max-width:480px;text-align:center">
+    <div class="modal-title">🎤 Trening wymowy</div>
+    <div style="font-size:.72rem;color:var(--muted);margin-bottom:8px;font-weight:600">Nagraj swoją wymowę i porównaj z lektorem</div>
+    <div style="margin:6px 0;font-size:.78rem;color:var(--muted)">Słówko:</div>
+    <div id="pcWord" style="font-family:'Playfair Display',serif;font-size:1.7rem;color:var(--accent);font-weight:800;margin-bottom:6px">—</div>
+    <div id="pcWordPl" style="font-size:.85rem;color:var(--muted);margin-bottom:12px">—</div>
+
+    <canvas id="pcWaveform" width="400" height="60" style="width:100%;max-width:400px;background:var(--surface2);border-radius:8px;margin-bottom:10px;display:none"></canvas>
+
+    <div id="pcStep1" style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-bottom:10px">
+      <button class="btn-modal-save" id="pcRecBtn" onclick="pcToggleRecord()" style="min-width:170px">🎙️ Nagraj swój głos</button>
+      <button class="btn-modal-cancel" onclick="pcPlayReference()">🔊 Wzorzec</button>
+    </div>
+
+    <div id="pcStep2" style="display:none">
+      <p style="font-size:.78rem;color:var(--muted);margin:4px 0 10px;font-weight:600">Porównaj — odtwórz na zmianę:</p>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-bottom:8px">
+        <button class="btn-sm" onclick="pcPlayUser()">▶ Twój głos</button>
+        <button class="btn-sm" onclick="pcPlayReference()">▶ Wzorzec</button>
+        <button class="btn-sm" onclick="pcPlayAlternating()" style="background:rgba(255,107,157,.18);border-color:rgba(255,107,157,.4);color:var(--pink)">🔄 Naprzemiennie 3×</button>
+      </div>
+      <button class="btn-sm" onclick="pcResetRecording()" style="margin-top:4px">🗑️ Wyrzuć i nagraj jeszcze raz</button>
+    </div>
+
+    <div id="pcStatus" style="font-size:.72rem;min-height:14px;margin-top:8px;font-weight:600;color:var(--muted)"></div>
+
+    <div style="margin-top:14px"><button class="btn-modal-cancel" onclick="closePronComparModal()">Zamknij</button></div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="requestAccessModal" style="display:none" onclick="if(event.target===this)closeRequestAccessModal()">
   <div class="modal-box" style="max-width:460px">
     <div style="font-family:'Playfair Display',serif;font-size:1.15rem;color:var(--accent);margin-bottom:4px">📩 Poproś o dostęp</div>
@@ -2751,7 +2783,10 @@ szkoła	school"></textarea>
       <div class="card-face card-back">
         <div class="card-label" id="cardBackLabel">English</div>
         <div class="card-word" id="wEn">—</div>
-        <div class="card-back-actions"><button class="btn-speak" onclick="speakACurr(event)">🔊 Wymowa</button></div>
+        <div class="card-back-actions">
+          <button class="btn-speak" onclick="speakACurr(event)">🔊 Wymowa</button>
+          <button class="btn-speak" onclick="openPronCompar(event)" title="Porównaj swoją wymowę z lektorem" style="background:rgba(255,107,157,.11);border-color:rgba(255,107,157,.32);color:var(--pink)">🎤 Porównaj</button>
+        </div>
       </div>
     </div>
   </div>
@@ -15738,6 +15773,258 @@ if ('serviceWorker' in navigator) {
     });
   }
 }
+
+// ══════════════════════════════════════════════
+//  TRENING WYMOWY — Twój głos vs lektor (Feature 2)
+//  Modal pronComparModal: uczeń nagrywa swoją wymowę (MediaRecorder),
+//  porównuje z TTS lub custom word_audio. Nie zapisuje nagrania (in-memory).
+//  Waveform: AnalyserNode + Canvas live podczas nagrywania.
+// ══════════════════════════════════════════════
+(function _initPronCompar(){
+  const state = {
+    word: null,
+    wordPl: null,
+    stream: null,
+    recorder: null,
+    audioCtx: null,
+    analyser: null,
+    rafId: null,
+    chunks: [],
+    blob: null,
+    blobUrl: null,
+    isRecording: false,
+    maxSec: 5,
+    timerStart: 0
+  };
+
+  function cleanup(){
+    if (state.rafId) cancelAnimationFrame(state.rafId);
+    state.rafId = null;
+    if (state.recorder && state.recorder.state !== 'inactive') {
+      try { state.recorder.stop(); } catch(_){}
+    }
+    if (state.stream) {
+      try { state.stream.getTracks().forEach(t => t.stop()); } catch(_){}
+      state.stream = null;
+    }
+    if (state.audioCtx) {
+      try { state.audioCtx.close(); } catch(_){}
+      state.audioCtx = null;
+    }
+    state.recorder = null;
+    state.analyser = null;
+    state.chunks = [];
+    state.isRecording = false;
+  }
+
+  function fullCleanup(){
+    cleanup();
+    if (state.blobUrl) {
+      try { URL.revokeObjectURL(state.blobUrl); } catch(_){}
+      state.blobUrl = null;
+    }
+    state.blob = null;
+  }
+
+  function setStatus(msg, isErr) {
+    const el = document.getElementById('pcStatus');
+    if (!el) return;
+    el.textContent = msg || '';
+    el.style.color = isErr ? 'var(--danger)' : 'var(--muted)';
+  }
+
+  function drawWaveform(){
+    const canvas = document.getElementById('pcWaveform');
+    if (!canvas || !state.analyser) return;
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+    const bufferLen = state.analyser.fftSize;
+    const data = new Uint8Array(bufferLen);
+    function tick(){
+      if (!state.isRecording) return;
+      state.rafId = requestAnimationFrame(tick);
+      state.analyser.getByteTimeDomainData(data);
+      ctx.fillStyle = 'rgba(42,29,110,.6)';
+      ctx.fillRect(0, 0, W, H);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#ff6b9d';
+      ctx.beginPath();
+      const slice = W / bufferLen;
+      let x = 0;
+      for (let i = 0; i < bufferLen; i++) {
+        const v = data[i] / 128.0;
+        const y = v * H / 2;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        x += slice;
+      }
+      ctx.lineTo(W, H / 2);
+      ctx.stroke();
+      // Timer
+      const elapsed = (performance.now() - state.timerStart) / 1000;
+      if (elapsed >= state.maxSec) { pcToggleRecord(); return; }
+      setStatus('🔴 Nagrywam… ' + elapsed.toFixed(1) + ' / ' + state.maxSec + 's');
+    }
+    tick();
+  }
+
+  window.openPronCompar = function(e){
+    if (e) { e.stopPropagation(); e.preventDefault(); }
+    if (typeof activeWords === 'undefined' || !activeWords || curIdx === null) {
+      toast('Najpierw wylosuj słówko.'); return;
+    }
+    const w = activeWords[curIdx];
+    if (!w) return;
+    state.word = w[1] || '';
+    state.wordPl = w[0] || '';
+    document.getElementById('pcWord').textContent = state.word;
+    document.getElementById('pcWordPl').textContent = state.wordPl;
+    document.getElementById('pcStep1').style.display = '';
+    document.getElementById('pcStep2').style.display = 'none';
+    document.getElementById('pcWaveform').style.display = 'none';
+    document.getElementById('pcRecBtn').textContent = '🎙️ Nagraj swój głos';
+    setStatus('');
+    fullCleanup();
+    document.getElementById('pronComparModal').style.display = 'flex';
+  };
+
+  window.closePronComparModal = function(){
+    fullCleanup();
+    document.getElementById('pronComparModal').style.display = 'none';
+  };
+
+  window.pcResetRecording = function(){
+    fullCleanup();
+    document.getElementById('pcStep1').style.display = '';
+    document.getElementById('pcStep2').style.display = 'none';
+    document.getElementById('pcWaveform').style.display = 'none';
+    document.getElementById('pcRecBtn').textContent = '🎙️ Nagraj swój głos';
+    setStatus('Gotowy do nowego nagrania.');
+  };
+
+  window.pcToggleRecord = async function(){
+    if (state.isRecording) {
+      // Stop
+      try { state.recorder && state.recorder.stop(); } catch(_){}
+      state.isRecording = false;
+      // chunks → blob handled in onstop
+      document.getElementById('pcRecBtn').textContent = '🎙️ Nagraj swój głos';
+      setStatus('Przetwarzanie…');
+      return;
+    }
+    // Start
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setStatus('Twoja przeglądarka nie obsługuje nagrywania.', true); return;
+    }
+    try {
+      state.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch(e) {
+      setStatus('Brak dostępu do mikrofonu.', true); return;
+    }
+    let mime = 'audio/webm;codecs=opus';
+    if (typeof MediaRecorder.isTypeSupported === 'function' && !MediaRecorder.isTypeSupported(mime)) {
+      mime = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' :
+             MediaRecorder.isTypeSupported('audio/mp4')  ? 'audio/mp4' : '';
+    }
+    try {
+      state.recorder = mime ? new MediaRecorder(state.stream, { mimeType: mime })
+                            : new MediaRecorder(state.stream);
+    } catch(e) {
+      setStatus('Nie udało się uruchomić nagrywania.', true);
+      cleanup(); return;
+    }
+    state.chunks = [];
+    state.recorder.ondataavailable = e => { if (e.data && e.data.size > 0) state.chunks.push(e.data); };
+    state.recorder.onstop = () => {
+      if (state.rafId) cancelAnimationFrame(state.rafId);
+      state.rafId = null;
+      if (state.blobUrl) { try { URL.revokeObjectURL(state.blobUrl); } catch(_){} }
+      state.blob = new Blob(state.chunks, { type: state.chunks[0]?.type || 'audio/webm' });
+      state.blobUrl = URL.createObjectURL(state.blob);
+      document.getElementById('pcWaveform').style.display = 'none';
+      document.getElementById('pcStep2').style.display = '';
+      setStatus('✓ Gotowe — porównaj swoją wymowę z wzorcem.');
+      // Stop mic
+      if (state.stream) { try { state.stream.getTracks().forEach(t => t.stop()); } catch(_){} state.stream = null; }
+      if (state.audioCtx) { try { state.audioCtx.close(); } catch(_){} state.audioCtx = null; }
+    };
+    // Setup AnalyserNode for waveform
+    try {
+      state.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const source = state.audioCtx.createMediaStreamSource(state.stream);
+      state.analyser = state.audioCtx.createAnalyser();
+      state.analyser.fftSize = 256;
+      source.connect(state.analyser);
+    } catch(e) { /* waveform optional */ }
+
+    state.recorder.start();
+    state.isRecording = true;
+    state.timerStart = performance.now();
+    document.getElementById('pcRecBtn').textContent = '⏹️ Zatrzymaj';
+    document.getElementById('pcWaveform').style.display = '';
+    setStatus('🔴 Nagrywam… mów wyraźnie');
+    drawWaveform();
+  };
+
+  // Odtwórz nagranie ucznia
+  window.pcPlayUser = function(){
+    if (!state.blobUrl) return Promise.resolve();
+    return new Promise(resolve => {
+      const a = new Audio(state.blobUrl);
+      a.onended = a.onerror = () => resolve();
+      a.play().catch(() => resolve());
+    });
+  };
+
+  // Odtwórz wzorzec (custom word_audio jeśli istnieje, inaczej TTS)
+  window.pcPlayReference = function(){
+    return new Promise(resolve => {
+      if (!state.word) return resolve();
+      // Custom audio?
+      const customUrl = (typeof DB !== 'undefined' && DB.getWordAudioUrl && state.wordPl)
+        ? findCustomAudioUrl(state.wordPl) : null;
+      if (customUrl) {
+        const a = new Audio(customUrl);
+        a.onended = a.onerror = () => resolve();
+        a.play().catch(() => { speakAndResolve(); });
+        return;
+      }
+      speakAndResolve();
+      function speakAndResolve(){
+        if (!('speechSynthesis' in window)) return resolve();
+        try { window.speechSynthesis.cancel(); } catch(_){}
+        const u = new SpeechSynthesisUtterance(state.word);
+        u.lang = 'en-GB'; u.rate = 0.9;
+        u.onend = u.onerror = () => resolve();
+        try { window.speechSynthesis.speak(u); } catch(_) { resolve(); }
+      }
+    });
+  };
+
+  function findCustomAudioUrl(wordPl){
+    // Iteruj po wszystkich unitach bieżącego podręcznika, szukaj nagrania
+    if (typeof BOOKS === 'undefined' || typeof currentBookId === 'undefined' || !BOOKS[currentBookId]) return null;
+    const book = BOOKS[currentBookId];
+    for (const uk of Object.keys(book.units)) {
+      if (uk === 'all') continue;
+      const url = DB.getWordAudioUrl(currentBookId, uk, wordPl);
+      if (url) return url;
+    }
+    return null;
+  }
+
+  // Naprzemiennie: wzorzec → ty → wzorzec → ty → wzorzec → ty (3 cykle)
+  window.pcPlayAlternating = async function(){
+    if (!state.blobUrl) return;
+    setStatus('🔁 Wzorzec → Twój głos × 3');
+    for (let i = 0; i < 3; i++) {
+      await pcPlayReference();
+      await new Promise(r => setTimeout(r, 200));
+      await pcPlayUser();
+      await new Promise(r => setTimeout(r, 300));
+    }
+    setStatus('✓ Skończone. Spróbuj jeszcze raz lub zamknij.');
+  };
+})();
 
 // ══════════════════════════════════════════════
 //  PWA INSTALL PROMPT (beforeinstallprompt + przycisk)
