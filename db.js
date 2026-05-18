@@ -1610,6 +1610,83 @@ const DB = (() => {
   // Używane m.in. przy wydruku haseł klasy — żeby uwzględnić powiązane konta opiekunów.
   // Polityka RLS: admin/teacher widzą relacje uczniów których utworzyli (przez _is_admin/_is_teacher
   // helpery z migracji #20). Jeśli brak uprawnień, zwraca [].
+  // Ranking klasowy (Feature 3): agreguje daily_xp_log dla wszystkich
+  // czlonkow klasy w ostatnich N dniach. Zwraca posortowana liste:
+  // [{ user_id, username, totalXp, totalMinutes, daysActive, met_challenge }]
+  // Wymaga uprawnien admin/nauczyciel (RLS pilnuje). Domyslnie 7 dni.
+  // weeklyChallengeXp: progi (default 100 XP/tydzien) — uzywane do flagi met_challenge.
+  async function loadClassLeaderboard(classId, days, weeklyChallengeXp) {
+    if (!classId) return [];
+    if (!_profile?.isAdmin && !_profile?.isTeacher) return [];
+    const d = Math.max(1, Math.min(90, days || 7));
+    const threshold = weeklyChallengeXp || 100;
+    try {
+      // 1) Pobierz czlonkow klasy
+      const { data: members, error: mErr } = await supabase
+        .from('class_members')
+        .select('user_id')
+        .eq('class_id', classId);
+      if (mErr) throw new Error(mErr.message);
+      const userIds = (members || []).map(m => m.user_id);
+      if (!userIds.length) return [];
+
+      // 2) Pobierz profile (username, plan, is_admin/teacher zeby moc filtrowac)
+      const { data: profiles, error: pErr } = await supabase
+        .from('profiles')
+        .select('id, username, is_admin, is_teacher')
+        .in('id', userIds);
+      if (pErr) throw new Error(pErr.message);
+      const profileMap = {};
+      (profiles || []).forEach(p => { profileMap[p.id] = p; });
+
+      // 3) Pobierz daily_xp_log z ostatnich N dni dla tych userow
+      const fromDate = new Date();
+      fromDate.setDate(fromDate.getDate() - d);
+      const fromStr = fromDate.toISOString().slice(0, 10);
+      let xpRes = await supabase
+        .from('daily_xp_log')
+        .select('user_id, day, xp, minutes')
+        .in('user_id', userIds)
+        .gte('day', fromStr);
+      if (xpRes.error) {
+        // fallback dla starego schematu bez minutes
+        xpRes = await supabase
+          .from('daily_xp_log')
+          .select('user_id, day, xp')
+          .in('user_id', userIds)
+          .gte('day', fromStr);
+        if (xpRes.error) throw new Error(xpRes.error.message);
+      }
+      const xpData = xpRes.data || [];
+
+      // 4) Agreguj per uczen
+      const aggMap = {};
+      userIds.forEach(uid => {
+        const p = profileMap[uid];
+        if (!p) return;
+        // Pomijamy adminow/nauczycieli z rankingu uczniow
+        if (p.is_admin || p.is_teacher) return;
+        aggMap[uid] = { user_id: uid, username: p.username, totalXp: 0, totalMinutes: 0, daysActive: 0, met_challenge: false };
+      });
+      xpData.forEach(row => {
+        const e = aggMap[row.user_id];
+        if (!e) return;
+        e.totalXp += row.xp || 0;
+        e.totalMinutes += row.minutes || 0;
+        if (row.xp > 0) e.daysActive++;
+      });
+
+      // 5) Met challenge (>= threshold)
+      Object.values(aggMap).forEach(e => { e.met_challenge = e.totalXp >= threshold; });
+
+      // 6) Sortuj malejaco po totalXp
+      return Object.values(aggMap).sort((a, b) => b.totalXp - a.totalXp);
+    } catch(e) {
+      console.warn('[loadClassLeaderboard]', e.message || e);
+      return [];
+    }
+  }
+
   async function loadParentChildLinksForChildren(childIds) {
     if (!Array.isArray(childIds) || !childIds.length) return [];
     if (!_profile?.isAdmin && !_profile?.isTeacher) return [];
@@ -3268,6 +3345,7 @@ const DB = (() => {
     addChild,
     removeChild,
     loadParentChildLinksForChildren,
+    loadClassLeaderboard,
     parentAssignBookToChild,
     parentUnassignBookFromChild,
     getChildUserBooks,
