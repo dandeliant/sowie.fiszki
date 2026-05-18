@@ -1516,6 +1516,17 @@ body.guest-mode .progress-wrap{opacity:.4;}
   </div>
   <div class="unit-title" id="booksScreenTitle">Wybierz podręcznik 📖</div>
   <div class="unit-subtitle" id="booksScreenSub">Z którego podręcznika chcesz ćwiczyć?</div>
+  <!-- Globalny banner Trudnych słów (auto-aktualizowany w refreshBooks) -->
+  <div id="globalHardWordsBanner" style="display:none;width:100%;max-width:680px;margin:0 auto 14px;background:linear-gradient(135deg,rgba(255,118,117,.16),rgba(255,107,157,.10));border:2px solid rgba(255,118,117,.45);border-radius:16px;padding:14px 18px;cursor:pointer" onclick="openGlobalHardWords()">
+    <div style="display:flex;align-items:center;gap:12px">
+      <span style="font-size:1.8rem">🔥</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-family:'Playfair Display',serif;font-size:1rem;color:var(--danger);font-weight:800">Twoje trudne słowa</div>
+        <div style="font-size:.72rem;color:var(--muted);font-weight:600" id="globalHardWordsSub">Powtórz słówka, które najczęściej mylisz</div>
+      </div>
+      <div style="background:var(--danger);color:#fff;padding:6px 12px;border-radius:20px;font-weight:800;font-size:.85rem" id="globalHardWordsCount">0</div>
+    </div>
+  </div>
   <div class="book-grid" id="bookGrid"></div>
   <div id="booksEmptyMsg" style="display:none;text-align:center;color:var(--muted);font-size:.85rem;font-weight:600;padding:28px 14px">
     Brak podręczników w tej kategorii.
@@ -4990,6 +5001,8 @@ function refreshBooks() {
   if (emptyEl) emptyEl.style.display = 'none';
   // Odswiez baner powtorek (klon w sBooks #reviewQueueBanner2)
   if (typeof refreshReviewQueueBanner === 'function') refreshReviewQueueBanner();
+  // Odswiez globalny baner Trudnych slow (auto-ukrywa sie gdy brak)
+  if (typeof refreshGlobalHardWordsBanner === 'function') refreshGlobalHardWordsBanner();
   // Fallback: brak kontekstu nawigacji
   // - zwykły użytkownik → przekierowanie na sLang (wybór języka)
   // - admin / nauczyciel → pokazujemy wybór języka pod panelem
@@ -6094,6 +6107,97 @@ function collectHardWords(bookId) {
     return true;
   });
 }
+
+// Generyczny modal pomocniczy (używany przez „🔥 Trudne słowa" i podobne).
+// Tworzy modal w locie i dokleja do <body>. closeGenericModal() usuwa go z DOMu.
+window.openGenericModal = function(title, htmlContent) {
+  closeGenericModal();
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.id = '__genericModal__';
+  overlay.addEventListener('click', e => { if (e.target === overlay) closeGenericModal(); });
+  const box = document.createElement('div');
+  box.className = 'modal-box';
+  box.style.maxWidth = '600px';
+  box.innerHTML = '<div class="modal-title">' + title + '</div>' + htmlContent;
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+};
+window.closeGenericModal = function() {
+  const m = document.getElementById('__genericModal__');
+  if (m) m.remove();
+};
+
+// Globalne zbieranie trudnych słów ze WSZYSTKICH dostępnych podręczników użytkownika.
+// Zwraca: { words: [[pl,en], …] unikalnie, byBook: { bookId: count, … }, total }
+// Używane przez baner „🔥 Twoje trudne słowa" w sBooks.
+function collectAllHardWords() {
+  const accessible = (typeof currentUserAccessibleBooks === 'function')
+    ? currentUserAccessibleBooks()
+    : Object.values(BOOKS);
+  const all = [];
+  const byBook = {};
+  accessible.forEach(b => {
+    const h = collectHardWords(b.id);
+    if (h.length === 0) return;
+    byBook[b.id] = { name: b.shortName || b.name, count: h.length, icon: b.icon };
+    h.forEach(w => all.push(w));
+  });
+  // Deduplikacja krzyżowa po [pl, en]
+  const seen = new Set();
+  const words = all.filter(w => {
+    const k = (w[0] || '') + '|' + (w[1] || '');
+    if (seen.has(k)) return false;
+    seen.add(k); return true;
+  });
+  return { words, byBook, total: words.length };
+}
+
+// Otwiera modal/screen z listą trudnych słów + CTA "Ucz się".
+window.openGlobalHardWords = function() {
+  const { words, byBook, total } = collectAllHardWords();
+  if (total === 0) { toast('🎉 Świetnie! Nie masz teraz żadnych trudnych słów.'); return; }
+  let html = '<div style="font-family:Nunito,sans-serif;color:var(--text);max-width:560px;margin:0 auto">';
+  html += '<div style="text-align:center;margin-bottom:18px">';
+  html += '<div style="font-size:2.6rem">🔥</div>';
+  html += '<div style="font-family:\'Playfair Display\',serif;font-size:1.3rem;color:var(--danger);font-weight:800;margin-top:4px">Trudne słowa — ' + total + '</div>';
+  html += '<div style="font-size:.78rem;color:var(--muted);font-weight:600">Słówka, które najczęściej mylisz w ' + Object.keys(byBook).length + ' podręczniku/ach</div>';
+  html += '</div>';
+  html += '<div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:14px;max-height:42vh;overflow-y:auto">';
+  Object.entries(byBook).sort((a,b) => b[1].count - a[1].count).forEach(([bookId, info]) => {
+    html += '<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px dashed var(--border)">';
+    html += '<span style="font-size:1.3rem">' + (info.icon || '📖') + '</span>';
+    html += '<span style="flex:1;font-weight:700">' + escHtml(info.name) + '</span>';
+    html += '<span style="background:rgba(255,118,117,.18);color:var(--danger);padding:3px 10px;border-radius:14px;font-weight:800;font-size:.78rem">' + info.count + '</span>';
+    html += '</div>';
+  });
+  html += '</div>';
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">';
+  html += '<button class="btn-modal-cancel" onclick="closeGenericModal()">Zamknij</button>';
+  html += '<button class="btn-modal-save" style="background:var(--danger)" onclick="closeGenericModal();startHardWordsSession(window._lastGlobalHardWords||[])">🎯 Ucz się trudnych słów</button>';
+  html += '</div></div>';
+  window._lastGlobalHardWords = words;
+  openGenericModal('🔥 Powtórka błędów', html);
+};
+
+// Odświeża baner globalnych trudnych słów w sBooks (pokazuje lub chowa).
+window.refreshGlobalHardWordsBanner = function() {
+  const el = document.getElementById('globalHardWordsBanner');
+  if (!el) return;
+  if (typeof currentUser === 'undefined' || !currentUser) { el.style.display = 'none'; return; }
+  const { total, byBook } = collectAllHardWords();
+  if (total === 0) { el.style.display = 'none'; return; }
+  const sub = document.getElementById('globalHardWordsSub');
+  const cnt = document.getElementById('globalHardWordsCount');
+  if (cnt) cnt.textContent = total;
+  if (sub) {
+    const nBooks = Object.keys(byBook).length;
+    sub.textContent = nBooks === 1
+      ? 'Powtórz słówka, które najczęściej mylisz'
+      : 'Z ' + nBooks + ' podręczników · powtórz najtrudniejsze';
+  }
+  el.style.display = '';
+};
 
 function startHardWordsSession(hardWords) {
   if (!hardWords.length) { toast('Brak trudnych słówek! 🎉'); return; }
