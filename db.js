@@ -1610,6 +1610,61 @@ const DB = (() => {
   // Używane m.in. przy wydruku haseł klasy — żeby uwzględnić powiązane konta opiekunów.
   // Polityka RLS: admin/teacher widzą relacje uczniów których utworzyli (przez _is_admin/_is_teacher
   // helpery z migracji #20). Jeśli brak uprawnień, zwraca [].
+  // ═══════════════════════════════════════════════════════════════
+  //  MINI-DIALOGI AUDIO (Feature 4) — migracja #40
+  // ═══════════════════════════════════════════════════════════════
+  // Każdy zalogowany może czytać; tworzy tylko admin/nauczyciel.
+  async function loadDialogsForBook(bookId, unitKey) {
+    if (!bookId) return [];
+    try {
+      let q = supabase
+        .from('dialogs')
+        .select('id, book_id, unit_key, title, speakers, lines, questions, is_premium, created_by, updated_at')
+        .eq('book_id', bookId)
+        .order('updated_at', { ascending: false });
+      if (unitKey !== undefined && unitKey !== null) q = q.eq('unit_key', unitKey);
+      const { data, error } = await q;
+      if (error) { console.warn('[loadDialogsForBook]', error.message); return []; }
+      return data || [];
+    } catch(e) {
+      console.warn('[loadDialogsForBook]', e.message || e);
+      return [];
+    }
+  }
+
+  async function saveDialog(payload) {
+    if (!_profile?.isAdmin && !_profile?.isTeacher) throw new Error('Tylko admin/nauczyciel.');
+    if (!payload || !payload.book_id || !payload.title) throw new Error('Brak wymaganych pól.');
+    const row = {
+      book_id:   payload.book_id,
+      unit_key:  payload.unit_key || '',
+      title:     payload.title,
+      speakers:  payload.speakers || [],
+      lines:     payload.lines || [],
+      questions: payload.questions || [],
+      is_premium: !!payload.is_premium,
+      created_by: _userId
+    };
+    if (payload.id) {
+      const { data, error } = await supabase.from('dialogs')
+        .update(row).eq('id', payload.id).select().single();
+      if (error) throw new Error(error.message);
+      return data;
+    } else {
+      const { data, error } = await supabase.from('dialogs')
+        .insert(row).select().single();
+      if (error) throw new Error(error.message);
+      return data;
+    }
+  }
+
+  async function deleteDialog(dialogId) {
+    if (!_profile?.isAdmin && !_profile?.isTeacher) throw new Error('Tylko admin/nauczyciel.');
+    if (!dialogId) throw new Error('Brak id dialogu.');
+    const { error } = await supabase.from('dialogs').delete().eq('id', dialogId);
+    if (error) throw new Error(error.message);
+  }
+
   // Ranking klasowy (Feature 3): agreguje daily_xp_log dla wszystkich
   // czlonkow klasy w ostatnich N dniach. Zwraca posortowana liste:
   // [{ user_id, username, totalXp, totalMinutes, daysActive, met_challenge }]
@@ -3346,6 +3401,9 @@ const DB = (() => {
     removeChild,
     loadParentChildLinksForChildren,
     loadClassLeaderboard,
+    loadDialogsForBook,
+    saveDialog,
+    deleteDialog,
     parentAssignBookToChild,
     parentUnassignBookFromChild,
     getChildUserBooks,

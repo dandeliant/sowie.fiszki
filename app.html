@@ -1730,6 +1730,17 @@ body.guest-mode .progress-wrap{opacity:.4;}
   </div>
   <!-- Notatki admina na poziomie podręcznika (publiczna + prywatna; renderowane jako .admin-note wewnątrz) -->
   <div id="bookNoteUnits" class="admin-note-wrap" style="display:none"></div>
+  <!-- Banner Mini-dialogow audio (Feature 4) — pokazany jesli sa dialogi dla biezacego podrecznika -->
+  <div id="dialogsBanner" style="display:none;width:100%;max-width:680px;margin:0 auto 14px;background:linear-gradient(135deg,rgba(116,185,255,.16),rgba(162,155,254,.10));border:2px solid rgba(116,185,255,.42);border-radius:16px;padding:12px 16px;cursor:pointer" onclick="openDialogsList()">
+    <div style="display:flex;align-items:center;gap:12px">
+      <span style="font-size:1.7rem">🎧</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-family:'Playfair Display',serif;font-size:1rem;color:var(--blue);font-weight:800">Mini-dialogi audio</div>
+        <div style="font-size:.72rem;color:var(--muted);font-weight:600" id="dialogsBannerSub">Posłuchaj, zrozum, odpowiedz</div>
+      </div>
+      <div style="background:var(--blue);color:#fff;padding:6px 12px;border-radius:20px;font-weight:800;font-size:.85rem" id="dialogsBannerCount">0</div>
+    </div>
+  </div>
   <div class="unit-grid" id="unitGrid"></div>
   <div class="cw-row" id="liveRow" style="border-color:rgba(255,209,102,.4);background:linear-gradient(135deg,rgba(255,209,102,.06),rgba(124,58,237,.06))">
     <span class="cw-row-label" style="color:var(--accent)">🎮 Gramy wszyscy (Live) <span style="font-size:.55rem;background:rgba(255,209,102,.15);color:var(--accent);padding:1px 6px;border-radius:100px;margin-left:4px;font-weight:800">⭐ PREMIUM</span>:</span>
@@ -5304,6 +5315,7 @@ function refreshGrid() {
   // Notatka admina na poziomie podręcznika
   if (typeof loadAndShowBookNote === 'function') {
     loadAndShowBookNote('book', currentBookId, '');
+    if (typeof refreshDialogsBanner === 'function') refreshDialogsBanner();
   }
   // Kafelek "Powtórka błędów" — zbiera trudne słowa ze wszystkich unitów
   const hardWords = collectHardWords(currentBookId);
@@ -6143,6 +6155,342 @@ function collectHardWords(bookId) {
     return true;
   });
 }
+
+// ══════════════════════════════════════════════
+//  MINI-DIALOGI AUDIO (Feature 4) — Listening Comprehension
+//  Banner #dialogsBanner w sUnits → modal z lista → modal odtwarzacza
+//  z TTS (2 glosy) + pytaniami komprehensji. Admin/nauczyciel
+//  ma dodatkowo edytor.
+// ══════════════════════════════════════════════
+(function _initDialogs(){
+  const state = {
+    cache: {},          // bookId → [dialogs...]
+    current: null,      // aktywny dialog w playerze
+    voices: { female: null, male: null },
+    isPlaying: false,
+    abortFn: null
+  };
+
+  function pickVoices(){
+    if (!('speechSynthesis' in window)) return;
+    const vs = window.speechSynthesis.getVoices() || [];
+    // Female en-GB preferred
+    state.voices.female = vs.find(v => v.name === 'Google UK English Female')
+      || vs.find(v => v.lang === 'en-GB' && /female/i.test(v.name))
+      || vs.find(v => v.lang === 'en-GB' && /(kate|serena|libby|sonia)/i.test(v.name))
+      || vs.find(v => v.lang === 'en-GB')
+      || vs.find(v => v.lang && v.lang.startsWith('en'));
+    state.voices.male = vs.find(v => v.name === 'Google UK English Male')
+      || vs.find(v => v.lang === 'en-GB' && /male/i.test(v.name))
+      || vs.find(v => v.lang === 'en-GB' && /(daniel|arthur|oliver)/i.test(v.name))
+      || vs.find(v => v.lang === 'en-GB' && v !== state.voices.female)
+      || state.voices.female;
+  }
+  if ('speechSynthesis' in window) {
+    pickVoices();
+    window.speechSynthesis.onvoiceschanged = pickVoices;
+  }
+
+  function speakLine(text, voiceKind){
+    return new Promise(resolve => {
+      if (!('speechSynthesis' in window)) return resolve();
+      try { window.speechSynthesis.cancel(); } catch(_){}
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = 'en-GB';
+      u.rate = 0.92;
+      const v = (voiceKind === 'male' ? state.voices.male : state.voices.female);
+      if (v) u.voice = v;
+      u.pitch = voiceKind === 'male' ? 0.9 : 1.05;
+      u.onend = u.onerror = () => resolve();
+      try { window.speechSynthesis.speak(u); } catch(_) { resolve(); }
+    });
+  }
+
+  // Odswiez banner dla biezacego podrecznika (wolane przy wejsciu do sUnits)
+  window.refreshDialogsBanner = async function(){
+    const banner = document.getElementById('dialogsBanner');
+    if (!banner) return;
+    if (typeof currentBookId === 'undefined' || !currentBookId) { banner.style.display = 'none'; return; }
+    let dialogs = state.cache[currentBookId];
+    if (!dialogs) {
+      try { dialogs = await DB.loadDialogsForBook(currentBookId); state.cache[currentBookId] = dialogs; }
+      catch(e) { banner.style.display = 'none'; return; }
+    }
+    const isStaff = (typeof isCurrentUserAdmin === 'function' && isCurrentUserAdmin())
+                 || (typeof isCurrentUserTeacher === 'function' && isCurrentUserTeacher());
+    if (!dialogs.length && !isStaff) { banner.style.display = 'none'; return; }
+    document.getElementById('dialogsBannerCount').textContent = dialogs.length;
+    document.getElementById('dialogsBannerSub').textContent = dialogs.length
+      ? (isStaff ? 'Posłuchaj, zrozum, odpowiedz · (admin: edytuj)' : 'Posłuchaj, zrozum, odpowiedz')
+      : 'Brak dialogów — kliknij, aby dodać pierwszy';
+    banner.style.display = '';
+  };
+
+  // Lista dialogów + przycisk dodawania (admin)
+  window.openDialogsList = async function(){
+    if (!currentBookId) return;
+    const isStaff = (typeof isCurrentUserAdmin === 'function' && isCurrentUserAdmin())
+                 || (typeof isCurrentUserTeacher === 'function' && isCurrentUserTeacher());
+    openGenericModal('🎧 Mini-dialogi', '<div style="text-align:center;padding:20px;color:var(--muted)">⏳ Ładuję…</div>');
+    let dialogs = [];
+    try { dialogs = await DB.loadDialogsForBook(currentBookId); state.cache[currentBookId] = dialogs; }
+    catch(e) { console.warn(e); }
+    let html = '<div style="font-family:Nunito,sans-serif;color:var(--text);max-width:520px;margin:0 auto">';
+    if (isStaff) {
+      html += '<button class="btn-modal-save" style="margin-bottom:12px;width:100%" onclick="openDialogEditor()">➕ Nowy dialog</button>';
+    }
+    if (!dialogs.length) {
+      html += '<div style="text-align:center;color:var(--muted);font-weight:600;padding:18px">📭 Brak dialogów dla tego podręcznika.</div>';
+    } else {
+      html += '<div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:6px;max-height:48vh;overflow-y:auto">';
+      dialogs.forEach(d => {
+        const lineCount = Array.isArray(d.lines) ? d.lines.length : 0;
+        const qCount = Array.isArray(d.questions) ? d.questions.length : 0;
+        html += '<div style="display:flex;align-items:center;gap:10px;padding:10px 8px;border-bottom:1px dashed var(--border)">';
+        html += '<span style="font-size:1.4rem">🎙️</span>';
+        html += '<div style="flex:1;min-width:0;cursor:pointer" onclick="closeGenericModal();openDialogPlayer(\'' + d.id + '\')">';
+        html += '<div style="font-weight:700;font-size:.92rem;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escHtml(d.title) + '</div>';
+        html += '<div style="font-size:.7rem;color:var(--muted);font-weight:600;margin-top:2px">' + lineCount + ' linii · ' + qCount + ' pytań</div>';
+        html += '</div>';
+        if (isStaff) {
+          html += '<button class="btn-sm" onclick="openDialogEditor(\'' + d.id + '\')" title="Edytuj">✏️</button>';
+          html += '<button class="btn-sm" style="border-color:rgba(255,118,117,.4);color:var(--danger)" onclick="confirmDeleteDialog(\'' + d.id + '\')" title="Usuń">🗑️</button>';
+        }
+        html += '</div>';
+      });
+      html += '</div>';
+    }
+    html += '<div style="margin-top:14px;text-align:center"><button class="btn-modal-cancel" onclick="closeGenericModal()">Zamknij</button></div>';
+    html += '</div>';
+    openGenericModal('🎧 Mini-dialogi', html);
+  };
+
+  // Player: pokazuje dialog (transcript), TTS lecąc po linii, potem pytania
+  window.openDialogPlayer = async function(dialogId){
+    const dialogs = state.cache[currentBookId] || await DB.loadDialogsForBook(currentBookId);
+    state.cache[currentBookId] = dialogs;
+    const d = dialogs.find(x => x.id === dialogId);
+    if (!d) { toast('⚠️ Dialog nie znaleziony.', 2400); return; }
+    state.current = d;
+    let html = '<div style="font-family:Nunito,sans-serif;color:var(--text);max-width:520px;margin:0 auto">';
+    html += '<div style="font-family:\'Playfair Display\',serif;font-size:1.2rem;color:var(--blue);font-weight:800;margin-bottom:6px;text-align:center">' + escHtml(d.title) + '</div>';
+    // Transcript
+    html += '<div id="dpTranscript" style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:10px;max-height:38vh;overflow-y:auto;margin-bottom:10px">';
+    (d.lines || []).forEach((line, i) => {
+      const sp = (d.speakers || [])[line.speaker] || { name: 'Speaker', voice: 'female' };
+      const isF = sp.voice === 'female';
+      const color = isF ? 'var(--pink)' : 'var(--blue)';
+      html += '<div id="dpLine' + i + '" data-line="' + i + '" style="padding:6px 4px;border-bottom:1px dashed var(--border);opacity:.55;transition:opacity .2s">';
+      html += '<div style="font-size:.7rem;color:' + color + ';font-weight:800;text-transform:uppercase;letter-spacing:.04em">' + escHtml(sp.name) + '</div>';
+      html += '<div style="font-size:.95rem;font-weight:600">' + escHtml(line.text || '') + '</div>';
+      if (line.pl) html += '<div style="font-size:.72rem;color:var(--muted);font-style:italic;margin-top:2px;display:none" class="dp-pl">' + escHtml(line.pl) + '</div>';
+      html += '</div>';
+    });
+    html += '</div>';
+    html += '<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-bottom:10px">';
+    html += '<button class="btn-modal-save" id="dpPlayBtn" onclick="dpPlayAll()">▶ Odtwórz cały dialog</button>';
+    html += '<button class="btn-sm" onclick="dpStop()">⏹ Stop</button>';
+    html += '<button class="btn-sm" onclick="dpTogglePl()" id="dpPlBtn">🇵🇱 Pokaż tłumaczenie</button>';
+    html += '</div>';
+    // Questions (initially hidden — pojawiaja sie po pierwszym odsluchaniu)
+    if (d.questions && d.questions.length) {
+      html += '<div id="dpQuestions" style="display:none;background:var(--surface2);border:1px solid var(--border);border-radius:14px;padding:12px">';
+      html += '<div style="font-weight:800;color:var(--accent);margin-bottom:8px;font-size:.95rem">📝 Pytania</div>';
+      d.questions.forEach((q, qi) => {
+        html += '<div style="margin-bottom:10px" data-question="' + qi + '">';
+        html += '<div style="font-weight:700;font-size:.88rem;margin-bottom:4px">' + (qi+1) + '. ' + escHtml(q.q) + '</div>';
+        (q.options || []).forEach((opt, oi) => {
+          html += '<button class="btn-sm" style="margin:2px;display:inline-block;text-align:left;padding:6px 10px;font-size:.78rem" onclick="dpAnswer(' + qi + ',' + oi + ',' + (oi === q.correct ? 'true' : 'false') + ',this)">' + String.fromCharCode(65+oi) + ') ' + escHtml(opt) + '</button>';
+        });
+        html += '<div class="dp-feedback" style="font-size:.78rem;font-weight:700;margin-top:4px"></div>';
+        html += '</div>';
+      });
+      html += '<div id="dpScore" style="margin-top:8px;font-size:.85rem;font-weight:800;color:var(--accent)"></div>';
+      html += '</div>';
+    }
+    html += '<div style="margin-top:14px;text-align:center"><button class="btn-modal-cancel" onclick="dpStop();closeGenericModal()">Zamknij</button></div>';
+    html += '</div>';
+    openGenericModal('🎧 ' + escHtml(d.title), html);
+  };
+
+  window.dpPlayAll = async function(){
+    if (!state.current) return;
+    state.isPlaying = true;
+    let aborted = false;
+    state.abortFn = () => { aborted = true; try { window.speechSynthesis.cancel(); } catch(_){} };
+    const speakers = state.current.speakers || [];
+    const lines = state.current.lines || [];
+    for (let i = 0; i < lines.length; i++) {
+      if (aborted) break;
+      const line = lines[i];
+      // Highlight current line
+      document.querySelectorAll('#dpTranscript > div').forEach(el => el.style.opacity = '.55');
+      const el = document.getElementById('dpLine' + i);
+      if (el) { el.style.opacity = '1'; el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
+      const sp = speakers[line.speaker] || { voice: 'female' };
+      await speakLine(line.text || '', sp.voice);
+      await new Promise(r => setTimeout(r, 250));
+    }
+    state.isPlaying = false;
+    state.abortFn = null;
+    document.querySelectorAll('#dpTranscript > div').forEach(el => el.style.opacity = '1');
+    // Pokaż pytania
+    const q = document.getElementById('dpQuestions');
+    if (q) q.style.display = '';
+  };
+
+  window.dpStop = function(){
+    if (state.abortFn) state.abortFn();
+    state.isPlaying = false;
+  };
+
+  window.dpTogglePl = function(){
+    const btn = document.getElementById('dpPlBtn');
+    const els = document.querySelectorAll('.dp-pl');
+    const show = (els.length > 0 && els[0].style.display === 'none');
+    els.forEach(el => el.style.display = show ? '' : 'none');
+    if (btn) btn.textContent = show ? '🇵🇱 Ukryj tłumaczenie' : '🇵🇱 Pokaż tłumaczenie';
+  };
+
+  const _dpAnswers = {};
+  window.dpAnswer = function(qi, oi, isCorrect, btnEl){
+    // Wyłącz wszystkie przyciski tego pytania
+    const wrap = btnEl && btnEl.parentElement;
+    if (!wrap) return;
+    wrap.querySelectorAll('button').forEach(b => { b.disabled = true; b.style.opacity = '.6'; });
+    btnEl.style.opacity = '1';
+    if (isCorrect) {
+      btnEl.style.background = 'rgba(85,239,196,.22)';
+      btnEl.style.borderColor = 'var(--success)';
+      btnEl.style.color = 'var(--success)';
+    } else {
+      btnEl.style.background = 'rgba(255,118,117,.18)';
+      btnEl.style.borderColor = 'var(--danger)';
+      btnEl.style.color = 'var(--danger)';
+      // Highlight correct one
+      const q = (state.current.questions || [])[qi];
+      if (q) {
+        const correctBtn = wrap.querySelectorAll('button')[q.correct];
+        if (correctBtn) {
+          correctBtn.style.background = 'rgba(85,239,196,.22)';
+          correctBtn.style.borderColor = 'var(--success)';
+          correctBtn.style.color = 'var(--success)';
+          correctBtn.style.opacity = '1';
+        }
+      }
+    }
+    const fb = wrap.querySelector('.dp-feedback');
+    if (fb) {
+      fb.textContent = isCorrect ? '✓ Dobrze!' : '✗ Poprawna: ' + String.fromCharCode(65 + ((state.current.questions || [])[qi].correct || 0));
+      fb.style.color = isCorrect ? 'var(--success)' : 'var(--danger)';
+    }
+    _dpAnswers[qi] = isCorrect;
+    // Update score
+    const totalQ = (state.current.questions || []).length;
+    const answered = Object.keys(_dpAnswers).length;
+    const correct = Object.values(_dpAnswers).filter(Boolean).length;
+    const scoreEl = document.getElementById('dpScore');
+    if (scoreEl) scoreEl.textContent = (answered === totalQ)
+      ? '🎉 Wynik: ' + correct + '/' + totalQ
+      : 'Postęp: ' + answered + '/' + totalQ;
+  };
+
+  // Edytor dialogu (admin/nauczyciel)
+  window.openDialogEditor = async function(dialogId){
+    let dialog = null;
+    if (dialogId) {
+      const dialogs = state.cache[currentBookId] || await DB.loadDialogsForBook(currentBookId);
+      dialog = dialogs.find(x => x.id === dialogId);
+    }
+    if (!dialog) {
+      dialog = {
+        id: null,
+        title: '',
+        speakers: [{name:'Anna', voice:'female'},{name:'Tom', voice:'male'}],
+        lines: [{speaker:0, text:'', pl:''}],
+        questions: [{q:'', options:['','','',''], correct:0}]
+      };
+    }
+    const dataAttr = encodeURIComponent(JSON.stringify(dialog));
+    let html = '<div style="font-family:Nunito,sans-serif;color:var(--text);max-width:560px;margin:0 auto" data-dialog="' + dataAttr + '" id="dialogEditorRoot">';
+    html += '<label style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px">Tytuł</label>';
+    html += '<input type="text" id="deTitle" value="' + escHtml(dialog.title) + '" placeholder="np. W kawiarni" style="width:100%;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.9rem;margin-bottom:10px;font-family:inherit">';
+    html += '<div style="font-size:.7rem;color:var(--muted);margin-bottom:8px;font-weight:600">Mówcy: <b>' + escHtml(dialog.speakers[0]?.name||'Anna') + '</b> (♀) + <b>' + escHtml(dialog.speakers[1]?.name||'Tom') + '</b> (♂)</div>';
+    html += '<div style="font-size:.7rem;color:var(--muted);font-style:italic;margin-bottom:10px">Wpisz linie dialogu (po angielsku) + opcjonalnie tłumaczenie PL. Format: <code>0: Hi! | Cześć!</code> (0=mówca pierwszy, 1=drugi).</div>';
+    html += '<label style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:3px">Linie dialogu (jedna na linijkę)</label>';
+    const linesStr = (dialog.lines || []).map(l => l.speaker + ': ' + (l.text||'') + (l.pl ? ' | ' + l.pl : '')).join('\n');
+    html += '<textarea id="deLines" rows="6" style="width:100%;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.85rem;font-family:monospace;resize:vertical;margin-bottom:10px">' + escHtml(linesStr) + '</textarea>';
+    html += '<label style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:3px">Pytania (jedno na linijkę, format: <code>pytanie | opcja A | opcja B | opcja C | opcja D | nr_poprawnej(0-3)</code>)</label>';
+    const qStr = (dialog.questions || []).map(q => [q.q||'', ...((q.options||[]).slice(0,4)), (q.correct ?? 0)].join(' | ')).join('\n');
+    html += '<textarea id="deQuestions" rows="4" style="width:100%;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.82rem;font-family:monospace;resize:vertical;margin-bottom:10px">' + escHtml(qStr) + '</textarea>';
+    html += '<div style="font-size:.7rem;color:var(--muted);font-style:italic;margin-bottom:10px">Przykład pytania:<br><code>Where is Tom going? | school | shop | home | park | 1</code></div>';
+    html += '<div id="deMsg" style="font-size:.74rem;min-height:14px;font-weight:600;margin-bottom:6px"></div>';
+    html += '<div style="display:flex;gap:8px;justify-content:flex-end">';
+    html += '<button class="btn-modal-cancel" onclick="closeGenericModal()">Anuluj</button>';
+    html += '<button class="btn-modal-save" onclick="saveDialogFromEditor()">' + (dialog.id ? 'Zapisz' : 'Utwórz') + '</button>';
+    html += '</div></div>';
+    openGenericModal((dialog.id ? '✏️ Edycja dialogu' : '➕ Nowy dialog'), html);
+  };
+
+  window.saveDialogFromEditor = async function(){
+    const root = document.getElementById('dialogEditorRoot');
+    const msg = document.getElementById('deMsg');
+    if (!root) return;
+    let dialog = {};
+    try { dialog = JSON.parse(decodeURIComponent(root.getAttribute('data-dialog'))); } catch(_) {}
+    const title = document.getElementById('deTitle').value.trim();
+    if (!title) { msg.style.color = 'var(--danger)'; msg.textContent = '⚠️ Tytuł wymagany.'; return; }
+    const linesRaw = document.getElementById('deLines').value.trim();
+    const qRaw = document.getElementById('deQuestions').value.trim();
+    // Parse linie: "0: Hi! | Cześć!" → {speaker:0, text:'Hi!', pl:'Cześć!'}
+    const lines = linesRaw.split('\n').map(l => l.trim()).filter(Boolean).map(l => {
+      const m = l.match(/^(\d+)\s*:\s*(.*)$/);
+      if (!m) return { speaker: 0, text: l, pl: '' };
+      const speaker = Math.min(1, Math.max(0, parseInt(m[1])||0));
+      const rest = m[2];
+      const parts = rest.split('|').map(s => s.trim());
+      return { speaker, text: parts[0] || '', pl: parts[1] || '' };
+    });
+    // Parse pytania
+    const questions = qRaw.split('\n').map(q => q.trim()).filter(Boolean).map(q => {
+      const parts = q.split('|').map(s => s.trim());
+      if (parts.length < 6) return null;
+      const correct = Math.min(3, Math.max(0, parseInt(parts[5])||0));
+      return { q: parts[0], options: parts.slice(1,5), correct };
+    }).filter(Boolean);
+    msg.style.color = 'var(--muted)';
+    msg.textContent = '⏳ Zapisywanie…';
+    try {
+      const saved = await DB.saveDialog({
+        id: dialog.id || null,
+        book_id: currentBookId,
+        unit_key: '',
+        title,
+        speakers: dialog.speakers,
+        lines,
+        questions
+      });
+      delete state.cache[currentBookId];
+      msg.style.color = 'var(--success)'; msg.textContent = '✓ Zapisano.';
+      setTimeout(() => { closeGenericModal(); refreshDialogsBanner(); }, 600);
+    } catch(e) {
+      msg.style.color = 'var(--danger)'; msg.textContent = '❌ ' + e.message;
+    }
+  };
+
+  window.confirmDeleteDialog = async function(dialogId){
+    if (!confirm('Usunąć ten dialog?')) return;
+    try {
+      await DB.deleteDialog(dialogId);
+      delete state.cache[currentBookId];
+      closeGenericModal();
+      refreshDialogsBanner();
+      toast('✓ Dialog usunięty.', 2400);
+    } catch(e) {
+      toast('❌ ' + e.message, 3200);
+    }
+  };
+})();
 
 // ══════════════════════════════════════════════
 //  RANKING KLASOWY (Feature 3) — leaderboard + tygodniowe wyzwanie
