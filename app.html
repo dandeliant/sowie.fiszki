@@ -16660,6 +16660,7 @@ if ('serviceWorker' in navigator) {
         adminTeachers:    () => (typeof openAdminTeachers==='function')    && openAdminTeachers(),
         reports:          () => showScreen('sBooks'),
         worksheet:        () => (typeof openWorksheetModal==='function')   && openWorksheetModal(),
+        tests:            () => (typeof openTestGenerator==='function')    && openTestGenerator(),
         premium:          () => (typeof openPremiumPricingModal==='function') && openPremiumPricingModal(),
       };
       const fn = map[goto];
@@ -22763,6 +22764,273 @@ if ('serviceWorker' in navigator) {
     // Admin widzi wszystko; nauczyciel tylko własne dostępne książki
     return currentUserAccessibleBooks();
   }
+
+  // ══════════════════════════════════════════════
+  //  GENERATOR TESTOW (Feature 5) — multiple choice / luki / rozsypanka / tlumaczenia
+  // ══════════════════════════════════════════════
+  window.openTestGenerator = function(){
+    if (!isCurrentUserAdmin() && !isCurrentUserTeacher()) {
+      if (typeof toast === 'function') toast('Dostępne tylko dla nauczyciela i administratora.', 2600);
+      return;
+    }
+    const books = wsAvailableBooks().sort((a,b) => a.name.localeCompare(b.name, 'pl'));
+    if (!books.length) { toast('Brak dostępnych podręczników.', 2600); return; }
+    let html = '<div style="font-family:Nunito,sans-serif;color:var(--text);max-width:480px;margin:0 auto">';
+    html += '<div style="font-size:.72rem;color:var(--muted);margin-bottom:12px;font-weight:600;line-height:1.45">Wygeneruj test do druku z dowolnej kombinacji formatów. Klucz odpowiedzi na końcu.</div>';
+    html += '<label style="font-size:.66rem;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:3px">Podręcznik</label>';
+    html += '<select id="tgBook" onchange="tgUpdateUnits()" style="width:100%;padding:9px 11px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.85rem;font-weight:600;outline:none;margin-bottom:10px;font-family:inherit">';
+    books.forEach(b => { html += '<option value="' + b.id + '">' + escHtml((b.icon||'') + ' ' + b.name) + '</option>'; });
+    html += '</select>';
+    html += '<label style="font-size:.66rem;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:3px">Unit</label>';
+    html += '<select id="tgUnit" style="width:100%;padding:9px 11px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.85rem;font-weight:600;outline:none;margin-bottom:10px;font-family:inherit"></select>';
+    html += '<div style="display:flex;gap:8px;margin-bottom:10px">';
+    html += '<div style="flex:1"><label style="font-size:.66rem;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:3px">Pytań/sekcja</label><input type="number" id="tgPerSection" value="8" min="3" max="30" style="width:100%;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.9rem;font-weight:700;outline:none;font-family:inherit"></div>';
+    html += '<div style="flex:1"><label style="font-size:.66rem;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:3px">Wersja</label><select id="tgVariant" style="width:100%;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.85rem;font-weight:600;outline:none;font-family:inherit"><option value="A">A</option><option value="B">B (inna kolejność)</option></select></div>';
+    html += '</div>';
+    html += '<label style="font-size:.66rem;font-weight:700;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:6px">Sekcje testu (zaznacz)</label>';
+    html += '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px">';
+    html += '<label style="font-size:.85rem;font-weight:600"><input type="checkbox" id="tgSecMC" checked> 📋 Multiple choice (PL → wybór EN)</label>';
+    html += '<label style="font-size:.85rem;font-weight:600"><input type="checkbox" id="tgSecGap"> 🕳️ Luki w zdaniach (wpisz słowo)</label>';
+    html += '<label style="font-size:.85rem;font-weight:600"><input type="checkbox" id="tgSecScramble"> 🔀 Rozsypanka liter (ułóż słowo)</label>';
+    html += '<label style="font-size:.85rem;font-weight:600"><input type="checkbox" id="tgSecTranslate"> ✏️ Tłumaczenie zdań</label>';
+    html += '</div>';
+    html += '<label style="font-size:.85rem;font-weight:600;display:flex;align-items:center;gap:6px;margin-bottom:12px"><input type="checkbox" id="tgIncludeKey" checked> 🔑 Dołącz klucz odpowiedzi na końcu</label>';
+    html += '<div id="tgMsg" style="font-size:.74rem;min-height:14px;font-weight:600;color:var(--muted);margin-bottom:6px"></div>';
+    html += '<div style="display:flex;gap:8px;justify-content:flex-end">';
+    html += '<button class="btn-modal-cancel" onclick="closeGenericModal()">Anuluj</button>';
+    html += '<button class="btn-modal-save" onclick="generateTest()">📝 Otwórz test do druku</button>';
+    html += '</div></div>';
+    openGenericModal('📝 Generator testów', html);
+    tgUpdateUnits();
+  };
+
+  window.tgUpdateUnits = function(){
+    const bookSel = document.getElementById('tgBook');
+    const unitSel = document.getElementById('tgUnit');
+    if (!bookSel || !unitSel) return;
+    const book = BOOKS[bookSel.value];
+    if (!book) return;
+    unitSel.innerHTML = '<option value="__all__">🌍 Cały podręcznik</option>';
+    Object.keys(book.units).forEach(k => {
+      const u = book.units[k];
+      const opt = document.createElement('option');
+      opt.value = k;
+      opt.textContent = (u.icon ? u.icon + ' ' : '') + (u.name || k) + ' (' + (u.words ? u.words.length : 0) + ')';
+      unitSel.appendChild(opt);
+    });
+  };
+
+  window.generateTest = function(){
+    const bookId = document.getElementById('tgBook').value;
+    const unitKey = document.getElementById('tgUnit').value;
+    const perSection = Math.max(3, Math.min(30, parseInt(document.getElementById('tgPerSection').value, 10) || 8));
+    const variant = document.getElementById('tgVariant').value;
+    const includeKey = document.getElementById('tgIncludeKey').checked;
+    const sections = {
+      mc:        document.getElementById('tgSecMC').checked,
+      gap:       document.getElementById('tgSecGap').checked,
+      scramble:  document.getElementById('tgSecScramble').checked,
+      translate: document.getElementById('tgSecTranslate').checked,
+    };
+    const msg = document.getElementById('tgMsg');
+    if (!sections.mc && !sections.gap && !sections.scramble && !sections.translate) {
+      msg.style.color = 'var(--danger)'; msg.textContent = '⚠️ Wybierz przynajmniej jedną sekcję.'; return;
+    }
+    const book = BOOKS[bookId];
+    if (!book) { msg.style.color = 'var(--danger)'; msg.textContent = '❌ Brak podręcznika.'; return; }
+    // Zbierz słowa z unitu lub całego podręcznika
+    let words = [];
+    let unitLabel = '';
+    if (unitKey === '__all__' || !unitKey) {
+      Object.values(book.units).forEach(u => { if (u.words) words = words.concat(u.words); });
+      unitLabel = 'cały podręcznik';
+    } else if (book.units[unitKey]) {
+      words = book.units[unitKey].words || [];
+      unitLabel = book.units[unitKey].name || unitKey;
+    }
+    if (words.length < 4) { msg.style.color = 'var(--danger)'; msg.textContent = '⚠️ Za mało słów (min. 4).'; return; }
+
+    // Wybór słów z sentence (dla luki/tłumaczenia)
+    const hasSentence = w => w.length >= 4 && w[2] && w[3] && /\s/.test(w[3]);
+    const wordsWithSent = words.filter(hasSentence);
+
+    // Seed losowości na podstawie wariantu (A vs B) — żeby A i B miały inną kolejność
+    const seed = variant === 'B' ? 137 : 1;
+    function shuffleSeeded(arr) {
+      const a = [...arr];
+      let s = seed;
+      for (let i = a.length - 1; i > 0; i--) {
+        s = (s * 9301 + 49297) % 233280;
+        const j = Math.floor((s / 233280) * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    }
+    const pool = shuffleSeeded(words);
+    const poolSent = shuffleSeeded(wordsWithSent);
+
+    function escTest(s){ return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+    // Generuj sekcje
+    let secIdx = 0;
+    let html = '';
+    const keyHtml = [];
+    let qNumGlobal = 0;
+
+    // 1) Multiple choice
+    if (sections.mc) {
+      secIdx++;
+      const items = pool.slice(0, perSection);
+      html += '<h3>Sekcja ' + secIdx + ' · Wybierz prawidłowe tłumaczenie (' + items.length + ' pkt)</h3>';
+      html += '<ol class="mc">';
+      const keyItems = [];
+      items.forEach((w, i) => {
+        qNumGlobal++;
+        // 3 błędne opcje z pool (różne od poprawnej)
+        const distractors = pool.filter(x => x[1] !== w[1]).slice(0, 50);
+        const picked = [];
+        let sLoc = seed + i;
+        while (picked.length < 3 && distractors.length) {
+          sLoc = (sLoc * 9301 + 49297) % 233280;
+          const idx = Math.floor((sLoc / 233280) * distractors.length);
+          const d = distractors.splice(idx, 1)[0];
+          if (d && !picked.find(p => p[1] === d[1])) picked.push(d);
+        }
+        const all = shuffleSeeded([w, ...picked]);
+        const correctLetter = String.fromCharCode(65 + all.findIndex(x => x[1] === w[1]));
+        html += '<li><span class="q">' + qNumGlobal + '. ' + escTest(w[0]) + '</span><div class="opts">';
+        all.forEach((opt, oi) => {
+          html += '<span class="opt">' + String.fromCharCode(65 + oi) + ') ' + escTest(opt[1]) + '</span>';
+        });
+        html += '</div></li>';
+        keyItems.push(qNumGlobal + '. ' + correctLetter + ' (' + escTest(w[1]) + ')');
+      });
+      html += '</ol>';
+      keyHtml.push('<strong>Sekcja ' + secIdx + ':</strong> ' + keyItems.join(' · '));
+    }
+
+    // 2) Luki w zdaniach
+    if (sections.gap) {
+      secIdx++;
+      if (poolSent.length < 3) {
+        html += '<h3>Sekcja ' + secIdx + ' · Luki w zdaniach</h3><p><em>⚠️ Brak zdań przykładowych w tym podręczniku.</em></p>';
+      } else {
+        const items = poolSent.slice(0, Math.min(perSection, poolSent.length));
+        html += '<h3>Sekcja ' + secIdx + ' · Wpisz brakujące słowo w zdaniu (' + items.length + ' pkt)</h3>';
+        html += '<ol class="gap">';
+        const keyItems = [];
+        items.forEach(w => {
+          qNumGlobal++;
+          const en = w[3];
+          const target = w[1];
+          // Zamień każde wystąpienie target (case-insensitive) na puste pole
+          const re = new RegExp('\\b' + target.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'gi');
+          const masked = en.replace(re, '__________');
+          html += '<li><span class="q">' + qNumGlobal + '. ' + escTest(masked) + '</span><span class="hint">(' + escTest(w[0]) + ')</span></li>';
+          keyItems.push(qNumGlobal + '. ' + escTest(target));
+        });
+        html += '</ol>';
+        keyHtml.push('<strong>Sekcja ' + secIdx + ':</strong> ' + keyItems.join(' · '));
+      }
+    }
+
+    // 3) Rozsypanka liter
+    if (sections.scramble) {
+      secIdx++;
+      const items = pool.filter(w => w[1] && !/\s/.test(w[1])).slice(0, perSection);
+      html += '<h3>Sekcja ' + secIdx + ' · Ułóż słowo z liter (' + items.length + ' pkt)</h3>';
+      html += '<ol class="scramble">';
+      const keyItems = [];
+      items.forEach(w => {
+        qNumGlobal++;
+        const en = w[1];
+        const letters = en.split('').filter(c => /\w/.test(c));
+        // Shuffle deterministically
+        let sLoc = seed + qNumGlobal;
+        const arr = [...letters];
+        for (let i = arr.length - 1; i > 0; i--) {
+          sLoc = (sLoc * 9301 + 49297) % 233280;
+          const j = Math.floor((sLoc / 233280) * (i + 1));
+          [arr[i], arr[j]] = [arr[j], arr[i]];
+        }
+        const scrambled = arr.join(' ').toUpperCase();
+        html += '<li><span class="q">' + qNumGlobal + '. ' + escTest(scrambled) + '</span><span class="hint">→ ' + escTest(w[0]) + '</span><span class="line">____________</span></li>';
+        keyItems.push(qNumGlobal + '. ' + escTest(en));
+      });
+      html += '</ol>';
+      keyHtml.push('<strong>Sekcja ' + secIdx + ':</strong> ' + keyItems.join(' · '));
+    }
+
+    // 4) Tłumaczenie zdań
+    if (sections.translate) {
+      secIdx++;
+      if (poolSent.length < 3) {
+        html += '<h3>Sekcja ' + secIdx + ' · Tłumaczenie zdań</h3><p><em>⚠️ Brak zdań przykładowych.</em></p>';
+      } else {
+        const items = poolSent.slice(perSection % poolSent.length, (perSection % poolSent.length) + Math.min(perSection, poolSent.length));
+        const finalItems = items.length ? items : poolSent.slice(0, Math.min(perSection, poolSent.length));
+        html += '<h3>Sekcja ' + secIdx + ' · Przetłumacz zdania na angielski (' + finalItems.length + ' pkt)</h3>';
+        html += '<ol class="translate">';
+        const keyItems = [];
+        finalItems.forEach(w => {
+          qNumGlobal++;
+          html += '<li><span class="q">' + qNumGlobal + '. ' + escTest(w[2]) + '</span><div class="line"></div></li>';
+          keyItems.push(qNumGlobal + '. ' + escTest(w[3]));
+        });
+        html += '</ol>';
+        keyHtml.push('<strong>Sekcja ' + secIdx + ':</strong> ' + keyItems.join(' · '));
+      }
+    }
+
+    // Klucz
+    if (includeKey) {
+      html += '<div class="page-break"></div><h2>🔑 Klucz odpowiedzi</h2>';
+      keyHtml.forEach(s => { html += '<p>' + s + '</p>'; });
+    }
+
+    // Otwórz okno do druku
+    const w = window.open('', '_blank');
+    if (!w) { msg.style.color = 'var(--danger)'; msg.textContent = '⚠️ Popup zablokowany.'; return; }
+    const branding = (typeof getSchoolBranding === 'function') ? getSchoolBranding() : { name:'', logo:'' };
+    const brandingHtml = (branding.logo || branding.name) ? '<div class="branding">'
+      + (branding.logo ? '<img src="' + escTest(branding.logo) + '" onerror="this.style.display=&quot;none&quot;">' : '')
+      + (branding.name ? '<div class="bn">' + escTest(branding.name) + '</div>' : '')
+      + '</div>' : '';
+    const title = book.name + ' · ' + unitLabel + ' · Wersja ' + variant;
+    w.document.write('<!DOCTYPE html><html lang="pl"><head><meta charset="UTF-8"><title>Test — ' + escTest(title) + '</title>'
+      + '<style>'
+      + 'body{font-family:Arial,sans-serif;padding:24px;color:#111;line-height:1.6}'
+      + 'h1{font-size:18px;margin:0 0 4px}'
+      + 'h2{font-size:14px;color:#555;margin:0 0 14px;font-weight:normal}'
+      + 'h3{font-size:13px;background:#f0f0f0;padding:7px 10px;border-radius:4px;margin:14px 0 8px;page-break-after:avoid}'
+      + 'ol{padding-left:20px;margin:0}'
+      + 'ol li{margin-bottom:10px;page-break-inside:avoid}'
+      + '.q{font-weight:600}'
+      + '.mc .opts{margin-top:4px;display:flex;flex-wrap:wrap;gap:14px;font-size:.95em}'
+      + '.gap .hint{color:#888;font-style:italic;margin-left:8px}'
+      + '.scramble .hint{color:#666;margin-left:8px}'
+      + '.scramble .line{display:inline-block;border-bottom:1px solid #444;margin-left:10px;width:140px}'
+      + '.translate .line{height:24px;border-bottom:1px dashed #999;margin-top:4px}'
+      + '.branding{display:flex;align-items:center;gap:10px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px dashed #ccc}'
+      + '.branding img{max-height:42px;max-width:120px;object-fit:contain}'
+      + '.bn{font-weight:700;color:#333}'
+      + '.page-break{page-break-before:always}'
+      + '.name-row{margin-bottom:14px;font-size:13px}'
+      + '.name-row span{display:inline-block;border-bottom:1px solid #888;min-width:240px;height:18px;margin-right:14px}'
+      + 'footer{margin-top:20px;text-align:center;font-size:10px;color:#999}'
+      + '@media print{body{padding:14px}}'
+      + '</style></head><body>'
+      + brandingHtml
+      + '<h1>Test — ' + escTest(book.name) + '</h1>'
+      + '<h2>' + escTest(unitLabel) + ' · Wersja ' + variant + ' · ' + new Date().toLocaleDateString('pl-PL') + '</h2>'
+      + '<div class="name-row">Imię i nazwisko: <span></span> Klasa: <span style="min-width:90px"></span> Data: <span style="min-width:90px"></span></div>'
+      + html
+      + '<footer>© 2026 Sowie Fiszki</footer>'
+      + '<script>window.onload=function(){window.print();};<\/script>'
+      + '</body></html>');
+    w.document.close();
+    closeGenericModal();
+  };
 
   window.openWorksheetModal = function(){
     if (!isCurrentUserAdmin() && !isCurrentUserTeacher()) {
