@@ -6207,28 +6207,89 @@ function collectHardWords(bookId) {
     cache: {},          // bookId → [dialogs...]
     current: null,      // aktywny dialog w playerze
     voices: { female: null, male: null },
+    sameVoiceFallback: false,  // czy obu mówców gra ten sam głos (potrzebne do dramatycznej zmiany pitch)
     isPlaying: false,
-    abortFn: null
+    abortFn: null,
+    userOverride: null  // { female: voiceURI, male: voiceURI } z localStorage
   };
+
+  // Wczytaj preferencje użytkownika ze schowka — wybrane głosy
+  try {
+    const saved = localStorage.getItem('fiszki_dialog_voices');
+    if (saved) state.userOverride = JSON.parse(saved);
+  } catch(_) {}
+
+  // Priorytet znanych "ładnych" głosów en-GB w kolejności jakości:
+  // Google Cloud TTS (online Chrome) > macOS premium > Microsoft modern > Microsoft Desktop > inne
+  const FEMALE_PRIORITY = [
+    /^Google UK English Female$/,
+    /Google.*UK.*English.*Female/i,
+    /^Microsoft (Libby|Sonia|Maisie|Olivia|Hollie|Mia|Bella) Online/i,  // Win11 Edge neural
+    /^Microsoft Libby/i,
+    /^Microsoft Sonia/i,
+    /^Microsoft Hazel(\sDesktop)?/i,  // Win10/8
+    /^Microsoft Susan/i,
+    /^(Kate|Serena|Martha|Karen)$/,    // macOS Premium
+    /^(Fiona|Moira|Tessa)$/,            // macOS UK regional
+    /en[-_]GB.*female/i
+  ];
+  const MALE_PRIORITY = [
+    /^Google UK English Male$/,
+    /Google.*UK.*English.*Male/i,
+    /^Microsoft (Ryan|Thomas|Noah|Ethan|Liam) Online/i,  // Win11 Edge neural
+    /^Microsoft Ryan/i,
+    /^Microsoft George/i,
+    /^Microsoft Mark/i,
+    /^(Daniel|Oliver|Arthur)$/,         // macOS UK Premium
+    /en[-_]GB.*male/i
+  ];
+
+  function findByPriority(voices, priority, excludeVoice) {
+    for (const pattern of priority) {
+      const v = voices.find(x =>
+        pattern.test(x.name) &&
+        (x.lang === 'en-GB' || x.lang === 'en_GB' || pattern.source.includes('UK') || pattern.source.includes('GB')) &&
+        x !== excludeVoice
+      );
+      if (v) return v;
+    }
+    // Fallback: cokolwiek en-GB
+    return voices.find(x => (x.lang === 'en-GB' || x.lang === 'en_GB') && x !== excludeVoice) ||
+           voices.find(x => x.lang && x.lang.startsWith('en') && x !== excludeVoice) ||
+           null;
+  }
 
   function pickVoices(){
     if (!('speechSynthesis' in window)) return;
     const vs = window.speechSynthesis.getVoices() || [];
-    // Female en-GB preferred
-    state.voices.female = vs.find(v => v.name === 'Google UK English Female')
-      || vs.find(v => v.lang === 'en-GB' && /female/i.test(v.name))
-      || vs.find(v => v.lang === 'en-GB' && /(kate|serena|libby|sonia)/i.test(v.name))
-      || vs.find(v => v.lang === 'en-GB')
-      || vs.find(v => v.lang && v.lang.startsWith('en'));
-    state.voices.male = vs.find(v => v.name === 'Google UK English Male')
-      || vs.find(v => v.lang === 'en-GB' && /male/i.test(v.name))
-      || vs.find(v => v.lang === 'en-GB' && /(daniel|arthur|oliver)/i.test(v.name))
-      || vs.find(v => v.lang === 'en-GB' && v !== state.voices.female)
-      || state.voices.female;
+    if (!vs.length) return;
+
+    // Jeśli user wybrał konkretne głosy — uszanuj
+    if (state.userOverride) {
+      state.voices.female = vs.find(v => v.voiceURI === state.userOverride.female) || null;
+      state.voices.male   = vs.find(v => v.voiceURI === state.userOverride.male)   || null;
+    }
+
+    // Auto-dobierz brakujące
+    if (!state.voices.female) state.voices.female = findByPriority(vs, FEMALE_PRIORITY, null);
+    if (!state.voices.male)   state.voices.male   = findByPriority(vs, MALE_PRIORITY, state.voices.female);
+
+    // Jeśli oba głosy to ten sam obiekt (nie udało się znaleźć osobnego męskiego) — flaga
+    state.sameVoiceFallback = (
+      !state.voices.male ||
+      state.voices.male === state.voices.female ||
+      (state.voices.female && state.voices.male.voiceURI === state.voices.female.voiceURI)
+    );
+    // Jeśli brak męskiego — użyj kobiecego głosu, ale flaga aktywna → dramatyczna zmiana pitch
+    if (!state.voices.male) state.voices.male = state.voices.female;
   }
+
   if ('speechSynthesis' in window) {
     pickVoices();
     window.speechSynthesis.onvoiceschanged = pickVoices;
+    // Retry po opóźnieniu — niektóre przeglądarki ładują głosy asynchronicznie
+    setTimeout(pickVoices, 500);
+    setTimeout(pickVoices, 1500);
   }
 
   function speakLine(text, voiceKind){
@@ -6237,14 +6298,117 @@ function collectHardWords(bookId) {
       try { window.speechSynthesis.cancel(); } catch(_){}
       const u = new SpeechSynthesisUtterance(text);
       u.lang = 'en-GB';
-      u.rate = 0.92;
       const v = (voiceKind === 'male' ? state.voices.male : state.voices.female);
       if (v) u.voice = v;
-      u.pitch = voiceKind === 'male' ? 0.9 : 1.05;
+      // Jeśli ten sam głos użyty dla obu mówców — DRAMATYCZNA różnica pitch+rate,
+      // żeby uczeń słyszał kto mówi. Inaczej subtelna preferencja kobieta wyższa/mężczyzna niższa.
+      if (state.sameVoiceFallback) {
+        u.pitch = voiceKind === 'male' ? 0.6 : 1.4;   // Bardzo różne — głębokie vs wysokie
+        u.rate  = voiceKind === 'male' ? 0.85 : 0.95; // Mężczyzna mówi nieco wolniej
+      } else {
+        u.pitch = voiceKind === 'male' ? 0.95 : 1.05; // Subtelnie
+        u.rate  = 0.92;
+      }
       u.onend = u.onerror = () => resolve();
       try { window.speechSynthesis.speak(u); } catch(_) { resolve(); }
     });
   }
+
+  // Modal wyboru głosów dla dialogów (zapisuje w localStorage)
+  window.openDialogVoiceSettings = function(){
+    if (!('speechSynthesis' in window)) { toast('⚠️ Twoja przeglądarka nie obsługuje TTS.', 2800); return; }
+    const vs = window.speechSynthesis.getVoices() || [];
+    if (!vs.length) { toast('⚠️ Brak załadowanych głosów. Odśwież stronę.', 2800); return; }
+    // Sortuj: en-GB pierwsze, potem inne en-*, potem reszta
+    const sorted = [...vs].sort((a, b) => {
+      const aGB = (a.lang === 'en-GB' || a.lang === 'en_GB') ? 0 : (a.lang && a.lang.startsWith('en') ? 1 : 2);
+      const bGB = (b.lang === 'en-GB' || b.lang === 'en_GB') ? 0 : (b.lang && b.lang.startsWith('en') ? 1 : 2);
+      if (aGB !== bGB) return aGB - bGB;
+      return a.name.localeCompare(b.name);
+    });
+    const curFemaleURI = state.voices.female ? state.voices.female.voiceURI : '';
+    const curMaleURI   = state.voices.male   ? state.voices.male.voiceURI   : '';
+    let html = '<div style="font-family:Nunito,sans-serif;color:var(--text);max-width:520px;margin:0 auto">';
+    html += '<div style="font-size:.8rem;color:var(--muted);margin-bottom:14px;line-height:1.55;font-weight:600">';
+    html += '🎤 Wybierz głosy dla Anny (kobiecy) i Toma (męski). Najlepsze brzmienie dają <b>Google UK English</b> (wymaga połączenia z internetem w Chrome) lub <b>macOS Daniel/Kate/Serena</b>. Próbka odtwarza się po wybraniu.';
+    html += '</div>';
+
+    // Pokaż status
+    html += '<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:14px;font-size:.78rem">';
+    html += '<b>Status:</b> Dostępnych głosów: ' + vs.length + ' · en-GB: ' + vs.filter(v => v.lang === 'en-GB' || v.lang === 'en_GB').length;
+    html += state.sameVoiceFallback ? ' · ⚠️ Auto wybrał ten sam głos dla obu — wybierz ręcznie różne' : ' · ✓ Auto wybrał 2 różne głosy';
+    html += '</div>';
+
+    // Female select
+    html += '<label style="display:block;font-size:.68rem;font-weight:800;color:var(--muted);text-transform:uppercase;margin-bottom:4px">♀ Głos Anny</label>';
+    html += '<select id="dvFemale" style="width:100%;padding:9px 11px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.86rem;font-family:inherit;margin-bottom:6px">';
+    sorted.forEach(v => {
+      const isGB = (v.lang === 'en-GB' || v.lang === 'en_GB');
+      const isGoogle = /Google/i.test(v.name);
+      const star = isGoogle && isGB ? '⭐ ' : (isGB ? '🇬🇧 ' : '');
+      const sel = v.voiceURI === curFemaleURI ? ' selected' : '';
+      html += '<option value="' + escHtml(v.voiceURI) + '"' + sel + '>' + escHtml(star + v.name + ' (' + v.lang + ')') + '</option>';
+    });
+    html += '</select>';
+    html += '<button class="btn-sm" onclick="testDialogVoice(\'female\')" style="margin-bottom:14px">▶ Posłuchaj Anny</button>';
+
+    // Male select
+    html += '<label style="display:block;font-size:.68rem;font-weight:800;color:var(--muted);text-transform:uppercase;margin-bottom:4px">♂ Głos Toma</label>';
+    html += '<select id="dvMale" style="width:100%;padding:9px 11px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.86rem;font-family:inherit;margin-bottom:6px">';
+    sorted.forEach(v => {
+      const isGB = (v.lang === 'en-GB' || v.lang === 'en_GB');
+      const isGoogle = /Google/i.test(v.name);
+      const star = isGoogle && isGB ? '⭐ ' : (isGB ? '🇬🇧 ' : '');
+      const sel = v.voiceURI === curMaleURI ? ' selected' : '';
+      html += '<option value="' + escHtml(v.voiceURI) + '"' + sel + '>' + escHtml(star + v.name + ' (' + v.lang + ')') + '</option>';
+    });
+    html += '</select>';
+    html += '<button class="btn-sm" onclick="testDialogVoice(\'male\')" style="margin-bottom:14px">▶ Posłuchaj Toma</button>';
+
+    html += '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">';
+    html += '<button class="btn-modal-cancel" onclick="resetDialogVoices()">🔄 Reset auto</button>';
+    html += '<button class="btn-modal-cancel" onclick="closeGenericModal()">Anuluj</button>';
+    html += '<button class="btn-modal-save" onclick="saveDialogVoices()">💾 Zapisz</button>';
+    html += '</div></div>';
+    openGenericModal('🎤 Ustawienia głosu', html);
+  };
+
+  window.testDialogVoice = function(kind) {
+    const sel = document.getElementById(kind === 'male' ? 'dvMale' : 'dvFemale');
+    const uri = sel.value;
+    const vs = window.speechSynthesis.getVoices();
+    const v = vs.find(x => x.voiceURI === uri);
+    if (!v) return;
+    try { window.speechSynthesis.cancel(); } catch(_){}
+    const u = new SpeechSynthesisUtterance(kind === 'male' ? 'Hello, my name is Tom. Nice to meet you.' : 'Hello, my name is Anna. Nice to meet you.');
+    u.voice = v;
+    u.lang = 'en-GB';
+    u.rate = 0.92;
+    window.speechSynthesis.speak(u);
+  };
+
+  window.saveDialogVoices = function() {
+    const fURI = document.getElementById('dvFemale').value;
+    const mURI = document.getElementById('dvMale').value;
+    state.userOverride = { female: fURI, male: mURI };
+    try { localStorage.setItem('fiszki_dialog_voices', JSON.stringify(state.userOverride)); } catch(_){}
+    // Wymuś przepicking
+    state.voices.female = null;
+    state.voices.male = null;
+    pickVoices();
+    closeGenericModal();
+    toast('✓ Głosy zapisane.', 2400);
+  };
+
+  window.resetDialogVoices = function() {
+    state.userOverride = null;
+    try { localStorage.removeItem('fiszki_dialog_voices'); } catch(_){}
+    state.voices.female = null;
+    state.voices.male = null;
+    pickVoices();
+    closeGenericModal();
+    toast('✓ Reset — auto-dobór głosów.', 2400);
+  };
 
   // Odswiez banner dla biezacego podrecznika (wolane przy wejsciu do sUnits)
   window.refreshDialogsBanner = async function(){
@@ -6331,6 +6495,7 @@ function collectHardWords(bookId) {
     html += '<button class="btn-modal-save" id="dpPlayBtn" onclick="dpPlayAll()">▶ Odtwórz cały dialog</button>';
     html += '<button class="btn-sm" onclick="dpStop()">⏹ Stop</button>';
     html += '<button class="btn-sm" onclick="dpTogglePl()" id="dpPlBtn">🇵🇱 Pokaż tłumaczenie</button>';
+    html += '<button class="btn-sm" onclick="openDialogVoiceSettings()" title="Wybierz głosy dla Anny i Toma">🎤 Głosy</button>';
     html += '</div>';
     // Questions (initially hidden — pojawiaja sie po pierwszym odsluchaniu)
     if (d.questions && d.questions.length) {
