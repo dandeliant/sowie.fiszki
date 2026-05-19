@@ -6494,6 +6494,159 @@ function collectHardWords(bookId) {
 })();
 
 // ══════════════════════════════════════════════
+//  STATYSTYKI PLATFORMY — panel admina (📊)
+//  Otwierany z teacher.html?go=stats. Tylko admin.
+//  Pokazuje: konta per rola (total/aktywne/nowe), DAU/WAU/MAU,
+//  top podręczniki, klasy, treści, liczby dla mediów/wydawnictw.
+// ══════════════════════════════════════════════
+window.openAdminStats = async function(){
+  if (!isCurrentUserAdmin()) { toast('Tylko administrator.', 2400); return; }
+  openGenericModal('📊 Statystyki platformy', '<div style="text-align:center;padding:30px;color:var(--muted)">⏳ Liczę…</div>');
+  let s = null;
+  try { s = await DB.loadAdminStats(); }
+  catch(e) {
+    openGenericModal('📊 Statystyki platformy',
+      '<div style="text-align:center;padding:20px"><div style="color:var(--danger);font-weight:600">❌ ' + escHtml(e.message || 'Błąd') + '</div>'
+      + '<div style="margin-top:14px"><button class="btn-modal-cancel" onclick="closeGenericModal()">Zamknij</button></div></div>');
+    return;
+  }
+  const tile = (icon, label, value, sub) =>
+    '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:12px 14px">'
+    + '<div style="font-size:.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:700;margin-bottom:4px">' + icon + ' ' + label + '</div>'
+    + '<div style="font-size:1.5rem;font-weight:900;color:var(--accent);line-height:1">' + value + '</div>'
+    + (sub ? '<div style="font-size:.7rem;color:var(--muted);margin-top:3px;font-weight:600">' + sub + '</div>' : '')
+    + '</div>';
+
+  let html = '<div style="font-family:Nunito,sans-serif;color:var(--text);max-width:760px;margin:0 auto">';
+  html += '<div style="text-align:center;font-size:.7rem;color:var(--muted);font-weight:600;margin-bottom:14px">Wygenerowano: ' + new Date(s.generatedAt).toLocaleString('pl-PL') + '</div>';
+
+  // ━━━ Sekcja: KONTA ━━━
+  html += '<div style="font-family:\'Playfair Display\',serif;font-size:1.05rem;color:var(--accent);font-weight:800;margin:14px 0 8px">👥 Konta</div>';
+  html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:14px">';
+  html += tile('🎓', 'Uczniowie', s.accounts.students.total, s.accounts.students.active30 + ' aktywnych (30d)');
+  html += tile('👩‍🏫', 'Nauczyciele', s.accounts.teachers.total, s.accounts.teachers.active30 + ' aktywnych (30d)');
+  html += tile('👨‍👩‍👧', 'Opiekunowie', s.accounts.parents.total, s.accounts.parents.active30 + ' aktywnych (30d)');
+  html += tile('🛡️', 'Administratorzy', s.accounts.admins.total, '');
+  html += tile('💎', 'Premium uczniów', s.accounts.premiumStudents, 'plan=premium');
+  html += tile('📈', 'Łącznie kont', s.accounts.total, s.accounts.totalActive30 + ' aktywnych');
+  html += '</div>';
+
+  // ━━━ Sekcja: WZROST ━━━
+  html += '<div style="font-family:\'Playfair Display\',serif;font-size:1.05rem;color:var(--accent);font-weight:800;margin:14px 0 8px">📈 Wzrost (nowe konta)</div>';
+  html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:14px">';
+  html += tile('🎓', 'Uczniowie ↑', '+' + s.accounts.students.new30, '+' + s.accounts.students.new7 + ' w 7d');
+  html += tile('👩‍🏫', 'Nauczyciele ↑', '+' + s.accounts.teachers.new30, '+' + s.accounts.teachers.new7 + ' w 7d');
+  html += tile('👨‍👩‍👧', 'Opiekunowie ↑', '+' + s.accounts.parents.new30, '+' + s.accounts.parents.new7 + ' w 7d');
+  html += '</div>';
+
+  // ━━━ Sekcja: AKTYWNOŚĆ ━━━
+  html += '<div style="font-family:\'Playfair Display\',serif;font-size:1.05rem;color:var(--accent);font-weight:800;margin:14px 0 8px">🔥 Aktywność</div>';
+  html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:14px">';
+  html += tile('🌅', 'DAU (dziś)', s.activity.dau, 'unikalnych userów');
+  html += tile('📅', 'WAU (7 dni)', s.activity.wau, 'unikalnych userów');
+  html += tile('🗓️', 'MAU (30 dni)', s.activity.mau, 'unikalnych userów');
+  html += tile('🔁', 'Lepkość', s.activity.stickiness + '%', 'DAU/MAU ratio');
+  html += tile('⚡', 'XP (30d)', s.activity.totalXp30.toLocaleString('pl-PL'), 'punktów łącznie');
+  html += tile('⏱️', 'Minuty (30d)', s.activity.totalMin30.toLocaleString('pl-PL'), Math.round(s.activity.totalMin30/60) + ' godzin');
+  html += '</div>';
+
+  // ━━━ Sekcja: TREŚCI ━━━
+  html += '<div style="font-family:\'Playfair Display\',serif;font-size:1.05rem;color:var(--accent);font-weight:800;margin:14px 0 8px">🗂️ Treści i klasy</div>';
+  html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:14px">';
+  html += tile('🏫', 'Klas', s.content.classes, 'średnio ' + s.content.avgClassSize + ' uczniów');
+  html += tile('🧑‍🤝‍🧑', 'Uczniów w klasach', s.content.classMembers, '');
+  html += tile('📝', 'Zestawów nauczycielskich', s.content.teacherSets, '');
+  html += tile('📌', 'Notatek admina', s.content.bookNotes, 'publicznych + prywatnych');
+  html += tile('🎧', 'Mini-dialogów', s.content.dialogs, 'audio z TTS');
+  html += tile('🎙️', 'Custom nagrań', s.content.customAudio, 'wymowy słów');
+  html += tile('💬', 'Konwersacji user↔admin', s.content.conversations, '');
+  html += tile('📨', 'Wiadomości z formularza', s.content.contactMessages, '');
+  html += tile('📊', 'Postępów ucz./unitu', s.content.totalUnitProgress.toLocaleString('pl-PL'), 'rekordów');
+  html += '</div>';
+
+  // ━━━ Top podręczniki ━━━
+  if (s.content.topBooks.length) {
+    html += '<div style="font-family:\'Playfair Display\',serif;font-size:1.05rem;color:var(--accent);font-weight:800;margin:14px 0 8px">📚 Top podręczniki (z przydzieleń user_books)</div>';
+    html += '<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:6px 10px;margin-bottom:14px">';
+    s.content.topBooks.forEach((b, i) => {
+      const book = BOOKS[b.book_id];
+      const name = book ? (book.icon + ' ' + (book.shortName || book.name)) : b.book_id;
+      html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px dashed var(--border)">';
+      html += '<span style="color:var(--muted);font-weight:700;width:24px">#' + (i+1) + '</span>';
+      html += '<span style="flex:1;font-weight:600">' + escHtml(name) + '</span>';
+      html += '<span style="background:rgba(255,209,102,.15);color:var(--accent);padding:3px 10px;border-radius:14px;font-weight:800;font-size:.78rem">' + b.count + '</span>';
+      html += '</div>';
+    });
+    html += '</div>';
+  }
+
+  // ━━━ Liczby dla mediów i wydawnictw ━━━
+  const totalBooks = Object.keys(BOOKS).length;
+  const totalGames = 14 + 24; // 14 in-unit games + ~24 standalone INNE
+  // Liczba słów w bazie (z BOOKS)
+  let totalWords = 0;
+  Object.values(BOOKS).forEach(b => {
+    if (b.units) Object.values(b.units).forEach(u => { if (u.words) totalWords += u.words.length; });
+  });
+  html += '<div style="font-family:\'Playfair Display\',serif;font-size:1.05rem;color:var(--accent);font-weight:800;margin:14px 0 8px">📰 Dla mediów i wydawnictw</div>';
+  html += '<div style="background:linear-gradient(135deg,rgba(255,209,102,.12),rgba(162,155,254,.08));border:1.5px solid rgba(255,209,102,.32);border-radius:14px;padding:14px;margin-bottom:14px;font-size:.86rem;line-height:1.7">';
+  html += '• Łączna liczba podręczników: <b>' + totalBooks + '</b><br>';
+  html += '• Łączna liczba słówek w bazie: <b>' + totalWords.toLocaleString('pl-PL') + '</b><br>';
+  html += '• Łączna liczba gier i aplikacji: <b>~' + totalGames + '</b> (14 trybów per unit + ~24 samodzielne)<br>';
+  html += '• Aktywnych nauczycieli (30d): <b>' + s.accounts.teachers.active30 + '</b><br>';
+  html += '• Aktywnych uczniów (30d): <b>' + s.accounts.students.active30 + '</b><br>';
+  html += '• Godziny nauki w ostatnim miesiącu: <b>' + Math.round(s.activity.totalMin30 / 60) + 'h</b><br>';
+  html += '• Klas założonych przez nauczycieli: <b>' + s.content.classes + '</b>';
+  html += '</div>';
+
+  html += '<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">';
+  html += '<button class="btn-modal-cancel" onclick="closeGenericModal()">Zamknij</button>';
+  html += '<button class="btn-sm" onclick="copyAdminStatsAsText()">📋 Skopiuj jako tekst</button>';
+  html += '<button class="btn-modal-save" onclick="openAdminStats()">🔄 Odśwież</button>';
+  html += '</div>';
+  html += '</div>';
+
+  window._lastAdminStats = s;
+  openGenericModal('📊 Statystyki platformy', html);
+};
+
+// Kopia statystyk jako plain text — wygodne do wklejenia w mailu do mediów
+window.copyAdminStatsAsText = function() {
+  const s = window._lastAdminStats;
+  if (!s) return;
+  let txt = 'Sowie Fiszki — statystyki platformy (' + new Date(s.generatedAt).toLocaleString('pl-PL') + ')\n\n';
+  txt += '=== KONTA ===\n';
+  txt += 'Uczniowie:     ' + s.accounts.students.total + ' (' + s.accounts.students.active30 + ' aktywnych 30d, +' + s.accounts.students.new30 + ' nowych 30d)\n';
+  txt += 'Nauczyciele:   ' + s.accounts.teachers.total + ' (' + s.accounts.teachers.active30 + ' aktywnych 30d, +' + s.accounts.teachers.new30 + ' nowych 30d)\n';
+  txt += 'Opiekunowie:   ' + s.accounts.parents.total + ' (' + s.accounts.parents.active30 + ' aktywnych 30d, +' + s.accounts.parents.new30 + ' nowych 30d)\n';
+  txt += 'Łącznie:       ' + s.accounts.total + ' (' + s.accounts.totalActive30 + ' aktywnych)\n\n';
+  txt += '=== AKTYWNOŚĆ ===\n';
+  txt += 'DAU (dziś):    ' + s.activity.dau + '\n';
+  txt += 'WAU (7 dni):   ' + s.activity.wau + '\n';
+  txt += 'MAU (30 dni):  ' + s.activity.mau + '\n';
+  txt += 'Lepkość:       ' + s.activity.stickiness + '%\n';
+  txt += 'XP w 30 dniach: ' + s.activity.totalXp30 + '\n';
+  txt += 'Godziny nauki: ' + Math.round(s.activity.totalMin30 / 60) + 'h\n\n';
+  txt += '=== TREŚCI ===\n';
+  txt += 'Klas:          ' + s.content.classes + ' (avg ' + s.content.avgClassSize + ' uczniów)\n';
+  txt += 'Zestawów nauczycielskich: ' + s.content.teacherSets + '\n';
+  txt += 'Notatek:       ' + s.content.bookNotes + '\n';
+  txt += 'Dialogów:      ' + s.content.dialogs + '\n';
+  txt += 'Custom nagrań: ' + s.content.customAudio + '\n';
+  if (s.content.topBooks.length) {
+    txt += '\n=== TOP PODRĘCZNIKI ===\n';
+    s.content.topBooks.forEach((b, i) => {
+      const book = BOOKS[b.book_id];
+      const name = book ? (book.shortName || book.name) : b.book_id;
+      txt += '#' + (i+1) + '. ' + name + ' — ' + b.count + ' przydzieleń\n';
+    });
+  }
+  try {
+    navigator.clipboard.writeText(txt).then(() => toast('✓ Skopiowano do schowka.', 2400));
+  } catch(e) { toast('⚠️ Schowek niedostępny — zaznacz tekst ręcznie.', 3000); }
+};
+
+// ══════════════════════════════════════════════
 //  RANKING KLASOWY (Feature 3) — leaderboard + tygodniowe wyzwanie
 //  Otwierany z sClassDetail przez przycisk "🏆 Ranking".
 //  Wykorzystuje DB.loadClassLeaderboard (agreguje daily_xp_log).
@@ -16683,6 +16836,7 @@ if ('serviceWorker' in navigator) {
         reports:          () => showScreen('sBooks'),
         worksheet:        () => (typeof openWorksheetModal==='function')   && openWorksheetModal(),
         tests:            () => (typeof openTestGenerator==='function')    && openTestGenerator(),
+        stats:            () => (typeof openAdminStats==='function')       && openAdminStats(),
         premium:          () => (typeof openPremiumPricingModal==='function') && openPremiumPricingModal(),
       };
       const fn = map[goto];

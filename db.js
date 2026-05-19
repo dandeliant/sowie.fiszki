@@ -1665,6 +1665,145 @@ const DB = (() => {
     if (error) throw new Error(error.message);
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  //  STATYSTYKI ADMINA (Stats Dashboard)
+  // ═══════════════════════════════════════════════════════════════
+  // Agreguje dane dla panelu admina: liczba kont per rola (total +
+  // aktywne ostatnie 30 dni), DAU/WAU/MAU z daily_xp_log, wzrost,
+  // top podręczniki z user_books, liczba klas, teacher_sets, book_notes.
+  // Wszystko w jednym wywołaniu (kilka równoległych queries). Tylko admin.
+  async function loadAdminStats() {
+    if (!_profile?.isAdmin) throw new Error('Tylko administrator.');
+    const now = new Date();
+    const day7  = new Date(now.getTime() - 7  * 86400000).toISOString().slice(0, 10);
+    const day30 = new Date(now.getTime() - 30 * 86400000).toISOString().slice(0, 10);
+    const day7iso  = new Date(now.getTime() - 7  * 86400000).toISOString();
+    const day30iso = new Date(now.getTime() - 30 * 86400000).toISOString();
+    const today = now.toISOString().slice(0, 10);
+
+    // Pomocnik do count
+    const count = async (table, filters) => {
+      let q = supabase.from(table).select('id', { count: 'exact', head: true });
+      if (filters) filters.forEach(([col, op, val]) => { q = q[op](col, val); });
+      const { count: c, error } = await q;
+      if (error) { console.warn('[stats]', table, error.message); return 0; }
+      return c || 0;
+    };
+
+    // Konta per rola — pobierzemy wszystkie profile (tylko niezbędne kolumny)
+    const { data: profiles, error: pErr } = await supabase
+      .from('profiles')
+      .select('id, is_admin, is_teacher, is_parent, last_study_date, created_at, plan');
+    if (pErr) throw new Error(pErr.message);
+    const all = profiles || [];
+    const thirtyMs = 30 * 86400000;
+    const sevenMs = 7 * 86400000;
+    const nowMs = now.getTime();
+
+    function isActive(p, days) {
+      if (!p.last_study_date) return false;
+      const t = new Date(p.last_study_date).getTime();
+      return !isNaN(t) && (nowMs - t) < days * 86400000;
+    }
+    function isAfter(p, days) {
+      if (!p.created_at) return false;
+      const t = new Date(p.created_at).getTime();
+      return !isNaN(t) && (nowMs - t) < days * 86400000;
+    }
+
+    const students  = all.filter(p => !p.is_admin && !p.is_teacher && !p.is_parent);
+    const teachers  = all.filter(p =>  p.is_teacher && !p.is_admin);
+    const parents   = all.filter(p =>  p.is_parent  && !p.is_admin);
+    const admins    = all.filter(p =>  p.is_admin);
+
+    const accounts = {
+      students:  { total: students.length, active30: students.filter(p => isActive(p, 30)).length, active7: students.filter(p => isActive(p, 7)).length, new30: students.filter(p => isAfter(p, 30)).length, new7: students.filter(p => isAfter(p, 7)).length },
+      teachers:  { total: teachers.length, active30: teachers.filter(p => isActive(p, 30)).length, active7: teachers.filter(p => isActive(p, 7)).length, new30: teachers.filter(p => isAfter(p, 30)).length, new7: teachers.filter(p => isAfter(p, 7)).length },
+      parents:   { total: parents.length,  active30: parents.filter(p => isActive(p, 30)).length,  active7: parents.filter(p => isActive(p, 7)).length,  new30: parents.filter(p => isAfter(p, 30)).length,  new7: parents.filter(p => isAfter(p, 7)).length },
+      admins:    { total: admins.length },
+      premiumStudents: students.filter(p => p.plan === 'premium').length
+    };
+    accounts.total = accounts.students.total + accounts.teachers.total + accounts.parents.total + accounts.admins.total;
+    accounts.totalActive30 = accounts.students.active30 + accounts.teachers.active30 + accounts.parents.active30;
+
+    // DAU/WAU/MAU z daily_xp_log
+    let xp = [];
+    try {
+      const { data, error } = await supabase
+        .from('daily_xp_log')
+        .select('user_id, day, xp, minutes')
+        .gte('day', day30);
+      if (!error) xp = data || [];
+    } catch(e) { console.warn('[stats xp]', e); }
+
+    const dauUsers   = new Set(xp.filter(r => r.day === today).map(r => r.user_id));
+    const wauUsers   = new Set(xp.filter(r => r.day >= day7).map(r => r.user_id));
+    const mauUsers   = new Set(xp.map(r => r.user_id));
+    const totalXp30  = xp.reduce((s, r) => s + (r.xp || 0), 0);
+    const totalMin30 = xp.reduce((s, r) => s + (r.minutes || 0), 0);
+
+    // Top podręczniki z user_books
+    let topBooks = [];
+    try {
+      const { data, error } = await supabase
+        .from('user_books')
+        .select('book_id');
+      if (!error && data) {
+        const map = {};
+        data.forEach(r => { map[r.book_id] = (map[r.book_id] || 0) + 1; });
+        topBooks = Object.entries(map).sort((a,b) => b[1] - a[1]).slice(0, 10).map(([id, c]) => ({ book_id: id, count: c }));
+      }
+    } catch(e) { console.warn('[stats books]', e); }
+
+    // Klasy
+    let classCount = 0, classMembersTotal = 0;
+    try {
+      const { count: c1 } = await supabase.from('classes').select('id', { count: 'exact', head: true });
+      classCount = c1 || 0;
+      const { count: c2 } = await supabase.from('class_members').select('id', { count: 'exact', head: true });
+      classMembersTotal = c2 || 0;
+    } catch(e) { console.warn('[stats classes]', e); }
+
+    // Teacher sets, book notes, dialogs, word_audio
+    const [teacherSetsCount, bookNotesCount, dialogsCount, wordAudioCount, conversationsCount, contactMessagesCount] = await Promise.all([
+      count('teacher_sets'),
+      count('book_notes'),
+      count('dialogs').catch(() => 0),
+      count('word_audio').catch(() => 0),
+      count('conversations').catch(() => 0),
+      count('public_contact_messages').catch(() => 0)
+    ]);
+
+    // Liczba unit_progress (oszacowanie ile sesji łącznie)
+    const unitProgressCount = await count('unit_progress').catch(() => 0);
+
+    return {
+      generatedAt: now.toISOString(),
+      accounts,
+      activity: {
+        dau: dauUsers.size,
+        wau: wauUsers.size,
+        mau: mauUsers.size,
+        totalXp30,
+        totalMin30,
+        stickiness: mauUsers.size > 0 ? Math.round((dauUsers.size / mauUsers.size) * 100) : 0
+      },
+      content: {
+        topBooks,
+        classes: classCount,
+        classMembers: classMembersTotal,
+        avgClassSize: classCount > 0 ? Math.round((classMembersTotal / classCount) * 10) / 10 : 0,
+        teacherSets: teacherSetsCount,
+        bookNotes: bookNotesCount,
+        dialogs: dialogsCount,
+        customAudio: wordAudioCount,
+        conversations: conversationsCount,
+        contactMessages: contactMessagesCount,
+        totalUnitProgress: unitProgressCount
+      }
+    };
+  }
+
   // Ranking klasowy (Feature 3): agreguje daily_xp_log dla wszystkich
   // czlonkow klasy w ostatnich N dniach. Zwraca posortowana liste:
   // [{ user_id, username, totalXp, totalMinutes, daysActive, met_challenge }]
@@ -3401,6 +3540,7 @@ const DB = (() => {
     removeChild,
     loadParentChildLinksForChildren,
     loadClassLeaderboard,
+    loadAdminStats,
     loadDialogsForBook,
     saveDialog,
     deleteDialog,
