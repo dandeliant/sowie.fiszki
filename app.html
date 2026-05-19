@@ -4643,6 +4643,34 @@ function showScreen(id) {
 //  wydawnictwami — listy słówek to materiały pomocnicze do nauki dla
 //  uczniów korzystających z odpowiedniego podręcznika.
 // ══════════════════════════════════════════════
+// Skrocone aliasy podrecznikow — widoczne tylko za logowaniem dla nauczyciela/admina/opiekuna.
+// Pomagaja szybko rozpoznac ktory podrecznik (np. "T3", "BT3", "SH3" — wszystkie klasa 3,
+// ale rozne serie). Skroty 2-4 literowe sa generyczne — nie identyfikuja jednoznacznie
+// konkretnej marki w sensie prawnym, ale dla nauczyciela kontekst jest jasny.
+const BOOK_ALIASES = {
+  brainy6:      'B6',
+  brainy7:      'B7',
+  tiger1:       'T1',
+  tiger2:       'T2',
+  tiger3:       'T3',
+  kidscan1:     'KC1',
+  bugsteam2:    'BT2',
+  bugsteam3:    'BT3',
+  together4:    'TG4',
+  together5:    'TG5',
+  together6:    'TG6',
+  stepsplus4:   'SP4',
+  stepsplus5:   'SP5',
+  englishA1:    'EC A1',
+  newpassword:  'NP A2+',
+  beHappy2:     'BH2',
+  superheroes2: 'SH2',
+  superheroes3: 'SH3',
+  link7:        'LK7',
+  link8:        'LK8',
+  impuls3:      'I3'
+};
+
 const PUBLISHERS = {
   // Macmillan Polska
   brainy6:    { name: 'Macmillan Polska', url: 'https://www.macmillan.pl' },
@@ -5240,6 +5268,16 @@ function refreshBooks() {
     const publisherInfo = pub
       ? `<div class="book-publisher-info" role="button" tabindex="0" title="O materiale: kliknij, aby zobaczyć zastrzeżenie i link do wydawnictwa" onclick="event.preventDefault();event.stopPropagation();openPublisherInfoModal('${escHtml(book.id)}');" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();openPublisherInfoModal('${escHtml(book.id)}');}">ⓘ Na podstawie: ${escHtml(pub.name)}</div>`
       : '';
+    // Chip „Pasuje do" — skrót podręcznika dla nauczycieli/admina (za logowaniem).
+    // Widoczne tylko dla staff (admin/teacher/parent). Bot Google nie indeksuje
+    // app.html (login wall + disallow w robots.txt), więc skróty te nie pojawiają
+    // się w wynikach wyszukiwania. Nauczyciel widzi skrót → rozpoznaje który
+    // podręcznik, bez ujawniania pełnej nazwy markowej w SEO.
+    const isStaffViewer = isAdmin || isTeacher || isParent;
+    const alias = BOOK_ALIASES[book.id];
+    const aliasChip = (isStaffViewer && alias)
+      ? `<div class="book-alias-chip" title="Krótki identyfikator dla nauczycieli" style="font-size:.66rem;color:var(--muted);font-weight:700;background:rgba(255,255,255,.06);border:1px solid var(--border);border-radius:100px;padding:2px 9px;margin-top:4px;display:inline-block">💡 Pasuje do: ${escHtml(alias)}</div>`
+      : '';
     d.innerHTML = `
       ${accessBtn}
       ${editBookBtn}
@@ -5248,6 +5286,7 @@ function refreshBooks() {
       <div class="book-name">${book.name}</div>
       <div class="book-desc">${book.description}</div>
       ${publisherInfo}
+      ${aliasChip}
       <div class="book-prog" style="color:${book.color}">${pct > 0 ? pct + '% opanowane' : 'Zacznij naukę!'}</div>
       <div class="book-bar-bg"><div class="book-bar-fill" style="width:${pct}%;background:${book.color}"></div></div>`;
     g.appendChild(d);
@@ -16837,6 +16876,7 @@ if ('serviceWorker' in navigator) {
         worksheet:        () => (typeof openWorksheetModal==='function')   && openWorksheetModal(),
         tests:            () => (typeof openTestGenerator==='function')    && openTestGenerator(),
         stats:            () => (typeof openAdminStats==='function')       && openAdminStats(),
+        newBook:          () => (typeof openAdminBookModal==='function')   && openAdminBookModal(),
         premium:          () => (typeof openPremiumPricingModal==='function') && openPremiumPricingModal(),
       };
       const fn = map[goto];
