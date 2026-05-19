@@ -12,7 +12,8 @@
 - **Hosting:** Vercel → **https://sowiefiszki.com** (custom domain, od 29.04.2026; wcześniej GitHub Pages)
 - **Backend:** Supabase (auth + Postgres + RLS), projekt `kofenaaeleyhwhbkytcz`
 - **Charakter:** osoba fizyczna prowadząca Platformę; **model freemium** (30-dniowy trial Premium → Free / Premium po opłacie). Wcześniej projekt był non-commercial — od ~2026-04-29 przygotowywany do monetyzacji.
-- **Service Worker:** aktualnie `v1.37` (stan na 18 maja 2026). Format `vMAJOR.MINOR` z zerem wiodącym, od `v1.00` (zresetowane od maja 2026 dla porządku; wcześniej luźna numeracja `v50`–`v233`).
+- **Service Worker:** aktualnie `v1.40` (stan na 19 maja 2026). Format `vMAJOR.MINOR` z zerem wiodącym, od `v1.00` (zresetowane od maja 2026 dla porządku; wcześniej luźna numeracja `v50`–`v233`).
+- **SEO:** `sitemap.xml` (5 publicznych URL-i: `/`, `/faq`, `/regulamin`, `/polityka`, `/aktualnosci.html`), `robots.txt` (allow publicznych, disallow `app/teacher/words/login/index/play` + skrypty, sitemap-link), `og-image.svg` (1200×630 — Facebook/LinkedIn/Twitter Cards), JSON-LD w `home.html` (Organization + WebSite + WebApplication + FAQPage). Każda publiczna strona (home/faq/regulamin/polityka/aktualnosci) ma: canonical, OG (title/description/image/locale/site_name/dimensions), Twitter Cards, robots meta. `vercel.json`: 301 redirect (`/` → `/home.html` `permanent: true` dla konsolidacji page rank), security headers (X-Content-Type-Options, Referrer-Policy, Permissions-Policy bez FLoC/Topics, X-Frame-Options), long cache (1 rok immutable) dla SVG/PNG/fonts.
 - **Promocja Premium:** **wszyscy zalogowani użytkownicy mają Premium za darmo do 31.08.2026** (override po stronie kodu w `db.js isPremium()` — `isPromoActive()` zwraca `true` gdy `Date.now() < 2026-09-01 00:00`). Po 1.09.2026 promocja samoczynnie wygasa — wraca normalna logika: nowi użytkownicy mają 30-dniowy trial gratis, reszta przechodzi na Free.
 
 ## 💰 Koszty i terminy odnowienia

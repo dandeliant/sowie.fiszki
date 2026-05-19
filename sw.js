@@ -5,7 +5,7 @@
 //  cache-first dla fontow i CDN. Nowy SW czeka na zgode klienta
 //  (postMessage SKIP_WAITING) — pokaz banera "Nowa wersja dostepna".
 // ═══════════════════════════════════════════════════════
-const CACHE_NAME = 'sowie-fiszki-v1.39';
+const CACHE_NAME = 'sowie-fiszki-v1.40';
 
 const PRECACHE_ASSETS = [
   './',
@@ -26,6 +26,7 @@ const PRECACHE_ASSETS = [
   './manifest.json',
   './icon.svg',
   './icon-maskable.svg',
+  './og-image.svg',
   './MyTracingFont.ttf',
   'https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Playfair+Display:wght@700&display=swap',
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2'
