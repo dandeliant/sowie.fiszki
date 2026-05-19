@@ -5787,6 +5787,21 @@ const BOOKS = {
           ['uprawiać karate', 'do karate', '🥋'],
           ['jeździć rowerem', 'ride a bike', '🚴'],
           ['jeździć konno', 'ride a horse', '🏇'],
+          ['robić przysiady', 'do squats', '🦵', 'Potrafię zrobić dziesięć przysiadów.', 'I can do ten squats.'],
+          ['robić pompki', 'do press-ups', '💪', 'Mój tata potrafi zrobić dwadzieścia pompek.', 'My dad can do twenty press-ups.'],
+          ['chodzić w miejscu', 'walk on the spot', '🚶', 'Na rozgrzewce chodzimy w miejscu.', 'We walk on the spot during the warm-up.'],
+          ['biegać w miejscu', 'run on the spot', '🏃', 'Potrafię biegać w miejscu przez minutę.', 'I can run on the spot for a minute.'],
+          ['rozciągać się', 'stretch', '🤸', 'Przed bieganiem rozciągam się.', 'I stretch before running.'],
+          // Zdania z czasownikiem 'can'
+          ['Czy potrafisz jeździć rowerem?', 'Can you ride a bike?'],
+          ['Czy potrafisz jeździć na deskorolce? Tak.', 'Can you skateboard? Yes, I can.'],
+          ['Czy potrafisz wiosłować? Nie.', "Can you row? No, I can't."],
+          ['Ja potrafię jeździć na rolkach.', 'I can rollerblade.'],
+          ['Ja nie potrafię jeździć na łyżwach.', "I can't ice-skate."],
+          ['On potrafi jeździć konno.', 'He can ride a horse.'],
+          ['Ona potrafi grać w piłkę nożną.', 'She can play football.'],
+          ['Czy potrafisz zrobić pięć pompek?', 'Can you do five press-ups?'],
+          ['Potrafię wykonać 15 przysiadów.', 'I can do fifteen squats.'],
         ]
       }
     }
