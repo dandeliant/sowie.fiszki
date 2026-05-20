@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🎙️ Speaking Generator — Sowie Fiszki</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg-1: #0a0e27;
+    --bg-2: #1a1a3e;
+    --bg-3: #2d1b69;
+    --accent: #ff6b9d;
+    --accent-2: #c06eff;
+    --accent-3: #4facfe;
+    --gold: #ffd166;
+    --green: #06d6a0;
+    --text: #f5f7ff;
+    --text-dim: #a8b0d3;
+    --card: rgba(255, 255, 255, 0.06);
+    --card-hover: rgba(255, 255, 255, 0.12);
+    --border: rgba(255, 255, 255, 0.1);
+  }
+
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: linear-gradient(135deg, var(--bg-1) 0%, var(--bg-2) 50%, var(--bg-3) 100%);
+    background-attachment: fixed;
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+    padding: 20px;
+    position: relative;
+  }
+
+  body::before, body::after {
+    content: '';
+    position: fixed;
+    width: 500px; height: 500px;
+    border-radius: 50%;
+    filter: blur(120px);
+    opacity: 0.3;
+    z-index: -1;
+    animation: float 20s ease-in-out infinite;
+  }
+  body::before { background: var(--accent); top: -200px; left: -200px; }
+  body::after { background: var(--accent-3); bottom: -200px; right: -200px; animation-delay: -10s; }
+
+  @keyframes float {
+    0%, 100% { transform: translate(0, 0) scale(1); }
+    33% { transform: translate(100px, -50px) scale(1.1); }
+    66% { transform: translate(-50px, 100px) scale(0.9); }
+  }
+
+  .container { max-width: 1200px; margin: 0 auto; }
+
+  header { text-align: center; margin-bottom: 24px; animation: fadeInDown 0.8s ease-out; }
+
+  h1 {
+    font-size: clamp(2rem, 5vw, 3.5rem);
+    font-weight: 800;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 50%, var(--accent-3) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 8px;
+    letter-spacing: -0.02em;
+  }
+
+  .subtitle { color: var(--text-dim); font-size: 1rem; font-weight: 300; }
+
+  .controls {
+    display: flex; flex-wrap: wrap; gap: 12px; justify-content: center;
+    margin-bottom: 20px;
+    animation: fadeInUp 0.8s ease-out 0.2s backwards;
+  }
+
+  .btn {
+    padding: 14px 24px; border: none; border-radius: 14px;
+    font-size: 1rem; font-weight: 600; cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    display: inline-flex; align-items: center; gap: 8px;
+    color: white; position: relative; overflow: hidden;
+    font-family: inherit;
+  }
+
+  .btn-primary {
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    box-shadow: 0 8px 24px rgba(255, 107, 157, 0.4);
+  }
+  .btn-primary:hover { transform: translateY(-3px) scale(1.02); box-shadow: 0 12px 32px rgba(255, 107, 157, 0.6); }
+
+  .btn-secondary {
+    background: linear-gradient(135deg, var(--accent-3), #00f2fe);
+    box-shadow: 0 8px 24px rgba(79, 172, 254, 0.4);
+  }
+  .btn-secondary:hover { transform: translateY(-3px) scale(1.02); box-shadow: 0 12px 32px rgba(79, 172, 254, 0.6); }
+
+  .btn-ghost {
+    background: var(--card); border: 1px solid var(--border); backdrop-filter: blur(10px);
+  }
+  .btn-ghost:hover { background: var(--card-hover); transform: translateY(-2px); }
+  .btn:active { transform: translateY(0) scale(0.98); }
+
+  .pattern-row { margin-bottom: 16px; animation: fadeInUp 0.8s ease-out 0.25s backwards; }
+
+  .pattern-select {
+    width: 100%;
+    padding: 16px 20px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    color: var(--text);
+    font-size: 1rem;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    backdrop-filter: blur(10px);
+    appearance: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a8b0d3' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 20px center;
+    padding-right: 50px;
+    transition: all 0.2s;
+  }
+  .pattern-select:hover { background-color: var(--card-hover); border-color: rgba(255, 255, 255, 0.2); }
+  .pattern-select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255, 107, 157, 0.2); }
+  .pattern-select option { background: var(--bg-2); color: var(--text); padding: 10px; }
+  .pattern-select optgroup { background: var(--bg-1); color: var(--gold); font-weight: 700; }
+
+  .options {
+    display: flex; flex-wrap: wrap; gap: 16px; justify-content: center;
+    margin-bottom: 24px; padding: 16px 20px;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 16px; backdrop-filter: blur(10px);
+    animation: fadeInUp 0.8s ease-out 0.3s backwards;
+  }
+
+  .option-group { display: flex; align-items: center; gap: 10px; color: var(--text-dim); font-size: 0.9rem; font-weight: 500; }
+
+  .pill-group { display: flex; background: rgba(0, 0, 0, 0.3); border-radius: 10px; padding: 4px; gap: 2px; }
+
+  .pill {
+    padding: 6px 14px; border: none; background: transparent;
+    color: var(--text-dim); border-radius: 8px; cursor: pointer;
+    font-size: 0.85rem; font-weight: 600; transition: all 0.2s;
+    font-family: inherit;
+  }
+  .pill.active {
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: white;
+    box-shadow: 0 2px 8px rgba(255, 107, 157, 0.4);
+  }
+  .pill:not(.active):hover { color: var(--text); background: rgba(255, 255, 255, 0.05); }
+
+  .grid { display: grid; gap: 16px; animation: fadeIn 0.6s ease-out 0.4s backwards; }
+  .grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
+  .grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
+  .grid.cols-2 { grid-template-columns: repeat(2, 1fr); }
+
+  .card {
+    aspect-ratio: 1;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    backdrop-filter: blur(10px);
+    position: relative; overflow: hidden;
+    padding: 12px;
+  }
+
+  .card::before {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(135deg, var(--accent), var(--accent-3));
+    opacity: 0; transition: opacity 0.3s; z-index: 0;
+  }
+
+  .card:hover {
+    transform: translateY(-8px) scale(1.03);
+    border-color: rgba(255, 255, 255, 0.3);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+  }
+  .card:hover::before { opacity: 0.15; }
+
+  .card.speaking { animation: pulse 0.8s ease-in-out infinite; border-color: var(--gold); }
+  .card.speaking::before { opacity: 0.25; background: linear-gradient(135deg, var(--gold), var(--accent)); }
+
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 209, 102, 0.7); }
+    50% { transform: scale(1.05); box-shadow: 0 0 0 20px rgba(255, 209, 102, 0); }
+  }
+
+  .emoji {
+    font-size: clamp(2.5rem, 8vw, 5rem);
+    line-height: 1; position: relative; z-index: 1;
+    filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.3));
+    transition: transform 0.3s;
+  }
+  .card:hover .emoji { transform: scale(1.15) rotate(-5deg); }
+
+  .word {
+    margin-top: 10px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text);
+    text-align: center;
+    position: relative; z-index: 1;
+    line-height: 1.3;
+    padding: 0 4px;
+  }
+
+  .word.hidden { display: none; }
+
+  .voice-status { text-align: center; margin-top: 12px; font-size: 0.8rem; color: var(--text-dim); opacity: 0.7; }
+  .voice-status.ok { color: var(--green); }
+
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes fadeInDown { from { opacity: 0; transform: translateY(-30px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes fadeInUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
+
+  @media (max-width: 600px) {
+    .grid.cols-4 { grid-template-columns: repeat(3, 1fr); }
+    .options { padding: 12px; }
+    .btn { padding: 12px 18px; font-size: 0.9rem; }
+    .word { font-size: 0.78rem; }
+  }
+
+  /* ============ BACK LINK + JAK GRAC + STOPKA (konwencja Sowie Fiszki) ============ */
+  .back-link {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 14px;
+    background: rgba(255, 255, 255, .12);
+    border: 2px solid rgba(255, 255, 255, .3);
+    border-radius: 999px;
+    color: var(--text);
+    font-family: inherit; font-weight: 600; font-size: .88rem;
+    text-decoration: none;
+    transition: all .15s ease;
+    backdrop-filter: blur(10px);
+  }
+  .back-link:hover {
+    background: rgba(255, 255, 255, .2);
+    border-color: var(--accent);
+    transform: translateY(-2px);
+  }
+  .back-top { display: inline-block; margin-bottom: 14px; position: relative; z-index: 2; }
+  .back-bottom { display: block; text-align: center; margin: 24px auto 8px; width: max-content; }
+
+  .htp-btn {
+    position: fixed; top: 16px; right: 16px; z-index: 1500;
+    background: var(--gold);
+    color: #1a1040;
+    border: 3px solid #fff;
+    padding: 8px 14px; border-radius: 999px;
+    font-family: inherit; font-weight: 700; font-size: .85rem;
+    cursor: pointer;
+    box-shadow: 0 6px 16px rgba(0,0,0,.3);
+    transition: all .15s ease;
+  }
+  .htp-btn:hover { transform: translateY(-2px); box-shadow: 0 10px 22px rgba(0,0,0,.4); }
+
+  .htp-modal {
+    position: fixed; inset: 0;
+    background: rgba(10, 14, 39, .78);
+    backdrop-filter: blur(8px);
+    display: none; place-items: center;
+    z-index: 4000;
+    padding: 20px;
+  }
+  .htp-modal.show { display: grid; }
+  .htp-box {
+    background: #fff;
+    border-radius: 24px;
+    padding: 26px 28px;
+    max-width: 480px; width: 100%;
+    max-height: 85vh; overflow-y: auto;
+    box-shadow: 0 25px 60px rgba(0,0,0,.5);
+    color: #2a2a4a;
+  }
+  .htp-box h3 {
+    font-family: inherit;
+    margin: 0 0 12px;
+    color: #6d28d9;
+    font-size: 1.4rem;
+  }
+  .htp-box ol {
+    padding-left: 22px; margin: 0 0 14px;
+    font-size: .92rem; line-height: 1.55;
+  }
+  .htp-box ol li { margin-bottom: 7px; }
+  .htp-box ol li b { color: #db2777; }
+  .htp-close {
+    appearance: none; border: none;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: #fff;
+    padding: 10px 22px; border-radius: 999px;
+    font-family: inherit; font-weight: 700; font-size: .95rem;
+    cursor: pointer; width: 100%;
+  }
+  .htp-close:hover { filter: brightness(1.1); }
+
+  .site-footer {
+    text-align: center; margin-top: 14px; padding: 14px 0;
+    font-size: .76rem; color: rgba(255, 255, 255, .5);
+    font-weight: 600; font-family: inherit;
+  }
+
+  @media print {
+    .back-link, .back-top, .back-bottom,
+    .htp-btn, .htp-modal,
+    .controls, .pattern-row, .options, .voice-status,
+    body::before, body::after { display: none !important; }
+    body { background: #fff !important; color: #000 !important; }
+    .card { background: #fff !important; border: 2px solid #888 !important; color: #000 !important; box-shadow: none !important; }
+    .word { color: #000 !important; }
+    h1 { -webkit-text-fill-color: #000 !important; background: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<a href="app.html" class="back-link back-top">← Powrót do Sowie Fiszki</a>
+
+<button class="htp-btn" id="htpBtn" type="button">ℹ️ Jak grać?</button>
+<div class="htp-modal" id="htpModal" role="dialog" aria-modal="true">
+  <div class="htp-box">
+    <h3>🎙️ Speaking Generator</h3>
+    <ol>
+      <li>Wybierz <b>kategorię</b> obrazków (zwierzęta, jedzenie, miejsca, ludzie, przedmioty, natura) oraz <b>wzorzec zdania</b> z listy rozwijanej (np. „It's a…", „Have you got…?", „Do you like…?").</li>
+      <li>Kliknij <b>🎲 Generate</b>, aby wylosować emoji do siatki <b>2×2</b>, <b>3×3</b> lub <b>4×4</b>.</li>
+      <li>Kliknij dowolną <b>kartę z emoji</b> — lektor po brytyjsku przeczyta zdanie w wybranym wzorcu.</li>
+      <li>Powtórz po lektorze na głos — ćwiczysz <b>wymowę i strukturę zdań</b> jednocześnie.</li>
+      <li>Użyj <b>🔊 Speak All</b>, aby usłyszeć wszystkie karty po kolei (świetne na rozgrzewkę).</li>
+      <li>Schowaj tekst (<b>👁️ Hide text</b>) i sprawdź, czy zapamiętasz słowa tylko z obrazka.</li>
+    </ol>
+    <button class="htp-close" id="htpClose" type="button">Zaczynamy!</button>
+  </div>
+</div>
+
+<div class="container">
+
+  <header>
+    <h1>🎙️ Speaking Generator</h1>
+    <p class="subtitle">Tap an emoji to hear it • Practise speaking with random pictures</p>
+  </header>
+
+  <div class="controls">
+    <button class="btn btn-primary" onclick="generate()">🎲 Generate</button>
+    <button class="btn btn-secondary" onclick="speakAll()">🔊 Speak All</button>
+    <button class="btn btn-ghost" onclick="toggleWords()">
+      <span id="wordsToggleLabel">👁️ Hide text</span>
+    </button>
+  </div>
+
+  <div class="pattern-row">
+    <select class="pattern-select" id="patternSelect" onchange="setPattern(this.value)">
+      <optgroup label="📝 Basics">
+        <option value="word">Word only — elephant</option>
+        <option value="this-is">This is a/an… — This is an elephant.</option>
+        <option value="its-a" selected>It's a/an… — It's an elephant.</option>
+        <option value="these-are">These are… (plural) — These are elephants.</option>
+        <option value="i-see">I see a/an… — I see an elephant.</option>
+      </optgroup>
+
+      <optgroup label="❓ What is it? / Is it a…?">
+        <option value="what-is-it">What is it? → It's a/an…</option>
+        <option value="whats-this">What's this? → It's a/an…</option>
+        <option value="is-it-a">Is it a/an…? → Yes, it is.</option>
+        <option value="what-are-they">What are they? → They're …s</option>
+      </optgroup>
+
+      <optgroup label="🎒 Have got">
+        <option value="have-got-q">What have you got? → I've got…</option>
+        <option value="have-you-got">Have you got…? → Yes, I have.</option>
+        <option value="ive-got">I've got a/an…</option>
+        <option value="havent-got">I haven't got a/an…</option>
+        <option value="hes-got">He's got a/an…</option>
+        <option value="shes-got">She's got a/an…</option>
+        <option value="has-he-got">Has he got…? → Yes, he has.</option>
+      </optgroup>
+
+      <optgroup label="❤️ Likes &amp; favourites">
+        <option value="do-you-like">Do you like…? → Yes, I do.</option>
+        <option value="i-like">I like… (plural)</option>
+        <option value="i-dont-like">I don't like…</option>
+        <option value="favourite-q">What's your favourite? → My favourite is…</option>
+        <option value="my-favourite">My favourite is a/an…</option>
+        <option value="he-likes">He likes…</option>
+      </optgroup>
+
+      <optgroup label="👀 Can see / Look!">
+        <option value="can-you-see">Can you see…? → Yes, I can see…</option>
+        <option value="i-can-see">I can see a/an…</option>
+        <option value="look">Look! It's a/an…</option>
+        <option value="wow">Wow! What a … !</option>
+      </optgroup>
+
+      <optgroup label="🏠 There is / There are">
+        <option value="there-is">There is a/an…</option>
+        <option value="there-are">There are some… (plural)</option>
+        <option value="is-there">Is there a/an…? → Yes, there is.</option>
+        <option value="how-many">How many … are there? → There's one.</option>
+      </optgroup>
+
+      <optgroup label="🛒 In a shop / Wants">
+        <option value="i-want">I want a/an…</option>
+        <option value="id-like">I'd like a/an…, please.</option>
+        <option value="can-i-have">Can I have a/an…, please? → Here you are.</option>
+        <option value="show-me">Show me a/an… → Here you are.</option>
+      </optgroup>
+
+      <optgroup label="⏰ Tenses">
+        <option value="yesterday">Yesterday I saw a/an…</option>
+        <option value="tomorrow">Tomorrow I'm going to see a/an…</option>
+        <option value="im-looking">I'm looking at a/an…</option>
+        <option value="i-have-seen">I have seen a/an…</option>
+      </optgroup>
+
+      <optgroup label="🎭 Story &amp; Imagination">
+        <option value="once-upon">Once upon a time there was a/an…</option>
+        <option value="looks-like">It looks like a/an…</option>
+        <option value="riddle">I'm thinking of… (riddle) → It's a/an…</option>
+        <option value="if-i-were">If I were a/an…</option>
+        <option value="dream">In my dream I saw a/an…</option>
+      </optgroup>
+    </select>
+  </div>
+
+  <div class="options">
+    <div class="option-group">
+      <span>Grid:</span>
+      <div class="pill-group">
+        <button class="pill" data-size="2" onclick="setSize(2)">2×2</button>
+        <button class="pill active" data-size="3" onclick="setSize(3)">3×3</button>
+        <button class="pill" data-size="4" onclick="setSize(4)">4×4</button>
+      </div>
+    </div>
+
+    <div class="option-group">
+      <span>Category:</span>
+      <div class="pill-group">
+        <button class="pill active" data-cat="all" onclick="setCat('all')">All</button>
+        <button class="pill" data-cat="animals" onclick="setCat('animals')">🐘 Animals</button>
+        <button class="pill" data-cat="food" onclick="setCat('food')">🍕 Food</button>
+        <button class="pill" data-cat="places" onclick="setCat('places')">🏰 Places</button>
+        <button class="pill" data-cat="people" onclick="setCat('people')">👨‍🍳 People</button>
+        <button class="pill" data-cat="objects" onclick="setCat('objects')">🎒 Objects</button>
+        <button class="pill" data-cat="nature" onclick="setCat('nature')">🌳 Nature</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="grid" class="grid cols-3"></div>
+
+  <p class="voice-status" id="voiceStatus">Loading voice…</p>
+
+</div>
+
+<a href="app.html" class="back-link back-bottom">← Wróć do Sowie Fiszki</a>
+<div class="site-footer">© 2026 Sowie Fiszki</div>
+
+<script>
+/* ============================================================
+   EMOJI DATABASE
+   ============================================================ */
+const DATA = {
+  animals: [
+    ["🐘","elephant"],["🦒","giraffe"],["🐍","snake"],["🐌","snail"],
+    ["🐝","bee"],["🦋","butterfly"],["🐜","ant"],["🦆","duck"],
+    ["🦅","eagle"],["🕊️","dove"],["🐢","turtle"],["🐰","rabbit"],
+    ["🐭","mouse"],["🐱","cat"],["🐶","dog"],["🐼","panda"],
+    ["🦊","fox"],["🐸","frog"],["🐎","horse"],["🐮","cow"],
+    ["🐷","pig"],["🐔","chicken"],["🐓","rooster"],["🦉","owl"],
+    ["🐨","koala"],["🦘","kangaroo"],["🦙","llama"],["🐒","monkey"],
+    ["🦍","gorilla"],["🐊","crocodile"],["🦓","zebra"],["🦌","deer"],
+    ["🐳","whale"],["🐬","dolphin"],["🦈","shark"],["🐟","fish"],
+    ["🐙","octopus"],["🦐","shrimp"],["🦞","lobster"],["🦀","crab"],
+    ["🐛","caterpillar"],["🐞","ladybird"],["🕷️","spider"],["🦂","scorpion"],
+    ["🐲","dragon"],["🦖","dinosaur"],["🐧","penguin"],["🦜","parrot"],
+    ["🦚","peacock"],["🐪","camel"],["🦛","hippo"],["🐹","hamster"],
+    ["🐿️","squirrel"],["🐺","wolf"],["🦔","hedgehog"],["🦇","bat"],
+    ["🐐","goat"],["🐑","sheep"],["🐩","poodle"]
+  ],
+  food: [
+    ["🍓","strawberry"],["🍒","cherry"],["🍩","doughnut"],["🍕","pizza"],
+    ["🍝","spaghetti"],["🍌","banana"],["🍏","apple"],["🍉","watermelon"],
+    ["🍿","popcorn"],["🍦","ice cream"],["🍪","cookie"],["🍰","cake"],
+    ["🎂","birthday cake"],["🍫","chocolate"],["🍬","sweet"],["🥛","milk"],
+    ["🍯","honey"],["🥚","egg"],["🍞","bread"],["🥖","baguette"],
+    ["🥐","croissant"],["🧀","cheese"],["🥗","salad"],["🌽","corn"],
+    ["🥕","carrot"],["🍅","tomato"],["🥦","broccoli"],["🍄","mushroom"],
+    ["🍋","lemon"],["🍐","pear"],["🍑","peach"],["🍍","pineapple"],
+    ["🥝","kiwi"],["🍇","grapes"],["🥥","coconut"],["🥑","avocado"],
+    ["🍔","hamburger"],["🌭","hot dog"],["🌮","taco"],["🌯","burrito"],
+    ["🍟","chips"],["🍳","fried egg"],["🥞","pancake"],["🍙","rice ball"],
+    ["🍣","sushi"],["🍜","noodles"],["🍲","soup"],["☕","coffee"],
+    ["🍵","tea"],["🥤","drink"],["🧃","juice"],["🥨","pretzel"],
+    ["🥧","pie"],["🍮","pudding"]
+  ],
+  places: [
+    ["🏫","school"],["🏤","post office"],["🏭","factory"],["🏨","hotel"],
+    ["🏟️","stadium"],["🏠","house"],["🏡","cottage"],["🏥","hospital"],
+    ["🏦","bank"],["🏛️","museum"],["🏰","castle"],["⛪","church"],
+    ["🕌","mosque"],["🕍","synagogue"],["🏖️","beach"],["🏝️","island"],
+    ["🏔️","mountain"],["🌋","volcano"],["🌃","city"],["🌅","sunset"],
+    ["🌉","bridge"],["🎡","ferris wheel"],["🎢","roller coaster"],["🎪","circus"],
+    ["🏚️","old house"],["🏢","office"],["🏪","shop"],["⛲","fountain"],
+    ["🚉","train station"],["✈️","airport"]
+  ],
+  people: [
+    ["👽","alien"],["💃","dancer"],["👨‍🎓","student"],["🤡","clown"],
+    ["👻","ghost"],["🧙‍♂️","wizard"],["👨‍🍳","cook"],["🕵️‍♂️","detective"],
+    ["🦸‍♂️","superhero"],["🧜‍♀️","mermaid"],["🧚‍♀️","fairy"],["🧞‍♂️","genie"],
+    ["🧝‍♀️","elf"],["🧟‍♂️","zombie"],["👰","bride"],["🤴","prince"],
+    ["👸","princess"],["👑","king"],["👨‍🚀","astronaut"],["👮‍♂️","police officer"],
+    ["👨‍🚒","firefighter"],["👨‍⚕️","doctor"],["👩‍⚕️","nurse"],["👨‍🏫","teacher"],
+    ["👨‍🎨","artist"],["👨‍🌾","farmer"],["👨‍💻","programmer"],["👩‍🔬","scientist"],
+    ["👨‍🔧","mechanic"],["👨‍✈️","pilot"],["👨‍💼","businessman"],["💂","guard"],
+    ["👶","baby"],["👦","boy"],["👧","girl"],["👨","man"],
+    ["👩","woman"],["👵","grandma"],["👴","grandpa"]
+  ],
+  objects: [
+    ["☎️","telephone"],["📸","camera"],["✏️","pencil"],["📏","ruler"],
+    ["✂️","pair of scissors"],["📔","notebook"],["📘","book"],["📖","open book"],
+    ["🎒","backpack"],["💼","briefcase"],["🎨","palette"],["🎸","guitar"],
+    ["🎺","trumpet"],["🎻","violin"],["🎹","piano"],["🥁","drum"],
+    ["🎤","microphone"],["🎧","pair of headphones"],["📻","radio"],["📺","TV"],
+    ["💻","laptop"],["📱","phone"],["⌨️","keyboard"],["🖨️","printer"],
+    ["💿","CD"],["🔋","battery"],["🔦","torch"],["🕯️","candle"],
+    ["💡","light bulb"],["🔑","key"],["🔒","lock"],["🔨","hammer"],
+    ["🔪","knife"],["🍴","fork"],["🥄","spoon"],["🥣","bowl"],
+    ["🍽️","plate"],["🧴","bottle"],["🧹","broom"],["🧺","basket"],
+    ["🛒","trolley"],["🛍️","shopping bag"],["👜","handbag"],["👛","purse"],
+    ["💳","card"],["💰","money"],["⚽","football"],["🏀","basketball"],
+    ["🏈","rugby ball"],["🎾","tennis ball"],["🏐","volleyball"],["🏸","badminton"],
+    ["⛸️","skate"],["🥊","boxing glove"],["🥋","karate uniform"],["🎲","dice"],
+    ["🧩","puzzle"],["🎈","balloon"],["🎁","present"],["💍","ring"],
+    ["⌚","watch"],["👕","T-shirt"],["👖","pair of jeans"],["👗","dress"],
+    ["👔","tie"],["🧥","coat"],["🧣","scarf"],["🧤","pair of gloves"],
+    ["🧦","pair of socks"],["👞","shoe"],["👠","high heel"],["👟","trainer"],
+    ["🥾","boot"],["🧢","cap"],["🎩","top hat"],["👑","crown"],
+    ["🕶️","pair of sunglasses"],["💄","lipstick"],["💎","diamond"],["🚗","car"],
+    ["🚕","taxi"],["🚌","bus"],["🚑","ambulance"],["🚒","fire engine"],
+    ["🚓","police car"],["🚜","tractor"],["🏍️","motorbike"],["🚲","bike"],
+    ["🛴","scooter"],["🚂","train"],["🚊","tram"],["🚁","helicopter"],
+    ["✈️","plane"],["🚀","rocket"],["🛸","UFO"],["⛵","sailing boat"],
+    ["🚤","speedboat"]
+  ],
+  nature: [
+    ["🔥","fire"],["☀️","sun"],["🌧️","rain cloud"],["⛅","cloud"],
+    ["⛈️","storm"],["❄️","snowflake"],["⛄","snowman"],["🌈","rainbow"],
+    ["⚡","lightning"],["💧","water drop"],["🌊","wave"],["☔","umbrella"],
+    ["🌙","moon"],["⭐","star"],["✨","sparkle"],["🌌","galaxy"],
+    ["🌍","Earth"],["🌳","tree"],["🌲","pine tree"],["🌴","palm tree"],
+    ["🌵","cactus"],["🍀","clover"],["🌿","herb"],["🍃","leaf"],
+    ["🍂","autumn leaf"],["🌷","tulip"],["🌹","rose"],["🌻","sunflower"],
+    ["🌼","daisy"],["💐","bouquet"],["🌺","hibiscus"],["🍄","mushroom"]
+  ]
+};
+
+/* ============================================================
+   STATE
+   ============================================================ */
+let gridSize = 3;
+let patternId = 'its-a';
+let category = 'all';
+let showWords = true;
+let lastItems = [];
+
+/* ============================================================
+   GRAMMAR HELPERS
+   ============================================================ */
+function aAn(word) {
+  const w = word.toLowerCase().trim();
+  return /^[aeiou]/.test(w) ? "an" : "a";
+}
+
+const UNCOUNTABLE = new Set([
+  'milk','honey','bread','cheese','salad','chocolate','ice cream',
+  'spaghetti','rice','soup','juice','tea','coffee','water','wine',
+  'beer','pudding','popcorn','corn','broccoli','money','fish','sushi'
+]);
+
+const IRREGULAR_PLURALS = {
+  'mouse':'mice','foot':'feet','tooth':'teeth','child':'children',
+  'man':'men','woman':'women','person':'people','sheep':'sheep',
+  'deer':'deer','fish':'fish'
+};
+
+function pluralize(word) {
+  const w = word.toLowerCase();
+  if (UNCOUNTABLE.has(w)) return word;
+  if (IRREGULAR_PLURALS[w]) return IRREGULAR_PLURALS[w];
+  if (/(s|x|sh|ch)$/.test(w)) return word + 'es';
+  if (/[^aeiou]y$/.test(w)) return word.slice(0, -1) + 'ies';
+  if (/(f|fe)$/.test(w) && !w.endsWith('ff')) return word.replace(/fe?$/, 'ves');
+  return word + 's';
+}
+
+function withArticle(word) {
+  if (UNCOUNTABLE.has(word.toLowerCase())) return word;
+  return `${aAn(word)} ${word}`;
+}
+
+function withSome(word) {
+  if (UNCOUNTABLE.has(word.toLowerCase())) return `${word}`;
+  return `${pluralize(word)}`;
+}
+
+/* ============================================================
+   PATTERNS
+   ============================================================ */
+const PATTERNS = {
+  'word':         { display: w => w,                                    spoken: w => w },
+  'this-is':      { display: w => `This is ${withArticle(w)}.`,         spoken: w => `This is ${withArticle(w)}.` },
+  'its-a':        { display: w => `It's ${withArticle(w)}.`,            spoken: w => `It's ${withArticle(w)}.` },
+  'these-are':    { display: w => `These are ${pluralize(w)}.`,         spoken: w => `These are ${pluralize(w)}.` },
+  'i-see':        { display: w => `I see ${withArticle(w)}.`,           spoken: w => `I see ${withArticle(w)}.` },
+
+  'what-is-it':   { display: w => `What is it?`,                        spoken: w => `It's ${withArticle(w)}.` },
+  'whats-this':   { display: w => `What's this?`,                       spoken: w => `It's ${withArticle(w)}.` },
+  'is-it-a':      { display: w => `Is it ${withArticle(w)}?`,           spoken: w => `Yes, it is. It's ${withArticle(w)}.` },
+  'what-are-they':{ display: w => `What are they?`,                     spoken: w => `They're ${pluralize(w)}.` },
+
+  'have-got-q':   { display: w => `What have you got?`,                 spoken: w => `I've got ${withArticle(w)}.` },
+  'have-you-got': { display: w => `Have you got ${withArticle(w)}?`,    spoken: w => `Yes, I have. I've got ${withArticle(w)}.` },
+  'ive-got':      { display: w => `I've got ${withArticle(w)}.`,        spoken: w => `I've got ${withArticle(w)}.` },
+  'havent-got':   { display: w => `I haven't got ${withArticle(w)}.`,   spoken: w => `I haven't got ${withArticle(w)}.` },
+  'hes-got':      { display: w => `He's got ${withArticle(w)}.`,        spoken: w => `He's got ${withArticle(w)}.` },
+  'shes-got':     { display: w => `She's got ${withArticle(w)}.`,       spoken: w => `She's got ${withArticle(w)}.` },
+  'has-he-got':   { display: w => `Has he got ${withArticle(w)}?`,      spoken: w => `Yes, he has. He's got ${withArticle(w)}.` },
+
+  'do-you-like':  { display: w => `Do you like ${withSome(w)}?`,        spoken: w => `Yes, I do. I like ${withSome(w)}.` },
+  'i-like':       { display: w => `I like ${withSome(w)}.`,             spoken: w => `I like ${withSome(w)}.` },
+  'i-dont-like':  { display: w => `I don't like ${withSome(w)}.`,       spoken: w => `I don't like ${withSome(w)}.` },
+  'favourite-q':  { display: w => `What's your favourite?`,             spoken: w => `My favourite is ${withArticle(w)}.` },
+  'my-favourite': { display: w => `My favourite is ${withArticle(w)}.`, spoken: w => `My favourite is ${withArticle(w)}.` },
+  'he-likes':     { display: w => `He likes ${withSome(w)}.`,           spoken: w => `He likes ${withSome(w)}.` },
+
+  'can-you-see':  { display: w => `Can you see ${withArticle(w)}?`,     spoken: w => `Yes, I can. I can see ${withArticle(w)}.` },
+  'i-can-see':    { display: w => `I can see ${withArticle(w)}.`,       spoken: w => `I can see ${withArticle(w)}.` },
+  'look':         { display: w => `Look! It's ${withArticle(w)}!`,      spoken: w => `Look! It's ${withArticle(w)}!` },
+  'wow':          { display: w => `Wow! What ${withArticle(w)}!`,       spoken: w => `Wow! What ${withArticle(w)}!` },
+
+  'there-is':     { display: w => `There is ${withArticle(w)}.`,        spoken: w => `There is ${withArticle(w)}.` },
+  'there-are':    { display: w => `There are some ${withSome(w)}.`,     spoken: w => `There are some ${withSome(w)}.` },
+  'is-there':     { display: w => `Is there ${withArticle(w)}?`,        spoken: w => `Yes, there is.` },
+  'how-many':     { display: w => `How many ${pluralize(w)} are there?`,spoken: w => `There's one ${w}.` },
+
+  'i-want':       { display: w => `I want ${withArticle(w)}.`,          spoken: w => `I want ${withArticle(w)}.` },
+  'id-like':      { display: w => `I'd like ${withArticle(w)}, please.`,spoken: w => `I'd like ${withArticle(w)}, please.` },
+  'can-i-have':   { display: w => `Can I have ${withArticle(w)}, please?`, spoken: w => `Can I have ${withArticle(w)}, please? Here you are.` },
+  'show-me':      { display: w => `Show me ${withArticle(w)}.`,         spoken: w => `Show me ${withArticle(w)}. Here you are.` },
+
+  'yesterday':    { display: w => `Yesterday I saw ${withArticle(w)}.`, spoken: w => `Yesterday I saw ${withArticle(w)}.` },
+  'tomorrow':     { display: w => `Tomorrow I'm going to see ${withArticle(w)}.`, spoken: w => `Tomorrow I'm going to see ${withArticle(w)}.` },
+  'im-looking':   { display: w => `I'm looking at ${withArticle(w)}.`,  spoken: w => `I'm looking at ${withArticle(w)}.` },
+  'i-have-seen':  { display: w => `I have seen ${withArticle(w)}.`,     spoken: w => `I have seen ${withArticle(w)}.` },
+
+  'once-upon':    { display: w => `Once upon a time there was ${withArticle(w)}.`, spoken: w => `Once upon a time there was ${withArticle(w)}.` },
+  'looks-like':   { display: w => `It looks like ${withArticle(w)}.`,   spoken: w => `It looks like ${withArticle(w)}.` },
+  'riddle':       { display: w => `I'm thinking of something…`,         spoken: w => `It's ${withArticle(w)}!` },
+  'if-i-were':    { display: w => `If I were ${withArticle(w)}…`,       spoken: w => `If I were ${withArticle(w)}, I would be happy.` },
+  'dream':        { display: w => `In my dream I saw ${withArticle(w)}.`, spoken: w => `In my dream I saw ${withArticle(w)}.` }
+};
+
+function getPattern() { return PATTERNS[patternId] || PATTERNS['its-a']; }
+
+/* ============================================================
+   DATA UTIL
+   ============================================================ */
+function flat(cat) {
+  if (cat === 'all') return Object.values(DATA).flat();
+  return DATA[cat] || [];
+}
+
+function pickRandom(arr, n) {
+  const pool = [...arr];
+  const out = [];
+  while (out.length < n && pool.length) {
+    const i = Math.floor(Math.random() * pool.length);
+    out.push(pool.splice(i, 1)[0]);
+  }
+  return out;
+}
+
+/* ============================================================
+   TTS — Google UK English Female priority
+   ============================================================ */
+let voices = [];
+
+function getV() {
+  voices = speechSynthesis.getVoices();
+  return voices.find(v => v.name === 'Google UK English Female')
+      || voices.find(v => v.lang === 'en-GB' && /female/i.test(v.name))
+      || voices.find(v => v.name && v.name.includes('Google UK English'))
+      || voices.find(v => v.lang === 'en-GB')
+      || voices.find(v => v.lang && v.lang.startsWith('en'))
+      || voices[0];
+}
+
+function spk(text) {
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  const v = getV();
+  if (v) u.voice = v;
+  u.lang = 'en-GB';
+  u.rate = 0.9;
+  u.pitch = 1.0;
+  speechSynthesis.speak(u);
+  return u;
+}
+
+function updateVoiceStatus() {
+  const v = getV();
+  const el = document.getElementById('voiceStatus');
+  if (v) {
+    el.textContent = `🎙️ Voice: ${v.name} (${v.lang})`;
+    el.classList.add('ok');
+  } else {
+    el.textContent = '⚠️ No voice loaded yet — click anything to start';
+  }
+}
+
+if (typeof speechSynthesis !== 'undefined') {
+  speechSynthesis.onvoiceschanged = () => {
+    voices = speechSynthesis.getVoices();
+    updateVoiceStatus();
+  };
+  setTimeout(updateVoiceStatus, 500);
+}
+
+/* ============================================================
+   GENERATE / RENDER
+   ============================================================ */
+function generate() {
+  const total = gridSize * gridSize;
+  const pool = flat(category);
+  lastItems = pickRandom(pool, total);
+  render();
+}
+
+function render() {
+  const grid = document.getElementById('grid');
+  grid.className = `grid cols-${gridSize}`;
+  grid.innerHTML = '';
+
+  const pat = getPattern();
+
+  lastItems.forEach((item, idx) => {
+    const [emoji, word] = item;
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.style.animationDelay = `${idx * 0.05}s`;
+    card.innerHTML = `
+      <div class="emoji">${emoji}</div>
+      <div class="word ${showWords ? '' : 'hidden'}">${pat.display(word)}</div>
+    `;
+    card.onclick = () => {
+      document.querySelectorAll('.card').forEach(c => c.classList.remove('speaking'));
+      card.classList.add('speaking');
+      const u = spk(pat.spoken(word));
+      u.onend = () => card.classList.remove('speaking');
+      setTimeout(() => card.classList.remove('speaking'), 5000);
+    };
+    grid.appendChild(card);
+  });
+}
+
+/* ============================================================
+   SPEAK ALL
+   ============================================================ */
+async function speakAll() {
+  const cards = document.querySelectorAll('.card');
+  const pat = getPattern();
+  for (let i = 0; i < lastItems.length; i++) {
+    const [, word] = lastItems[i];
+    cards.forEach(c => c.classList.remove('speaking'));
+    cards[i].classList.add('speaking');
+    await new Promise(resolve => {
+      const u = spk(pat.spoken(word));
+      u.onend = resolve;
+      setTimeout(resolve, 6000);
+    });
+    cards[i].classList.remove('speaking');
+    await new Promise(r => setTimeout(r, 250));
+  }
+}
+
+/* ============================================================
+   OPTIONS
+   ============================================================ */
+function setSize(n) {
+  gridSize = n;
+  document.querySelectorAll('[data-size]').forEach(b => b.classList.toggle('active', +b.dataset.size === n));
+  generate();
+}
+
+function setPattern(id) {
+  patternId = id;
+  render();
+}
+
+function setCat(c) {
+  category = c;
+  document.querySelectorAll('[data-cat]').forEach(b => b.classList.toggle('active', b.dataset.cat === c));
+  generate();
+}
+
+function toggleWords() {
+  showWords = !showWords;
+  document.getElementById('wordsToggleLabel').textContent = showWords ? '👁️ Hide text' : '🙈 Show text';
+  render();
+}
+
+/* ============================================================
+   START
+   ============================================================ */
+generate();
+
+document.addEventListener('click', () => {
+  if (voices.length === 0) {
+    voices = speechSynthesis.getVoices();
+    updateVoiceStatus();
+  }
+}, { once: true });
+
+/* ============================================================
+   "JAK GRAC?" MODAL
+   ============================================================ */
+(function(){
+  const btn   = document.getElementById("htpBtn");
+  const modal = document.getElementById("htpModal");
+  const close = document.getElementById("htpClose");
+  if (!btn || !modal || !close) return;
+  const open  = () => modal.classList.add("show");
+  const hide  = () => modal.classList.remove("show");
+  btn.addEventListener("click", open);
+  close.addEventListener("click", hide);
+  modal.addEventListener("click", (e) => { if (e.target === modal) hide(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") hide(); });
+})();
+</script>
+
+<script src="consent.js"></script>
+</body>
+</html>
