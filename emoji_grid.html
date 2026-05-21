@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Emoji Vocabulary Grid</title>
+<style>
+  :root{
+    --primary:#5b6cff; --primary-dark:#3f4ee0; --accent:#ff5d8f;
+    --bg:#f4f6fb; --card:#ffffff; --text:#1f2330; --muted:#6b7280;
+    --line:#e6e9f2; --shadow:rgba(31,35,48,.10); --ok:#10b981;
+  }
+  body.dark{
+    --bg:#10121a; --card:#1b1e2b; --text:#eef0f6; --muted:#9aa0b3;
+    --line:#2a2e40; --shadow:rgba(0,0,0,.4); --primary:#8b97ff; --primary-dark:#6b78f0;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;font-family:'Segoe UI',Tahoma,Verdana,sans-serif}
+  body{background:var(--bg);color:var(--text);min-height:100vh;padding:1.5rem;
+       transition:background .3s,color .3s;display:flex;flex-direction:column;align-items:center}
+  .wrap{width:100%;max-width:980px}
+  header{text-align:center;margin-bottom:1.5rem}
+  h1{font-size:2.3rem;background:linear-gradient(90deg,var(--primary),var(--accent));
+     -webkit-background-clip:text;background-clip:text;color:transparent;margin-bottom:.3rem}
+  .sub{color:var(--muted);font-size:1.05rem}
+
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:16px;
+         padding:1rem 1.2rem;box-shadow:0 8px 24px var(--shadow);margin-bottom:1.2rem}
+  .row{display:flex;flex-wrap:wrap;gap:.7rem;align-items:center}
+  .row + .row{margin-top:.9rem}
+  .grow{flex:1}
+
+  .btn{padding:.65rem 1.1rem;border:none;border-radius:10px;font-size:.95rem;font-weight:600;
+       cursor:pointer;transition:transform .15s,box-shadow .15s,background .2s;display:inline-flex;
+       align-items:center;gap:.5rem}
+  .btn:hover{transform:translateY(-2px)}
+  .btn:active{transform:translateY(0)}
+  .btn-p{background:var(--primary);color:#fff;box-shadow:0 4px 12px var(--shadow)}
+  .btn-p:hover{background:var(--primary-dark)}
+  .btn-a{background:var(--accent);color:#fff;box-shadow:0 4px 12px var(--shadow)}
+  .btn-o{background:transparent;border:1.5px solid var(--line);color:var(--text)}
+  .btn-o:hover{background:var(--line)}
+  .btn.active{outline:2px solid var(--primary);outline-offset:1px}
+
+  select,label{font-size:.95rem;color:var(--text)}
+  select{padding:.55rem .7rem;border-radius:10px;border:1.5px solid var(--line);
+         background:var(--card);color:var(--text);cursor:pointer}
+  .chk{display:inline-flex;align-items:center;gap:.4rem;cursor:pointer;color:var(--muted)}
+  input[type=range]{accent-color:var(--primary);cursor:pointer}
+
+  .switch{position:relative;display:inline-block;width:52px;height:28px}
+  .switch input{opacity:0;width:0;height:0}
+  .sl{position:absolute;inset:0;background:#c9cede;border-radius:30px;transition:.3s;cursor:pointer}
+  .sl:before{content:"";position:absolute;height:20px;width:20px;left:4px;bottom:4px;
+             background:#fff;border-radius:50%;transition:.3s}
+  input:checked + .sl{background:var(--primary)}
+  input:checked + .sl:before{transform:translateX(24px)}
+
+  .stats{color:var(--muted);font-size:.9rem;text-align:center;margin-bottom:.8rem}
+  .stats b{color:var(--primary)}
+
+  .grid{display:grid;gap:1rem;perspective:1200px}
+  .tile{position:relative;aspect-ratio:1/1;background:var(--card);border:1px solid var(--line);
+        border-radius:16px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+        cursor:pointer;box-shadow:0 6px 16px var(--shadow);transition:transform .25s,box-shadow .25s;
+        animation:pop .4s ease both;overflow:hidden;user-select:none}
+  .tile:hover{transform:translateY(-4px) scale(1.03);box-shadow:0 14px 28px var(--shadow);z-index:2}
+  .tile:active{transform:scale(.97)}
+  .tile.fav{border-color:var(--accent);box-shadow:0 6px 16px rgba(255,93,143,.35)}
+  .tile .emoji{line-height:1;filter:drop-shadow(0 3px 5px var(--shadow))}
+  .tile .label{margin-top:.5rem;text-align:center;padding:0 .4rem}
+  .tile .en{font-weight:700;font-size:.95rem;text-transform:capitalize}
+  .tile .pl{font-size:.78rem;color:var(--muted)}
+  .tile.quiz .label{visibility:hidden}
+  .tile.quiz.revealed .label{visibility:visible;animation:fade .3s ease}
+  .tile .speak{position:absolute;top:6px;left:6px;font-size:.85rem;opacity:0;transition:.2s}
+  .tile:hover .speak{opacity:.5}
+  .star{position:absolute;top:6px;right:8px;font-size:1.1rem;opacity:.25;transition:.2s;line-height:1}
+  .star:hover{opacity:1;transform:scale(1.2)}
+  .tile.fav .star{opacity:1}
+
+  .loader{display:none;flex-direction:column;align-items:center;gap:.8rem;margin:2rem 0;color:var(--muted)}
+  .spin{width:42px;height:42px;border:4px solid var(--line);border-top-color:var(--primary);
+        border-radius:50%;animation:spin 1s linear infinite}
+
+  footer{margin-top:2rem;color:var(--muted);font-size:.85rem;text-align:center}
+
+  @keyframes pop{from{opacity:0;transform:scale(.7)}to{opacity:1;transform:scale(1)}}
+  @keyframes fade{from{opacity:0}to{opacity:1}}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @keyframes wob{0%,100%{transform:rotate(0)}25%{transform:rotate(-8deg)}75%{transform:rotate(8deg)}}
+  .tile.anim .emoji{animation:wob 1.6s ease-in-out infinite}
+
+  @media(max-width:560px){
+    h1{font-size:1.8rem}
+    .row{justify-content:center}
+    .grow{flex:1 1 100%}
+  }
+
+  /* ============ BACK LINK + JAK GRAC + STOPKA (konwencja Sowie Fiszki) ============ */
+  .back-link{
+    display:inline-flex;align-items:center;gap:6px;
+    padding:8px 14px;
+    background:var(--card);
+    border:2px solid var(--primary);
+    border-radius:999px;
+    color:var(--primary);
+    font-family:inherit;font-weight:600;font-size:.88rem;
+    text-decoration:none;
+    transition:all .15s ease;
+    box-shadow:0 4px 12px var(--shadow);
+  }
+  .back-link:hover{ background:var(--primary); color:#fff; transform:translateY(-2px); }
+  .back-top{ display:inline-block; margin-bottom:16px; }
+  .back-bottom{ display:block; text-align:center; margin:20px auto 8px; width:max-content; }
+
+  .htp-btn{
+    position:fixed;top:16px;right:16px;z-index:1500;
+    background:var(--accent);color:#fff;
+    border:3px solid #fff;
+    padding:8px 14px;border-radius:999px;
+    font-family:inherit;font-weight:700;font-size:.85rem;
+    cursor:pointer;
+    box-shadow:0 6px 16px rgba(255,93,143,.4);
+    transition:all .15s ease;
+  }
+  .htp-btn:hover{ transform:translateY(-2px); filter:brightness(1.06); }
+
+  .htp-modal{
+    position:fixed;inset:0;
+    background:rgba(16,18,26,.78);
+    backdrop-filter:blur(8px);
+    -webkit-backdrop-filter:blur(8px);
+    display:none;place-items:center;
+    z-index:4000;
+    padding:20px;
+  }
+  .htp-modal.show{ display:grid; }
+  .htp-box{
+    background:#fff;
+    border-radius:22px;
+    padding:24px 26px;
+    max-width:500px;width:100%;
+    max-height:85vh;overflow-y:auto;
+    box-shadow:0 25px 60px rgba(0,0,0,.5);
+    color:#1f2330;
+    font-family:'Segoe UI',inherit;
+  }
+  .htp-box h3{ margin:0 0 12px; color:var(--primary); font-size:1.4rem; }
+  .htp-box ol{ padding-left:22px; margin:0 0 14px; font-size:.92rem; line-height:1.55; }
+  .htp-box ol li{ margin-bottom:7px; }
+  .htp-box ol li b{ color:var(--accent); }
+  .htp-close{
+    appearance:none;border:none;
+    background:linear-gradient(135deg,var(--primary),var(--accent));
+    color:#fff;
+    padding:10px 22px;border-radius:999px;
+    font-family:inherit;font-weight:700;font-size:.95rem;
+    cursor:pointer;width:100%;
+  }
+  .htp-close:hover{ filter:brightness(1.08); }
+
+  .site-footer{
+    margin-top:14px;padding:14px 0;
+    font-size:.78rem;color:var(--muted);text-align:center;font-weight:600;
+  }
+
+  @media print{
+    .back-link, .htp-btn, .htp-modal, .panel, footer { display:none !important; }
+    body{ background:#fff !important; color:#000 !important; }
+    h1{ -webkit-text-fill-color:#000 !important; background:none !important; color:#000 !important; }
+    .tile{ background:#fff !important; border:2px solid #888 !important; box-shadow:none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <a href="app.html" class="back-link back-top">← Powrót do Sowie Fiszki</a>
+
+  <button class="htp-btn" id="htpBtn" type="button">ℹ️ Jak grać?</button>
+  <div class="htp-modal" id="htpModal" role="dialog" aria-modal="true">
+    <div class="htp-box">
+      <h3>🔤 Emoji Vocabulary Grid</h3>
+      <ol>
+        <li>Wybierz <b>kategorię</b>: Zwierzęta, Jedzenie, Sport, Zawody, Podróże, Pogoda, Przedmioty, Ubrania — lub zostaw „Wszystkie".</li>
+        <li>Kliknij <b>🎲 Generuj siatkę</b>. Suwakiem ustaw rozmiar od <b>2×2</b> do <b>5×5</b>.</li>
+        <li>W trybie <b>📖 Pokaz</b> widzisz emoji + nazwę po angielsku + tłumaczenie po polsku. Klik w kafelek = lektor brytyjski czyta słowo.</li>
+        <li>W trybie <b>❓ Quiz</b> etykiety są ukryte — kliknij kafelek, by odkryć słowo (i usłyszeć wymowę). Świetne na powtórki.</li>
+        <li>Dodaj słówko do <b>⭐ ulubionych</b> klikając gwiazdkę. Włącz „Tylko ulubione", by powtarzać własne mini-zestawy.</li>
+        <li>Eksportuj siatkę do <b>🖼️ PNG</b> — gotowy obrazek do druku, prezentacji lub udostępnienia.</li>
+      </ol>
+      <button class="htp-close" id="htpClose" type="button">Zaczynamy!</button>
+    </div>
+  </div>
+
+  <header>
+    <h1>Emoji Vocabulary Grid</h1>
+    <p class="sub">Losowa siatka słówek z wymową — do ćwiczeń ze słownictwa</p>
+  </header>
+
+  <div class="panel">
+    <div class="row">
+      <button id="gen" class="btn btn-p">🎲 Generuj siatkę</button>
+      <button id="speakAll" class="btn btn-o">🔊 Przeczytaj wszystkie</button>
+      <button id="save" class="btn btn-a">🖼️ Zapisz PNG</button>
+      <div class="grow"></div>
+      <label class="chk">🌙 Tryb ciemny
+        <span class="switch"><input type="checkbox" id="dark"><span class="sl"></span></span>
+      </label>
+    </div>
+
+    <div class="row">
+      <label>Kategoria:
+        <select id="cat"></select>
+      </label>
+      <span style="display:flex;gap:.4rem">
+        <button class="btn btn-o mode active" data-mode="grid">📖 Pokaz</button>
+        <button class="btn btn-o mode" data-mode="quiz">❓ Quiz</button>
+      </span>
+      <label class="chk"><input type="checkbox" id="showPL" checked> Tłumaczenie PL</label>
+      <label class="chk"><input type="checkbox" id="anim"> Animacja</label>
+      <label class="chk"><input type="checkbox" id="favOnly"> Tylko ulubione</label>
+      <div class="grow"></div>
+      <label class="chk">Rozmiar
+        <input type="range" id="size" min="2" max="5" value="3">
+        <span id="sizeVal">3×3</span>
+      </label>
+    </div>
+  </div>
+
+  <div id="stats" class="stats"></div>
+
+  <div id="loader" class="loader"><div class="spin"></div><span>Losuję słówka…</span></div>
+
+  <div id="grid" class="grid"></div>
+
+  <a href="app.html" class="back-link back-bottom">← Wróć do Sowie Fiszki</a>
+  <div class="site-footer">© 2026 Sowie Fiszki</div>
+</div>
+
+<script>
+/* ---------- Dane: natywne emoji + nazwa EN + PL, pogrupowane ---------- */
+const DATA = {
+  "Zwierzęta": [["🐶","dog","pies"],["🐱","cat","kot"],["🐭","mouse","mysz"],["🐹","hamster","chomik"],["🐰","rabbit","królik"],["🦊","fox","lis"],["🐻","bear","niedźwiedź"],["🐼","panda","panda"],["🐨","koala","koala"],["🐯","tiger","tygrys"],["🦁","lion","lew"],["🐮","cow","krowa"],["🐷","pig","świnia"],["🐸","frog","żaba"],["🐵","monkey","małpa"],["🐔","chicken","kura"],["🐧","penguin","pingwin"],["🐦","bird","ptak"],["🦆","duck","kaczka"],["🦉","owl","sowa"],["🐴","horse","koń"],["🦄","unicorn","jednorożec"],["🐝","bee","pszczoła"],["🐢","turtle","żółw"],["🐍","snake","wąż"],["🦋","butterfly","motyl"],["🐬","dolphin","delfin"],["🐳","whale","wieloryb"],["🦈","shark","rekin"],["🐘","elephant","słoń"],["🦒","giraffe","żyrafa"],["🦓","zebra","zebra"],["🐑","sheep","owca"],["🐐","goat","koza"],["🐌","snail","ślimak"],["🕷️","spider","pająk"]],
+  "Jedzenie": [["🍎","apple","jabłko"],["🍌","banana","banan"],["🍓","strawberry","truskawka"],["🍇","grapes","winogrona"],["🍊","orange","pomarańcza"],["🍋","lemon","cytryna"],["🍉","watermelon","arbuz"],["🍒","cherries","wiśnie"],["🍑","peach","brzoskwinia"],["🍍","pineapple","ananas"],["🥝","kiwi","kiwi"],["🍅","tomato","pomidor"],["🥕","carrot","marchewka"],["🌽","corn","kukurydza"],["🥦","broccoli","brokuł"],["🍄","mushroom","grzyb"],["🍞","bread","chleb"],["🧀","cheese","ser"],["🥚","egg","jajko"],["🍕","pizza","pizza"],["🍔","burger","hamburger"],["🍟","fries","frytki"],["🌭","hot dog","hot dog"],["🍝","pasta","makaron"],["🍰","cake","ciasto"],["🍪","cookie","ciastko"],["🍫","chocolate","czekolada"],["🍦","ice cream","lody"],["🍩","doughnut","pączek"],["🍿","popcorn","popcorn"],["☕","coffee","kawa"],["🥛","milk","mleko"],["🍵","tea","herbata"]],
+  "Sport": [["⚽","football","piłka nożna"],["🏀","basketball","koszykówka"],["🏈","american football","futbol amerykański"],["🎾","tennis","tenis"],["🏐","volleyball","siatkówka"],["🏓","table tennis","tenis stołowy"],["🏸","badminton","badminton"],["🥊","boxing","boks"],["🏊","swimming","pływanie"],["🚴","cycling","kolarstwo"],["🏃","running","bieganie"],["⛷️","skiing","narciarstwo"],["🏂","snowboarding","snowboard"],["🏄","surfing","surfing"],["🧗","climbing","wspinaczka"],["⛳","golf","golf"],["🎳","bowling","kręgle"],["🤸","gymnastics","gimnastyka"],["🥋","martial arts","sztuki walki"],["🏆","trophy","puchar"],["🏅","medal","medal"],["🎯","darts","rzutki"]],
+  "Zawody": [["👨‍🏫","teacher","nauczyciel"],["👩‍⚕️","doctor","lekarz"],["👮","police officer","policjant"],["👨‍🚒","firefighter","strażak"],["👨‍🍳","cook","kucharz"],["👩‍🔬","scientist","naukowiec"],["👨‍💻","programmer","programista"],["👨‍🌾","farmer","rolnik"],["👷","builder","budowniczy"],["👨‍✈️","pilot","pilot"],["👩‍🚀","astronaut","astronauta"],["🕵️","detective","detektyw"],["👨‍🎨","artist","artysta"],["🎤","singer","piosenkarz"],["💂","guard","strażnik"],["🧑‍⚖️","judge","sędzia"],["👨‍🔧","mechanic","mechanik"],["🧑‍🏭","factory worker","robotnik"]],
+  "Podróże": [["🚗","car","samochód"],["🚕","taxi","taksówka"],["🚌","bus","autobus"],["🚎","trolleybus","trolejbus"],["🚓","police car","radiowóz"],["🚑","ambulance","karetka"],["🚒","fire engine","wóz strażacki"],["🚜","tractor","traktor"],["🚲","bicycle","rower"],["🛵","scooter","skuter"],["🏍️","motorcycle","motocykl"],["✈️","plane","samolot"],["🚀","rocket","rakieta"],["🚁","helicopter","helikopter"],["🚂","train","pociąg"],["🚆","train","kolej"],["🚊","tram","tramwaj"],["⛵","sailboat","żaglówka"],["🚢","ship","statek"],["🚤","speedboat","motorówka"],["🗺️","map","mapa"],["🧳","luggage","walizka"]],
+  "Pogoda": [["☀️","sun","słońce"],["🌤️","sun & cloud","słońce i chmura"],["⛅","cloudy","pochmurno"],["☁️","cloud","chmura"],["🌧️","rain","deszcz"],["⛈️","thunderstorm","burza"],["🌩️","lightning","błyskawica"],["❄️","snow","śnieg"],["☃️","snowman","bałwan"],["🌪️","tornado","tornado"],["🌈","rainbow","tęcza"],["💧","drop","kropla"],["🌊","wave","fala"],["🔥","fire","ogień"],["⭐","star","gwiazda"],["🌙","moon","księżyc"],["🌧","umbrella","parasol"],["🌫️","fog","mgła"]],
+  "Przedmioty": [["📱","phone","telefon"],["💻","laptop","laptop"],["⌚","watch","zegarek"],["📷","camera","aparat"],["📺","TV","telewizor"],["🎧","headphones","słuchawki"],["💡","light bulb","żarówka"],["🔑","key","klucz"],["🔒","lock","kłódka"],["✏️","pencil","ołówek"],["📚","books","książki"],["📖","book","książka"],["🎒","backpack","plecak"],["✂️","scissors","nożyczki"],["📏","ruler","linijka"],["🖊️","pen","długopis"],["🧹","broom","miotła"],["🕯️","candle","świeca"],["🎈","balloon","balon"],["🎁","present","prezent"],["⚙️","gear","koło zębate"],["🔋","battery","bateria"]],
+  "Ubrania": [["👕","t-shirt","koszulka"],["👖","jeans","dżinsy"],["👗","dress","sukienka"],["👔","tie","krawat"],["🧥","coat","płaszcz"],["🧦","socks","skarpety"],["🧤","gloves","rękawiczki"],["🧣","scarf","szalik"],["👟","trainers","buty sportowe"],["👞","shoe","but"],["👠","high heels","szpilki"],["👢","boots","kozaki"],["🥾","hiking boot","but trekkingowy"],["🧢","cap","czapka z daszkiem"],["🎩","top hat","cylinder"],["👑","crown","korona"],["👓","glasses","okulary"],["🕶️","sunglasses","okulary słoneczne"],["👜","handbag","torebka"],["💼","briefcase","teczka"]]
+};
+
+/* płaska lista wszystkich + zbudowanie listy kategorii */
+const ALL = [];
+for(const c in DATA) DATA[c].forEach(e=>ALL.push({emoji:e[0],en:e[1],pl:e[2],cat:c}));
+
+/* ---------- Stan ---------- */
+let favorites = load('emojiFav', []);
+let state = {size:3, cat:'all', mode:'grid', showPL:true, anim:false, favOnly:false};
+let current = [];
+
+/* ---------- localStorage bezpiecznie ---------- */
+function load(k,def){ try{const v=localStorage.getItem(k); return v?JSON.parse(v):def;}catch(e){return def;} }
+function save(k,v){ try{localStorage.setItem(k,JSON.stringify(v));}catch(e){} }
+
+/* ---------- TTS (łańcuch getV/spk) ---------- */
+function getV(){
+  const vs = speechSynthesis.getVoices();
+  return vs.find(v=>/Google UK English Female/i.test(v.name))
+      || vs.find(v=>/UK English Female/i.test(v.name))
+      || vs.find(v=>/en-GB/i.test(v.lang))
+      || vs.find(v=>v.lang && v.lang.toLowerCase().startsWith('en'))
+      || vs[0] || null;
+}
+function spk(text){
+  if(!('speechSynthesis' in window)) return;
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  const v = getV(); if(v){u.voice=v; u.lang=v.lang;} else u.lang='en-GB';
+  u.rate=.9; u.pitch=1;
+  speechSynthesis.speak(u);
+}
+if('speechSynthesis' in window) speechSynthesis.onvoiceschanged = ()=>{};
+
+/* ---------- DOM ---------- */
+const $ = id => document.getElementById(id);
+const grid=$('grid'), stats=$('stats'), loader=$('loader');
+
+/* wypełnij kategorie */
+const catSel=$('cat');
+catSel.innerHTML = '<option value="all">Wszystkie</option>' +
+  Object.keys(DATA).map(c=>`<option value="${c}">${c}</option>`).join('');
+
+/* ---------- Zdarzenia ---------- */
+$('gen').addEventListener('click', generate);
+$('speakAll').addEventListener('click', speakAll);
+$('save').addEventListener('click', savePNG);
+$('dark').addEventListener('change', e=>{
+  document.body.classList.toggle('dark', e.target.checked); save('emojiDark', e.target.checked);
+});
+catSel.addEventListener('change', e=>{state.cat=e.target.value; generate();});
+document.querySelectorAll('.mode').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('.mode').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active'); state.mode=b.dataset.mode; render();
+}));
+$('showPL').addEventListener('change',e=>{state.showPL=e.target.checked; render();});
+$('anim').addEventListener('change',e=>{state.anim=e.target.checked; render();});
+$('favOnly').addEventListener('change',e=>{state.favOnly=e.target.checked; generate();});
+$('size').addEventListener('input',e=>{
+  state.size=+e.target.value; $('sizeVal').textContent=`${state.size}×${state.size}`; generate();
+});
+
+/* ---------- Init ---------- */
+if(load('emojiDark',false)){document.body.classList.add('dark'); $('dark').checked=true;}
+generate();
+
+/* ---------- Logika ---------- */
+function pool(){
+  let p = state.cat==='all' ? ALL : ALL.filter(e=>e.cat===state.cat);
+  if(state.favOnly){
+    const favSet = new Set(favorites);
+    p = p.filter(e=>favSet.has(e.emoji));
+  }
+  return p;
+}
+
+function generate(){
+  loader.style.display='flex'; grid.style.opacity='.4';
+  setTimeout(()=>{
+    const p = pool();
+    const n = state.size*state.size;
+    current = [];
+    if(p.length===0){
+      grid.innerHTML=''; loader.style.display='none'; grid.style.opacity='1';
+      stats.innerHTML='Brak słówek w tym zestawie. Dodaj ulubione ⭐ albo wybierz inną kategorię.';
+      return;
+    }
+    // losowanie bez powtórzeń jeśli się da, inaczej z powtórzeniami
+    const shuffled=[...p].sort(()=>Math.random()-.5);
+    for(let i=0;i<n;i++){
+      current.push(shuffled.length>=n ? shuffled[i] : p[Math.floor(Math.random()*p.length)]);
+    }
+    render();
+    loader.style.display='none'; grid.style.opacity='1';
+  },300);
+}
+
+function render(){
+  grid.style.gridTemplateColumns=`repeat(${state.size},1fr)`;
+  const emojiPx = Math.max(28, 120 - state.size*14);
+  grid.innerHTML='';
+  current.forEach((e,i)=>{
+    const fav = favorites.includes(e.emoji);
+    const tile=document.createElement('div');
+    tile.className='tile'+(fav?' fav':'')+(state.anim?' anim':'')+(state.mode==='quiz'?' quiz':'');
+    tile.style.animationDelay=`${i*0.05}s`;
+    tile.innerHTML=`
+      <span class="speak">🔊</span>
+      <span class="star">${fav?'★':'☆'}</span>
+      <span class="emoji" style="font-size:${emojiPx}px">${e.emoji}</span>
+      <span class="label">
+        <span class="en">${e.en}</span>
+        ${state.showPL?`<br><span class="pl">${e.pl}</span>`:''}
+      </span>`;
+    // klik w kafelek -> czytaj + (quiz) odkryj
+    tile.addEventListener('click',()=>{
+      if(state.mode==='quiz') tile.classList.add('revealed');
+      spk(e.en);
+    });
+    // gwiazdka -> ulubione
+    tile.querySelector('.star').addEventListener('click',ev=>{
+      ev.stopPropagation();
+      const idx=favorites.indexOf(e.emoji);
+      if(idx===-1) favorites.push(e.emoji); else favorites.splice(idx,1);
+      save('emojiFav',favorites);
+      tile.classList.toggle('fav');
+      tile.querySelector('.star').textContent=favorites.includes(e.emoji)?'★':'☆';
+      updateStats();
+    });
+    grid.appendChild(tile);
+  });
+  updateStats();
+}
+
+function updateStats(){
+  stats.innerHTML=`Na ekranie: <b>${current.length}</b> &nbsp;·&nbsp; Ulubione: <b>${favorites.length}</b> &nbsp;·&nbsp; Baza słówek: <b>${ALL.length}</b>`;
+}
+
+function speakAll(){
+  if(!('speechSynthesis' in window) || !current.length) return;
+  speechSynthesis.cancel();
+  current.forEach((e,i)=>{
+    const u=new SpeechSynthesisUtterance(e.en);
+    const v=getV(); if(v){u.voice=v;u.lang=v.lang;} else u.lang='en-GB';
+    u.rate=.9;
+    setTimeout(()=>speechSynthesis.speak(u), i*1100);
+  });
+}
+
+/* ---------- Prawdziwy eksport PNG (natywny canvas) ---------- */
+function savePNG(){
+  const n=state.size, cell=200, pad=30, labelH=state.mode==='quiz'?0:46;
+  const W=n*cell+pad*2, H=n*cell+pad*2+50;
+  const cv=document.createElement('canvas');
+  cv.width=W; cv.height=H;
+  const ctx=cv.getContext('2d');
+  const dark=document.body.classList.contains('dark');
+  ctx.fillStyle=dark?'#10121a':'#f4f6fb'; ctx.fillRect(0,0,W,H);
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  current.forEach((e,i)=>{
+    const r=Math.floor(i/n), c=i%n;
+    const x=pad+c*cell, y=pad+r*cell;
+    // karta
+    ctx.fillStyle=dark?'#1b1e2b':'#ffffff';
+    roundRect(ctx,x+8,y+8,cell-16,cell-16,18); ctx.fill();
+    // emoji
+    ctx.font=`${cell-80-labelH}px "Segoe UI Emoji","Apple Color Emoji",sans-serif`;
+    ctx.fillText(e.emoji, x+cell/2, y+cell/2-(labelH?14:0));
+    // etykieta
+    if(state.mode!=='quiz'){
+      ctx.fillStyle=dark?'#eef0f6':'#1f2330';
+      ctx.font='bold 22px "Segoe UI",sans-serif';
+      ctx.fillText(cap(e.en), x+cell/2, y+cell-46);
+      if(state.showPL){
+        ctx.fillStyle=dark?'#9aa0b3':'#6b7280';
+        ctx.font='16px "Segoe UI",sans-serif';
+        ctx.fillText(e.pl, x+cell/2, y+cell-22);
+      }
+    }
+  });
+  ctx.fillStyle=dark?'#9aa0b3':'#6b7280';
+  ctx.font='14px "Segoe UI",sans-serif';
+  ctx.fillText('Emoji Vocabulary Grid · Daniel Ostrowski', W/2, H-22);
+  const link=document.createElement('a');
+  link.download='emoji-grid.png';
+  link.href=cv.toDataURL('image/png');
+  link.click();
+}
+function roundRect(ctx,x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
+}
+const cap=s=>s.charAt(0).toUpperCase()+s.slice(1);
+
+/* ========= "JAK GRAC?" MODAL ========= */
+(function(){
+  const btn   = document.getElementById("htpBtn");
+  const modal = document.getElementById("htpModal");
+  const close = document.getElementById("htpClose");
+  if (!btn || !modal || !close) return;
+  const open  = () => modal.classList.add("show");
+  const hide  = () => modal.classList.remove("show");
+  btn.addEventListener("click", open);
+  close.addEventListener("click", hide);
+  modal.addEventListener("click", (e) => { if (e.target === modal) hide(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") hide(); });
+})();
+</script>
+
+<script src="consent.js"></script>
+</body>
+</html>

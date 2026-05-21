@@ -1,0 +1,882 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Word Builder · Narzędzie do nauki słownictwa</title>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Newsreader:ital,opsz,wght@0,6..72,400..600;1,6..72,400..500&family=Spline+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#101117;
+    --bg-2:#15171f;
+    --surface:#1b1e29;
+    --surface-2:#222637;
+    --line:rgba(255,255,255,.08);
+    --ink:#ece9e2;
+    --ink-soft:#a8a59c;
+    --ink-faint:#6f6d68;
+    --accent:#f0a830;
+    --accent-2:#e8913c;
+    --teal:#4cc3ad;
+    --success:#5fd38a;
+    --danger:#ff7a6b;
+    --warn:#ffcf5c;
+    --radius:16px;
+    --shadow:0 18px 50px -18px rgba(0,0,0,.75);
+    --blur:saturate(140%) blur(8px);
+  }
+  body.light{
+    --bg:#f3efe6;
+    --bg-2:#efe9dc;
+    --surface:#fffdf8;
+    --surface-2:#f6f1e6;
+    --line:rgba(40,30,20,.10);
+    --ink:#2b2722;
+    --ink-soft:#6b6358;
+    --ink-faint:#9a9388;
+    --accent:#c97a17;
+    --accent-2:#b5651d;
+    --teal:#1f9d8a;
+    --success:#2f9e5c;
+    --danger:#cf4a3c;
+    --warn:#c98a16;
+    --shadow:0 18px 50px -22px rgba(60,40,20,.35);
+  }
+
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    font-family:'Spline Sans',system-ui,sans-serif;
+    background:
+      radial-gradient(1200px 600px at 12% -8%, color-mix(in srgb,var(--accent) 14%, transparent), transparent 60%),
+      radial-gradient(1000px 700px at 95% 0%, color-mix(in srgb,var(--teal) 12%, transparent), transparent 55%),
+      linear-gradient(160deg,var(--bg),var(--bg-2));
+    background-attachment:fixed;
+    color:var(--ink);
+    min-height:100vh;
+    line-height:1.5;
+    padding:clamp(1rem,3vw,2.5rem) 1rem 4rem;
+    transition:background .4s ease,color .3s ease;
+  }
+
+  .wrap{max-width:920px;margin:0 auto}
+
+  /* ---------- Header ---------- */
+  header.app{
+    display:flex;align-items:center;justify-content:space-between;
+    gap:1rem;margin-bottom:1.75rem;flex-wrap:wrap;
+  }
+  .brand{display:flex;align-items:center;gap:.85rem}
+  .logo{
+    width:48px;height:48px;border-radius:14px;flex-shrink:0;
+    display:grid;place-items:center;font-size:1.3rem;color:#1a1305;
+    background:linear-gradient(140deg,var(--accent),var(--accent-2));
+    box-shadow:0 8px 22px -8px color-mix(in srgb,var(--accent) 80%,transparent);
+    transform:rotate(-4deg);
+  }
+  .brand h1{
+    font-family:'Bricolage Grotesque',sans-serif;
+    font-weight:700;font-size:clamp(1.5rem,4vw,2rem);
+    letter-spacing:-.02em;line-height:1;
+  }
+  .brand .tag{font-size:.82rem;color:var(--ink-soft);margin-top:.2rem}
+  .head-actions{display:flex;gap:.5rem}
+  .icon-btn{
+    width:42px;height:42px;border-radius:12px;border:1px solid var(--line);
+    background:var(--surface);color:var(--ink);cursor:pointer;font-size:1rem;
+    display:grid;place-items:center;transition:.2s;
+  }
+  .icon-btn:hover{background:var(--surface-2);transform:translateY(-2px)}
+
+  /* ---------- Cards ---------- */
+  .card{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:clamp(1.1rem,3vw,1.6rem);
+    box-shadow:var(--shadow);
+    margin-bottom:1.25rem;
+  }
+
+  /* ---------- Mode tabs ---------- */
+  .modes{display:flex;gap:.4rem;background:var(--bg-2);border:1px solid var(--line);
+    padding:.35rem;border-radius:14px;margin-bottom:1.1rem;flex-wrap:wrap}
+  .mode-btn{
+    flex:1;min-width:120px;padding:.7rem .6rem;border:none;border-radius:10px;
+    background:transparent;color:var(--ink-soft);cursor:pointer;font-weight:600;
+    font-size:.92rem;display:flex;align-items:center;justify-content:center;gap:.5rem;
+    transition:.2s;font-family:inherit;
+  }
+  .mode-btn:hover{color:var(--ink)}
+  .mode-btn.active{
+    background:linear-gradient(140deg,var(--accent),var(--accent-2));
+    color:#1a1305;box-shadow:0 6px 16px -8px color-mix(in srgb,var(--accent) 70%,transparent);
+  }
+  .mode-hint{font-size:.85rem;color:var(--ink-soft);margin-bottom:1rem;min-height:1.2em}
+
+  /* ---------- Input ---------- */
+  textarea{
+    width:100%;min-height:120px;padding:1rem 1.1rem;border-radius:12px;
+    border:1px solid var(--line);background:var(--bg-2);color:var(--ink);
+    font-size:1rem;resize:vertical;outline:none;font-family:inherit;line-height:1.6;
+  }
+  textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 22%,transparent)}
+  textarea.shake{animation:shake .45s}
+
+  .samples{display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.7rem}
+  .chip{
+    border:1px solid var(--line);background:var(--bg-2);color:var(--ink-soft);
+    border-radius:999px;padding:.32rem .8rem;font-size:.8rem;cursor:pointer;transition:.2s;
+    font-family:inherit;
+  }
+  .chip:hover{color:var(--ink);border-color:var(--accent);transform:translateY(-1px)}
+
+  /* ---------- Controls grid ---------- */
+  .controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:1rem 1.4rem;margin:1.2rem 0}
+  .ctrl label{display:block;font-size:.78rem;text-transform:uppercase;letter-spacing:.06em;
+    color:var(--ink-faint);margin-bottom:.45rem;font-weight:600}
+  .ctrl .row{display:flex;align-items:center;gap:.6rem}
+  select{
+    width:100%;padding:.6rem .7rem;border-radius:10px;border:1px solid var(--line);
+    background:var(--bg-2);color:var(--ink);font-family:inherit;font-size:.92rem;cursor:pointer;outline:none;
+  }
+  select:focus{border-color:var(--accent)}
+  .slider{
+    -webkit-appearance:none;appearance:none;width:100%;height:6px;border-radius:6px;
+    background:linear-gradient(90deg,var(--accent) var(--fill,30%),var(--surface-2) var(--fill,30%));
+    outline:none;cursor:pointer;
+  }
+  .slider::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;
+    background:var(--accent);border:3px solid var(--surface);box-shadow:0 2px 6px rgba(0,0,0,.3);cursor:pointer}
+  .slider::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:var(--accent);
+    border:3px solid var(--surface);cursor:pointer}
+  .val-badge{min-width:48px;text-align:center;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums}
+
+  /* ---------- Buttons ---------- */
+  .buttons{display:flex;gap:.65rem;flex-wrap:wrap}
+  .btn{
+    padding:.78rem 1.25rem;border:none;border-radius:11px;font-size:.95rem;font-weight:600;
+    cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:.5rem;
+    font-family:inherit;transition:.18s;flex:1;min-width:140px;
+  }
+  .btn:active{transform:translateY(1px)}
+  .btn-primary{background:linear-gradient(140deg,var(--accent),var(--accent-2));color:#1a1305;
+    box-shadow:0 8px 20px -10px color-mix(in srgb,var(--accent) 80%,transparent)}
+  .btn-primary:hover{filter:brightness(1.06);transform:translateY(-2px)}
+  .btn-ghost{background:var(--surface-2);color:var(--ink);border:1px solid var(--line)}
+  .btn-ghost:hover{background:var(--bg-2);transform:translateY(-2px)}
+  .btn-success{background:color-mix(in srgb,var(--success) 22%,transparent);color:var(--success);
+    border:1px solid color-mix(in srgb,var(--success) 45%,transparent)}
+  .btn-success:hover{background:color-mix(in srgb,var(--success) 32%,transparent);transform:translateY(-2px)}
+  .btn[hidden]{display:none}
+
+  /* ---------- Output ---------- */
+  .out-head{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:.9rem;flex-wrap:wrap}
+  .out-title{font-family:'Bricolage Grotesque',sans-serif;font-weight:600;font-size:1.05rem;display:flex;align-items:center;gap:.5rem}
+  .out-tools{display:flex;gap:.4rem}
+  .mini{border:1px solid var(--line);background:var(--bg-2);color:var(--ink-soft);border-radius:9px;
+    width:38px;height:38px;display:grid;place-items:center;cursor:pointer;transition:.2s;font-size:.95rem}
+  .mini:hover{color:var(--accent);border-color:var(--accent)}
+  .mini.on{color:var(--accent);border-color:var(--accent)}
+
+  .passage{
+    font-family:'Newsreader',Georgia,serif;font-size:1.22rem;line-height:2.05;
+    background:var(--bg-2);border:1px solid var(--line);border-radius:12px;
+    padding:1.4rem 1.5rem;min-height:140px;
+  }
+  .passage .empty{color:var(--ink-faint);font-style:italic;font-size:1rem}
+
+  .word{display:inline;border-radius:5px;padding:0 2px;transition:background .2s,color .2s}
+  .speakable{cursor:pointer}
+  .speakable:hover{background:color-mix(in srgb,var(--teal) 18%,transparent)}
+  .blank{
+    cursor:pointer;color:transparent;border-bottom:2px dashed var(--accent);
+    background:color-mix(in srgb,var(--accent) 9%,transparent);padding:0 5px;
+    border-radius:5px;user-select:none;position:relative;
+  }
+  .blank::after{content:attr(data-hint);position:absolute;left:0;right:0;bottom:2px;
+    text-align:center;color:var(--accent);font-size:.78em;letter-spacing:.15em;pointer-events:none}
+  .blank:hover{background:color-mix(in srgb,var(--accent) 18%,transparent)}
+  .revealed{color:var(--accent);font-weight:600;animation:pop .35s}
+  .correct{color:var(--success);font-weight:600}
+  .incorrect{color:var(--danger);font-weight:600;text-decoration:line-through wavy color-mix(in srgb,var(--danger) 60%,transparent)}
+  .active-blank{background:color-mix(in srgb,var(--accent) 28%,transparent);box-shadow:0 0 0 2px var(--accent)}
+
+  /* inline quiz input */
+  .gap-input{
+    display:inline-block;min-width:80px;width:auto;font-family:'Spline Sans',sans-serif;
+    font-size:1rem;padding:.1rem .5rem;border:none;border-bottom:2px solid var(--accent);
+    background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--ink);
+    border-radius:5px 5px 0 0;outline:none;text-align:center;
+  }
+
+  /* ---------- Stats ---------- */
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:.7rem;margin-top:1.1rem}
+  .stat{background:var(--bg-2);border:1px solid var(--line);border-radius:12px;padding:.85rem .6rem;text-align:center}
+  .stat .v{font-family:'Bricolage Grotesque',sans-serif;font-size:1.5rem;font-weight:700;color:var(--accent);
+    line-height:1;font-variant-numeric:tabular-nums}
+  .stat .l{font-size:.72rem;color:var(--ink-faint);margin-top:.35rem;text-transform:uppercase;letter-spacing:.05em}
+  #statAcc .v{color:var(--teal)}
+
+  /* ---------- Score banner ---------- */
+  .banner{margin-top:1.1rem;padding:1rem 1.2rem;border-radius:12px;text-align:center;font-size:1.02rem;
+    animation:pop .4s;border:1px solid var(--line)}
+
+  /* ---------- Toast ---------- */
+  #toast{position:fixed;left:50%;bottom:1.4rem;transform:translate(-50%,140%);
+    background:var(--surface);border:1px solid var(--line);color:var(--ink);
+    padding:.7rem 1.1rem;border-radius:12px;box-shadow:var(--shadow);font-size:.9rem;
+    transition:transform .35s cubic-bezier(.2,1.2,.3,1);z-index:50;max-width:90vw}
+  #toast.show{transform:translate(-50%,0)}
+
+  footer{text-align:center;font-size:.82rem;color:var(--ink-faint);margin-top:2rem;line-height:1.7}
+  footer a{color:var(--ink-soft);text-decoration:none;border-bottom:1px dotted var(--ink-faint)}
+
+  @keyframes pop{0%{transform:scale(.94);opacity:0}100%{transform:scale(1);opacity:1}}
+  @keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-7px)}40%,80%{transform:translateX(7px)}}
+
+  @media(max-width:560px){
+    .stats{grid-template-columns:repeat(2,1fr)}
+    .btn{min-width:0}
+    .passage{font-size:1.1rem;line-height:1.95}
+  }
+
+  /* ---------- Print worksheet ---------- */
+  #print{display:none}
+  @media print{
+    body *{visibility:hidden}
+    #print,#print *{visibility:visible}
+    #print{display:block;position:absolute;inset:0;background:#fff;color:#000;padding:2rem;
+      font-family:'Newsreader',Georgia,serif}
+    #print h2{font-family:'Bricolage Grotesque',sans-serif;margin-bottom:.3rem}
+    #print .meta{font-size:.85rem;color:#555;margin-bottom:1.2rem;border-bottom:1px solid #ccc;padding-bottom:.6rem}
+    #print .ptext{font-size:1.15rem;line-height:2.4}
+    #print .gap{display:inline-block;min-width:90px;border-bottom:1px solid #000;text-align:center;
+      font-size:.8rem;color:#888;vertical-align:bottom}
+    #print .key{margin-top:2rem;padding-top:1rem;border-top:2px dashed #999;font-size:.95rem}
+    #print .key h3{font-family:'Bricolage Grotesque',sans-serif;margin-bottom:.5rem}
+    #print .key ol{columns:3;-webkit-columns:3;column-gap:2rem;padding-left:1.4rem}
+  }
+
+  /* ============ BACK LINK + JAK GRAC + STOPKA (konwencja Sowie Fiszki) ============ */
+  .back-link{
+    display:inline-flex;align-items:center;gap:6px;
+    padding:8px 14px;
+    background:color-mix(in srgb,var(--accent) 12%,transparent);
+    border:2px solid color-mix(in srgb,var(--accent) 45%,transparent);
+    border-radius:999px;
+    color:var(--accent);
+    font-family:inherit;font-weight:600;font-size:.88rem;
+    text-decoration:none;
+    transition:all .15s ease;
+  }
+  .back-link:hover{ background:var(--accent); color:#1a1305; transform:translateY(-2px); }
+  .back-top{ display:inline-block; margin-bottom:18px; }
+  .back-bottom{ display:block; text-align:center; margin:24px auto 8px; width:max-content; }
+
+  .htp-btn{
+    position:fixed;top:16px;right:16px;z-index:1500;
+    background:linear-gradient(140deg,var(--accent),var(--accent-2));color:#1a1305;
+    border:3px solid var(--surface);
+    padding:8px 14px;border-radius:999px;
+    font-family:inherit;font-weight:700;font-size:.85rem;
+    cursor:pointer;
+    box-shadow:0 6px 16px -4px color-mix(in srgb,var(--accent) 70%,transparent);
+    transition:all .15s ease;
+  }
+  .htp-btn:hover{ transform:translateY(-2px); filter:brightness(1.06); }
+
+  .htp-modal{
+    position:fixed;inset:0;
+    background:rgba(16,17,23,.82);
+    backdrop-filter:blur(8px);
+    -webkit-backdrop-filter:blur(8px);
+    display:none;place-items:center;
+    z-index:4000;
+    padding:20px;
+  }
+  body.light .htp-modal{ background:rgba(60,40,20,.55); }
+  .htp-modal.show{ display:grid; }
+  .htp-box{
+    background:#fffdf8;
+    border-radius:22px;
+    padding:24px 26px;
+    max-width:520px;width:100%;
+    max-height:85vh;overflow-y:auto;
+    box-shadow:0 25px 60px rgba(0,0,0,.5);
+    color:#2b2722;
+    font-family:'Spline Sans',inherit;
+  }
+  .htp-box h3{ font-family:'Bricolage Grotesque',inherit; margin:0 0 12px; color:#c97a17; font-size:1.4rem; }
+  .htp-box ol{ padding-left:22px; margin:0 0 14px; font-size:.92rem; line-height:1.55; }
+  .htp-box ol li{ margin-bottom:7px; }
+  .htp-box ol li b{ color:#b5651d; }
+  .htp-box ol ul{ padding-left:18px; margin:6px 0 0; }
+  .htp-box ol ul li{ margin-bottom:4px; }
+  .htp-close{
+    appearance:none;border:none;
+    background:linear-gradient(140deg,#f0a830,#e8913c);
+    color:#1a1305;
+    padding:10px 22px;border-radius:999px;
+    font-family:inherit;font-weight:700;font-size:.95rem;
+    cursor:pointer;width:100%;
+  }
+  .htp-close:hover{ filter:brightness(1.08); }
+
+  .site-footer{
+    text-align:center;margin-top:14px;padding:14px 0;
+    font-size:.76rem;color:var(--ink-faint);font-weight:600;
+  }
+
+  /* Schowaj nasze elementy w trybie drukowania karty pracy
+     (oryginalny @media print juz ukrywa wszystko poza #print) */
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <a href="app.html" class="back-link back-top">← Powrót do Sowie Fiszki</a>
+
+  <button class="htp-btn" id="htpBtn" type="button">ℹ️ Jak grać?</button>
+  <div class="htp-modal" id="htpModal" role="dialog" aria-modal="true">
+    <div class="htp-box">
+      <h3>📝 Word Builder</h3>
+      <ol>
+        <li>Wpisz dowolny tekst po angielsku do pola tekstowego (lub kliknij gotowy <b>przykład</b>: Daily routine, My family, Animals, Present Simple, Have you ever…).</li>
+        <li>Wybierz <b>tryb</b>:
+          <ul>
+            <li>🎓 <b>Ćwiczenie</b> — kliknij ukrytą lukę, by ją odkryć i usłyszeć wymowę. Klik ponownie = ukryj.</li>
+            <li>📝 <b>Quiz</b> — wpisuj brakujące słowa, <b>Enter</b> przeskakuje do kolejnej luki. Na koniec <b>Sprawdź</b>.</li>
+            <li>🎧 <b>Dyktando</b> — wszystkie słowa są ukryte, słuchaj lektora (<b>R</b> = powtórz) i zapisuj cały tekst ze słuchu.</li>
+          </ul>
+        </li>
+        <li>Ustaw <b>% ukrytych słów</b>, <b>sposób ukrywania</b> (losowo / dłuższe słowa / co N-te) i <b>podpowiedź</b> (brak / pierwsza litera / pierwsza + ostatnia).</li>
+        <li>Kliknij dowolne słowo w tekście, by usłyszeć jego wymowę (lektor brytyjski). <b>Spacja</b> = przeczytaj cały tekst.</li>
+        <li>Możesz <b>wydrukować kartę pracy</b> z lukami i kluczem odpowiedzi — przycisk 🖨️ w prawym górnym rogu sekcji „Tekst".</li>
+        <li>Twój ostatni tekst i motyw są <b>zapamiętywane lokalnie</b> w przeglądarce.</li>
+      </ol>
+      <button class="htp-close" id="htpClose" type="button">Zaczynamy!</button>
+    </div>
+  </div>
+
+  <header class="app">
+    <div class="brand">
+      <div class="logo"><i class="fa-solid fa-feather-pointed"></i></div>
+      <div>
+        <h1>Word&nbsp;Builder</h1>
+        <div class="tag">Czytaj · słuchaj · uzupełniaj · zapamiętuj</div>
+      </div>
+    </div>
+    <div class="head-actions">
+      <button id="speakAll" class="icon-btn" title="Przeczytaj cały tekst (spacja)"><i class="fa-solid fa-volume-high"></i></button>
+      <button id="themeToggle" class="icon-btn" title="Zmień motyw"><i class="fa-solid fa-moon"></i></button>
+    </div>
+  </header>
+
+  <!-- Setup card -->
+  <section class="card">
+    <div class="modes" id="modes">
+      <button class="mode-btn active" data-mode="practice"><i class="fa-solid fa-graduation-cap"></i> Ćwiczenie</button>
+      <button class="mode-btn" data-mode="quiz"><i class="fa-solid fa-pen-to-square"></i> Quiz</button>
+      <button class="mode-btn" data-mode="dictation"><i class="fa-solid fa-headphones"></i> Dyktando</button>
+    </div>
+    <div class="mode-hint" id="modeHint"></div>
+
+    <textarea id="input" placeholder="Wpisz lub wklej tekst do nauki (zdania, słówka, dialog)…"></textarea>
+    <div class="samples" id="samples"></div>
+
+    <div class="controls">
+      <div class="ctrl">
+        <label for="pct">Ukryte słowa</label>
+        <div class="row">
+          <input type="range" id="pct" class="slider" min="10" max="90" value="30" step="5">
+          <span class="val-badge" id="pctVal">30%</span>
+        </div>
+      </div>
+      <div class="ctrl">
+        <label for="strategy">Sposób ukrywania</label>
+        <select id="strategy">
+          <option value="random">Losowo</option>
+          <option value="long">Dłuższe słowa</option>
+          <option value="every">Co N-te słowo</option>
+        </select>
+      </div>
+      <div class="ctrl">
+        <label for="hint">Podpowiedź</label>
+        <select id="hint">
+          <option value="none">Brak</option>
+          <option value="first">Pierwsza litera</option>
+          <option value="ends">Pierwsza + ostatnia</option>
+        </select>
+      </div>
+      <div class="ctrl">
+        <label for="rate">Tempo lektora</label>
+        <div class="row">
+          <input type="range" id="rate" class="slider" min="0.6" max="1.2" value="0.95" step="0.05">
+          <span class="val-badge" id="rateVal">0.95×</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="buttons">
+      <button id="generate" class="btn btn-primary"><i class="fa-solid fa-wand-magic-sparkles"></i> Generuj</button>
+      <button id="revealAll" class="btn btn-ghost"><i class="fa-solid fa-eye"></i> Pokaż wszystko</button>
+      <button id="check" class="btn btn-success" hidden><i class="fa-solid fa-check-double"></i> Sprawdź</button>
+      <button id="reset" class="btn btn-ghost"><i class="fa-solid fa-rotate-left"></i> Wyczyść</button>
+    </div>
+  </section>
+
+  <!-- Output card -->
+  <section class="card">
+    <div class="out-head">
+      <div class="out-title"><i class="fa-solid fa-book-open" style="color:var(--teal)"></i> Tekst</div>
+      <div class="out-tools">
+        <button id="repeatAudio" class="mini" title="Powtórz audio (R)"><i class="fa-solid fa-repeat"></i></button>
+        <button id="autoSpeak" class="mini" title="Czytaj słowo po odkryciu"><i class="fa-solid fa-comment-dots"></i></button>
+        <button id="printBtn" class="mini" title="Drukuj kartę pracy"><i class="fa-solid fa-print"></i></button>
+      </div>
+    </div>
+    <div class="passage" id="passage"><span class="empty">Wpisz tekst powyżej i kliknij „Generuj”. Kliknij dowolne słowo, żeby usłyszeć jego wymowę.</span></div>
+
+    <div class="stats">
+      <div class="stat"><div class="v" id="sTotal">0</div><div class="l">Słowa</div></div>
+      <div class="stat"><div class="v" id="sHidden">0</div><div class="l">Ukryte</div></div>
+      <div class="stat"><div class="v" id="sDone">0</div><div class="l">Uzupełnione</div></div>
+      <div class="stat" id="statAcc"><div class="v" id="sAcc">—</div><div class="l">Skuteczność</div></div>
+    </div>
+    <div id="banner"></div>
+  </section>
+
+  <a href="app.html" class="back-link back-bottom">← Wróć do Sowie Fiszki</a>
+  <div class="site-footer">© 2026 Sowie Fiszki</div>
+</div>
+
+<div id="toast"></div>
+<div id="print"></div>
+
+<script>
+/* =========================================================
+   Word Builder — single-file vocabulary trainer
+   ========================================================= */
+
+const $ = id => document.getElementById(id);
+
+/* ---- State ---- */
+let mode = 'practice';
+let segments = [];      // {type:'word'|'gap', text, ...} flat render list
+let wordRefs = [];      // indices into segments that are words
+let blanks = [];        // {segIdx, answer, done, correct}
+let activeBlank = null; // segment index of focused blank (quiz)
+let autoSpeakOn = true;
+let lastAudioText = '';
+
+/* ---- DOM ---- */
+const input=$('input'), passage=$('passage'), banner=$('banner');
+const pct=$('pct'), pctVal=$('pctVal'), rate=$('rate'), rateVal=$('rateVal');
+const strategySel=$('strategy'), hintSel=$('hint');
+
+/* =========================================================
+   Text-to-speech  (getV / spk priority chain)
+   ========================================================= */
+let voicesCache = [];
+function loadVoices(){ voicesCache = window.speechSynthesis ? speechSynthesis.getVoices() : []; }
+if('speechSynthesis' in window){
+  loadVoices();
+  speechSynthesis.onvoiceschanged = loadVoices;
+}
+function getV(){
+  const v = voicesCache.length ? voicesCache : (window.speechSynthesis ? speechSynthesis.getVoices() : []);
+  return v.find(x=>x.name==='Google UK English Female')
+      || v.find(x=>/en[-_]GB/i.test(x.lang) && /female/i.test(x.name))
+      || v.find(x=>/Google UK English/i.test(x.name))
+      || v.find(x=>/en[-_]GB/i.test(x.lang))
+      || v.find(x=>/^en/i.test(x.lang))
+      || v[0] || null;
+}
+function spk(text, opts={}){
+  if(!('speechSynthesis' in window) || !text) return;
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  const v = getV();
+  if(v){ u.voice=v; u.lang=v.lang; } else { u.lang='en-GB'; }
+  u.rate = opts.rate ?? parseFloat(rate.value) ?? 0.95;
+  u.pitch = 1;
+  speechSynthesis.speak(u);
+}
+
+/* =========================================================
+   Local storage (wrapped — never breaks if unavailable)
+   ========================================================= */
+const store = {
+  get(k,def){ try{ const v=localStorage.getItem(k); return v===null?def:v; }catch(e){ return def; } },
+  set(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+};
+
+/* =========================================================
+   Sample texts (curriculum-friendly)
+   ========================================================= */
+const SAMPLES = {
+  "Daily routine":"I get up at seven o'clock. I have breakfast and brush my teeth. Then I go to school by bus. After school I do my homework and play football with my friends.",
+  "My family":"This is my family. My father is a teacher and my mother is a doctor. I have got one brother and two sisters. We live in a big house near the park.",
+  "Animals":"The lion is a strong animal that lives in Africa. Elephants are the biggest animals on land. Dolphins are very clever and they live in the sea.",
+  "Present Simple":"She always drinks coffee in the morning. He never watches television at night. They usually play tennis on Sundays. We sometimes go to the cinema.",
+  "Have you ever…?":"Have you ever been to London? Have you ever eaten sushi? Have you ever ridden a horse? Have you ever seen a shooting star in the night sky?"
+};
+function buildSamples(){
+  const box=$('samples');
+  Object.keys(SAMPLES).forEach(name=>{
+    const c=document.createElement('button');
+    c.className='chip'; c.textContent=name;
+    c.onclick=()=>{ input.value=SAMPLES[name]; flash('Wczytano przykład: '+name); };
+    box.appendChild(c);
+  });
+}
+
+/* =========================================================
+   Tokenizer — splits into words + gaps, punctuation aware
+   ========================================================= */
+function normalize(s){
+  return s.toLowerCase()
+          .replace(/[''`]/g,"'")
+          .replace(/^[^\p{L}\p{N}']+|[^\p{L}\p{N}']+$/gu,'')
+          .trim();
+}
+function tokenize(text){
+  segments=[]; wordRefs=[];
+  const re=/[\p{L}\p{N}][\p{L}\p{N}''-]*/gu;
+  let last=0, m;
+  while((m=re.exec(text))!==null){
+    if(m.index>last) segments.push({type:'gap',text:text.slice(last,m.index)});
+    segments.push({type:'word',text:m[0],answer:normalize(m[0])});
+    wordRefs.push(segments.length-1);
+    last=re.lastIndex;
+  }
+  if(last<text.length) segments.push({type:'gap',text:text.slice(last)});
+}
+
+/* =========================================================
+   Choose which words to hide based on strategy
+   ========================================================= */
+function chooseHidden(){
+  const count=Math.max(1,Math.floor(wordRefs.length*(parseInt(pct.value,10)/100)));
+  let pick=[];
+  const candidates=wordRefs.filter(i=>segments[i].text.length>1); // skip single-letter words
+  const pool=candidates.length?candidates:[...wordRefs];
+
+  if(strategySel.value==='long'){
+    pick=[...pool].sort((a,b)=>segments[b].text.length-segments[a].text.length).slice(0,count);
+  } else if(strategySel.value==='every'){
+    const step=Math.max(1,Math.round(wordRefs.length/count));
+    for(let k=0;k<wordRefs.length && pick.length<count;k+=step){
+      if(segments[wordRefs[k]].text.length>1) pick.push(wordRefs[k]);
+    }
+    if(pick.length<count){ // top up randomly
+      const rest=pool.filter(i=>!pick.includes(i));
+      shuffle(rest); pick.push(...rest.slice(0,count-pick.length));
+    }
+  } else {
+    const shuffled=[...pool]; shuffle(shuffled); pick=shuffled.slice(0,count);
+  }
+  return new Set(pick);
+}
+function shuffle(a){ for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} }
+
+/* =========================================================
+   Hint text for a blank
+   ========================================================= */
+function hintFor(word){
+  const h=hintSel.value;
+  if(h==='none') return '·'.repeat(Math.min(word.length,8));
+  if(h==='first') return word[0]+'·'.repeat(Math.max(1,Math.min(word.length-1,7)));
+  if(h==='ends'){
+    if(word.length<=2) return word;
+    return word[0]+'·'.repeat(Math.min(word.length-2,6))+word[word.length-1];
+  }
+  return '···';
+}
+
+/* =========================================================
+   Generate / render
+   ========================================================= */
+function generate(){
+  const text=input.value.trim();
+  if(!text){
+    input.classList.add('shake'); setTimeout(()=>input.classList.remove('shake'),450);
+    flash('Najpierw wpisz jakiś tekst.'); return;
+  }
+  store.set('wb_text',input.value);
+  tokenize(text);
+  if(!wordRefs.length){ flash('Brak słów do ukrycia.'); return; }
+
+  const hideAll = mode==='dictation';
+  const hidden = hideAll ? new Set(wordRefs) : chooseHidden();
+  blanks=[];
+
+  let html='';
+  segments.forEach((seg,idx)=>{
+    if(seg.type==='gap'){ html+=esc(seg.text); return; }
+    if(hidden.has(idx)){
+      blanks.push({segIdx:idx,answer:seg.answer,done:false,correct:false});
+      html+=`<span class="word blank" data-idx="${idx}" data-hint="${esc(hintFor(seg.text))}">${esc(seg.text)}</span>`;
+    } else {
+      html+=`<span class="word speakable" data-idx="${idx}">${esc(seg.text)}</span>`;
+    }
+  });
+  passage.innerHTML=html;
+  banner.innerHTML='';
+
+  passage.querySelectorAll('.speakable').forEach(el=>el.onclick=()=>spk(el.textContent));
+  passage.querySelectorAll('.blank').forEach(el=>el.onclick=()=>onBlankClick(el));
+
+  $('check').hidden = (mode!=='quiz' && mode!=='dictation');
+  $('revealAll').hidden = (mode==='quiz' || mode==='dictation');
+
+  if(mode==='quiz'||mode==='dictation'){
+    const first=passage.querySelector('.blank');
+    if(first) onBlankClick(first);
+  }
+  if(mode==='dictation'){
+    lastAudioText=text;
+    setTimeout(()=>spk(text),300);
+    flash('Słuchaj i wpisz brakujące słowa.');
+  }
+  updateStats();
+}
+
+function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+/* =========================================================
+   Practice: click reveals / hides + speaks
+   Quiz & Dictation: click opens inline input
+   ========================================================= */
+function onBlankClick(el){
+  const idx=+el.dataset.idx, word=segments[idx].text;
+
+  if(mode==='practice'){
+    if(el.classList.contains('revealed')){
+      el.className='word blank'; el.textContent=word;
+      el.dataset.hint=hintFor(word);
+      markDone(idx,false);
+    } else {
+      el.className='word revealed'; el.textContent=word;
+      if(autoSpeakOn) spk(word);
+      markDone(idx,true);
+    }
+    updateStats(); return;
+  }
+
+  // quiz / dictation -> inline input
+  if(el.querySelector('input')) { el.querySelector('input').focus(); return; }
+  passage.querySelectorAll('.active-blank').forEach(b=>b.classList.remove('active-blank'));
+  activeBlank=idx;
+  el.classList.add('active-blank');
+
+  const inp=document.createElement('input');
+  inp.className='gap-input'; inp.size=Math.max(6,word.length);
+  inp.setAttribute('aria-label','Wpisz brakujące słowo');
+  el.textContent=''; el.classList.remove('blank'); el.appendChild(inp);
+  inp.focus();
+
+  inp.onkeydown=e=>{
+    if(e.key==='Enter'){ e.preventDefault(); submitGap(el,idx,inp.value); }
+    else if(e.key==='Tab'){ /* allow natural focus move after submit below */ }
+  };
+}
+
+function submitGap(el,idx,value){
+  const word=segments[idx].text;
+  const ok = normalize(value)===segments[idx].answer && value.trim()!=='';
+  el.innerHTML=''; el.textContent=word;
+  el.className='word '+(ok?'correct':'incorrect');
+  el.dataset.idx=idx;
+  el.onclick=()=>spk(word);
+  markDone(idx,ok);
+  if(autoSpeakOn) spk(word);
+  updateStats();
+
+  // move to next unfinished blank
+  const next=[...passage.querySelectorAll('.blank')][0];
+  if(next){ onBlankClick(next); }
+  else { activeBlank=null; finishRound(); }
+}
+
+function markDone(idx,correct){
+  const b=blanks.find(x=>x.segIdx===idx); if(!b) return;
+  b.done=true; b.correct=correct;
+}
+
+/* ---- Reveal all (practice) ---- */
+function revealAll(){
+  passage.querySelectorAll('.blank').forEach(el=>{
+    const idx=+el.dataset.idx, word=segments[idx].text;
+    el.className='word revealed'; el.textContent=word; markDone(idx,false);
+  });
+  updateStats();
+}
+
+/* ---- Check (quiz/dictation): reveal remaining + score ---- */
+function check(){
+  passage.querySelectorAll('.blank').forEach(el=>{
+    const idx=+el.dataset.idx, word=segments[idx].text;
+    el.innerHTML=''; el.textContent=word;
+    el.className='word incorrect'; el.onclick=()=>spk(word);
+    markDone(idx,false);
+  });
+  finishRound();
+}
+
+function finishRound(){
+  updateStats();
+  const total=blanks.length;
+  const right=blanks.filter(b=>b.correct).length;
+  const score=total?Math.round(right/total*100):0;
+  let msg,bg,col;
+  if(score>=90){msg=`🏆 Świetnie! Wynik: ${score}% (${right}/${total})`;col='var(--success)';}
+  else if(score>=70){msg=`👏 Dobra robota! Wynik: ${score}% (${right}/${total})`;col='var(--success)';}
+  else if(score>=50){msg=`💪 Nieźle! Wynik: ${score}% (${right}/${total}) — ćwicz dalej!`;col='var(--warn)';}
+  else{msg=`📚 Wynik: ${score}% (${right}/${total}). Spróbuj jeszcze raz!`;col='var(--danger)';}
+  bg=`color-mix(in srgb, ${col} 16%, transparent)`;
+  banner.innerHTML=`<div class="banner" style="background:${bg};color:${col}">${msg}</div>`;
+
+  // track best score
+  const best=parseInt(store.get('wb_best','0'),10);
+  if(score>best){ store.set('wb_best',score); }
+}
+
+/* =========================================================
+   Stats
+   ========================================================= */
+function updateStats(){
+  const total=wordRefs.length, hidden=blanks.length;
+  const done=blanks.filter(b=>b.done).length;
+  const answered=blanks.filter(b=>b.done && (mode!=='practice'));
+  $('sTotal').textContent=total;
+  $('sHidden').textContent=hidden;
+  $('sDone').textContent=done;
+  if(mode==='practice'||answered.length===0){ $('sAcc').textContent='—'; }
+  else{
+    const right=blanks.filter(b=>b.correct).length;
+    $('sAcc').textContent=Math.round(right/Math.max(1,done)*100)+'%';
+  }
+}
+
+/* =========================================================
+   Reset
+   ========================================================= */
+function reset(){
+  input.value='';
+  passage.innerHTML='<span class="empty">Wpisz tekst powyżej i kliknij „Generuj”. Kliknij dowolne słowo, żeby usłyszeć jego wymowę.</span>';
+  banner.innerHTML='';
+  segments=[];wordRefs=[];blanks=[];activeBlank=null;
+  if('speechSynthesis' in window) speechSynthesis.cancel();
+  updateStats();
+}
+
+/* =========================================================
+   Print worksheet + answer key
+   ========================================================= */
+function printWorksheet(){
+  if(!blanks.length){ flash('Najpierw wygeneruj tekst z lukami.'); return; }
+  let n=0; let body='';
+  segments.forEach((seg,idx)=>{
+    if(seg.type==='gap'){ body+=esc(seg.text); return; }
+    const b=blanks.find(x=>x.segIdx===idx);
+    if(b){ n++; body+=`<span class="gap">(${n}) ___________</span>`; }
+    else body+=esc(seg.text);
+  });
+  // build answer key in the order blanks appear in the text
+  let order=[];
+  segments.forEach((seg,idx)=>{ if(blanks.find(x=>x.segIdx===idx)) order.push(`<li>${esc(seg.text)}</li>`); });
+  const date=new Date().toLocaleDateString('pl-PL');
+  $('print').innerHTML=`
+    <h2>Karta pracy — uzupełnij luki</h2>
+    <div class="meta">Word Builder · ${date} · Imię i nazwisko: ______________________</div>
+    <div class="ptext">${body}</div>
+    <div class="key"><h3>Klucz odpowiedzi</h3><ol>${order.join('')}</ol></div>`;
+  window.print();
+}
+
+/* =========================================================
+   UI wiring
+   ========================================================= */
+function flash(msg){
+  const t=$('toast'); t.textContent=msg; t.classList.add('show');
+  clearTimeout(flash._t); flash._t=setTimeout(()=>t.classList.remove('show'),2200);
+}
+
+const MODE_HINTS={
+  practice:'Kliknij lukę, aby ją odkryć i usłyszeć wymowę. Kliknij ponownie, by ukryć.',
+  quiz:'Wpisz brakujące słowo i naciśnij Enter — sam przeskoczy do kolejnej luki.',
+  dictation:'Wszystkie słowa ukryte. Słuchaj nagrania (R = powtórz) i zapisz tekst ze słuchu.'
+};
+function setMode(m){
+  mode=m;
+  document.querySelectorAll('.mode-btn').forEach(b=>b.classList.toggle('active',b.dataset.mode===m));
+  $('modeHint').textContent=MODE_HINTS[m];
+  reset();
+}
+
+/* events */
+$('generate').onclick=generate;
+$('revealAll').onclick=revealAll;
+$('check').onclick=check;
+$('reset').onclick=reset;
+$('printBtn').onclick=printWorksheet;
+$('speakAll').onclick=()=>{ const t=passage.textContent.trim(); if(t){lastAudioText=t;spk(t);} };
+$('repeatAudio').onclick=()=>{ if(lastAudioText) spk(lastAudioText); else flash('Brak audio do powtórzenia.'); };
+$('autoSpeak').onclick=function(){ autoSpeakOn=!autoSpeakOn; this.classList.toggle('on',autoSpeakOn);
+  flash(autoSpeakOn?'Lektor słów: włączony':'Lektor słów: wyłączony'); };
+
+document.querySelectorAll('.mode-btn').forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
+
+pct.oninput=()=>{ pctVal.textContent=pct.value+'%'; pct.style.setProperty('--fill',((pct.value-10)/80*100)+'%'); };
+rate.oninput=()=>{ rateVal.textContent=parseFloat(rate.value).toFixed(2)+'×';
+  rate.style.setProperty('--fill',((rate.value-0.6)/0.6*100)+'%'); };
+
+$('themeToggle').onclick=function(){
+  const light=document.body.classList.toggle('light');
+  this.querySelector('i').className=light?'fa-solid fa-sun':'fa-solid fa-moon';
+  store.set('wb_theme',light?'light':'dark');
+};
+
+/* keyboard shortcuts */
+document.addEventListener('keydown',e=>{
+  if(e.target.tagName==='TEXTAREA'||e.target.tagName==='INPUT') return;
+  if(e.code==='Space'){ e.preventDefault(); $('speakAll').click(); }
+  if(e.key==='r'||e.key==='R'){ $('repeatAudio').click(); }
+});
+
+/* init */
+(function init(){
+  $('year').textContent=new Date().getFullYear();
+  buildSamples();
+  $('modeHint').textContent=MODE_HINTS.practice;
+  autoSpeakOn=true; $('autoSpeak').classList.add('on');
+  pct.dispatchEvent(new Event('input'));
+  rate.dispatchEvent(new Event('input'));
+  if(store.get('wb_theme','dark')==='light'){ $('themeToggle').click(); }
+  const saved=store.get('wb_text',''); if(saved) input.value=saved;
+})();
+
+/* ========= "JAK GRAC?" MODAL ========= */
+(function(){
+  const btn   = document.getElementById("htpBtn");
+  const modal = document.getElementById("htpModal");
+  const close = document.getElementById("htpClose");
+  if (!btn || !modal || !close) return;
+  const open  = () => modal.classList.add("show");
+  const hide  = () => modal.classList.remove("show");
+  btn.addEventListener("click", open);
+  close.addEventListener("click", hide);
+  modal.addEventListener("click", (e) => { if (e.target === modal) hide(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") hide(); });
+})();
+</script>
+
+<script src="consent.js"></script>
+</body>
+</html>
