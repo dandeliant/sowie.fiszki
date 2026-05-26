@@ -430,6 +430,8 @@ header{width:100%;display:flex;align-items:flex-start;justify-content:space-betw
 .duel-opt.duel-wrong{border-color:var(--danger)!important;background:rgba(255,118,117,.12)!important;color:var(--danger)!important;opacity:.5;}
 .duel-opt.duel-disabled{pointer-events:none;opacity:.5;}
 .duel-opt.duel-revealed{opacity:.3;text-decoration:line-through;}
+.duel-opt.duel-selected{border-color:var(--accent)!important;background:rgba(255,209,102,.18)!important;color:var(--accent)!important;box-shadow:0 0 0 3px rgba(255,209,102,.28);opacity:1!important;}
+.duel-opt.duel-selected::after{content:" ⏳";font-size:.85em;}
 .duel-emoji-fall{position:absolute;font-size:1.6rem;pointer-events:none;animation:duelEmojiDrop 1.5s ease-out forwards;z-index:9990;}
 @keyframes duelEmojiDrop{0%{opacity:1;transform:translateY(0) scale(1) rotate(0deg)}100%{opacity:0;transform:translateY(60vh) scale(.5) rotate(360deg)}}
 .duel-float-score{position:fixed;pointer-events:none;z-index:9991;font-weight:900;opacity:0;animation:duelFloat 1.2s ease-out forwards;}
@@ -11485,6 +11487,7 @@ let duelWrongStreak = [];    // [N] — dla eliminacji
 let duelEliminated = [];     // [N] — true/false
 let duelPowerUps = [];       // [N][] — tablice trzymanych power-upow
 let duelActiveBonus = {};    // { [playerIdx]: 'double'|'shield' } — aktywne bonusy do najbliższej odpowiedzi
+let duelRoundAnswers = [];   // [N] — odpowiedzi w biezacej rundzie: { chosen, btnEl, responseMs, ok } | null
 let duelRoundStart = 0;      // Date.now()
 let duelTimerHandle = null;
 let duelGameStart = 0;       // Date.now() — start calej gry (dla limitu czasu Klasyczny)
@@ -11913,6 +11916,7 @@ function _renderTFGrid() {
 
 function duelStartTimer() {
   duelRoundStart = Date.now();
+  duelRoundAnswers = new Array(duelConfig.playerCount).fill(null);
   if (duelTimerHandle) clearInterval(duelTimerHandle);
   const fill = document.getElementById('duelTimerFill');
   const preview = document.getElementById('duelPointsPreview');
@@ -11940,137 +11944,270 @@ function duelStartTimer() {
 function duelStopTimer() { if (duelTimerHandle) { clearInterval(duelTimerHandle); duelTimerHandle = null; } }
 
 function duelTimeOut() {
-  duelLocked = true;
   duelStopTimer();
+  // Gracze, ktorzy zdazyli odpowiedziec, dostaja punkty zgodnie z dotychczasowa logika.
+  // Ci, ktorzy nie odpowiedzieli — bez punktow, ale slowko liczone jako trudne.
+  let anyoneAnswered = false;
+  for (let i = 0; i < duelConfig.playerCount; i++) {
+    if (duelEliminated[i]) continue;
+    if (duelRoundAnswers[i]) { anyoneAnswered = true; break; }
+  }
+  if (anyoneAnswered) {
+    if (duelTab === 'tf') duelResolveTFRound();
+    else duelResolveQuizRound(duelWords[duelIdx][1]);
+    return;
+  }
   // Nikt nie odpowiedzial — pokaz poprawna, bez punktow
+  duelLocked = true;
   const r = document.getElementById('duelRoundResult');
   r.style.display = 'block';
   r.style.background = 'rgba(120,120,120,.15)'; r.style.color = 'var(--muted)';
   const correct = duelTab === 'tf' ? (duelTFCorrect ? 'Prawda' : 'Fałsz') : duelWords[duelIdx][1];
+  // Ujawnij poprawna na kolumnach (zeby uczen widzial)
+  if (duelTab === 'tf') {
+    document.querySelectorAll('#duelTFGrid .duel-opt').forEach(b => {
+      b.classList.add('duel-disabled');
+      const isPrawda = b.textContent.includes('Prawda');
+      if (isPrawda === duelTFCorrect) b.classList.add('duel-correct');
+    });
+  } else {
+    document.querySelectorAll('#duelPlayersGrid .duel-opt').forEach(b => {
+      b.classList.add('duel-disabled');
+      if (b.textContent === correct) b.classList.add('duel-correct');
+    });
+  }
   r.textContent = '⏰ Czas minął! Poprawnie: ' + correct;
-  // Zaznacz wszystkie słówko jako trudne
   duelStats.hardWords[duelWords[duelIdx][0]] = (duelStats.hardWords[duelWords[duelIdx][0]] || 0) + 1;
   setTimeout(() => { duelIdx++; duelRenderRound(); }, 1800);
 }
 
+// Czy wszyscy nie-wyeliminowani gracze juz odpowiedzieli w tej rundzie?
+function duelAllAnswered() {
+  if (!duelConfig) return false;
+  for (let i = 0; i < duelConfig.playerCount; i++) {
+    if (duelEliminated[i]) continue;
+    if (!duelRoundAnswers[i]) return false;
+  }
+  return true;
+}
+
+// Punkty za czas odpowiedzi — wariant z konkretnym ms (zamiast Date.now() w momencie wywolania)
+function duelPointsForElapsed(elapsedMs) {
+  const elapsedSec = elapsedMs / 1000;
+  const pts = Math.round(DUEL_POINTS_MAX - elapsedSec * 1);
+  return Math.max(DUEL_POINTS_MIN, Math.min(DUEL_POINTS_MAX, pts));
+}
+
 function duelAnswer(playerIdx, chosen, correct, btnEl) {
   if (duelLocked || duelEliminated[playerIdx]) return;
-  duelLocked = true;
-  duelStopTimer();
+  if (duelRoundAnswers[playerIdx]) return; // ten gracz juz odpowiedzial w tej rundzie
+
   const responseMs = Date.now() - duelRoundStart;
   const ok = chosen === correct;
-  const p = duelConfig.players[playerIdx];
-  const col = DUEL_COLOR_PALETTE[p.colorIdx];
+  duelRoundAnswers[playerIdx] = { chosen, btnEl, responseMs, ok };
 
-  duelStats.total[playerIdx]++;
-  if (!duelStats.fastest[playerIdx] || responseMs < duelStats.fastest[playerIdx]) duelStats.fastest[playerIdx] = responseMs;
+  // Wizualnie: pokaz wybor gracza (neutralny, bez ujawniania czy dobrze/zle)
+  btnEl.classList.add('duel-selected');
+  // Zablokuj TYLKO kolumne tego gracza (pozostali wciaz wybieraja)
+  const cols = document.querySelectorAll('#duelPlayersGrid .duel-player-col');
+  if (cols[playerIdx]) {
+    cols[playerIdx].querySelectorAll('.duel-opt').forEach(b => {
+      if (b !== btnEl) b.classList.add('duel-disabled');
+    });
+  }
+  // Drobny sound feedback (neutralny tick — gracz wie ze wybor zarejestrowany)
+  duelPlaySound('tick');
 
-  // Zablokuj wszystkie przyciski we wszystkich kolumnach
+  if (duelAllAnswered()) {
+    duelResolveQuizRound(correct);
+  }
+}
+
+// Ujawnienie rundy quiz: ujawnij poprawna odpowiedz wszystkim, naliczy punkty kazdemu, podsumuj
+function duelResolveQuizRound(correct) {
+  duelLocked = true;
+  duelStopTimer();
+
+  let fastestCorrectMs = Infinity;
+  let fastestCorrectIdx = -1;
+  const summary = []; // do bannera podsumowujacego
+
+  for (let i = 0; i < duelConfig.playerCount; i++) {
+    if (duelEliminated[i]) continue;
+    const ans = duelRoundAnswers[i];
+    if (!ans) continue; // gracz nie zdazyl (np. timer wygasl)
+    const { btnEl, responseMs, ok } = ans;
+    const p = duelConfig.players[i];
+    const col = DUEL_COLOR_PALETTE[p.colorIdx];
+
+    duelStats.total[i]++;
+    if (!duelStats.fastest[i] || responseMs < duelStats.fastest[i]) duelStats.fastest[i] = responseMs;
+
+    if (ok) {
+      let pts = duelPointsForElapsed(responseMs);
+      duelStreak[i]++;
+      duelStats.correct[i]++;
+      if (duelStreak[i] > duelStats.longestStreak[i]) duelStats.longestStreak[i] = duelStreak[i];
+      duelWrongStreak[i] = 0;
+      if (duelStreak[i] >= DUEL_STREAK_BONUS) pts = Math.round(pts * 1.5);
+      if (duelActiveBonus[i] === 'double') { pts *= 2; delete duelActiveBonus[i]; }
+      btnEl.classList.remove('duel-selected');
+      btnEl.classList.add('duel-correct');
+      duelScore[i] += pts;
+      duelSpawnEmojis(i);
+      duelFloatScorePop(btnEl, '+' + pts, col.border);
+      summary.push(duelPlayerLabel(i) + ' +' + pts);
+      if (responseMs < fastestCorrectMs) { fastestCorrectMs = responseMs; fastestCorrectIdx = i; }
+    } else {
+      duelStreak[i] = 0;
+      duelWrongStreak[i]++;
+      btnEl.classList.remove('duel-selected');
+      btnEl.classList.add('duel-wrong');
+      let loss = DUEL_PENALTY;
+      if (duelActiveBonus[i] === 'shield') { loss = 0; delete duelActiveBonus[i]; }
+      duelScore[i] = Math.max(0, duelScore[i] - loss);
+      duelStats.hardWords[duelWords[duelIdx][0]] = (duelStats.hardWords[duelWords[duelIdx][0]] || 0) + 1;
+      if (duelConfig.gameMode === 'elimination' && duelWrongStreak[i] >= 3) duelEliminated[i] = true;
+      summary.push(duelPlayerLabel(i) + (loss === 0 ? ' 🛡️' : ' −' + loss));
+    }
+  }
+
+  // Ujawnij poprawna na wszystkich kolumnach + zablokuj wszystkie przyciski
   document.querySelectorAll('#duelPlayersGrid .duel-opt').forEach(b => {
     b.classList.add('duel-disabled');
-    if (b.textContent === correct) b.classList.add('duel-correct');
+    if (b.textContent === correct && !b.classList.contains('duel-correct') && !b.classList.contains('duel-wrong')) {
+      b.classList.add('duel-correct');
+    }
   });
 
-  if (ok) {
-    let pts = duelCurrentPoints();
-    duelStreak[playerIdx]++;
-    duelStats.correct[playerIdx]++;
-    if (duelStreak[playerIdx] > duelStats.longestStreak[playerIdx]) duelStats.longestStreak[playerIdx] = duelStreak[playerIdx];
-    duelWrongStreak[playerIdx] = 0;
-    // FIRE STREAK bonus (3+ z rzedu) = +50%
-    if (duelStreak[playerIdx] >= DUEL_STREAK_BONUS) pts = Math.round(pts * 1.5);
-    // Aktywny bonus "double"
-    if (duelActiveBonus[playerIdx] === 'double') { pts *= 2; delete duelActiveBonus[playerIdx]; }
-    btnEl.classList.add('duel-correct');
-    duelScore[playerIdx] += pts;
-    spkForeign(correct);
-    duelPlaySound('ok');
-    duelSpawnEmojis(playerIdx);
-    duelFloatScorePop(btnEl, '+' + pts, col.border);
-    const r = document.getElementById('duelRoundResult');
-    r.style.display = 'block';
-    r.style.background = col.bg; r.style.color = col.border;
-    r.textContent = duelPlayerLabel(playerIdx) + ' +' + pts + ' pkt! · ' + correct;
-  } else {
-    duelStreak[playerIdx] = 0;
-    duelWrongStreak[playerIdx]++;
-    btnEl.classList.add('duel-wrong');
-    let loss = DUEL_PENALTY;
-    if (duelActiveBonus[playerIdx] === 'shield') { loss = 0; delete duelActiveBonus[playerIdx]; }
-    duelScore[playerIdx] = Math.max(0, duelScore[playerIdx] - loss);
-    duelStats.hardWords[duelWords[duelIdx][0]] = (duelStats.hardWords[duelWords[duelIdx][0]] || 0) + 1;
-    duelPlaySound('bad');
-    // Eliminacja: 3 złe z rzedu = eliminacja
-    if (duelConfig.gameMode === 'elimination' && duelWrongStreak[playerIdx] >= 3) {
-      duelEliminated[playerIdx] = true;
-    }
-    const r = document.getElementById('duelRoundResult');
-    r.style.display = 'block';
-    r.style.background = 'rgba(255,118,117,.12)'; r.style.color = 'var(--danger)';
-    r.textContent = duelPlayerLabel(playerIdx) + ' ' + (loss === 0 ? '🛡️ Shield! 0 pkt' : '−' + loss + ' pkt!') + ' · Poprawnie: ' + correct;
-    spkForeign(correct);
-  }
-  // Co DUEL_POWER_UP_EVERY rund — przyznaj losowo power-up zwyciezcy rundy (tylko przy ok)
-  if (ok && (duelIdx + 1) % DUEL_POWER_UP_EVERY === 0 && duelPowerUps[playerIdx].length < 3) {
+  // Dzwiek: ok jesli ktokolwiek odpowiedzial poprawnie, w innym wypadku bad
+  duelPlaySound(fastestCorrectIdx >= 0 ? 'ok' : 'bad');
+  spkForeign(correct);
+
+  // Power-up — najszybszej poprawnej odpowiedzi (co DUEL_POWER_UP_EVERY rund)
+  if (fastestCorrectIdx >= 0
+      && (duelIdx + 1) % DUEL_POWER_UP_EVERY === 0
+      && duelPowerUps[fastestCorrectIdx].length < 3) {
     const pu = DUEL_POWER_UPS[Math.floor(Math.random() * DUEL_POWER_UPS.length)];
-    duelPowerUps[playerIdx].push(pu);
-    setTimeout(() => toast('🎁 ' + duelPlayerLabel(playerIdx) + ' zdobywa power-up: ' + pu + '!', 2400), 600);
+    duelPowerUps[fastestCorrectIdx].push(pu);
+    setTimeout(() => toast('🎁 ' + duelPlayerLabel(fastestCorrectIdx) + ' zdobywa power-up: ' + pu + '!', 2400), 600);
   }
-  setTimeout(() => { duelIdx++; duelRenderRound(); }, 2200);
+
+  // Podsumowanie rundy
+  const r = document.getElementById('duelRoundResult');
+  r.style.display = 'block';
+  if (fastestCorrectIdx >= 0) {
+    const col = DUEL_COLOR_PALETTE[duelConfig.players[fastestCorrectIdx].colorIdx];
+    r.style.background = col.bg; r.style.color = col.border;
+    r.textContent = '🏆 ' + correct + ' · ' + summary.join(' · ');
+  } else {
+    r.style.background = 'rgba(255,118,117,.12)'; r.style.color = 'var(--danger)';
+    r.textContent = 'Poprawnie: ' + correct + (summary.length ? ' · ' + summary.join(' · ') : '');
+  }
+
+  setTimeout(() => { duelIdx++; duelRenderRound(); }, 2500);
 }
 
 function duelTFAnswer(playerIdx, userSaysTrue, btnEl) {
   if (duelLocked || duelEliminated[playerIdx]) return;
+  if (duelRoundAnswers[playerIdx]) return; // ten gracz juz odpowiedzial
+
+  const responseMs = Date.now() - duelRoundStart;
+  const ok = (userSaysTrue === duelTFCorrect);
+  duelRoundAnswers[playerIdx] = { chosen: userSaysTrue, btnEl, responseMs, ok };
+
+  // Wizualnie: zaznacz wybor (neutralnie)
+  btnEl.classList.add('duel-selected');
+  // Zablokuj tylko kolumne tego gracza
+  const cols = document.querySelectorAll('#duelTFGrid .duel-player-col');
+  if (cols[playerIdx]) {
+    cols[playerIdx].querySelectorAll('.duel-opt').forEach(b => {
+      if (b !== btnEl) b.classList.add('duel-disabled');
+    });
+  }
+  duelPlaySound('tick');
+
+  if (duelAllAnswered()) {
+    duelResolveTFRound();
+  }
+}
+
+// Ujawnienie rundy TF: dla kazdego gracza naliczy punkty, ujawnij prawde
+function duelResolveTFRound() {
   duelLocked = true;
   duelStopTimer();
-  const ok = (userSaysTrue === duelTFCorrect);
   const [pl, en] = duelWords[duelIdx];
-  const p = duelConfig.players[playerIdx];
-  const col = DUEL_COLOR_PALETTE[p.colorIdx];
-  duelStats.total[playerIdx]++;
-  const responseMs = Date.now() - duelRoundStart;
-  if (!duelStats.fastest[playerIdx] || responseMs < duelStats.fastest[playerIdx]) duelStats.fastest[playerIdx] = responseMs;
-  // Zablokuj wszystkie
-  document.querySelectorAll('#duelTFGrid .duel-opt').forEach(b => { b.classList.add('duel-disabled'); });
-  if (ok) {
-    let pts = duelCurrentPoints();
-    duelStreak[playerIdx]++;
-    duelStats.correct[playerIdx]++;
-    if (duelStreak[playerIdx] > duelStats.longestStreak[playerIdx]) duelStats.longestStreak[playerIdx] = duelStreak[playerIdx];
-    duelWrongStreak[playerIdx] = 0;
-    if (duelStreak[playerIdx] >= DUEL_STREAK_BONUS) pts = Math.round(pts * 1.5);
-    if (duelActiveBonus[playerIdx] === 'double') { pts *= 2; delete duelActiveBonus[playerIdx]; }
-    btnEl.classList.add('duel-correct');
-    duelScore[playerIdx] += pts;
-    spkForeign(en);
-    duelPlaySound('ok');
-    duelSpawnEmojis(playerIdx);
-    duelFloatScorePop(btnEl, '+' + pts, col.border);
-    const r = document.getElementById('duelRoundResult');
-    r.style.display = 'block';
-    r.style.background = col.bg; r.style.color = col.border;
-    r.textContent = duelPlayerLabel(playerIdx) + ' +' + pts + ' pkt! · ' + pl + ' = ' + en;
-  } else {
-    duelStreak[playerIdx] = 0;
-    duelWrongStreak[playerIdx]++;
-    btnEl.classList.add('duel-wrong');
-    let loss = DUEL_PENALTY;
-    if (duelActiveBonus[playerIdx] === 'shield') { loss = 0; delete duelActiveBonus[playerIdx]; }
-    duelScore[playerIdx] = Math.max(0, duelScore[playerIdx] - loss);
-    duelPlaySound('bad');
-    if (duelConfig.gameMode === 'elimination' && duelWrongStreak[playerIdx] >= 3) duelEliminated[playerIdx] = true;
-    const r = document.getElementById('duelRoundResult');
-    r.style.display = 'block';
-    r.style.background = 'rgba(255,118,117,.12)'; r.style.color = 'var(--danger)';
-    r.textContent = duelPlayerLabel(playerIdx) + ' ' + (loss === 0 ? '🛡️ Shield!' : '−' + loss + ' pkt') + ' · ' + pl + ' = ' + en;
-    spkForeign(en);
+
+  let fastestCorrectMs = Infinity;
+  let fastestCorrectIdx = -1;
+  const summary = [];
+
+  for (let i = 0; i < duelConfig.playerCount; i++) {
+    if (duelEliminated[i]) continue;
+    const ans = duelRoundAnswers[i];
+    if (!ans) continue;
+    const { btnEl, responseMs, ok } = ans;
+    const p = duelConfig.players[i];
+    const col = DUEL_COLOR_PALETTE[p.colorIdx];
+
+    duelStats.total[i]++;
+    if (!duelStats.fastest[i] || responseMs < duelStats.fastest[i]) duelStats.fastest[i] = responseMs;
+
+    if (ok) {
+      let pts = duelPointsForElapsed(responseMs);
+      duelStreak[i]++;
+      duelStats.correct[i]++;
+      if (duelStreak[i] > duelStats.longestStreak[i]) duelStats.longestStreak[i] = duelStreak[i];
+      duelWrongStreak[i] = 0;
+      if (duelStreak[i] >= DUEL_STREAK_BONUS) pts = Math.round(pts * 1.5);
+      if (duelActiveBonus[i] === 'double') { pts *= 2; delete duelActiveBonus[i]; }
+      btnEl.classList.remove('duel-selected');
+      btnEl.classList.add('duel-correct');
+      duelScore[i] += pts;
+      duelSpawnEmojis(i);
+      duelFloatScorePop(btnEl, '+' + pts, col.border);
+      summary.push(duelPlayerLabel(i) + ' +' + pts);
+      if (responseMs < fastestCorrectMs) { fastestCorrectMs = responseMs; fastestCorrectIdx = i; }
+    } else {
+      duelStreak[i] = 0;
+      duelWrongStreak[i]++;
+      btnEl.classList.remove('duel-selected');
+      btnEl.classList.add('duel-wrong');
+      let loss = DUEL_PENALTY;
+      if (duelActiveBonus[i] === 'shield') { loss = 0; delete duelActiveBonus[i]; }
+      duelScore[i] = Math.max(0, duelScore[i] - loss);
+      if (duelConfig.gameMode === 'elimination' && duelWrongStreak[i] >= 3) duelEliminated[i] = true;
+      summary.push(duelPlayerLabel(i) + (loss === 0 ? ' 🛡️' : ' −' + loss));
+    }
   }
-  if (ok && (duelIdx + 1) % DUEL_POWER_UP_EVERY === 0 && duelPowerUps[playerIdx].length < 3) {
+
+  // Zablokuj wszystkie przyciski TF
+  document.querySelectorAll('#duelTFGrid .duel-opt').forEach(b => b.classList.add('duel-disabled'));
+
+  duelPlaySound(fastestCorrectIdx >= 0 ? 'ok' : 'bad');
+  spkForeign(en);
+
+  if (fastestCorrectIdx >= 0
+      && (duelIdx + 1) % DUEL_POWER_UP_EVERY === 0
+      && duelPowerUps[fastestCorrectIdx].length < 3) {
     const pu = DUEL_POWER_UPS[Math.floor(Math.random() * DUEL_POWER_UPS.length)];
-    duelPowerUps[playerIdx].push(pu);
-    setTimeout(() => toast('🎁 ' + duelPlayerLabel(playerIdx) + ' zdobywa power-up: ' + pu + '!', 2400), 600);
+    duelPowerUps[fastestCorrectIdx].push(pu);
+    setTimeout(() => toast('🎁 ' + duelPlayerLabel(fastestCorrectIdx) + ' zdobywa power-up: ' + pu + '!', 2400), 600);
   }
-  setTimeout(() => { duelIdx++; duelRenderRound(); }, 2200);
+
+  const r = document.getElementById('duelRoundResult');
+  r.style.display = 'block';
+  const verdict = duelTFCorrect ? '✅ Prawda' : '❌ Fałsz';
+  if (fastestCorrectIdx >= 0) {
+    const col = DUEL_COLOR_PALETTE[duelConfig.players[fastestCorrectIdx].colorIdx];
+    r.style.background = col.bg; r.style.color = col.border;
+    r.textContent = verdict + ' · ' + pl + ' = ' + en + ' · ' + summary.join(' · ');
+  } else {
+    r.style.background = 'rgba(255,118,117,.12)'; r.style.color = 'var(--danger)';
+    r.textContent = verdict + ' · ' + pl + ' = ' + en + (summary.length ? ' · ' + summary.join(' · ') : '');
+  }
+
+  setTimeout(() => { duelIdx++; duelRenderRound(); }, 2500);
 }
 
 window.duelUsePowerUp = function(playerIdx, powerUp) {
