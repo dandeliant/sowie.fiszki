@@ -62,8 +62,42 @@
         headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY }
       });
       const d = await r.json();
-      return d && d.length ? d[0].status : null;
+      const status = d && d.length ? d[0].status : null;
+      if (status === 'finished') return 'finished';
+      // Czy nasz player nadal istnieje? (host moze wykluczyc gracza)
+      if (SF_LIVE.playerId) {
+        try {
+          const r2 = await fetch(SUPABASE_URL + '/rest/v1/live_game_players?id=eq.' + encodeURIComponent(SF_LIVE.playerId) + '&select=id', {
+            headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY }
+          });
+          const d2 = await r2.json();
+          if (Array.isArray(d2) && d2.length === 0) return 'kicked';
+        } catch(e) {}
+      }
+      return status;
     } catch(e) { return null; }
+  }
+
+  function showKickedOverlay() {
+    // Zatrzymaj wszystkie timery + akcje gry (best-effort)
+    _ended = true;
+    if (document.getElementById('sfLiveKickedOverlay')) return;
+    const ov = document.createElement('div');
+    ov.id = 'sfLiveKickedOverlay';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(120,30,30,.96);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;font-family:Nunito,system-ui,sans-serif';
+    const safeNick = (SF_LIVE.nick || 'gracz').replace(/[<>&"]/g, '');
+    ov.innerHTML =
+      '<div style="background:rgba(40,10,10,.98);border:2px solid #ff6b6b;border-radius:24px;padding:32px 28px;text-align:center;max-width:440px;width:100%;color:#fff;box-shadow:0 30px 60px rgba(0,0,0,.5)">' +
+      '<div style="font-size:4rem;margin-bottom:8px">🚫</div>' +
+      '<div style="font-family:Fredoka,sans-serif;font-size:1.4rem;color:#ff6b6b;margin-bottom:8px">Zostałeś usunięty z gry</div>' +
+      '<div style="font-size:.94rem;color:rgba(255,255,255,.85);line-height:1.5;margin-bottom:18px">' + safeNick + ', nauczyciel usunął Cię z tej rundy. Jeśli chcesz dołączyć ponownie — wpisz PIN.</div>' +
+      '<button id="sfLiveKickedBtn" type="button" style="background:#ff6b6b;color:#fff;border:none;padding:11px 26px;border-radius:999px;font-family:inherit;font-weight:800;font-size:.95rem;cursor:pointer">↩️ Wpisz PIN ponownie</button>' +
+      '</div>';
+    document.body.appendChild(ov);
+    const btn = document.getElementById('sfLiveKickedBtn');
+    if (btn) btn.addEventListener('click', () => { location.href = 'app.html'; });
+    // Auto-redirect po 6 s na wypadek, gdyby uczen nie kliknal
+    setTimeout(() => { if (document.getElementById('sfLiveKickedOverlay')) location.href = 'app.html'; }, 6000);
   }
 
   function showOverlay(score) {
@@ -106,6 +140,9 @@
         if (_scoreGetter) await pushScore(_scoreGetter() || 0);
         stopTimers();
         location.href = 'app.html';
+      } else if (st === 'kicked') {
+        stopTimers();
+        showKickedOverlay();
       }
     }, 5000);
     if (SF_LIVE.timeLimit > 0) {

@@ -19480,6 +19480,11 @@ if ('serviceWorker' in navigator) {
         // 1) Lista graczy — odświeżaj tylko w lobby (status='waiting')
         if (_liveGame.status === 'waiting') {
           const fresh = await DB.getLiveGamePlayers(_liveGame.id);
+          // Gracz: jesli nie ma juz mnie na liscie — host mnie wyrzucil
+          if (!_liveIsHost && _livePlayer && !fresh.some(p => p.id === _livePlayer.id)) {
+            _handleKickedFromLive();
+            return;
+          }
           if (fresh.length !== _livePlayers.length || fresh.some((p,i) => !_livePlayers[i] || _livePlayers[i].id !== p.id)) {
             _livePlayers = fresh;
             _renderLivePlayers();
@@ -19534,6 +19539,11 @@ if ('serviceWorker' in navigator) {
           try {
             const ans = await DB.getLiveAnswersForQuestion(_liveGame.id, _liveGame.currentQuestion || 0);
             const players = await DB.getLiveGamePlayers(_liveGame.id);
+            // Czy host mnie wykluczyl w trakcie quizu?
+            if (_livePlayer && !players.some(p => p.id === _livePlayer.id)) {
+              _handleKickedFromLive();
+              return;
+            }
             if (players.length > 0 && ans.length >= players.length) {
               _lqPlayerReveal();
             }
@@ -19545,7 +19555,18 @@ if ('serviceWorker' in navigator) {
     // Subscribe Realtime — szybsze niż polling gdy zadziała
     _liveSubPlayers = DB.subscribeLiveGamePlayers(_liveGame.id, async (payload) => {
       try {
+        // Szybka sciezka: DELETE wlasnego rekordu = kick (bez ponownego fetch)
+        if (!_liveIsHost && _livePlayer && payload && payload.eventType === 'DELETE'
+            && payload.old && payload.old.id === _livePlayer.id) {
+          _handleKickedFromLive();
+          return;
+        }
         _livePlayers = await DB.getLiveGamePlayers(_liveGame.id);
+        // Fallback: sprawdz po refetchu (gdy event nie zawiera old.id)
+        if (!_liveIsHost && _livePlayer && !_livePlayers.some(p => p.id === _livePlayer.id)) {
+          _handleKickedFromLive();
+          return;
+        }
         _renderLivePlayers();
       } catch(e) {}
     });
@@ -19563,19 +19584,77 @@ if ('serviceWorker' in navigator) {
 
   function _renderLivePlayers() {
     const html = _livePlayers.map(p => {
+      if (_liveIsHost) {
+        // Host widzi przycisk usun (❌) przy kazdym graczu
+        return '<span style="display:inline-flex;align-items:center;gap:6px;background:var(--surface);border:1px solid rgba(255,209,102,.4);border-radius:100px;padding:5px 6px 5px 12px;font-size:.78rem;font-weight:700;color:var(--text)">👤 ' + esc(p.nickname) +
+          '<button type="button" class="lobby-kick-btn" data-pid="' + esc(p.id) + '" data-nick="' + esc(p.nickname) + '" title="Usuń gracza" aria-label="Usuń gracza ' + esc(p.nickname) + '" style="background:rgba(255,118,117,.18);border:1px solid rgba(255,118,117,.45);color:var(--danger);border-radius:50%;width:22px;height:22px;font-size:.7rem;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;padding:0;line-height:1">✕</button></span>';
+      }
       return '<span style="display:inline-flex;align-items:center;gap:4px;background:var(--surface);border:1px solid rgba(255,209,102,.4);border-radius:100px;padding:5px 12px;font-size:.78rem;font-weight:700;color:var(--text)">👤 ' + esc(p.nickname) + '</span>';
     }).join('');
     const empty = '<span style="color:var(--muted);font-size:.74rem;font-weight:600;font-style:italic">Brak graczy — czekamy…</span>';
     const cnt = _livePlayers.length;
     if (_liveIsHost) {
       document.getElementById('liveLobbyPlayerCount').textContent = cnt;
-      document.getElementById('liveLobbyPlayerList').innerHTML = html || empty;
+      const listEl = document.getElementById('liveLobbyPlayerList');
+      listEl.innerHTML = html || empty;
+      // Attach klik dla przycisku usun
+      listEl.querySelectorAll('.lobby-kick-btn').forEach(btn => {
+        btn.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          const pid = btn.getAttribute('data-pid');
+          const nick = btn.getAttribute('data-nick') || 'gracz';
+          _kickLivePlayer(pid, nick);
+        });
+      });
       const startBtn = document.getElementById('liveLobbyStartBtn');
       if (startBtn) startBtn.disabled = (cnt < 1);
     } else {
       document.getElementById('liveLobbyPlayerCountP').textContent = cnt;
       document.getElementById('liveLobbyPlayerListP').innerHTML = html || empty;
     }
+  }
+
+  // Host: usun gracza z gry (np. nieodpowiedni nick).
+  // Po stronie gracza: polling/realtime wykryje brak wlasnego id i pokaze
+  // ekran wpisywania PIN-u od nowa (_handleKickedFromLive).
+  async function _kickLivePlayer(playerId, nickname) {
+    if (!_liveIsHost || !_liveGame || !playerId) return;
+    if (!confirm('Usunąć gracza „' + nickname + '" z gry?\nGracz straci połączenie i będzie musiał wpisać PIN ponownie.')) return;
+    try {
+      await DB.kickLivePlayer(playerId);
+      // Optymistycznie usun z lokalnej listy (polling i tak odswiezy)
+      _livePlayers = _livePlayers.filter(p => p.id !== playerId);
+      _renderLivePlayers();
+      if (typeof toast === 'function') toast('🚫 Gracz „' + nickname + '" został usunięty z gry', 2600);
+    } catch(e) {
+      console.warn('[kickLivePlayer]', e);
+      if (typeof toast === 'function') toast('Nie udało się usunąć gracza: ' + (e.message || e), 3500);
+    }
+  }
+
+  // Gracz: zostal usuniety przez gospodarza — sprzatamy stan i wracamy do PIN-u.
+  function _handleKickedFromLive() {
+    if (_liveIsHost) return; // tylko gracz
+    const wasPin = _liveGame?.pin || '';
+    try { if (_livePollTimer) { clearInterval(_livePollTimer); _livePollTimer = null; } } catch(e) {}
+    try { if (_lqTimerInterval) { clearInterval(_lqTimerInterval); _lqTimerInterval = null; } } catch(e) {}
+    try { if (_lqAutoNextTimer) { clearTimeout(_lqAutoNextTimer); _lqAutoNextTimer = null; } } catch(e) {}
+    try { if (_lrPollTimer) { clearInterval(_lrPollTimer); _lrPollTimer = null; } } catch(e) {}
+    try { if (_lrTimerInterval) { clearInterval(_lrTimerInterval); _lrTimerInterval = null; } } catch(e) {}
+    try { if (_liveSubGame) DB.unsubscribeLive(_liveSubGame); } catch(e) {}
+    try { if (_liveSubPlayers) DB.unsubscribeLive(_liveSubPlayers); } catch(e) {}
+    _liveSubGame = null; _liveSubPlayers = null;
+    _liveGame = null; _liveIsHost = false; _livePlayer = null; _livePlayers = [];
+    try { sessionStorage.removeItem('fiszki_live'); } catch(e) {}
+    if (typeof toast === 'function') toast('⚠️ Nauczyciel usunął Cię z gry. Możesz dołączyć ponownie wpisując PIN.', 5500);
+    // Pokaz ekran PIN, wyczysc nick, ewentualnie prefilluj PIN
+    try {
+      const pinEl = document.getElementById('liveJoinPinInput');
+      const nickEl = document.getElementById('liveJoinNickInput');
+      if (pinEl) pinEl.value = wasPin;
+      if (nickEl) nickEl.value = '';
+    } catch(e) {}
+    if (typeof showScreen === 'function') showScreen('sLiveJoin');
   }
 
   function _renderLiveQR() {
