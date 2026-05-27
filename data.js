@@ -1317,6 +1317,33 @@ const BOOKS = {
           ['Nie ma żadnych restauracji.', "There aren't any restaurants."],
         ]
       },
+      unit6: {
+        name: 'Unit 6', icon: '🏞️', color: '#fdcb6e',
+        words: [
+          ['robić zdjęcia', 'taking photos', '📸'],
+          ['puszczać latawiec', 'flying a kite', '🪁'],
+          ['urządzać piknik', 'having a picnic', '🧺'],
+          ['łowić ryby', 'fishing', '🎣'],
+          ['zbierać muszle', 'collecting shells', '🐚'],
+          ['budować zamek z piasku', 'building a sandcastle', '🏰'],
+          ['nurkować z rurką', 'snorkelling', '🤿'],
+          ['rozpalać ognisko', 'making a fire', '🔥'],
+          ['chodzić po górach, wędrować', 'hiking', '🥾'],
+          ['plaża', 'beach', '🏖️'],
+          ['góry', 'mountains', '⛰️'],
+          ['las', 'forest', '🌲'],
+          ['jezioro', 'lake', '🏞️'],
+          ['miasto', 'city', '🏙️'],
+          ['wieś', 'village', '🏘️'],
+          ['Ja zbieram muszle.', "I'm collecting shells."],
+          ['On łowi ryby.', "He's fishing."],
+          ['Ona robi zdjęcia.', "She's taking photos."],
+          ['My łowimy ryby nad jeziorem.', "We're fishing in the lake."],
+          ['Ty robisz zdjęcia w górach.', "You're taking photos in the mountains."],
+          ['Oni budują zamek z piasku na plaży.', "They're building a sandcastle on the beach."],
+          ['Jesteśmy w lesie.', "We're in the forest."],
+        ]
+      },
     }
   }
 
