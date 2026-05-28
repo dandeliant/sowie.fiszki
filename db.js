@@ -2992,10 +2992,14 @@ const DB = (() => {
     delete _bookAccessOverrides[bookId];
   }
 
-  // ── WORD AUDIO (migracja #28) ───────────────────────────────
-  // Custom nagrania wymowy słówek przez admina/nauczyciela z mikrofonu.
-  // Cache: book_id|unit_key|word_pl → audio_url
+  // ── WORD AUDIO (migracje #28 + #41) ─────────────────────────
+  // Custom nagrania wymowy slowek przez admina/nauczyciela z mikrofonu.
+  // Migracja #41 rozszerza schemat o ODRĘBNE nagrania PL i EN per slowo.
+  // Cache: book_id|unit_key|word_pl → { en: url|null, pl: url|null }
   let _wordAudioCache = {};
+  // Czy baza obsluguje juz kolumny *_pl/*_en (migracja #41)?
+  // Wykrywane przy pierwszym loadWordAudioCache().
+  let _wordAudioBilingual = null;
 
   function getWordAudioCache() { return _wordAudioCache || {}; }
 
@@ -3003,61 +3007,97 @@ const DB = (() => {
     return bookId + '|' + unitKey + '|' + wordPl;
   }
 
-  // Sprawdza czy istnieje custom nagranie dla danego słowa.
+  // Sprawdza czy istnieje custom nagranie dla slowa w danym jezyku.
+  // lang: 'en' (domyslny — zgodnie z poprzednim API) lub 'pl'.
   // Zwraca URL audio lub null.
-  function getWordAudioUrl(bookId, unitKey, wordPl) {
+  function getWordAudioUrl(bookId, unitKey, wordPl, lang) {
     if (!bookId || !unitKey || !wordPl) return null;
-    return _wordAudioCache[_waKey(bookId, unitKey, wordPl)] || null;
+    const entry = _wordAudioCache[_waKey(bookId, unitKey, wordPl)];
+    if (!entry) return null;
+    // Wsteczna kompatybilnosc: stary kod (bez argumentu lang)
+    // dostawal URL EN — zachowujemy to zachowanie.
+    const l = (lang === 'pl') ? 'pl' : 'en';
+    if (typeof entry === 'string') return l === 'en' ? entry : null;
+    return entry[l] || null;
   }
 
   async function loadWordAudioCache() {
+    // Najpierw probujemy nowe kolumny (migracja #41)
+    try {
+      const { data, error } = await supabase
+        .from('word_audio')
+        .select('book_id, unit_key, word_pl, audio_url, audio_url_en, audio_url_pl');
+      if (!error) {
+        _wordAudioBilingual = true;
+        const map = {};
+        (data || []).forEach(r => {
+          const en = r.audio_url_en || r.audio_url || null;
+          const pl = r.audio_url_pl || null;
+          if (en || pl) map[_waKey(r.book_id, r.unit_key, r.word_pl)] = { en, pl };
+        });
+        _wordAudioCache = map;
+        return map;
+      }
+      console.warn('[loadWordAudioCache] bilingual columns niedostepne, fallback:', error.message);
+    } catch(e) { /* fall through */ }
+    // Fallback: stary schemat (przed migracja #41) — tylko audio_url (EN)
     try {
       const { data, error } = await supabase
         .from('word_audio')
         .select('book_id, unit_key, word_pl, audio_url');
       if (error) {
-        // Tabela może jeszcze nie istnieć (przed migracją #28)
-        console.warn('[loadWordAudioCache] niedostępna:', error.message);
+        console.warn('[loadWordAudioCache] niedostepna:', error.message);
         _wordAudioCache = {};
+        _wordAudioBilingual = false;
         return _wordAudioCache;
       }
+      _wordAudioBilingual = false;
       const map = {};
       (data || []).forEach(r => {
-        map[_waKey(r.book_id, r.unit_key, r.word_pl)] = r.audio_url;
+        if (r.audio_url) map[_waKey(r.book_id, r.unit_key, r.word_pl)] = { en: r.audio_url, pl: null };
       });
       _wordAudioCache = map;
       return map;
     } catch (e) {
       console.warn('[loadWordAudioCache] error:', e.message);
       _wordAudioCache = {};
+      _wordAudioBilingual = false;
       return _wordAudioCache;
     }
   }
 
-  // Upload Blob (np. z MediaRecorder) do bucket „word-audio" + zapis URL
-  // do tabeli word_audio. Tylko admin / nauczyciel. Nadpisuje istniejące.
-  async function uploadWordAudio(blob, bookId, unitKey, wordPl) {
+  // Upload Blob (z MediaRecorder) do bucket „word-audio" + zapis URL
+  // do tabeli word_audio. Tylko admin / nauczyciel.
+  // lang: 'en' (domyslnie) lub 'pl'. Nadpisuje istniejace nagranie tego jezyka.
+  async function uploadWordAudio(blob, bookId, unitKey, wordPl, lang) {
     if (!_profile?.isAdmin && !_profile?.isTeacher) throw new Error('Brak uprawnień');
     if (!blob || !bookId || !unitKey || !wordPl) throw new Error('Niepełne dane.');
     if (blob.size === 0) throw new Error('Pusty plik audio.');
     if (blob.size > 1024 * 1024) throw new Error('Plik za duży (>1MB). Skróć nagranie.');
+    const l = (lang === 'pl') ? 'pl' : 'en';
 
-    // Najpierw skasuj stare nagranie jeśli istnieje (zwalnia miejsce w storage)
+    // Najpierw skasuj stare nagranie tego jezyka, jesli istnieje
     try {
+      const sel = _wordAudioBilingual
+        ? 'audio_path, audio_path_en, audio_path_pl'
+        : 'audio_path';
       const { data: oldRow } = await supabase.from('word_audio')
-        .select('audio_path')
+        .select(sel)
         .eq('book_id', bookId).eq('unit_key', unitKey).eq('word_pl', wordPl)
         .maybeSingle();
-      if (oldRow && oldRow.audio_path) {
-        await supabase.storage.from('word-audio').remove([oldRow.audio_path]);
+      if (oldRow) {
+        const toRemove = [];
+        const oldPath = (_wordAudioBilingual && oldRow['audio_path_' + l]) || (l === 'en' ? oldRow.audio_path : null);
+        if (oldPath) toRemove.push(oldPath);
+        if (toRemove.length) await supabase.storage.from('word-audio').remove(toRemove);
       }
-    } catch(e) { /* ignoruj — kolejny upload nadpisze meta */ }
+    } catch(e) { /* ignoruj */ }
 
-    // Wygeneruj bezpieczną ścieżkę: bookId/unitKey/timestamp_normalized.webm
+    // Wygeneruj bezpieczna sciezke z prefiksem jezyka
     const safeWord = (wordPl || 'word').toLowerCase()
       .replace(/[ąćęłńóśźż]/g, c => ({ą:'a',ć:'c',ę:'e',ł:'l',ń:'n',ó:'o',ś:'s',ź:'z',ż:'z'})[c] || c)
       .replace(/[^a-z0-9]/g, '_').substring(0, 40);
-    const path = `${bookId}/${unitKey}/${Date.now()}_${safeWord}.webm`;
+    const path = `${bookId}/${unitKey}/${l}_${Date.now()}_${safeWord}.webm`;
 
     // Upload do Storage
     const { error: upErr } = await supabase.storage
@@ -3065,24 +3105,39 @@ const DB = (() => {
       .upload(path, blob, { contentType: blob.type || 'audio/webm', upsert: false });
     if (upErr) throw new Error('Upload nieudany: ' + upErr.message);
 
-    // Pobierz publiczny URL
     const { data: urlData } = supabase.storage.from('word-audio').getPublicUrl(path);
     const audioUrl = urlData?.publicUrl;
     if (!audioUrl) throw new Error('Nie udało się uzyskać publicznego URL.');
 
-    // Upsert do tabeli meta-danych
-    const { error: dbErr } = await supabase.from('word_audio').upsert({
+    // Upsert do tabeli — uzywaj nowych kolumn jesli baza ma migracje #41
+    const upsertPayload = {
       book_id: bookId,
       unit_key: unitKey,
       word_pl: wordPl,
-      audio_url: audioUrl,
-      audio_path: path,
       uploaded_by: _userId,
       uploaded_at: new Date().toISOString()
-    }, { onConflict: 'book_id,unit_key,word_pl' });
+    };
+    if (_wordAudioBilingual) {
+      upsertPayload['audio_url_'  + l] = audioUrl;
+      upsertPayload['audio_path_' + l] = path;
+      // Dla wstecznej kompatybilnosci aplikacji nadpisz tez stare kolumny,
+      // jesli to EN (zeby kod ktory jeszcze nie zna lang dzialal).
+      if (l === 'en') { upsertPayload.audio_url = audioUrl; upsertPayload.audio_path = path; }
+    } else {
+      if (l === 'pl') throw new Error('Brak migracji #41 — uruchom add-word-audio-bilingual.sql w Supabase, żeby móc nagrywać PL.');
+      upsertPayload.audio_url = audioUrl;
+      upsertPayload.audio_path = path;
+    }
+    const { error: dbErr } = await supabase.from('word_audio')
+      .upsert(upsertPayload, { onConflict: 'book_id,unit_key,word_pl' });
     if (dbErr) throw new Error('Zapis meta: ' + dbErr.message);
 
-    _wordAudioCache[_waKey(bookId, unitKey, wordPl)] = audioUrl;
+    // Aktualizuj cache
+    const k = _waKey(bookId, unitKey, wordPl);
+    const cur = _wordAudioCache[k];
+    if (cur && typeof cur === 'object') cur[l] = audioUrl;
+    else if (typeof cur === 'string') _wordAudioCache[k] = { en: l === 'en' ? audioUrl : cur, pl: l === 'pl' ? audioUrl : null };
+    else _wordAudioCache[k] = { en: l === 'en' ? audioUrl : null, pl: l === 'pl' ? audioUrl : null };
     return audioUrl;
   }
 
@@ -3160,25 +3215,64 @@ const DB = (() => {
     } catch(e) { return 0; }
   }
 
-  async function deleteWordAudio(bookId, unitKey, wordPl) {
+  // Usuwa nagranie z bazy + Storage. Bez `lang` (lub 'all') — kasuje
+  // OBA jezyki + rekord. Z `lang='en'`/'pl' — kasuje tylko jeden jezyk
+  // (rekord zostaje, jezeli drugi jezyk ma nadal nagranie).
+  async function deleteWordAudio(bookId, unitKey, wordPl, lang) {
     if (!_profile?.isAdmin && !_profile?.isTeacher) throw new Error('Brak uprawnień');
     if (!bookId || !unitKey || !wordPl) throw new Error('Niepełne dane.');
+    const onlyLang = (lang === 'en' || lang === 'pl') ? lang : null;
+    const k = _waKey(bookId, unitKey, wordPl);
 
-    // Pobierz path do usunięcia z storage
+    // Pobierz wszystkie pathy
+    const sel = _wordAudioBilingual
+      ? 'audio_path, audio_path_en, audio_path_pl, audio_url, audio_url_en, audio_url_pl'
+      : 'audio_path, audio_url';
     const { data: row } = await supabase.from('word_audio')
-      .select('audio_path')
+      .select(sel)
       .eq('book_id', bookId).eq('unit_key', unitKey).eq('word_pl', wordPl)
       .maybeSingle();
-    if (row && row.audio_path) {
-      try { await supabase.storage.from('word-audio').remove([row.audio_path]); } catch(e) {}
+    if (!row) { delete _wordAudioCache[k]; return; }
+
+    const pathsToRemove = [];
+    if (onlyLang === 'en' || !onlyLang) {
+      if (row.audio_path_en) pathsToRemove.push(row.audio_path_en);
+      if (row.audio_path && !row.audio_path_en && !row.audio_path_pl) pathsToRemove.push(row.audio_path);
+    }
+    if (onlyLang === 'pl' || !onlyLang) {
+      if (row.audio_path_pl) pathsToRemove.push(row.audio_path_pl);
+    }
+    if (pathsToRemove.length) {
+      try { await supabase.storage.from('word-audio').remove(pathsToRemove); } catch(e) {}
     }
 
+    if (onlyLang && _wordAudioBilingual) {
+      // Update tylko jeden jezyk — drugi moze nadal byc nagrany
+      const upd = {};
+      upd['audio_url_'  + onlyLang] = null;
+      upd['audio_path_' + onlyLang] = null;
+      if (onlyLang === 'en') { upd.audio_url = null; upd.audio_path = null; }
+      const { error } = await supabase.from('word_audio')
+        .update(upd)
+        .eq('book_id', bookId).eq('unit_key', unitKey).eq('word_pl', wordPl);
+      if (error) throw new Error(error.message);
+      // Cache: zostaw obiekt, zerwij tylko jeden jezyk
+      const cur = _wordAudioCache[k];
+      if (cur && typeof cur === 'object') {
+        cur[onlyLang] = null;
+        if (!cur.en && !cur.pl) delete _wordAudioCache[k];
+      } else {
+        if (onlyLang === 'en') delete _wordAudioCache[k];
+      }
+      return;
+    }
+
+    // Pelne skasowanie (oba jezyki)
     const { error } = await supabase.from('word_audio')
       .delete()
       .eq('book_id', bookId).eq('unit_key', unitKey).eq('word_pl', wordPl);
     if (error) throw new Error(error.message);
-
-    delete _wordAudioCache[_waKey(bookId, unitKey, wordPl)];
+    delete _wordAudioCache[k];
   }
 
   async function adminCreateUser(username, password) {
