@@ -3150,12 +3150,19 @@ const DB = (() => {
       }
     } catch(e) { /* ignoruj */ }
 
-    // Wygeneruj bezpieczna sciezke
+    // Wygeneruj bezpieczna sciezke. Format znacznika czasu: YYYYMMDDHHmm
+    // (lokalny czas) — czytelny w nazwie pliku, sortowalny chronologicznie.
+    // Granularnosc minutowa — przy szybkim re-upload tego samego slowa w tej
+    // samej minucie Supabase upload(upsert:false) zwroci blad konfliktu,
+    // user widzi to wprost.
     const safeWord = (wordPl || 'word').toLowerCase()
       .replace(/[ąćęłńóśźż]/g, c => ({ą:'a',ć:'c',ę:'e',ł:'l',ń:'n',ó:'o',ś:'s',ź:'z',ż:'z'})[c] || c)
       .replace(/[^a-z0-9]/g, '_').substring(0, 40);
     const prefix = isSent ? ('sent_' + l) : l;
-    const path = `${bookId}/${unitKey}/${prefix}_${Date.now()}_${safeWord}.webm`;
+    const now = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    const stamp = '' + now.getFullYear() + pad(now.getMonth() + 1) + pad(now.getDate()) + pad(now.getHours()) + pad(now.getMinutes());
+    const path = `${bookId}/${unitKey}/${prefix}_${stamp}_${safeWord}.webm`;
 
     // Upload do Storage
     const { error: upErr } = await supabase.storage
@@ -3346,6 +3353,94 @@ const DB = (() => {
       .eq('book_id', bookId).eq('unit_key', unitKey).eq('word_pl', wordPl);
     if (error) throw new Error(error.message);
     delete _wordAudioCache[k];
+  }
+
+  // ── AUDIO STATS + ORPHAN CLEANUP (migracja #44, admin only) ────
+  // Zwraca rozbudowany raport: liczby nagran per (kind, lang), rozmiar
+  // Storage per podrecznik, top podrecznikow z najwiecej nagran.
+  async function loadAudioStats() {
+    if (!_profile?.isAdmin) throw new Error('Tylko administrator.');
+    // 1) Liczby z tabeli word_audio
+    const counts = { wordEn: 0, wordPl: 0, sentEn: 0, sentPl: 0 };
+    const perBookCount = {};
+    try {
+      const { data: rows, error } = await supabase
+        .from('word_audio')
+        .select('book_id, audio_url, audio_url_en, audio_url_pl, audio_url_sent_en, audio_url_sent_pl');
+      if (error) throw new Error(error.message);
+      (rows || []).forEach(r => {
+        const hWordEn = !!(r.audio_url_en || r.audio_url);
+        const hWordPl = !!r.audio_url_pl;
+        const hSentEn = !!r.audio_url_sent_en;
+        const hSentPl = !!r.audio_url_sent_pl;
+        if (hWordEn) counts.wordEn++;
+        if (hWordPl) counts.wordPl++;
+        if (hSentEn) counts.sentEn++;
+        if (hSentPl) counts.sentPl++;
+        const total = (hWordEn?1:0) + (hWordPl?1:0) + (hSentEn?1:0) + (hSentPl?1:0);
+        if (total > 0) perBookCount[r.book_id] = (perBookCount[r.book_id] || 0) + total;
+      });
+    } catch(e) {
+      console.warn('[loadAudioStats] word_audio:', e.message);
+    }
+
+    // 2) Storage stats z RPC (migracja #44)
+    let storageBookStats = [];
+    let totalBytes = 0;
+    let totalFiles = 0;
+    try {
+      const { data, error } = await supabase.rpc('audio_storage_stats');
+      if (error) throw new Error(error.message);
+      storageBookStats = (data || []).map(r => ({
+        bookId: r.book_id, files: Number(r.file_count) || 0, bytes: Number(r.total_bytes) || 0
+      }));
+      storageBookStats.forEach(r => { totalBytes += r.bytes; totalFiles += r.files; });
+    } catch(e) {
+      console.warn('[loadAudioStats] storage RPC niedostepna (potrzebna migracja #44):', e.message);
+    }
+
+    // 3) Top 5 podrecznikow z najwiecej nagran (wg liczby w word_audio)
+    const top = Object.entries(perBookCount)
+      .map(([bookId, count]) => ({ bookId, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+
+    return {
+      counts: { ...counts, total: counts.wordEn + counts.wordPl + counts.sentEn + counts.sentPl },
+      storage: { totalBytes, totalFiles, perBook: storageBookStats },
+      topBooks: top
+    };
+  }
+
+  // Lista osieroconych plikow (w Storage, nie w word_audio.audio_path*).
+  async function loadAudioOrphans() {
+    if (!_profile?.isAdmin) throw new Error('Tylko administrator.');
+    const { data, error } = await supabase.rpc('audio_orphan_files');
+    if (error) throw new Error(error.message);
+    return (data || []).map(r => ({
+      name: r.name,
+      bytes: Number(r.size_bytes) || 0,
+      createdAt: r.created_at
+    }));
+  }
+
+  // Usuwa wszystkie osierocone pliki (batch po 100, Storage API limit).
+  // Zwraca {requested, deleted}.
+  async function deleteAudioOrphans() {
+    if (!_profile?.isAdmin) throw new Error('Tylko administrator.');
+    const orphans = await loadAudioOrphans();
+    if (!orphans.length) return { requested: 0, deleted: 0 };
+    const paths = orphans.map(o => o.name);
+    let deleted = 0;
+    for (let i = 0; i < paths.length; i += 100) {
+      const batch = paths.slice(i, i + 100);
+      try {
+        const { data, error } = await supabase.storage.from('word-audio').remove(batch);
+        if (!error) deleted += (data ? data.length : batch.length);
+        else console.warn('[deleteAudioOrphans] batch error:', error.message);
+      } catch(e) { console.warn('[deleteAudioOrphans] batch ex:', e.message); }
+    }
+    return { requested: paths.length, deleted };
   }
 
   async function adminCreateUser(username, password) {
@@ -3628,6 +3723,9 @@ const DB = (() => {
     loadWordAudioCache,
     uploadWordAudio,
     deleteWordAudio,
+    loadAudioStats,
+    loadAudioOrphans,
+    deleteAudioOrphans,
     submitContactForm,
     adminLoadContactMessages,
     adminUpdateContactMessage,

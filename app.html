@@ -6748,6 +6748,10 @@ window.openAdminStats = async function(){
       + '<div style="margin-top:14px"><button class="btn-modal-cancel" onclick="closeGenericModal()">Zamknij</button></div></div>');
     return;
   }
+  // Statystyki audio (migracja #44) — niezalezne, fail-soft
+  let audioStats = null;
+  try { audioStats = await DB.loadAudioStats(); }
+  catch(e) { console.warn('[adminStats] audio stats unavailable:', e.message); }
   const tile = (icon, label, value, sub) =>
     '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:12px 14px">'
     + '<div style="font-size:.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:700;margin-bottom:4px">' + icon + ' ' + label + '</div>'
@@ -6802,6 +6806,50 @@ window.openAdminStats = async function(){
   html += tile('📊', 'Postępów ucz./unitu', s.content.totalUnitProgress.toLocaleString('pl-PL'), 'rekordów');
   html += '</div>';
 
+  // ━━━ Sekcja: NAGRANIA AUDIO (migracja #44) ━━━
+  if (audioStats) {
+    const fmtMB = (b) => (b / (1024 * 1024)).toFixed(2) + ' MB';
+    const totalRecs = audioStats.counts.total;
+    html += '<div style="font-family:\'Playfair Display\',serif;font-size:1.05rem;color:var(--accent);font-weight:800;margin:14px 0 8px">🎙️ Custom nagrania wymowy</div>';
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:10px">';
+    html += tile('🇵🇱', 'Słowa PL',    audioStats.counts.wordPl, '');
+    html += tile('🌐', 'Słowa docelowe', audioStats.counts.wordEn, '');
+    html += tile('📝🇵🇱', 'Zdania PL',  audioStats.counts.sentPl, '');
+    html += tile('📝🌐', 'Zdania docelowe', audioStats.counts.sentEn, '');
+    html += tile('📊', 'Łącznie nagrań', totalRecs, audioStats.storage.totalFiles + ' plików w Storage');
+    html += tile('💾', 'Rozmiar Storage', fmtMB(audioStats.storage.totalBytes), 'limit Free: 1 GB');
+    html += '</div>';
+    // Top 5 podrecznikow z najwiecej nagran
+    if (audioStats.topBooks.length) {
+      html += '<div style="font-size:.72rem;color:var(--muted);font-weight:700;margin:6px 0 4px;text-transform:uppercase;letter-spacing:.05em">Top 5 podręczników z najwięcej nagrań</div>';
+      html += '<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:6px 10px;margin-bottom:10px">';
+      audioStats.topBooks.forEach((b, i) => {
+        const book = BOOKS[b.bookId];
+        const name = book ? (book.icon + ' ' + (book.shortName || book.name)) : b.bookId;
+        const storage = audioStats.storage.perBook.find(x => x.bookId === b.bookId);
+        const sizeStr = storage ? fmtMB(storage.bytes) : '—';
+        html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px dashed var(--border)">';
+        html += '<span style="color:var(--muted);font-weight:700;width:24px">#' + (i+1) + '</span>';
+        html += '<span style="flex:1;font-weight:600">' + escHtml(name) + '</span>';
+        html += '<span style="color:var(--muted);font-size:.72rem;font-weight:600;margin-right:6px">' + sizeStr + '</span>';
+        html += '<span style="background:rgba(255,209,102,.15);color:var(--accent);padding:3px 10px;border-radius:14px;font-weight:800;font-size:.78rem">' + b.count + '</span>';
+        html += '</div>';
+      });
+      html += '</div>';
+    }
+    // Sprzatanie osieroconych plikow
+    html += '<div style="background:rgba(255,118,117,.08);border:1.5px dashed rgba(255,118,117,.4);border-radius:12px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">';
+    html += '<div style="flex:1;min-width:200px"><div style="font-weight:800;color:var(--danger);font-size:.85rem">🧹 Osierocone pliki</div>';
+    html += '<div style="font-size:.7rem;color:var(--muted);font-weight:600;line-height:1.4;margin-top:3px">Pliki w Storage, do których nie ma już referencji w bazie (np. po nadpisaniach). Można je bezpiecznie usunąć — niczego nie zepsują.</div></div>';
+    html += '<button type="button" class="btn-sm" onclick="cleanupAudioOrphans()" style="background:var(--danger);color:#fff;border:none;font-weight:800">🧹 Sprawdź i wyczyść</button>';
+    html += '</div>';
+  } else {
+    html += '<div style="font-family:\'Playfair Display\',serif;font-size:1.05rem;color:var(--accent);font-weight:800;margin:14px 0 8px">🎙️ Custom nagrania wymowy</div>';
+    html += '<div style="background:rgba(255,159,67,.08);border:1.5px dashed rgba(255,159,67,.4);border-radius:12px;padding:12px 14px;margin-bottom:14px;font-size:.78rem;color:var(--muted);font-weight:600;line-height:1.5">';
+    html += '⚠️ Statystyki nagrań niedostępne — uruchom migrację <code>add-audio-stats-rpcs.sql</code> w Supabase, żeby je włączyć.';
+    html += '</div>';
+  }
+
   // ━━━ Top podręczniki ━━━
   if (s.content.topBooks.length) {
     html += '<div style="font-family:\'Playfair Display\',serif;font-size:1.05rem;color:var(--accent);font-weight:800;margin:14px 0 8px">📚 Top podręczniki (z przydzieleń user_books)</div>';
@@ -6846,6 +6894,46 @@ window.openAdminStats = async function(){
 
   window._lastAdminStats = s;
   openGenericModal('📊 Statystyki platformy', html);
+};
+
+// Sprzatanie osieroconych plikow audio (admin only). Pyta confirm,
+// pobiera liste, pokazuje rozmiar i ilosc, drugi confirm -> remove.
+window.cleanupAudioOrphans = async function() {
+  if (typeof isCurrentUserAdmin !== 'function' || !isCurrentUserAdmin()) {
+    if (typeof toast === 'function') toast('Tylko administrator.', 2400);
+    return;
+  }
+  if (!DB.loadAudioOrphans) {
+    if (typeof toast === 'function') toast('Wymagana migracja #44 (add-audio-stats-rpcs.sql).', 3200);
+    return;
+  }
+  let orphans = null;
+  try { orphans = await DB.loadAudioOrphans(); }
+  catch(e) {
+    alert('❌ Nie udało się pobrać listy: ' + (e.message || e));
+    return;
+  }
+  if (!orphans || !orphans.length) {
+    if (typeof toast === 'function') toast('✓ Brak osieroconych plików. Czysto!', 2800);
+    return;
+  }
+  const totalBytes = orphans.reduce((sum, o) => sum + (o.bytes || 0), 0);
+  const mb = (totalBytes / (1024 * 1024)).toFixed(2);
+  // Pokaz max 10 nazw w confirm (zeby zbyt dlugi tekst nie zalal okna)
+  const preview = orphans.slice(0, 10).map(o => '• ' + o.name).join('\n');
+  const more = orphans.length > 10 ? '\n…i ' + (orphans.length - 10) + ' więcej' : '';
+  const msg = 'Znaleziono ' + orphans.length + ' osieroconych plików (' + mb + ' MB).\n\n'
+            + 'Pierwsze:\n' + preview + more + '\n\n'
+            + 'Usunąć wszystkie z Storage? (operacja nieodwracalna)';
+  if (!confirm(msg)) return;
+  if (typeof toast === 'function') toast('⏳ Usuwam ' + orphans.length + ' plików…', 3000);
+  try {
+    const res = await DB.deleteAudioOrphans();
+    if (typeof toast === 'function') toast('🧹 Usunięto ' + res.deleted + '/' + res.requested + ' plików. Odświeżam statystyki…', 3000);
+    setTimeout(() => openAdminStats(), 800);
+  } catch(e) {
+    alert('❌ Błąd usuwania: ' + (e.message || e));
+  }
 };
 
 // Kopia statystyk jako plain text — wygodne do wklejenia w mailu do mediów
