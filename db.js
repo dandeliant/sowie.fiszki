@@ -3133,15 +3133,17 @@ const DB = (() => {
       throw new Error('Brak migracji #41 — uruchom add-word-audio-bilingual.sql w Supabase, żeby móc nagrywać PL.');
     }
 
-    // Najpierw skasuj stare nagranie tego (lang, kind), jesli istnieje
+    // Sprawdz istniejacy wiersz — pobierz wszystkie pathy + audio_url (legacy)
+    let existingRow = null;
     try {
       const sel = _wordAudioSentence
-        ? 'audio_path, audio_path_en, audio_path_pl, audio_path_sent_en, audio_path_sent_pl'
-        : (_wordAudioBilingual ? 'audio_path, audio_path_en, audio_path_pl' : 'audio_path');
+        ? 'audio_url, audio_path, audio_path_en, audio_path_pl, audio_path_sent_en, audio_path_sent_pl'
+        : (_wordAudioBilingual ? 'audio_url, audio_path, audio_path_en, audio_path_pl' : 'audio_url, audio_path');
       const { data: oldRow } = await supabase.from('word_audio')
         .select(sel)
         .eq('book_id', bookId).eq('unit_key', unitKey).eq('word_pl', wordPl)
         .maybeSingle();
+      existingRow = oldRow;
       if (oldRow) {
         const oldPath = oldRow[col.path] || (!isSent && l === 'en' ? oldRow.audio_path : null);
         if (oldPath) await supabase.storage.from('word-audio').remove([oldPath]);
@@ -3175,9 +3177,18 @@ const DB = (() => {
     };
     upsertPayload[col.url]  = audioUrl;
     upsertPayload[col.path] = path;
-    // Dla wstecznej kompatybilnosci aplikacji nadpisz stare kolumny gdy zapisujemy EN word
+    // Dla wstecznej kompatybilnosci nadpisz stare kolumny gdy zapisujemy EN word
     if (!isSent && l === 'en') {
       upsertPayload.audio_url = audioUrl;
+      upsertPayload.audio_path = path;
+    } else if (!existingRow || !existingRow.audio_url) {
+      // DEFENSIVE: migracja #28 ma NOT NULL na audio_url/audio_path. Gdy zapisujemy
+      // PL slowo lub zdanie i wiersz nie istnieje (lub legacy column jest NULL),
+      // INSERT zlamie NOT NULL constraint. Wypelniamy legacy kolumny biezacym
+      // uploadem jako placeholder — bezpieczne, bo zostana nadpisane przy EN word.
+      // Migracja #43 (drop-word-audio-not-null.sql) usuwa NOT NULL, po jej
+      // uruchomieniu ten branch nadal dziala poprawnie (po prostu uzupelnia).
+      upsertPayload.audio_url  = audioUrl;
       upsertPayload.audio_path = path;
     }
     const { error: dbErr } = await supabase.from('word_audio')
