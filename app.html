@@ -7525,6 +7525,8 @@ function openWordEditor(){
   msg.textContent = ''; msg.style.color = '';
   document.getElementById('wordEditModal').style.display = 'flex';
   setTimeout(() => document.getElementById('wordEditPl').focus(), 60);
+  // Bezpiecznik: bind eventow rekordera (idempotentne, robi nic jesli juz zbindowane)
+  if (typeof _waBindEvents === 'function') _waBindEvents();
   // Inicjalizacja sekcji nagrywania (Phase C) — pokazuje status istniejącego nagrania
   if (typeof _waInitForCurrentWord === 'function') _waInitForCurrentWord();
 }
@@ -8042,8 +8044,11 @@ async function _waDeleteExisting(lang) {
   }
 }
 
-// Bindowanie eventów dla obu paneli (delegacja na #wordAudioBilingualWrap)
-(function _waBindEvents(){
+// Bindowanie eventów dla obu paneli (delegacja na #wordAudioBilingualWrap).
+// LAZY — wolane przy pierwszym openWordEditor, bo modal jest na koncu body
+// (a ten skrypt jest wczesniej, wiec wrap nie istnieje jeszcze przy parse time).
+// Idempotentne — sprawdza flage _waBound, wiec wielokrotne wywolania sa OK.
+function _waBindEvents(){
   const wrap = document.getElementById('wordAudioBilingualWrap');
   if (!wrap || wrap._waBound) return;
   wrap._waBound = true;
@@ -8058,7 +8063,6 @@ async function _waDeleteExisting(lang) {
     else if (btn.classList.contains('wa-btn-cancel')) _waCancelRec(lang);
     else if (btn.classList.contains('wa-btn-delete')) _waDeleteExisting(lang);
   });
-  // Sliders trim
   wrap.addEventListener('input', (ev) => {
     const el = ev.target;
     if (!el.classList || !el.dataset || !el.dataset.lang) return;
@@ -8081,7 +8085,13 @@ async function _waDeleteExisting(lang) {
       _waUpdateTrimLabels(lang); _waDrawWaveform(lang);
     }
   });
-})();
+}
+// Bezpiecznik: jesli DOM juz gotowy, sprobuj bind od razu; jesli nie — czekaj.
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _waBindEvents);
+} else {
+  _waBindEvents();
+}
 
 // Wsteczna kompatybilność z legacy nazwami (mogą być wywoływane z innych miejsc)
 window.wordAudioStartRec      = () => _waStart('en');
@@ -8184,26 +8194,30 @@ function _bulkAudioRender() {
 }
 
 // Otwiera modal edycji slowka (wordEditModal) dla wybranego slowa z unitu.
-// Po zamknieciu modala — refresh listy w bulk modalu (zeby zaktualizowac status).
+// Zamyka tymczasowo bulk-modal (zeby wordEdit byl na wierzchu) i przywraca
+// go po zamknieciu wordEdit + odswieza liste (status sie zaktualizuje).
 function _bulkAudioEditWord(wordIdx, lang) {
   const book = BOOKS[currentBookId];
   const unit = book && book.units[currentUnitKey];
   if (!unit || !unit.words || !unit.words[wordIdx]) return;
-  const w = unit.words[wordIdx];
-  // Ustaw kontekst dla wordEditModala (curIdx + activeWords)
-  // To pozwala _waInitForCurrentWord znalezc slowo i unitKey
   activeWords = unit.words.slice();
   curIdx = wordIdx;
+  // Ukryj bulk-modal zeby wordEdit nie byl pod nim
+  const bulkEl = document.getElementById('bulkAudioModal');
+  if (bulkEl) bulkEl.style.display = 'none';
   if (typeof openWordEditor === 'function') {
     openWordEditor();
   }
-  // Gdy modal zostanie zamkniety, odswiez bulk-liste
+  // Gdy modal zostanie zamkniety — przywroc bulk, odswiez liste, zaakcentuj wiersz
   const modalEl = document.getElementById('wordEditModal');
+  if (!modalEl) return;
   const observer = new MutationObserver(() => {
     if (modalEl.style.display === 'none') {
       observer.disconnect();
-      // Krotki delay zeby cache mial szanse byc odswiezony
-      setTimeout(() => _bulkAudioRender(), 100);
+      setTimeout(() => {
+        _bulkAudioRender();
+        if (bulkEl) bulkEl.style.display = 'flex';
+      }, 100);
     }
   });
   observer.observe(modalEl, { attributes: true, attributeFilter: ['style'] });
