@@ -7614,70 +7614,80 @@ function refreshEditWordBtn(){
 }
 
 // ══════════════════════════════════════════════
-//  NAGRYWANIE WYMOWY SŁÓWKA — bilingual + trim (migracja #41)
-//  Każdy język (PL + język docelowy) ma własny niezależny recorder.
+//  NAGRYWANIE WYMOWY SŁÓWKA + ZDANIA — bilingual + trim (migracje #41 + #42)
+//  4 niezalezne recordery na slowo: (lang × kind) = (pl|en) × (word|sentence).
 //  Format: audio/webm;codecs=opus, mono 24 kHz, 32 kbps — ~6 KB/sekundę.
-//  Po stop pokazujemy waveform + suwaki trim (start/koniec). Save
-//  wycina ciszę/szum z początku i końca przez Web Audio API
-//  (decodeAudioData → AudioBufferSourceNode → MediaStreamDestination →
-//  MediaRecorder = ponowny encoding do webm/opus z trimowanej próbki).
+//  Po stop pokazujemy waveform + suwaki trim. Save wycina ciszę/szum z
+//  początku/końca przez Web Audio API (decodeAudioData → MediaStreamDest
+//  → MediaRecorder = re-encoding webm/opus z trimowanej próbki).
 // ══════════════════════════════════════════════
 
-// Stałe: optymalne parametry nagrywania
 const WA_MAX_SEC = 10;
+const WA_MAX_SEC_SENT = 18; // dluzsze dla zdan
 const WA_AUDIO_CONSTRAINTS = {
-  channelCount: 1,
-  sampleRate: 24000,
-  echoCancellation: true,
-  noiseSuppression: true,
-  autoGainControl: true
+  channelCount: 1, sampleRate: 24000,
+  echoCancellation: true, noiseSuppression: true, autoGainControl: true
 };
-const WA_BITRATE = 32000; // 32 kbps — wystarczy dla mowy
+const WA_BITRATE = 32000;
 
-// Stan per język: 'pl' i 'en'
-const _waState = {
-  pl: { unitKey: null, wordPl: null, recorder: null, stream: null, chunks: [],
-        recordedBlob: null, decodedBuffer: null, durationSec: 0,
-        previewUrl: null, timerInterval: null, startedAt: 0,
-        trimStart: 0, trimEnd: 0, currentAudioEl: null },
-  en: { unitKey: null, wordPl: null, recorder: null, stream: null, chunks: [],
-        recordedBlob: null, decodedBuffer: null, durationSec: 0,
-        previewUrl: null, timerInterval: null, startedAt: 0,
-        trimStart: 0, trimEnd: 0, currentAudioEl: null }
-};
+// Stan rekordera per (lang, kind). Klucz: lang+'-'+kind, np. 'pl-word', 'en-sentence'.
+const _waState = {};
+function _waSlot(lang, kind) {
+  const k = lang + '-' + (kind || 'word');
+  if (!_waState[k]) _waState[k] = {
+    unitKey: null, wordPl: null, sentenceText: null,
+    recorder: null, stream: null, chunks: [],
+    recordedBlob: null, decodedBuffer: null, durationSec: 0,
+    previewUrl: null, timerInterval: null, startedAt: 0,
+    trimStart: 0, trimEnd: 0, currentAudioEl: null
+  };
+  return _waState[k];
+}
 
-// Helper: wybierz element w obrębie panelu danego języka
-function _waEl(lang, cls) {
-  return document.querySelector('.' + cls + '[data-lang="' + lang + '"]');
+// Helper: wybierz element po (klasa, lang, kind). kind domyslnie 'word'.
+function _waEl(lang, kind, cls) {
+  // Wsteczna kompatybilnosc: stare wywolanie _waEl(lang, cls) gdzie cls to string klasy.
+  if (arguments.length === 2 && typeof kind === 'string' && kind.indexOf('wa-') === 0) {
+    cls = kind; kind = 'word';
+  }
+  const k = kind || 'word';
+  return document.querySelector('.' + cls + '[data-lang="' + lang + '"][data-kind="' + k + '"]');
+}
+
+// Iterator po wszystkich kombinacjach (lang, kind)
+function _waEachPanel(cb) {
+  ['word','sentence'].forEach(kind => {
+    ['pl','en'].forEach(lang => cb(lang, kind));
+  });
 }
 
 // Ustaw UI stanu: 'idle' (nic) | 'idle-saved' | 'recording' | 'preview'
-function _waSetUI(lang, state) {
+function _waSetUI(lang, kind, state) {
   const ids = ['wa-btn-start','wa-btn-stop','wa-btn-play','wa-btn-save','wa-btn-cancel','wa-btn-delete'];
-  ids.forEach(c => { const el = _waEl(lang, c); if (el) el.style.display = 'none'; });
-  const trim = _waEl(lang, 'wa-trim');
+  ids.forEach(c => { const el = _waEl(lang, kind, c); if (el) el.style.display = 'none'; });
+  const trim = _waEl(lang, kind, 'wa-trim');
   if (state === 'idle') {
-    const b = _waEl(lang, 'wa-btn-start'); if (b) { b.style.display = ''; b.textContent = '🎙️ Nagraj'; }
+    const b = _waEl(lang, kind, 'wa-btn-start'); if (b) { b.style.display = ''; b.textContent = '🎙️ Nagraj'; }
     if (trim) trim.style.display = 'none';
   } else if (state === 'idle-saved') {
-    const b = _waEl(lang, 'wa-btn-start'); if (b) { b.style.display = ''; b.textContent = '🎙️ Nagraj ponownie'; }
-    const p = _waEl(lang, 'wa-btn-play'); if (p) { p.style.display = ''; p.textContent = '🔊 Odtwórz zapisane'; }
-    const d = _waEl(lang, 'wa-btn-delete'); if (d) d.style.display = '';
+    const b = _waEl(lang, kind, 'wa-btn-start'); if (b) { b.style.display = ''; b.textContent = '🎙️ Nagraj ponownie'; }
+    const p = _waEl(lang, kind, 'wa-btn-play'); if (p) { p.style.display = ''; p.textContent = '🔊 Odtwórz zapisane'; }
+    const d = _waEl(lang, kind, 'wa-btn-delete'); if (d) d.style.display = '';
     if (trim) trim.style.display = 'none';
   } else if (state === 'recording') {
-    const s = _waEl(lang, 'wa-btn-stop'); if (s) s.style.display = '';
+    const s = _waEl(lang, kind, 'wa-btn-stop'); if (s) s.style.display = '';
   } else if (state === 'preview') {
-    const b = _waEl(lang, 'wa-btn-start'); if (b) { b.style.display = ''; b.textContent = '🎙️ Nagraj ponownie'; }
-    const p = _waEl(lang, 'wa-btn-play'); if (p) { p.style.display = ''; p.textContent = '🔊 Odsłuchaj (z trim)'; }
-    const sv = _waEl(lang, 'wa-btn-save'); if (sv) sv.style.display = '';
-    const c = _waEl(lang, 'wa-btn-cancel'); if (c) c.style.display = '';
+    const b = _waEl(lang, kind, 'wa-btn-start'); if (b) { b.style.display = ''; b.textContent = '🎙️ Nagraj ponownie'; }
+    const p = _waEl(lang, kind, 'wa-btn-play'); if (p) { p.style.display = ''; p.textContent = '🔊 Odsłuchaj (z trim)'; }
+    const sv = _waEl(lang, kind, 'wa-btn-save'); if (sv) sv.style.display = '';
+    const c = _waEl(lang, kind, 'wa-btn-cancel'); if (c) c.style.display = '';
     if (trim) trim.style.display = '';
   }
 }
 
-// Sprzątaj zasoby per język (mikrofon, ObjectURL, AudioContext nodes)
-function _waCleanupLang(lang) {
-  const s = _waState[lang];
+// Sprzątaj zasoby per panel (lang, kind)
+function _waCleanupPanel(lang, kind) {
+  const s = _waState[lang + '-' + (kind || 'word')];
   if (!s) return;
   if (s.timerInterval) { clearInterval(s.timerInterval); s.timerInterval = null; }
   if (s.stream) {
@@ -7697,29 +7707,65 @@ function _waCleanupLang(lang) {
   s.trimStart = 0; s.trimEnd = 0;
 }
 
-// Inicjalizacja po otwarciu modala edycji słówka — ustawia status obu paneli
-function _waInitForCurrentWord() {
-  _waCleanupLang('pl'); _waCleanupLang('en');
+// Pobierz tekst zdania przykładowego dla aktywnego slowa (lub null)
+// Sprawdza: 1) inline w activeWords (4-elem albo 5-elem z emoji),
+//           2) cache DB._sentences via getSentence().
+function _waGetSentenceForCurrentWord() {
+  if (curIdx === null || !activeWords || !activeWords[curIdx]) return null;
+  const w = activeWords[curIdx];
+  let pl = null, en = null;
+  if (typeof getInlineSentences === 'function') {
+    const inl = getInlineSentences(w);
+    if (inl && (inl.sentPl || inl.sentEn)) { pl = inl.sentPl || null; en = inl.sentEn || null; }
+  }
+  if ((!pl || !en) && typeof DB !== 'undefined' && DB.getSentence && currentBookId) {
+    try {
+      const dbS = DB.getSentence(currentBookId, w[0]);
+      if (dbS) {
+        if (!pl) pl = dbS.sentence_pl || null;
+        if (!en) en = dbS.sentence_target || null;
+      }
+    } catch(e) {}
+  }
+  if (!pl && !en) return null;
+  return { pl, en };
+}
 
-  // Etykieta panelu EN — dopasuj do języka książki (np. "Francuski")
+// Inicjalizacja po otwarciu modala edycji słówka — ustawia status WSZYSTKICH paneli
+function _waInitForCurrentWord() {
+  _waEachPanel((l, k) => _waCleanupPanel(l, k));
+
+  // Etykiety panelu EN — dopasuj do języka książki
   try {
     const book = (typeof BOOKS !== 'undefined') ? BOOKS[currentBookId] : null;
+    const map  = { en: '🇬🇧 Angielski', fr: '🇫🇷 Francuski', de: '🇩🇪 Niemiecki', es: '🇪🇸 Hiszpański', it: '🇮🇹 Włoski', ru: '🇷🇺 Rosyjski' };
+    const mapSent = { en: '🇬🇧 Zdanie po angielsku', fr: '🇫🇷 Zdanie po francusku', de: '🇩🇪 Zdanie po niemiecku', es: '🇪🇸 Zdanie po hiszpańsku', it: '🇮🇹 Zdanie po włosku', ru: '🇷🇺 Zdanie po rosyjsku' };
     const lbl = document.getElementById('waEnLabel');
-    if (lbl && book) {
-      const map = { en: '🇬🇧 Angielski', fr: '🇫🇷 Francuski', de: '🇩🇪 Niemiecki', es: '🇪🇸 Hiszpański', it: '🇮🇹 Włoski', ru: '🇷🇺 Rosyjski' };
-      lbl.textContent = map[book.language] || '🌐 Język docelowy';
-    }
+    if (lbl && book) lbl.textContent = map[book.language] || '🌐 Język docelowy';
+    const lbl2 = document.getElementById('waEnSentLabel');
+    if (lbl2 && book) lbl2.textContent = mapSent[book.language] || '🌐 Zdanie w jęz. docelowym';
   } catch(e) {}
 
+  // Pokaz/ukryj sekcje zdan + ustaw preview tekstu
+  const sentSection = document.getElementById('wordAudioSentenceSection');
+  const sentPreview = document.getElementById('wordAudioSentencePreview');
+  const sent = _waGetSentenceForCurrentWord();
+  if (sentSection) sentSection.style.display = sent ? '' : 'none';
+  if (sentPreview && sent) {
+    const pl = sent.pl ? sent.pl : '<em style="opacity:.6">(brak zdania PL)</em>';
+    const en = sent.en ? sent.en : '<em style="opacity:.6">(brak zdania docelowego)</em>';
+    sentPreview.innerHTML = '🇵🇱 ' + (typeof escHtml === 'function' ? escHtml(sent.pl || '') : (sent.pl || '')) +
+                            '<br>🌐 ' + (typeof escHtml === 'function' ? escHtml(sent.en || '') : (sent.en || ''));
+  }
+
   if (curIdx === null || !activeWords || !activeWords[curIdx]) {
-    ['pl','en'].forEach(l => {
-      const st = _waEl(l, 'wa-status'); if (st) st.textContent = '—';
-      _waSetUI(l, 'idle');
+    _waEachPanel((l, k) => {
+      const st = _waEl(l, k, 'wa-status'); if (st) st.textContent = '—';
+      _waSetUI(l, k, 'idle');
     });
     return;
   }
   const wordPl = activeWords[curIdx][0];
-  // Znajdź unit zawierający to słowo
   const book = (typeof BOOKS !== 'undefined') ? BOOKS[currentBookId] : null;
   let foundUnit = null;
   if (book) {
@@ -7728,34 +7774,43 @@ function _waInitForCurrentWord() {
       if (book.units[uk].words.some(w => w[0] === wordPl)) { foundUnit = uk; break; }
     }
   }
-  ['pl','en'].forEach(lang => {
-    const s = _waState[lang];
+
+  _waEachPanel((lang, kind) => {
+    // Slot dla zdania tylko gdy jest tekst; dla slowa zawsze.
+    if (kind === 'sentence' && !sent) return;
+    if (kind === 'sentence') {
+      // Jesli tekst danego jezyka nie istnieje, ukryj panel calkowicie
+      const hasText = (lang === 'pl' ? sent.pl : sent.en);
+      const panel = document.querySelector('.wa-panel[data-lang="' + lang + '"][data-kind="sentence"]');
+      if (panel) panel.style.display = hasText ? '' : 'none';
+      if (!hasText) return;
+    }
+    const s = _waSlot(lang, kind);
     s.wordPl = wordPl;
     s.unitKey = foundUnit;
-    const stEl = _waEl(lang, 'wa-status');
-    const hint = _waEl(lang, 'wa-hint');
-    const btnStart = _waEl(lang, 'wa-btn-start');
+    s.sentenceText = (kind === 'sentence') ? ((lang === 'pl' ? sent.pl : sent.en) || null) : null;
+    const stEl = _waEl(lang, kind, 'wa-status');
+    const btnStart = _waEl(lang, kind, 'wa-btn-start');
     if (!foundUnit) {
       if (stEl) { stEl.textContent = '⚠️ Brak unitu'; stEl.style.color = 'var(--danger)'; }
-      if (hint) hint.textContent = 'Nie znaleziono słowa w żadnym unicie. Nagrywanie niedostępne.';
-      _waSetUI(lang, 'idle');
+      _waSetUI(lang, kind, 'idle');
       if (btnStart) btnStart.disabled = true;
       return;
     }
-    const url = (DB.getWordAudioUrl) ? DB.getWordAudioUrl(currentBookId, foundUnit, wordPl, lang) : null;
+    const url = (DB.getWordAudioUrl) ? DB.getWordAudioUrl(currentBookId, foundUnit, wordPl, lang, kind) : null;
     if (url) {
       if (stEl) { stEl.textContent = '✓ Zapisane'; stEl.style.color = 'var(--success)'; }
-      _waSetUI(lang, 'idle-saved');
+      _waSetUI(lang, kind, 'idle-saved');
     } else {
       if (stEl) { stEl.textContent = 'Brak nagrania (TTS)'; stEl.style.color = 'var(--muted)'; }
-      _waSetUI(lang, 'idle');
+      _waSetUI(lang, kind, 'idle');
     }
     if (btnStart) btnStart.disabled = false;
   });
 }
 
 // Czyść po zamknięciu modala
-function _wordAudioCleanup() { _waCleanupLang('pl'); _waCleanupLang('en'); }
+function _wordAudioCleanup() { _waEachPanel((l, k) => _waCleanupPanel(l, k)); }
 
 // Wybierz najlepszy mimeType dla MediaRecorder (preferencja: opus)
 function _waPickMime() {
@@ -7766,9 +7821,9 @@ function _waPickMime() {
 
 // Rysuje uproszczony waveform AudioBuffer na canvas + przezroczystą maskę dla
 // obszaru poza zakresem trim (zakres = procent 0..1)
-function _waDrawWaveform(lang) {
-  const s = _waState[lang];
-  const canvas = _waEl(lang, 'wa-wave');
+function _waDrawWaveform(lang, kind) {
+  const s = _waSlot(lang, kind);
+  const canvas = _waEl(lang, kind, 'wa-wave');
   if (!canvas || !s.decodedBuffer) return;
   const ctx = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height;
@@ -7776,9 +7831,7 @@ function _waDrawWaveform(lang) {
   const data = s.decodedBuffer.getChannelData(0);
   const N = data.length;
   const step = Math.max(1, Math.floor(N / W));
-  // Tło
   ctx.fillStyle = 'rgba(255,255,255,.04)'; ctx.fillRect(0, 0, W, H);
-  // Wave
   ctx.fillStyle = 'rgba(162,155,254,.55)';
   for (let x = 0; x < W; x++) {
     let min = 1.0, max = -1.0;
@@ -7791,32 +7844,26 @@ function _waDrawWaveform(lang) {
     const y1 = (1 - min) * 0.5 * H;
     ctx.fillRect(x, Math.min(y0, y1), 1, Math.max(1, Math.abs(y1 - y0)));
   }
-  // Maska obszaru wyciętego (przed start i po koniec)
   const startX = Math.floor(s.trimStart * W);
   const endX = Math.ceil(s.trimEnd * W);
   ctx.fillStyle = 'rgba(0,0,0,.55)';
   if (startX > 0) ctx.fillRect(0, 0, startX, H);
   if (endX < W)   ctx.fillRect(endX, 0, W - endX, H);
-  // Linie granic
   ctx.fillStyle = 'rgba(255,209,102,.95)';
   ctx.fillRect(Math.max(0, startX - 1), 0, 2, H);
   ctx.fillRect(Math.min(W - 2, endX - 1), 0, 2, H);
 }
 
-// Aktualizuj labels pod suwakami trim
-function _waUpdateTrimLabels(lang) {
-  const s = _waState[lang];
-  const startVal = _waEl(lang, 'wa-trim-start-val');
-  const endVal = _waEl(lang, 'wa-trim-end-val');
-  const startSec = s.trimStart * s.durationSec;
-  const endSec = s.trimEnd * s.durationSec;
-  if (startVal) startVal.textContent = startSec.toFixed(2) + 's';
-  if (endVal)   endVal.textContent   = endSec.toFixed(2) + 's';
+function _waUpdateTrimLabels(lang, kind) {
+  const s = _waSlot(lang, kind);
+  const startVal = _waEl(lang, kind, 'wa-trim-start-val');
+  const endVal = _waEl(lang, kind, 'wa-trim-end-val');
+  if (startVal) startVal.textContent = (s.trimStart * s.durationSec).toFixed(2) + 's';
+  if (endVal)   endVal.textContent   = (s.trimEnd   * s.durationSec).toFixed(2) + 's';
 }
 
-// Po nagraniu — zdekoduj AudioBuffer i pokaż waveform + trim
-async function _waPrepareTrim(lang) {
-  const s = _waState[lang];
+async function _waPrepareTrim(lang, kind) {
+  const s = _waSlot(lang, kind);
   if (!s.recordedBlob) return;
   try {
     const arr = await s.recordedBlob.arrayBuffer();
@@ -7831,30 +7878,27 @@ async function _waPrepareTrim(lang) {
     s.durationSec = 0;
   }
   s.trimStart = 0; s.trimEnd = 1;
-  const startSlider = _waEl(lang, 'wa-trim-start');
-  const endSlider = _waEl(lang, 'wa-trim-end');
+  const startSlider = _waEl(lang, kind, 'wa-trim-start');
+  const endSlider = _waEl(lang, kind, 'wa-trim-end');
   if (startSlider) startSlider.value = 0;
   if (endSlider)   endSlider.value = 1000;
-  _waUpdateTrimLabels(lang);
-  _waDrawWaveform(lang);
+  _waUpdateTrimLabels(lang, kind);
+  _waDrawWaveform(lang, kind);
 }
 
-// Wytnij fragment AudioBuffer wg trim i re-encode do webm/opus przez
-// MediaStreamDestination + MediaRecorder. Zwraca Blob.
-async function _waEncodeTrimmed(lang) {
-  const s = _waState[lang];
-  if (!s.decodedBuffer) return s.recordedBlob; // fallback
+async function _waEncodeTrimmed(lang, kind) {
+  const s = _waSlot(lang, kind);
+  if (!s.decodedBuffer) return s.recordedBlob;
   const buf = s.decodedBuffer;
   const sr = buf.sampleRate;
   const startSample = Math.max(0, Math.floor(s.trimStart * buf.length));
   const endSample = Math.min(buf.length, Math.ceil(s.trimEnd * buf.length));
   const len = Math.max(1, endSample - startSample);
-  if (len < 100) return s.recordedBlob; // za krótkie
+  if (len < 100) return s.recordedBlob;
 
   const AC = window.AudioContext || window.webkitAudioContext;
   const ac = new AC({ sampleRate: sr });
   const trimmed = ac.createBuffer(1, len, sr);
-  // Kopiuj wyłącznie kanał 0 (mono); jeśli źródło stereo — średnia
   const src0 = buf.getChannelData(0);
   const dst0 = trimmed.getChannelData(0);
   if (buf.numberOfChannels > 1) {
@@ -7877,16 +7921,14 @@ async function _waEncodeTrimmed(lang) {
   rec.start();
   source.start();
   source.onended = () => { try { rec.stop(); } catch(e){} };
-  // Bezpiecznik — auto-stop trochę po długości
   setTimeout(() => { try { if (rec.state !== 'inactive') rec.stop(); } catch(e){} }, (len / sr) * 1000 + 600);
   await done;
   try { ac.close(); } catch(e){}
   return new Blob(chunks, { type: mime });
 }
 
-// START NAGRYWANIA (per język)
-async function _waStart(lang) {
-  const s = _waState[lang];
+async function _waStart(lang, kind) {
+  const s = _waSlot(lang, kind);
   if (!s.unitKey) return;
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     alert('Twoja przeglądarka nie obsługuje nagrywania audio.');
@@ -7907,7 +7949,7 @@ async function _waStart(lang) {
       : new MediaRecorder(s.stream);
   } catch(e) {
     alert('Nie udało się uruchomić nagrywania: ' + e.message);
-    _waCleanupLang(lang);
+    _waCleanupPanel(lang, kind);
     return;
   }
   s.chunks = [];
@@ -7919,53 +7961,50 @@ async function _waStart(lang) {
     s.previewUrl = URL.createObjectURL(s.recordedBlob);
     if (s.stream) { s.stream.getTracks().forEach(t => t.stop()); s.stream = null; }
     if (s.timerInterval) { clearInterval(s.timerInterval); s.timerInterval = null; }
-    const hint = _waEl(lang, 'wa-hint');
-    if (hint) hint.textContent = `Nagrano ${(s.recordedBlob.size/1024).toFixed(1)} KB. Przytnij ciszę z początku/końca i zapisz.`;
-    _waSetUI(lang, 'preview');
-    await _waPrepareTrim(lang);
+    const hint = _waEl(lang, kind, 'wa-hint');
+    if (hint) hint.textContent = `Nagrano ${(s.recordedBlob.size/1024).toFixed(1)} KB. Przytnij ciszę i zapisz.`;
+    _waSetUI(lang, kind, 'preview');
+    await _waPrepareTrim(lang, kind);
   };
   s.recorder.start();
   s.startedAt = Date.now();
-  const hint = _waEl(lang, 'wa-hint');
+  const hint = _waEl(lang, kind, 'wa-hint');
   if (hint) hint.textContent = '🔴 Nagrywam… mów wyraźnie. Kliknij ⏹️ Stop gdy skończysz.';
-  _waSetUI(lang, 'recording');
-  const tEl = _waEl(lang, 'wa-timer');
+  _waSetUI(lang, kind, 'recording');
+  const tEl = _waEl(lang, kind, 'wa-timer');
+  const maxSec = (kind === 'sentence') ? WA_MAX_SEC_SENT : WA_MAX_SEC;
   s.timerInterval = setInterval(() => {
     const sec = Math.floor((Date.now() - s.startedAt) / 1000);
     if (tEl) tEl.textContent = '0:' + String(sec).padStart(2, '0');
-    if (sec >= WA_MAX_SEC) _waStop(lang);
+    if (sec >= maxSec) _waStop(lang, kind);
   }, 200);
 }
 
-function _waStop(lang) {
-  const s = _waState[lang];
+function _waStop(lang, kind) {
+  const s = _waSlot(lang, kind);
   if (s.recorder && s.recorder.state === 'recording') {
     try { s.recorder.stop(); } catch(e){}
   }
 }
 
-// Odtwórz: świeże nagranie (z trim) lub zapisane z DB
-function _waPreview(lang) {
-  const s = _waState[lang];
+function _waPreview(lang, kind) {
+  const s = _waSlot(lang, kind);
   if (s.currentAudioEl) { try { s.currentAudioEl.pause(); } catch(e){} s.currentAudioEl = null; }
   if (s.decodedBuffer && s.durationSec > 0) {
-    // Preview z trim — odtwórz przez Web Audio z dokładnym start/end
     const AC = window.AudioContext || window.webkitAudioContext;
     const ac = new AC();
-    const buf = s.decodedBuffer;
     const startSec = s.trimStart * s.durationSec;
     const endSec = s.trimEnd * s.durationSec;
     const src = ac.createBufferSource();
-    src.buffer = buf;
+    src.buffer = s.decodedBuffer;
     src.connect(ac.destination);
     src.start(0, startSec, Math.max(0.05, endSec - startSec));
     src.onended = () => { try { ac.close(); } catch(e){} };
     return;
   }
-  // Brak świeżego nagrania — odtwórz zapisane z DB
   let url = s.previewUrl;
   if (!url && DB.getWordAudioUrl && s.unitKey && s.wordPl) {
-    url = DB.getWordAudioUrl(currentBookId, s.unitKey, s.wordPl, lang);
+    url = DB.getWordAudioUrl(currentBookId, s.unitKey, s.wordPl, lang, kind);
   }
   if (!url) return;
   const a = new Audio(url);
@@ -7973,47 +8012,47 @@ function _waPreview(lang) {
   a.play().catch(e => alert('Nie udało się odtworzyć: ' + e.message));
 }
 
-function _waCancelRec(lang) {
-  const s = _waState[lang];
+function _waCancelRec(lang, kind) {
+  const s = _waSlot(lang, kind);
   if (s.previewUrl) { URL.revokeObjectURL(s.previewUrl); s.previewUrl = null; }
   s.recordedBlob = null;
   s.decodedBuffer = null;
-  // Wróć do stanu — pokaż status zapisanego (jeśli był) lub idle
-  const url = (DB.getWordAudioUrl) ? DB.getWordAudioUrl(currentBookId, s.unitKey, s.wordPl, lang) : null;
-  const stEl = _waEl(lang, 'wa-status');
+  const url = (DB.getWordAudioUrl) ? DB.getWordAudioUrl(currentBookId, s.unitKey, s.wordPl, lang, kind) : null;
+  const stEl = _waEl(lang, kind, 'wa-status');
   if (url) {
     if (stEl) { stEl.textContent = '✓ Zapisane'; stEl.style.color = 'var(--success)'; }
-    _waSetUI(lang, 'idle-saved');
+    _waSetUI(lang, kind, 'idle-saved');
   } else {
     if (stEl) { stEl.textContent = 'Brak nagrania (TTS)'; stEl.style.color = 'var(--muted)'; }
-    _waSetUI(lang, 'idle');
+    _waSetUI(lang, kind, 'idle');
   }
 }
 
-async function _waSaveRec(lang) {
-  const s = _waState[lang];
+async function _waSaveRec(lang, kind) {
+  const s = _waSlot(lang, kind);
   if (!s.recordedBlob || !s.unitKey || !s.wordPl) return;
-  const stEl = _waEl(lang, 'wa-status');
-  const hint = _waEl(lang, 'wa-hint');
-  const btnSave = _waEl(lang, 'wa-btn-save');
+  const stEl = _waEl(lang, kind, 'wa-status');
+  const hint = _waEl(lang, kind, 'wa-hint');
+  const btnSave = _waEl(lang, kind, 'wa-btn-save');
   if (btnSave) { btnSave.disabled = true; btnSave.textContent = '⏳ Zapisuję…'; }
   if (stEl) { stEl.textContent = '⏳ Wysyłam…'; stEl.style.color = 'var(--muted)'; }
   try {
-    // Wytnij obszar trim (jeśli AudioBuffer dostępny i są jakieś granice)
     let toUpload = s.recordedBlob;
     if (s.decodedBuffer && (s.trimStart > 0.001 || s.trimEnd < 0.999)) {
       if (hint) hint.textContent = '✂️ Przycinam ciszę…';
-      try { toUpload = await _waEncodeTrimmed(lang); }
+      try { toUpload = await _waEncodeTrimmed(lang, kind); }
       catch(e) { console.warn('[waEncodeTrimmed]', e); toUpload = s.recordedBlob; }
     }
-    await DB.uploadWordAudio(toUpload, currentBookId, s.unitKey, s.wordPl, lang);
+    await DB.uploadWordAudio(toUpload, currentBookId, s.unitKey, s.wordPl, lang, kind);
     if (stEl) { stEl.textContent = '✓ Zapisano'; stEl.style.color = 'var(--success)'; }
-    if (hint) hint.textContent = 'Nagranie zapisane. Od teraz fiszka odtwarza Twoją wersję zamiast TTS.';
-    if (typeof toast === 'function') toast('🎙️ Wymowa zapisana (' + (lang === 'pl' ? 'PL' : 'docelowy') + ').', 2400);
+    if (hint) hint.textContent = 'Nagranie zapisane. Od teraz aplikacja odtwarza Twoją wersję zamiast TTS.';
+    const kindLbl = kind === 'sentence' ? 'zdanie' : 'słowo';
+    const langLbl = lang === 'pl' ? 'PL' : 'docelowy';
+    if (typeof toast === 'function') toast('🎙️ Zapisano (' + kindLbl + ' ' + langLbl + ').', 2400);
     if (s.previewUrl) { URL.revokeObjectURL(s.previewUrl); s.previewUrl = null; }
     s.recordedBlob = null;
     s.decodedBuffer = null;
-    _waSetUI(lang, 'idle-saved');
+    _waSetUI(lang, kind, 'idle-saved');
   } catch(e) {
     console.error('[waSaveRec]', e);
     if (stEl) { stEl.textContent = '❌ Błąd'; stEl.style.color = 'var(--danger)'; }
@@ -8023,20 +8062,21 @@ async function _waSaveRec(lang) {
   }
 }
 
-async function _waDeleteExisting(lang) {
-  const s = _waState[lang];
+async function _waDeleteExisting(lang, kind) {
+  const s = _waSlot(lang, kind);
   if (!s.unitKey || !s.wordPl) return;
   const langLbl = lang === 'pl' ? 'polskie' : 'docelowe';
-  if (!confirm('Usunąć ' + langLbl + ' nagranie wymowy? Fiszka wróci do TTS dla tego języka.')) return;
-  const stEl = _waEl(lang, 'wa-status');
-  const hint = _waEl(lang, 'wa-hint');
+  const kindLbl = kind === 'sentence' ? 'zdania' : 'słowa';
+  if (!confirm('Usunąć ' + langLbl + ' nagranie ' + kindLbl + '? Aplikacja wróci do TTS dla tej części.')) return;
+  const stEl = _waEl(lang, kind, 'wa-status');
+  const hint = _waEl(lang, kind, 'wa-hint');
   if (stEl) { stEl.textContent = '⏳ Usuwam…'; stEl.style.color = 'var(--muted)'; }
   try {
-    await DB.deleteWordAudio(currentBookId, s.unitKey, s.wordPl, lang);
+    await DB.deleteWordAudio(currentBookId, s.unitKey, s.wordPl, lang, kind);
     if (stEl) { stEl.textContent = 'Brak nagrania (TTS)'; stEl.style.color = 'var(--muted)'; }
     if (hint) hint.textContent = 'Nagranie usunięte. Naciśnij 🎙️ aby dodać nowe.';
     if (typeof toast === 'function') toast('🗑️ Nagranie usunięte.', 2400);
-    _waSetUI(lang, 'idle');
+    _waSetUI(lang, kind, 'idle');
   } catch(e) {
     console.error('[waDeleteExisting]', e);
     if (stEl) { stEl.textContent = '❌ Błąd'; stEl.style.color = 'var(--danger)'; }
@@ -8044,62 +8084,62 @@ async function _waDeleteExisting(lang) {
   }
 }
 
-// Bindowanie eventów dla obu paneli (delegacja na #wordAudioBilingualWrap).
-// LAZY — wolane przy pierwszym openWordEditor, bo modal jest na koncu body
-// (a ten skrypt jest wczesniej, wiec wrap nie istnieje jeszcze przy parse time).
-// Idempotentne — sprawdza flage _waBound, wiec wielokrotne wywolania sa OK.
+// Bindowanie eventów dla wszystkich paneli — delegacja na wspolnego rodzica.
+// Bind sluchamy na dokumencie (body), zeby objac oba bloki: word i sentence,
+// ktore sa rozdzielone w DOM (jeden #wordAudioBilingualWrap, drugi
+// #wordAudioSentenceSection).
 function _waBindEvents(){
-  const wrap = document.getElementById('wordAudioBilingualWrap');
-  if (!wrap || wrap._waBound) return;
-  wrap._waBound = true;
-  wrap.addEventListener('click', (ev) => {
-    const btn = ev.target.closest('button[data-lang]');
+  const modal = document.getElementById('wordEditModal');
+  if (!modal || modal._waBound) return;
+  modal._waBound = true;
+  modal.addEventListener('click', (ev) => {
+    const btn = ev.target.closest('button[data-lang][data-kind]');
     if (!btn) return;
     const lang = btn.getAttribute('data-lang');
-    if (btn.classList.contains('wa-btn-start')) _waStart(lang);
-    else if (btn.classList.contains('wa-btn-stop')) _waStop(lang);
-    else if (btn.classList.contains('wa-btn-play')) _waPreview(lang);
-    else if (btn.classList.contains('wa-btn-save')) _waSaveRec(lang);
-    else if (btn.classList.contains('wa-btn-cancel')) _waCancelRec(lang);
-    else if (btn.classList.contains('wa-btn-delete')) _waDeleteExisting(lang);
+    const kind = btn.getAttribute('data-kind') || 'word';
+    if (btn.classList.contains('wa-btn-start')) _waStart(lang, kind);
+    else if (btn.classList.contains('wa-btn-stop')) _waStop(lang, kind);
+    else if (btn.classList.contains('wa-btn-play')) _waPreview(lang, kind);
+    else if (btn.classList.contains('wa-btn-save')) _waSaveRec(lang, kind);
+    else if (btn.classList.contains('wa-btn-cancel')) _waCancelRec(lang, kind);
+    else if (btn.classList.contains('wa-btn-delete')) _waDeleteExisting(lang, kind);
   });
-  wrap.addEventListener('input', (ev) => {
+  modal.addEventListener('input', (ev) => {
     const el = ev.target;
     if (!el.classList || !el.dataset || !el.dataset.lang) return;
     const lang = el.dataset.lang;
-    const s = _waState[lang];
-    if (!s) return;
+    const kind = el.dataset.kind || 'word';
+    const s = _waSlot(lang, kind);
     if (el.classList.contains('wa-trim-start')) {
       s.trimStart = Math.min(0.99, parseInt(el.value, 10) / 1000);
       if (s.trimStart >= s.trimEnd) {
         s.trimEnd = Math.min(1, s.trimStart + 0.01);
-        const e2 = _waEl(lang, 'wa-trim-end'); if (e2) e2.value = Math.round(s.trimEnd * 1000);
+        const e2 = _waEl(lang, kind, 'wa-trim-end'); if (e2) e2.value = Math.round(s.trimEnd * 1000);
       }
-      _waUpdateTrimLabels(lang); _waDrawWaveform(lang);
+      _waUpdateTrimLabels(lang, kind); _waDrawWaveform(lang, kind);
     } else if (el.classList.contains('wa-trim-end')) {
       s.trimEnd = Math.max(0.01, parseInt(el.value, 10) / 1000);
       if (s.trimEnd <= s.trimStart) {
         s.trimStart = Math.max(0, s.trimEnd - 0.01);
-        const e1 = _waEl(lang, 'wa-trim-start'); if (e1) e1.value = Math.round(s.trimStart * 1000);
+        const e1 = _waEl(lang, kind, 'wa-trim-start'); if (e1) e1.value = Math.round(s.trimStart * 1000);
       }
-      _waUpdateTrimLabels(lang); _waDrawWaveform(lang);
+      _waUpdateTrimLabels(lang, kind); _waDrawWaveform(lang, kind);
     }
   });
 }
-// Bezpiecznik: jesli DOM juz gotowy, sprobuj bind od razu; jesli nie — czekaj.
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', _waBindEvents);
 } else {
   _waBindEvents();
 }
 
-// Wsteczna kompatybilność z legacy nazwami (mogą być wywoływane z innych miejsc)
-window.wordAudioStartRec      = () => _waStart('en');
-window.wordAudioStopRec       = () => _waStop('en');
-window.wordAudioPreview       = () => _waPreview('en');
-window.wordAudioCancelRec     = () => _waCancelRec('en');
-window.wordAudioSaveRec       = () => _waSaveRec('en');
-window.wordAudioDeleteExisting= () => _waDeleteExisting('en');
+// Wsteczna kompatybilnosc z legacy nazwami (sa wywolywane w starym kodzie)
+window.wordAudioStartRec      = () => _waStart('en', 'word');
+window.wordAudioStopRec       = () => _waStop('en', 'word');
+window.wordAudioPreview       = () => _waPreview('en', 'word');
+window.wordAudioCancelRec     = () => _waCancelRec('en', 'word');
+window.wordAudioSaveRec       = () => _waSaveRec('en', 'word');
+window.wordAudioDeleteExisting= () => _waDeleteExisting('en', 'word');
 
 // ══════════════════════════════════════════════
 //  BULK AUDIO RECORDER (migracja #41)
@@ -8158,37 +8198,82 @@ function _bulkAudioRender() {
   const list = document.getElementById('bulkAudioList');
   if (!list) return;
   let countPl = 0, countEn = 0;
+  let sentTotal = 0, sentPlCount = 0, sentEnCount = 0;
   const rows = unit.words.map((w, idx) => {
     const pl = w[0] || '';
     const target = w[1] || '';
-    const urlPl = DB.getWordAudioUrl ? DB.getWordAudioUrl(currentBookId, currentUnitKey, pl, 'pl') : null;
-    const urlEn = DB.getWordAudioUrl ? DB.getWordAudioUrl(currentBookId, currentUnitKey, pl, 'en') : null;
+    const urlPl = DB.getWordAudioUrl ? DB.getWordAudioUrl(currentBookId, currentUnitKey, pl, 'pl', 'word') : null;
+    const urlEn = DB.getWordAudioUrl ? DB.getWordAudioUrl(currentBookId, currentUnitKey, pl, 'en', 'word') : null;
     if (urlPl) countPl++;
     if (urlEn) countEn++;
-    const plBg = urlPl ? 'background:rgba(6,214,160,.22);border:1.5px solid var(--accent2);color:var(--accent2)'
-                       : 'background:var(--surface2);border:1.5px solid var(--border);color:var(--text)';
-    const enBg = urlEn ? 'background:rgba(6,214,160,.22);border:1.5px solid var(--accent2);color:var(--accent2)'
-                       : 'background:var(--surface2);border:1.5px solid var(--border);color:var(--text)';
-    const plIco = urlPl ? '✓' : '·';
-    const enIco = urlEn ? '✓' : '·';
-    return '<div class="bulk-audio-row" data-idx="' + idx + '" style="display:flex;align-items:center;gap:8px;padding:7px 8px;border-bottom:1px solid var(--border);font-size:.78rem">' +
+    // Czy slowo ma zdanie?
+    let sentPl = null, sentEn = null;
+    if (typeof getInlineSentences === 'function') {
+      const inl = getInlineSentences(w);
+      if (inl) { sentPl = inl.sentPl || null; sentEn = inl.sentEn || null; }
+    }
+    if ((!sentPl || !sentEn) && DB.getSentence) {
+      try {
+        const dbS = DB.getSentence(currentBookId, pl);
+        if (dbS) { if (!sentPl) sentPl = dbS.sentence_pl || null; if (!sentEn) sentEn = dbS.sentence_target || null; }
+      } catch(e){}
+    }
+    const hasSent = !!(sentPl || sentEn);
+    if (hasSent) sentTotal++;
+    const urlSentPl = (hasSent && sentPl && DB.getWordAudioUrl) ? DB.getWordAudioUrl(currentBookId, currentUnitKey, pl, 'pl', 'sentence') : null;
+    const urlSentEn = (hasSent && sentEn && DB.getWordAudioUrl) ? DB.getWordAudioUrl(currentBookId, currentUnitKey, pl, 'en', 'sentence') : null;
+    if (urlSentPl) sentPlCount++;
+    if (urlSentEn) sentEnCount++;
+
+    const styleOK   = 'background:rgba(6,214,160,.22);border:1.5px solid var(--accent2);color:var(--accent2)';
+    const styleNone = 'background:var(--surface2);border:1.5px solid var(--border);color:var(--text)';
+    const btn = (lang, kind, has, lbl) => {
+      const bg = has ? styleOK : styleNone;
+      const ico = has ? '✓' : '·';
+      const titleMap = { 'pl-word': 'Nagraj wymowę słowa po polsku', 'en-word': 'Nagraj wymowę słowa w języku docelowym',
+                          'pl-sentence': 'Nagraj wymowę zdania po polsku', 'en-sentence': 'Nagraj wymowę zdania w języku docelowym' };
+      return '<button type="button" class="bulk-audio-rec" data-idx="' + idx + '" data-lang="' + lang + '" data-kind="' + kind + '" title="' + titleMap[lang+'-'+kind] + '" style="' + bg + ';border-radius:8px;padding:5px 8px;font-weight:800;font-size:.7rem;cursor:pointer;font-family:inherit;min-width:46px">' + ico + ' ' + lbl + '</button>';
+    };
+    const sentBtnsHtml = hasSent
+      ? btn('pl', 'sentence', urlSentPl, '📝🇵🇱') + btn('en', 'sentence', urlSentEn, '📝🌐')
+      : '';
+    return '<div class="bulk-audio-row" data-idx="' + idx + '" style="display:flex;align-items:center;gap:6px;padding:7px 8px;border-bottom:1px solid var(--border);font-size:.76rem;flex-wrap:wrap">' +
       '<span style="min-width:24px;text-align:right;color:var(--muted);font-weight:700">' + (idx + 1) + '.</span>' +
-      '<span style="flex:1;font-weight:600">' + esc(pl) + '</span>' +
-      '<span style="flex:1;font-weight:500;color:var(--muted)">' + esc(target) + '</span>' +
-      '<button type="button" class="bulk-audio-rec" data-idx="' + idx + '" data-lang="pl" title="Nagraj wymowę polską" style="' + plBg + ';border-radius:8px;padding:5px 9px;font-weight:800;font-size:.7rem;cursor:pointer;font-family:inherit;min-width:42px">' + plIco + ' 🇵🇱</button>' +
-      '<button type="button" class="bulk-audio-rec" data-idx="' + idx + '" data-lang="en" title="Nagraj wymowę w języku docelowym" style="' + enBg + ';border-radius:8px;padding:5px 9px;font-weight:800;font-size:.7rem;cursor:pointer;font-family:inherit;min-width:42px">' + enIco + ' 🌐</button>' +
+      '<span style="flex:1;min-width:120px;font-weight:600">' + esc(pl) + '</span>' +
+      '<span style="flex:1;min-width:120px;font-weight:500;color:var(--muted)">' + esc(target) + '</span>' +
+      btn('pl', 'word', urlPl, '🇵🇱') +
+      btn('en', 'word', urlEn, '🌐') +
+      sentBtnsHtml +
     '</div>';
   }).join('');
   list.innerHTML = rows;
   document.getElementById('bulkStatPl').textContent = countPl + '/' + unit.words.length;
   document.getElementById('bulkStatEn').textContent = countEn + '/' + unit.words.length;
+  // Sentence statystyki — opcjonalnie pokaz osobny chip
+  let sentEl = document.getElementById('bulkStatSent');
+  const statsBar = document.getElementById('bulkAudioStats');
+  if (sentTotal > 0) {
+    if (!sentEl && statsBar) {
+      const span = document.createElement('span');
+      span.id = 'bulkStatSentChip';
+      span.style.cssText = 'background:rgba(255,159,67,.18);color:#ff9f43;padding:4px 10px;border-radius:100px';
+      span.innerHTML = '📝 Zdania: <span id="bulkStatSent">0/0</span>';
+      statsBar.appendChild(span);
+      sentEl = document.getElementById('bulkStatSent');
+    }
+    if (sentEl) sentEl.textContent = (sentPlCount + sentEnCount) + '/' + (sentTotal * 2);
+  } else {
+    const chip = document.getElementById('bulkStatSentChip');
+    if (chip) chip.style.display = 'none';
+  }
   // Bind clicks (raz po render)
   list.querySelectorAll('.bulk-audio-rec').forEach(btn => {
     btn.addEventListener('click', (ev) => {
       ev.stopPropagation();
       const idx = parseInt(btn.getAttribute('data-idx'), 10);
       const lang = btn.getAttribute('data-lang');
-      _bulkAudioEditWord(idx, lang);
+      const kind = btn.getAttribute('data-kind') || 'word';
+      _bulkAudioEditWord(idx, lang, kind);
     });
   });
 }
@@ -8545,32 +8630,49 @@ function spkForeign(txt) {
 }
 
 // Sprobuj odtworzyc custom nagranie dla podanego tekstu w wybranym jezyku.
-// Szuka slowa w aktywnym podręczniku (BOOKS[currentBookId]), gdzie:
-//   - lang='pl' → text == word[0] (polski)
-//   - lang='en' → text == word[1] (jezyk docelowy)
-// Jezeli znajdzie i istnieje URL w cache word_audio → odtwarza i zwraca true.
-// W przeciwnym razie → false (caller powinien zrobic fallback do TTS).
+// Szuka w 4 miejscach kazdego slowa aktywnego podręcznika:
+//   1) text == word[0] (PL slowo) → audio (lang, 'word')
+//   2) text == word[1] (docelowe slowo) → audio (lang, 'word')
+//   3) text == sentence_pl (inline 4-5 elem albo z DB) → audio (lang, 'sentence')
+//   4) text == sentence_target (inline 4-5 elem albo z DB) → audio (lang, 'sentence')
+// Jezeli znajdzie URL w cache → odtwarza, zwraca true. Inaczej false (TTS fallback).
 function _tryCustomAudio(text, lang) {
   if (!text || typeof DB === 'undefined' || !DB.getWordAudioUrl) return false;
   if (typeof BOOKS === 'undefined' || !currentBookId || !BOOKS[currentBookId]) return false;
   const book = BOOKS[currentBookId];
-  const fieldIdx = (lang === 'pl') ? 0 : 1;
   const target = String(text).trim();
+  const wordField = (lang === 'pl') ? 0 : 1;
+  const playUrl = (url) => {
+    if (!url) return false;
+    try { const a = new Audio(url); a.play().catch(() => {}); return true; }
+    catch(e) { return false; }
+  };
   for (const uk of Object.keys(book.units)) {
     if (uk === 'all') continue;
     const arr = book.units[uk].words;
     for (let i = 0; i < arr.length; i++) {
-      if (String(arr[i][fieldIdx] || '').trim() === target) {
-        const wordPl = arr[i][0];
-        const url = DB.getWordAudioUrl(currentBookId, uk, wordPl, lang);
-        if (url) {
-          try {
-            const a = new Audio(url);
-            a.play().catch(() => {});
-            return true;
-          } catch(e) { return false; }
-        }
-        return false;
+      const w = arr[i];
+      // 1) Match na slowo (PL lub docelowe)
+      if (String(w[wordField] || '').trim() === target) {
+        const url = DB.getWordAudioUrl(currentBookId, uk, w[0], lang, 'word');
+        return playUrl(url);
+      }
+      // 2) Match na zdanie — inline + DB
+      let sentPl = null, sentEn = null;
+      if (typeof getInlineSentences === 'function') {
+        const inl = getInlineSentences(w);
+        if (inl) { sentPl = inl.sentPl || null; sentEn = inl.sentEn || null; }
+      }
+      if ((!sentPl || !sentEn) && DB.getSentence) {
+        try {
+          const dbS = DB.getSentence(currentBookId, w[0]);
+          if (dbS) { if (!sentPl) sentPl = dbS.sentence_pl || null; if (!sentEn) sentEn = dbS.sentence_target || null; }
+        } catch(e){}
+      }
+      const sentField = (lang === 'pl') ? sentPl : sentEn;
+      if (sentField && String(sentField).trim() === target) {
+        const url = DB.getWordAudioUrl(currentBookId, uk, w[0], lang, 'sentence');
+        return playUrl(url);
       }
     }
   }
@@ -24925,70 +25027,137 @@ ${bodyHtml}
     <div class="modal-label" id="wordEditTargetLabel">Język docelowy *</div>
     <input type="text" class="modal-textarea" id="wordEditTarget" placeholder="np. head" autocomplete="off" autocorrect="off" style="height:auto;padding:8px 10px;font-size:.85rem;font-weight:600">
 
-    <!-- Sekcja nagrywania wymowy — PL + EN (migracja #41) -->
-    <div class="modal-label">🎙️ Wymowa (nagranie własne)</div>
+    <!-- Sekcja nagrywania wymowy — SLOWA + ZDANIA × PL + EN (migracje #41 + #42) -->
+    <div class="modal-label">🎙️ Wymowa słówka (nagranie własne)</div>
     <div id="wordAudioBilingualWrap" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px">
 
-      <!-- Panel PL -->
-      <div class="wa-panel" data-lang="pl" style="background:var(--surface2);border:1.5px solid var(--border);border-radius:10px;padding:10px 12px">
+      <!-- Panel: slowo PL -->
+      <div class="wa-panel" data-lang="pl" data-kind="word" style="background:var(--surface2);border:1.5px solid var(--border);border-radius:10px;padding:10px 12px">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:6px">
           <span style="font-size:.78rem;font-weight:800">🇵🇱 Polski</span>
-          <span class="wa-status" data-lang="pl" style="font-size:.62rem;font-weight:600;color:var(--muted)">—</span>
+          <span class="wa-status" data-lang="pl" data-kind="word" style="font-size:.62rem;font-weight:600;color:var(--muted)">—</span>
         </div>
-        <div class="wa-controls" data-lang="pl" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-          <button type="button" class="wa-btn-start" data-lang="pl" style="background:var(--danger);color:#fff;border:none;border-radius:100px;padding:7px 14px;font-weight:800;font-size:.74rem;cursor:pointer;font-family:inherit">🎙️ Nagraj</button>
-          <button type="button" class="wa-btn-stop" data-lang="pl" style="display:none;background:var(--accent);color:#1a1040;border:none;border-radius:100px;padding:7px 14px;font-weight:800;font-size:.74rem;cursor:pointer;font-family:inherit">⏹️ Stop <span class="wa-timer" data-lang="pl" style="font-family:monospace">0:00</span></button>
-          <button type="button" class="wa-btn-play" data-lang="pl" style="display:none;background:transparent;border:1.5px solid var(--purple);color:var(--purple);border-radius:100px;padding:6px 12px;font-weight:700;font-size:.7rem;cursor:pointer;font-family:inherit">🔊 Odtwórz</button>
-          <button type="button" class="wa-btn-save" data-lang="pl" style="display:none;background:var(--success);color:#fff;border:none;border-radius:100px;padding:6px 14px;font-weight:800;font-size:.7rem;cursor:pointer;font-family:inherit">💾 Zapisz</button>
-          <button type="button" class="wa-btn-cancel" data-lang="pl" style="display:none;background:transparent;border:1.5px solid var(--muted);color:var(--muted);border-radius:100px;padding:6px 12px;font-weight:700;font-size:.7rem;cursor:pointer;font-family:inherit">✗ Anuluj</button>
-          <button type="button" class="wa-btn-delete" data-lang="pl" style="display:none;background:transparent;border:1.5px solid var(--danger);color:var(--danger);border-radius:100px;padding:6px 12px;font-weight:700;font-size:.7rem;cursor:pointer;font-family:inherit">🗑️ Usuń</button>
+        <div class="wa-controls" data-lang="pl" data-kind="word" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <button type="button" class="wa-btn-start"  data-lang="pl" data-kind="word" style="background:var(--danger);color:#fff;border:none;border-radius:100px;padding:7px 14px;font-weight:800;font-size:.74rem;cursor:pointer;font-family:inherit">🎙️ Nagraj</button>
+          <button type="button" class="wa-btn-stop"   data-lang="pl" data-kind="word" style="display:none;background:var(--accent);color:#1a1040;border:none;border-radius:100px;padding:7px 14px;font-weight:800;font-size:.74rem;cursor:pointer;font-family:inherit">⏹️ Stop <span class="wa-timer" data-lang="pl" data-kind="word" style="font-family:monospace">0:00</span></button>
+          <button type="button" class="wa-btn-play"   data-lang="pl" data-kind="word" style="display:none;background:transparent;border:1.5px solid var(--purple);color:var(--purple);border-radius:100px;padding:6px 12px;font-weight:700;font-size:.7rem;cursor:pointer;font-family:inherit">🔊 Odtwórz</button>
+          <button type="button" class="wa-btn-save"   data-lang="pl" data-kind="word" style="display:none;background:var(--success);color:#fff;border:none;border-radius:100px;padding:6px 14px;font-weight:800;font-size:.7rem;cursor:pointer;font-family:inherit">💾 Zapisz</button>
+          <button type="button" class="wa-btn-cancel" data-lang="pl" data-kind="word" style="display:none;background:transparent;border:1.5px solid var(--muted);color:var(--muted);border-radius:100px;padding:6px 12px;font-weight:700;font-size:.7rem;cursor:pointer;font-family:inherit">✗ Anuluj</button>
+          <button type="button" class="wa-btn-delete" data-lang="pl" data-kind="word" style="display:none;background:transparent;border:1.5px solid var(--danger);color:var(--danger);border-radius:100px;padding:6px 12px;font-weight:700;font-size:.7rem;cursor:pointer;font-family:inherit">🗑️ Usuń</button>
         </div>
-        <div class="wa-trim" data-lang="pl" style="display:none;margin-top:8px">
-          <canvas class="wa-wave" data-lang="pl" width="320" height="48" style="width:100%;height:48px;background:rgba(0,0,0,.18);border-radius:6px;display:block;margin-bottom:6px"></canvas>
+        <div class="wa-trim" data-lang="pl" data-kind="word" style="display:none;margin-top:8px">
+          <canvas class="wa-wave" data-lang="pl" data-kind="word" width="320" height="48" style="width:100%;height:48px;background:rgba(0,0,0,.18);border-radius:6px;display:block;margin-bottom:6px"></canvas>
           <div style="display:flex;align-items:center;gap:6px;font-size:.62rem;color:var(--muted);font-weight:600">
             <span style="min-width:40px">Start:</span>
-            <input type="range" class="wa-trim-start" data-lang="pl" min="0" max="1000" value="0" step="1" style="flex:1">
-            <span class="wa-trim-start-val" data-lang="pl" style="min-width:42px;text-align:right;font-family:monospace">0.00s</span>
+            <input type="range" class="wa-trim-start" data-lang="pl" data-kind="word" min="0" max="1000" value="0" step="1" style="flex:1">
+            <span class="wa-trim-start-val" data-lang="pl" data-kind="word" style="min-width:42px;text-align:right;font-family:monospace">0.00s</span>
           </div>
           <div style="display:flex;align-items:center;gap:6px;font-size:.62rem;color:var(--muted);font-weight:600;margin-top:3px">
             <span style="min-width:40px">Koniec:</span>
-            <input type="range" class="wa-trim-end" data-lang="pl" min="0" max="1000" value="1000" step="1" style="flex:1">
-            <span class="wa-trim-end-val" data-lang="pl" style="min-width:42px;text-align:right;font-family:monospace">0.00s</span>
+            <input type="range" class="wa-trim-end" data-lang="pl" data-kind="word" min="0" max="1000" value="1000" step="1" style="flex:1">
+            <span class="wa-trim-end-val" data-lang="pl" data-kind="word" style="min-width:42px;text-align:right;font-family:monospace">0.00s</span>
           </div>
         </div>
-        <div class="wa-hint" data-lang="pl" style="font-size:.6rem;color:var(--muted);font-weight:500;font-style:italic;margin-top:6px;line-height:1.4">Naciśnij 🎙️, przeczytaj polskie słowo wyraźnie (max 10 s), zatrzymaj i zapisz.</div>
+        <div class="wa-hint" data-lang="pl" data-kind="word" style="font-size:.6rem;color:var(--muted);font-weight:500;font-style:italic;margin-top:6px;line-height:1.4">Naciśnij 🎙️, przeczytaj polskie słowo wyraźnie (max 10 s), zatrzymaj i zapisz.</div>
       </div>
 
-      <!-- Panel EN (target language — moze byc tez FR/DE/itd.) -->
-      <div class="wa-panel" data-lang="en" style="background:var(--surface2);border:1.5px solid var(--border);border-radius:10px;padding:10px 12px">
+      <!-- Panel: slowo docelowe (EN/FR/DE/...) -->
+      <div class="wa-panel" data-lang="en" data-kind="word" style="background:var(--surface2);border:1.5px solid var(--border);border-radius:10px;padding:10px 12px">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:6px">
           <span style="font-size:.78rem;font-weight:800" id="waEnLabel">🇬🇧 Angielski</span>
-          <span class="wa-status" data-lang="en" style="font-size:.62rem;font-weight:600;color:var(--muted)">—</span>
+          <span class="wa-status" data-lang="en" data-kind="word" style="font-size:.62rem;font-weight:600;color:var(--muted)">—</span>
         </div>
-        <div class="wa-controls" data-lang="en" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-          <button type="button" class="wa-btn-start" data-lang="en" style="background:var(--danger);color:#fff;border:none;border-radius:100px;padding:7px 14px;font-weight:800;font-size:.74rem;cursor:pointer;font-family:inherit">🎙️ Nagraj</button>
-          <button type="button" class="wa-btn-stop" data-lang="en" style="display:none;background:var(--accent);color:#1a1040;border:none;border-radius:100px;padding:7px 14px;font-weight:800;font-size:.74rem;cursor:pointer;font-family:inherit">⏹️ Stop <span class="wa-timer" data-lang="en" style="font-family:monospace">0:00</span></button>
-          <button type="button" class="wa-btn-play" data-lang="en" style="display:none;background:transparent;border:1.5px solid var(--purple);color:var(--purple);border-radius:100px;padding:6px 12px;font-weight:700;font-size:.7rem;cursor:pointer;font-family:inherit">🔊 Odtwórz</button>
-          <button type="button" class="wa-btn-save" data-lang="en" style="display:none;background:var(--success);color:#fff;border:none;border-radius:100px;padding:6px 14px;font-weight:800;font-size:.7rem;cursor:pointer;font-family:inherit">💾 Zapisz</button>
-          <button type="button" class="wa-btn-cancel" data-lang="en" style="display:none;background:transparent;border:1.5px solid var(--muted);color:var(--muted);border-radius:100px;padding:6px 12px;font-weight:700;font-size:.7rem;cursor:pointer;font-family:inherit">✗ Anuluj</button>
-          <button type="button" class="wa-btn-delete" data-lang="en" style="display:none;background:transparent;border:1.5px solid var(--danger);color:var(--danger);border-radius:100px;padding:6px 12px;font-weight:700;font-size:.7rem;cursor:pointer;font-family:inherit">🗑️ Usuń</button>
+        <div class="wa-controls" data-lang="en" data-kind="word" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <button type="button" class="wa-btn-start"  data-lang="en" data-kind="word" style="background:var(--danger);color:#fff;border:none;border-radius:100px;padding:7px 14px;font-weight:800;font-size:.74rem;cursor:pointer;font-family:inherit">🎙️ Nagraj</button>
+          <button type="button" class="wa-btn-stop"   data-lang="en" data-kind="word" style="display:none;background:var(--accent);color:#1a1040;border:none;border-radius:100px;padding:7px 14px;font-weight:800;font-size:.74rem;cursor:pointer;font-family:inherit">⏹️ Stop <span class="wa-timer" data-lang="en" data-kind="word" style="font-family:monospace">0:00</span></button>
+          <button type="button" class="wa-btn-play"   data-lang="en" data-kind="word" style="display:none;background:transparent;border:1.5px solid var(--purple);color:var(--purple);border-radius:100px;padding:6px 12px;font-weight:700;font-size:.7rem;cursor:pointer;font-family:inherit">🔊 Odtwórz</button>
+          <button type="button" class="wa-btn-save"   data-lang="en" data-kind="word" style="display:none;background:var(--success);color:#fff;border:none;border-radius:100px;padding:6px 14px;font-weight:800;font-size:.7rem;cursor:pointer;font-family:inherit">💾 Zapisz</button>
+          <button type="button" class="wa-btn-cancel" data-lang="en" data-kind="word" style="display:none;background:transparent;border:1.5px solid var(--muted);color:var(--muted);border-radius:100px;padding:6px 12px;font-weight:700;font-size:.7rem;cursor:pointer;font-family:inherit">✗ Anuluj</button>
+          <button type="button" class="wa-btn-delete" data-lang="en" data-kind="word" style="display:none;background:transparent;border:1.5px solid var(--danger);color:var(--danger);border-radius:100px;padding:6px 12px;font-weight:700;font-size:.7rem;cursor:pointer;font-family:inherit">🗑️ Usuń</button>
         </div>
-        <div class="wa-trim" data-lang="en" style="display:none;margin-top:8px">
-          <canvas class="wa-wave" data-lang="en" width="320" height="48" style="width:100%;height:48px;background:rgba(0,0,0,.18);border-radius:6px;display:block;margin-bottom:6px"></canvas>
+        <div class="wa-trim" data-lang="en" data-kind="word" style="display:none;margin-top:8px">
+          <canvas class="wa-wave" data-lang="en" data-kind="word" width="320" height="48" style="width:100%;height:48px;background:rgba(0,0,0,.18);border-radius:6px;display:block;margin-bottom:6px"></canvas>
           <div style="display:flex;align-items:center;gap:6px;font-size:.62rem;color:var(--muted);font-weight:600">
             <span style="min-width:40px">Start:</span>
-            <input type="range" class="wa-trim-start" data-lang="en" min="0" max="1000" value="0" step="1" style="flex:1">
-            <span class="wa-trim-start-val" data-lang="en" style="min-width:42px;text-align:right;font-family:monospace">0.00s</span>
+            <input type="range" class="wa-trim-start" data-lang="en" data-kind="word" min="0" max="1000" value="0" step="1" style="flex:1">
+            <span class="wa-trim-start-val" data-lang="en" data-kind="word" style="min-width:42px;text-align:right;font-family:monospace">0.00s</span>
           </div>
           <div style="display:flex;align-items:center;gap:6px;font-size:.62rem;color:var(--muted);font-weight:600;margin-top:3px">
             <span style="min-width:40px">Koniec:</span>
-            <input type="range" class="wa-trim-end" data-lang="en" min="0" max="1000" value="1000" step="1" style="flex:1">
-            <span class="wa-trim-end-val" data-lang="en" style="min-width:42px;text-align:right;font-family:monospace">0.00s</span>
+            <input type="range" class="wa-trim-end" data-lang="en" data-kind="word" min="0" max="1000" value="1000" step="1" style="flex:1">
+            <span class="wa-trim-end-val" data-lang="en" data-kind="word" style="min-width:42px;text-align:right;font-family:monospace">0.00s</span>
           </div>
         </div>
-        <div class="wa-hint" data-lang="en" style="font-size:.6rem;color:var(--muted);font-weight:500;font-style:italic;margin-top:6px;line-height:1.4">Naciśnij 🎙️, przeczytaj słowo w języku docelowym (max 10 s), zatrzymaj i zapisz.</div>
+        <div class="wa-hint" data-lang="en" data-kind="word" style="font-size:.6rem;color:var(--muted);font-weight:500;font-style:italic;margin-top:6px;line-height:1.4">Naciśnij 🎙️, przeczytaj słowo w języku docelowym (max 10 s), zatrzymaj i zapisz.</div>
       </div>
 
+    </div>
+
+    <!-- Sekcja: nagrania ZDAN przykladowych (migracja #42) — widoczna gdy slowo ma zdanie -->
+    <div id="wordAudioSentenceSection" style="display:none">
+      <div class="modal-label">📝 Wymowa zdania przykładowego</div>
+      <div id="wordAudioSentencePreview" style="font-size:.72rem;font-style:italic;color:var(--muted);padding:6px 10px;background:rgba(108,92,231,.08);border:1px dashed rgba(108,92,231,.35);border-radius:8px;margin-bottom:6px;line-height:1.5">—</div>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px">
+
+        <!-- Panel: zdanie PL -->
+        <div class="wa-panel" data-lang="pl" data-kind="sentence" style="background:var(--surface2);border:1.5px solid var(--border);border-radius:10px;padding:10px 12px">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:6px">
+            <span style="font-size:.78rem;font-weight:800">🇵🇱 Zdanie po polsku</span>
+            <span class="wa-status" data-lang="pl" data-kind="sentence" style="font-size:.62rem;font-weight:600;color:var(--muted)">—</span>
+          </div>
+          <div class="wa-controls" data-lang="pl" data-kind="sentence" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <button type="button" class="wa-btn-start"  data-lang="pl" data-kind="sentence" style="background:var(--danger);color:#fff;border:none;border-radius:100px;padding:7px 14px;font-weight:800;font-size:.74rem;cursor:pointer;font-family:inherit">🎙️ Nagraj</button>
+            <button type="button" class="wa-btn-stop"   data-lang="pl" data-kind="sentence" style="display:none;background:var(--accent);color:#1a1040;border:none;border-radius:100px;padding:7px 14px;font-weight:800;font-size:.74rem;cursor:pointer;font-family:inherit">⏹️ Stop <span class="wa-timer" data-lang="pl" data-kind="sentence" style="font-family:monospace">0:00</span></button>
+            <button type="button" class="wa-btn-play"   data-lang="pl" data-kind="sentence" style="display:none;background:transparent;border:1.5px solid var(--purple);color:var(--purple);border-radius:100px;padding:6px 12px;font-weight:700;font-size:.7rem;cursor:pointer;font-family:inherit">🔊 Odtwórz</button>
+            <button type="button" class="wa-btn-save"   data-lang="pl" data-kind="sentence" style="display:none;background:var(--success);color:#fff;border:none;border-radius:100px;padding:6px 14px;font-weight:800;font-size:.7rem;cursor:pointer;font-family:inherit">💾 Zapisz</button>
+            <button type="button" class="wa-btn-cancel" data-lang="pl" data-kind="sentence" style="display:none;background:transparent;border:1.5px solid var(--muted);color:var(--muted);border-radius:100px;padding:6px 12px;font-weight:700;font-size:.7rem;cursor:pointer;font-family:inherit">✗ Anuluj</button>
+            <button type="button" class="wa-btn-delete" data-lang="pl" data-kind="sentence" style="display:none;background:transparent;border:1.5px solid var(--danger);color:var(--danger);border-radius:100px;padding:6px 12px;font-weight:700;font-size:.7rem;cursor:pointer;font-family:inherit">🗑️ Usuń</button>
+          </div>
+          <div class="wa-trim" data-lang="pl" data-kind="sentence" style="display:none;margin-top:8px">
+            <canvas class="wa-wave" data-lang="pl" data-kind="sentence" width="320" height="48" style="width:100%;height:48px;background:rgba(0,0,0,.18);border-radius:6px;display:block;margin-bottom:6px"></canvas>
+            <div style="display:flex;align-items:center;gap:6px;font-size:.62rem;color:var(--muted);font-weight:600">
+              <span style="min-width:40px">Start:</span>
+              <input type="range" class="wa-trim-start" data-lang="pl" data-kind="sentence" min="0" max="1000" value="0" step="1" style="flex:1">
+              <span class="wa-trim-start-val" data-lang="pl" data-kind="sentence" style="min-width:42px;text-align:right;font-family:monospace">0.00s</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;font-size:.62rem;color:var(--muted);font-weight:600;margin-top:3px">
+              <span style="min-width:40px">Koniec:</span>
+              <input type="range" class="wa-trim-end" data-lang="pl" data-kind="sentence" min="0" max="1000" value="1000" step="1" style="flex:1">
+              <span class="wa-trim-end-val" data-lang="pl" data-kind="sentence" style="min-width:42px;text-align:right;font-family:monospace">0.00s</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Panel: zdanie docelowe -->
+        <div class="wa-panel" data-lang="en" data-kind="sentence" style="background:var(--surface2);border:1.5px solid var(--border);border-radius:10px;padding:10px 12px">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:6px">
+            <span style="font-size:.78rem;font-weight:800" id="waEnSentLabel">🇬🇧 Zdanie po angielsku</span>
+            <span class="wa-status" data-lang="en" data-kind="sentence" style="font-size:.62rem;font-weight:600;color:var(--muted)">—</span>
+          </div>
+          <div class="wa-controls" data-lang="en" data-kind="sentence" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <button type="button" class="wa-btn-start"  data-lang="en" data-kind="sentence" style="background:var(--danger);color:#fff;border:none;border-radius:100px;padding:7px 14px;font-weight:800;font-size:.74rem;cursor:pointer;font-family:inherit">🎙️ Nagraj</button>
+            <button type="button" class="wa-btn-stop"   data-lang="en" data-kind="sentence" style="display:none;background:var(--accent);color:#1a1040;border:none;border-radius:100px;padding:7px 14px;font-weight:800;font-size:.74rem;cursor:pointer;font-family:inherit">⏹️ Stop <span class="wa-timer" data-lang="en" data-kind="sentence" style="font-family:monospace">0:00</span></button>
+            <button type="button" class="wa-btn-play"   data-lang="en" data-kind="sentence" style="display:none;background:transparent;border:1.5px solid var(--purple);color:var(--purple);border-radius:100px;padding:6px 12px;font-weight:700;font-size:.7rem;cursor:pointer;font-family:inherit">🔊 Odtwórz</button>
+            <button type="button" class="wa-btn-save"   data-lang="en" data-kind="sentence" style="display:none;background:var(--success);color:#fff;border:none;border-radius:100px;padding:6px 14px;font-weight:800;font-size:.7rem;cursor:pointer;font-family:inherit">💾 Zapisz</button>
+            <button type="button" class="wa-btn-cancel" data-lang="en" data-kind="sentence" style="display:none;background:transparent;border:1.5px solid var(--muted);color:var(--muted);border-radius:100px;padding:6px 12px;font-weight:700;font-size:.7rem;cursor:pointer;font-family:inherit">✗ Anuluj</button>
+            <button type="button" class="wa-btn-delete" data-lang="en" data-kind="sentence" style="display:none;background:transparent;border:1.5px solid var(--danger);color:var(--danger);border-radius:100px;padding:6px 12px;font-weight:700;font-size:.7rem;cursor:pointer;font-family:inherit">🗑️ Usuń</button>
+          </div>
+          <div class="wa-trim" data-lang="en" data-kind="sentence" style="display:none;margin-top:8px">
+            <canvas class="wa-wave" data-lang="en" data-kind="sentence" width="320" height="48" style="width:100%;height:48px;background:rgba(0,0,0,.18);border-radius:6px;display:block;margin-bottom:6px"></canvas>
+            <div style="display:flex;align-items:center;gap:6px;font-size:.62rem;color:var(--muted);font-weight:600">
+              <span style="min-width:40px">Start:</span>
+              <input type="range" class="wa-trim-start" data-lang="en" data-kind="sentence" min="0" max="1000" value="0" step="1" style="flex:1">
+              <span class="wa-trim-start-val" data-lang="en" data-kind="sentence" style="min-width:42px;text-align:right;font-family:monospace">0.00s</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;font-size:.62rem;color:var(--muted);font-weight:600;margin-top:3px">
+              <span style="min-width:40px">Koniec:</span>
+              <input type="range" class="wa-trim-end" data-lang="en" data-kind="sentence" min="0" max="1000" value="1000" step="1" style="flex:1">
+              <span class="wa-trim-end-val" data-lang="en" data-kind="sentence" style="min-width:42px;text-align:right;font-family:monospace">0.00s</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
     </div>
 
     <div id="wordEditMsg" style="font-size:.78rem;font-weight:700;margin-top:8px;min-height:18px"></div>
