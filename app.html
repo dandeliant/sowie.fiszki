@@ -6003,11 +6003,15 @@ function openWordList(key) {
   document.getElementById('customSection').style.display = 'none';
   document.getElementById('btnCustomToggle').style.display = 'none'; // admin ma teraz własny UI
   // Pokaz przycisk bulk-audio dla admina/nauczyciela (migracja #41)
+  // Ukryj dla wirtualnych unitow (all, mistakes) i custom-* (slowka spoza BOOKS)
   const bulkBtn = document.getElementById('btnBulkAudio');
   if (bulkBtn) {
     const canRecord = (typeof isCurrentUserAdmin === 'function' && isCurrentUserAdmin())
                    || (typeof isCurrentUserTeacher === 'function' && isCurrentUserTeacher());
-    bulkBtn.style.display = (canRecord && key !== 'all') ? '' : 'none';
+    const realBook = BOOKS && BOOKS[currentBookId];
+    const realUnit = realBook && realBook.units && realBook.units[key];
+    const isRealUnit = !!realUnit && key !== 'all' && key !== 'mistakes';
+    bulkBtn.style.display = (canRecord && isRealUnit) ? '' : 'none';
   }
   showScreen('sWordList');
 }
@@ -8199,18 +8203,41 @@ window.wordAudioDeleteExisting= () => _waDeleteExisting('en');
 //  panelem rekordera (wykorzystuje istniejacy `wordEditModal`).
 // ══════════════════════════════════════════════
 window.openBulkAudioModal = function() {
+  console.log('[bulkAudio] open clicked', { currentBookId, currentUnitKey });
   const canRecord = (typeof isCurrentUserAdmin === 'function' && isCurrentUserAdmin())
                  || (typeof isCurrentUserTeacher === 'function' && isCurrentUserTeacher());
-  if (!canRecord) return;
-  if (!currentBookId || !currentUnitKey || currentUnitKey === 'all') return;
+  if (!canRecord) {
+    if (typeof toast === 'function') toast('Tylko admin/nauczyciel mogą nagrywać.', 2400);
+    return;
+  }
+  if (!currentBookId) {
+    if (typeof toast === 'function') toast('Brak aktywnego podręcznika.', 2400);
+    console.warn('[bulkAudio] no currentBookId');
+    return;
+  }
+  if (!currentUnitKey || currentUnitKey === 'all' || currentUnitKey === 'mistakes') {
+    if (typeof toast === 'function') toast('Wejdź najpierw w konkretny unit (nie „Wszystkie" / „Trudne słowa").', 3000);
+    console.warn('[bulkAudio] virtual unit:', currentUnitKey);
+    return;
+  }
   const book = BOOKS[currentBookId];
-  if (!book || !book.units || !book.units[currentUnitKey]) return;
+  if (!book) {
+    if (typeof toast === 'function') toast('Nie znaleziono podręcznika ' + currentBookId + '.', 2800);
+    console.warn('[bulkAudio] book missing:', currentBookId);
+    return;
+  }
+  if (!book.units || !book.units[currentUnitKey]) {
+    if (typeof toast === 'function') toast('Nie znaleziono unitu „' + currentUnitKey + '" — być może to własny unit (custom). Bulk-nagrywanie działa tylko dla unitów podręcznika.', 4500);
+    console.warn('[bulkAudio] unit missing:', currentUnitKey, 'available:', Object.keys(book.units || {}));
+    return;
+  }
   const unit = book.units[currentUnitKey];
   const langMap = { en: 'Angielski', fr: 'Francuski', de: 'Niemiecki', es: 'Hiszpański', it: 'Włoski', ru: 'Rosyjski' };
   const langName = langMap[book.language] || 'Język docelowy';
   document.getElementById('bulkAudioInfo').textContent = (book.shortName || book.name) + ' · ' + (unit.name || currentUnitKey) + ' — ' + (unit.words ? unit.words.length : 0) + ' słówek · klik PL lub ' + langName + ' aby nagrać';
   _bulkAudioRender();
   document.getElementById('bulkAudioModal').style.display = 'flex';
+  console.log('[bulkAudio] modal opened OK');
 };
 
 window.closeBulkAudioModal = function() {
