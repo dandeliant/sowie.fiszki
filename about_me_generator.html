@@ -701,15 +701,65 @@
     100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
   }
 
+  /* ====== WORKSHEET PRINT — czysta karta pracy (wlasny layout) ====== */
+  #worksheetPrint { display: none; }
+  .ws-page {
+    font-family: "Nunito", system-ui, sans-serif;
+    color: #000;
+    padding: 0 8px;
+  }
+  .ws-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    border-bottom: 2.5px solid #000;
+    padding-bottom: 8px;
+    margin-bottom: 16px;
+    gap: 16px;
+  }
+  .ws-title {
+    font-family: "Fredoka", sans-serif;
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1.1;
+  }
+  .ws-title .sub { display: block; font-size: 12px; font-weight: 500; color: #444; margin-top: 2px; }
+  .ws-meta { font-size: 11px; text-align: right; line-height: 1.7; }
+  .ws-meta .fill { display: inline-block; min-width: 110px; border-bottom: 1.2px solid #444; }
+  .ws-character {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    border: 2px dashed #555;
+    padding: 10px 16px;
+    border-radius: 14px;
+    margin-bottom: 14px;
+    background: #f7f3eb;
+  }
+  .ws-char-emoji { font-size: 60px; line-height: 1; flex-shrink: 0; }
+  .ws-char-info { font-size: 14px; line-height: 1.7; }
+  .ws-char-name { font-size: 19px; font-weight: 800; line-height: 1.1; margin-bottom: 4px; }
+  .ws-char-tags { color: #444; font-weight: 600; }
+  .ws-instr { font-size: 12px; font-style: italic; margin-bottom: 12px; color: #333; }
+  .ws-q-list { list-style: none; padding: 0; margin: 0; }
+  .ws-q-item { margin-bottom: 14px; page-break-inside: avoid; }
+  .ws-q-text { font-weight: 700; font-size: 13px; margin-bottom: 5px; }
+  .ws-q-hint { font-style: italic; color: #666; font-weight: 500; font-size: 11px; margin-left: 4px; }
+  .ws-q-line { border-bottom: 1.5px solid #555; height: 22px; margin-bottom: 4px; }
+  .ws-footer { margin-top: 18px; text-align: center; font-size: 10px; color: #666; border-top: 1px dashed #aaa; padding-top: 8px; }
+
   @media print {
     .back-link, .back-top, .back-bottom,
     .htp-btn, .htp-modal,
     .toolbar, .voice-indicator,
     .action-bar, .intro-overlay,
-    .confetti,
+    .confetti, header, .mode-switcher, .scene-card,
+    .site-footer,
     body::before { display: none !important; }
-    body { background: #fff !important; }
-    .qa-answer .blur { background: transparent !important; color: var(--plum-2) !important; }
+    body { background: #fff !important; color: #000 !important; }
+    .wrap { padding: 0 !important; max-width: 100% !important; }
+    #worksheetPrint { display: block !important; }
+    @page { margin: 14mm 13mm; }
   }
 </style>
 </head>
@@ -856,6 +906,7 @@
       <button class="big-btn primary" id="generateBtn">🎲 Generate</button>
       <button class="big-btn show-btn" id="showBtn" disabled>👀 Show</button>
       <button class="big-btn speak-btn" id="speakAllBtn" disabled>🔊 Speak All</button>
+      <button class="big-btn show-btn" id="printBtn" disabled title="Drukuj czystą kartę pracy dla ucznia">🖨️ Drukuj kartę</button>
     </div>
 
   </div>
@@ -877,6 +928,9 @@
 </div>
 
 <div class="site-footer">© 2026 Sowie Fiszki</div>
+
+<!-- Worksheet print target — wypelniany przez printWorksheet() przy kliknieciu drukuj -->
+<div id="worksheetPrint" aria-hidden="true"></div>
 
 <script>
 /* =========================================================
@@ -1222,9 +1276,84 @@ function generate() {
   showBtn.disabled = false;
   speakAllBtn.disabled = false;
   sayBtns.forEach(b => b.disabled = false);
+  const _printBtn = document.getElementById("printBtn");
+  if (_printBtn) _printBtn.disabled = false;
 
   // Mała fanfara
   spawnConfetti();
+}
+
+/* =========================================================
+   DRUKOWANIE KARTY PRACY (czysta wersja dla ucznia)
+   Buduje #worksheetPrint na podstawie aktualnego `current` +
+   tekstow pytan z DOM (bo zaleza od mode), wywoluje window.print().
+   Style @media print pokazuja tylko #worksheetPrint.
+========================================================= */
+function printWorksheet() {
+  if (!current) {
+    alert("Najpierw kliknij 🎲 Generate, żeby wylosować postać do karty pracy.");
+    return;
+  }
+  const c = current;
+  const isThird = (mode === "thirdPerson");
+  // Pytania bierzemy z aktualnego DOM (uwzglednia mode me/he-she)
+  const q1 = (document.getElementById("q1text") || {}).textContent || "Where are you from?";
+  const q2 = (document.getElementById("q2text") || {}).textContent || "What nationality are you?";
+  const q3 = (document.getElementById("q3text") || {}).textContent || "Where do you live?";
+  const q4lead = (document.getElementById("q4lead") || {}).textContent || "Do you like";
+  const q5 = "What time is it?";
+
+  const instr = isThird
+    ? "Read about this person. Answer the questions in writing — use he/she."
+    : "Imagine you are this person. Answer the questions in writing — use I.";
+
+  const ws = `
+    <div class="ws-page">
+      <div class="ws-header">
+        <div class="ws-title">👋 About Me — Karta pracy<span class="sub">Speaking practice · narodowości · miasta · sporty · czas</span></div>
+        <div class="ws-meta">
+          Imię: <span class="fill"></span><br>
+          Klasa: <span class="fill" style="min-width:55px"></span> &nbsp; Data: <span class="fill" style="min-width:80px"></span>
+        </div>
+      </div>
+      <div class="ws-character">
+        <div class="ws-char-emoji">${escHtml(c.emoji)} ${escHtml(c.country.flag)}</div>
+        <div class="ws-char-info">
+          <div class="ws-char-name">${escHtml(c.name)}</div>
+          <div class="ws-char-tags">🌍 ${escHtml(c.country.nameInQuestion)} &nbsp;·&nbsp; ${escHtml(c.sport.emoji)} ${escHtml(c.sport.name)} &nbsp;·&nbsp; 🕐 ${escHtml(c.time.display)}</div>
+        </div>
+      </div>
+      <div class="ws-instr">${escHtml(instr)}</div>
+      <ol class="ws-q-list">
+        <li class="ws-q-item">
+          <div class="ws-q-text">1. ${escHtml(q1)}</div>
+          <div class="ws-q-line"></div>
+        </li>
+        <li class="ws-q-item">
+          <div class="ws-q-text">2. ${escHtml(q2)}</div>
+          <div class="ws-q-line"></div>
+        </li>
+        <li class="ws-q-item">
+          <div class="ws-q-text">3. ${escHtml(q3)} <span class="ws-q-hint">(podpowiedź: ${escHtml(c.city)})</span></div>
+          <div class="ws-q-line"></div>
+        </li>
+        <li class="ws-q-item">
+          <div class="ws-q-text">4. ${escHtml(q4lead)} ${escHtml(c.sport.emoji)} ${escHtml(c.sport.name)}? <span class="ws-q-hint">(${c.likesSport ? "✅ tak" : "❌ nie"})</span></div>
+          <div class="ws-q-line"></div>
+        </li>
+        <li class="ws-q-item">
+          <div class="ws-q-text">5. ${escHtml(q5)} <span class="ws-q-hint">(${escHtml(c.time.display)})</span></div>
+          <div class="ws-q-line"></div>
+        </li>
+      </ol>
+      <div class="ws-footer">© 2026 Sowie Fiszki · sowiefiszki.com</div>
+    </div>
+  `;
+  const target = document.getElementById("worksheetPrint");
+  if (!target) return;
+  target.innerHTML = ws;
+  // Maly delay zeby DOM zdazyl sie zaktualizowac przed dialogem druku
+  setTimeout(() => window.print(), 60);
 }
 
 function escHtml(s) {
@@ -1292,6 +1421,12 @@ function answersAreShown() {
    EVENT BINDINGS
 ========================================================= */
 generateBtn.addEventListener("click", generate);
+
+// Drukowanie czystej karty pracy — wlaczone po pierwszym Generate
+{
+  const _printBtn = document.getElementById("printBtn");
+  if (_printBtn) _printBtn.addEventListener("click", printWorksheet);
+}
 
 showBtn.addEventListener("click", () => {
   if (!current) return;
