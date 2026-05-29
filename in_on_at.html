@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>At / In / On — Generator ćwiczeń</title>
+<style>
+  :root {
+    --bg1: #6366f1;
+    --bg2: #8b5cf6;
+    --bg3: #ec4899;
+    --card: #ffffff;
+    --ink: #1e293b;
+    --muted: #64748b;
+    --at: #f59e0b;
+    --in: #06b6d4;
+    --on: #10b981;
+    --ok: #16a34a;
+    --bad: #dc2626;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    min-height: 100vh;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: linear-gradient(135deg, var(--bg1), var(--bg2), var(--bg3));
+    background-size: 300% 300%;
+    animation: gradient 14s ease infinite;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 64px 24px 24px; /* gora wieksza zeby back-link nie zaslanial karty */
+    color: var(--ink);
+  }
+
+  @keyframes gradient {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+
+  .card {
+    background: var(--card);
+    width: 100%;
+    max-width: 520px;
+    border-radius: 24px;
+    padding: 36px 32px 32px;
+    box-shadow: 0 25px 60px rgba(0,0,0,0.25);
+    text-align: center;
+  }
+
+  h1 {
+    font-size: 1.9rem;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    margin-bottom: 4px;
+  }
+  h1 .at { color: var(--at); }
+  h1 .in { color: var(--in); }
+  h1 .on { color: var(--on); }
+
+  .subtitle {
+    color: var(--muted);
+    font-size: 0.95rem;
+    margin-bottom: 26px;
+  }
+
+  .word-box {
+    background: linear-gradient(135deg, #f8fafc, #eef2ff);
+    border: 2px dashed #cbd5e1;
+    border-radius: 18px;
+    padding: 34px 20px;
+    margin-bottom: 24px;
+    min-height: 120px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+
+  .word {
+    font-size: 2.3rem;
+    font-weight: 800;
+    color: var(--ink);
+    word-break: break-word;
+  }
+  .word.placeholder {
+    font-size: 1.1rem;
+    font-weight: 500;
+    color: var(--muted);
+  }
+  .hint {
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+
+  .options {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 22px;
+  }
+
+  .opt {
+    flex: 1;
+    padding: 16px 0;
+    font-size: 1.15rem;
+    font-weight: 700;
+    border: 2px solid transparent;
+    border-radius: 14px;
+    cursor: pointer;
+    background: #f1f5f9;
+    color: var(--ink);
+    transition: transform .12s, box-shadow .12s, background .15s;
+    text-transform: lowercase;
+  }
+  .opt:hover:not(:disabled) { transform: translateY(-3px); box-shadow: 0 8px 18px rgba(0,0,0,.12); }
+  .opt[data-v="at"].selected { background: var(--at); color:#fff; }
+  .opt[data-v="in"].selected { background: var(--in); color:#fff; }
+  .opt[data-v="on"].selected { background: var(--on); color:#fff; }
+  .opt.correct { background: var(--ok) !important; color:#fff; border-color: var(--ok); }
+  .opt.wrong { background: var(--bad) !important; color:#fff; border-color: var(--bad); }
+  .opt:disabled { cursor: default; }
+
+  .buttons { display: flex; gap: 12px; }
+
+  button.action {
+    flex: 1;
+    padding: 15px 0;
+    font-size: 1.05rem;
+    font-weight: 700;
+    border: none;
+    border-radius: 14px;
+    cursor: pointer;
+    color: #fff;
+    transition: transform .12s, opacity .15s;
+  }
+  button.action:hover:not(:disabled) { transform: translateY(-2px); }
+  button.action:disabled { opacity: .45; cursor: default; }
+  .btn-gen { background: linear-gradient(135deg, var(--bg1), var(--bg2)); }
+  .btn-check { background: linear-gradient(135deg, var(--bg3), var(--bg2)); }
+
+  .result {
+    margin-top: 22px;
+    border-radius: 16px;
+    padding: 18px;
+    text-align: left;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity .3s, transform .3s;
+    display: none;
+  }
+  .result.show { opacity: 1; transform: translateY(0); display: block; }
+  .result.good { background: #f0fdf4; border: 1px solid #bbf7d0; }
+  .result.no   { background: #fef2f2; border: 1px solid #fecaca; }
+
+  .result .verdict { font-weight: 800; font-size: 1.05rem; margin-bottom: 8px; }
+  .result.good .verdict { color: var(--ok); }
+  .result.no .verdict { color: var(--bad); }
+  .result .answer { font-size: 1rem; margin-bottom: 10px; }
+  .result .answer b { font-size: 1.1rem; }
+  .result .example {
+    background: #fff;
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 1rem;
+    color: var(--ink);
+    border-left: 4px solid var(--bg2);
+  }
+  .result .example .pl { display:block; color: var(--muted); font-size:.85rem; margin-top:4px; }
+  .result .rule { font-size: .85rem; color: var(--muted); margin-top: 10px; }
+
+  .score { margin-top: 18px; font-size: .9rem; color: var(--muted); }
+  .score b { color: var(--ink); }
+
+  /* ===== Zakładki ===== */
+  .tabs {
+    display: flex;
+    gap: 8px;
+    background: #f1f5f9;
+    padding: 6px;
+    border-radius: 14px;
+    margin-bottom: 24px;
+  }
+  .tab {
+    flex: 1;
+    padding: 11px 0;
+    border: none;
+    border-radius: 10px;
+    background: transparent;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--muted);
+    cursor: pointer;
+    transition: background .2s, color .2s, box-shadow .2s;
+  }
+  .tab.active {
+    background: #fff;
+    color: var(--ink);
+    box-shadow: 0 3px 10px rgba(0,0,0,.1);
+  }
+
+  .view { display: none; }
+  .view.active { display: block; animation: fade .35s ease; }
+  @keyframes fade { from { opacity:0; transform: translateY(8px);} to {opacity:1; transform:none;} }
+
+  /* ===== Naucz się ===== */
+  .learn-intro { color: var(--muted); font-size: .95rem; margin-bottom: 20px; line-height: 1.5; }
+
+  .funnel {
+    background: linear-gradient(135deg, #f8fafc, #eef2ff);
+    border-radius: 18px;
+    padding: 18px;
+    margin-bottom: 26px;
+  }
+  .funnel-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 0 auto;
+    padding: 12px 16px;
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: 0 2px 8px rgba(0,0,0,.06);
+    text-align: left;
+  }
+  .funnel-row.in  { width: 100%; }
+  .funnel-row.in2 { width: 85%; }
+  .funnel-row.on  { width: 65%; }
+  .funnel-row.at  { width: 45%; }
+  .funnel-txt { font-size: .9rem; color: var(--ink); }
+  .funnel-arrow { font-size: .75rem; color: var(--muted); margin: 6px 0; }
+
+  .badge {
+    flex-shrink: 0;
+    font-weight: 800;
+    color: #fff;
+    padding: 4px 12px;
+    border-radius: 999px;
+    font-size: .85rem;
+    text-transform: lowercase;
+  }
+  .badge.at { background: var(--at); }
+  .badge.in { background: var(--in); }
+  .badge.on { background: var(--on); }
+
+  /* ===== Karty (flip) ===== */
+  .flip-card {
+    perspective: 1000px;
+    margin-bottom: 14px;
+    cursor: pointer;
+    height: 130px;
+  }
+  .flip-inner {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    transition: transform .6s;
+    transform-style: preserve-3d;
+  }
+  .flip-card.flipped .flip-inner { transform: rotateY(180deg); }
+
+  .flip-front, .flip-back {
+    position: absolute;
+    inset: 0;
+    backface-visibility: hidden;
+    border-radius: 16px;
+    padding: 16px 20px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .flip-front {
+    align-items: center;
+    color: #fff;
+    gap: 4px;
+  }
+  .flip-front.at { background: linear-gradient(135deg, var(--at), #fbbf24); }
+  .flip-front.in { background: linear-gradient(135deg, var(--in), #22d3ee); }
+  .flip-front.on { background: linear-gradient(135deg, var(--on), #34d399); }
+  .flip-front .big { font-size: 2.4rem; font-weight: 800; line-height: 1; }
+  .flip-front .lbl { font-size: 1rem; font-weight: 600; }
+  .flip-front .tap { font-size: .75rem; opacity: .85; margin-top: 4px; }
+
+  .flip-back {
+    background: #fff;
+    border: 2px solid #e2e8f0;
+    transform: rotateY(180deg);
+    text-align: left;
+  }
+  .flip-back ul { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+  .flip-back li { font-size: .88rem; color: var(--ink); }
+  .flip-back b { color: var(--bg1); }
+
+  .learn-tip {
+    margin-top: 18px;
+    font-size: .9rem;
+    color: var(--ink);
+    background: #fef3c7;
+    border-radius: 12px;
+    padding: 12px 14px;
+  }
+
+  /* ===== Drukuj ===== */
+  .print-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 12px;
+  }
+  .pc-label { font-size: .9rem; color: var(--muted); font-weight: 600; }
+  .pc-label select {
+    margin-left: 6px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 2px solid #e2e8f0;
+    font-size: .95rem;
+    font-weight: 700;
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .print-controls .action { flex: 0 1 auto; padding: 12px 18px; }
+  .print-note { font-size: .85rem; color: var(--muted); margin-bottom: 18px; }
+
+  .sheets-preview { display: flex; flex-direction: column; gap: 18px; }
+
+  .print-sheet {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    box-shadow: 0 6px 20px rgba(0,0,0,.12);
+    aspect-ratio: 210 / 297;
+    padding: 8% 9%;
+    text-align: left;
+    font-family: 'Comic Sans MS', 'Segoe Print', 'Comic Neue', cursive;
+    color: #4b5563;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+  }
+  .sheet-title {
+    text-align: center;
+    font-size: 2rem;
+    font-weight: 800;
+    color: #4b5563;
+    margin-bottom: 18px;
+    letter-spacing: 1px;
+  }
+  .sheet-instr { font-size: 1rem; margin-bottom: 10px; }
+  .sheet-list { list-style: decimal; padding-left: 26px; display: flex; flex-direction: column; gap: 10px; }
+  .sheet-list li { font-size: 1rem; line-height: 1.5; padding-left: 4px; }
+  .sheet-list b { text-decoration: underline; color: #4b5563; }
+  .blank { letter-spacing: 1px; }
+  .sheet-footer {
+    margin-top: auto;
+    padding-top: 20px;
+    text-align: center;
+    font-size: .9rem;
+    color: #9ca3af;
+  }
+
+  /* ===== Tylko wydruk ===== */
+  @media print {
+    @page { size: A4; margin: 16mm; }
+    body {
+      background: #fff !important;
+      display: block;
+      padding: 0;
+      animation: none;
+    }
+    .card {
+      box-shadow: none;
+      max-width: none;
+      width: 100%;
+      padding: 0;
+      border-radius: 0;
+    }
+    /* ukryj cały interfejs poza arkuszami */
+    .card > h1, .subtitle, .tabs,
+    #practice, #learn,
+    .print-controls, .print-note { display: none !important; }
+
+    #print { display: block !important; }
+    .sheets-preview { display: block; gap: 0; }
+
+    .print-sheet {
+      border: none;
+      box-shadow: none;
+      border-radius: 0;
+      aspect-ratio: auto;
+      min-height: 96vh;
+      padding: 0;
+      page-break-after: always;
+    }
+    .print-sheet:last-child { page-break-after: auto; }
+    /* ukryj nasze elementy konwencji takze w trybie wydruku */
+    .back-link, .htp-btn, .htp-modal, .site-footer { display: none !important; }
+  }
+
+  /* ============ BACK LINK + JAK GRAC + STOPKA (konwencja Sowie Fiszki) ============ */
+  .back-link {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 14px;
+    background: rgba(255,255,255,.92);
+    border: 2px solid rgba(255,255,255,.6);
+    border-radius: 999px;
+    color: var(--bg2);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    font-weight: 700; font-size: .85rem;
+    text-decoration: none;
+    transition: all .15s ease;
+    box-shadow: 0 6px 18px rgba(0,0,0,.18);
+  }
+  .back-link:hover { background: #fff; transform: translateY(-2px); }
+  .back-top    { position: fixed; top: 14px; left: 14px; z-index: 1400; }
+  .back-bottom { display: block; text-align: center; margin: 20px auto 10px; width: max-content; }
+
+  .htp-btn {
+    position: fixed; top: 14px; right: 14px; z-index: 1500;
+    background: linear-gradient(135deg, var(--at), #fbbf24);
+    color: #1e293b;
+    border: 3px solid #fff;
+    padding: 8px 14px; border-radius: 999px;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    font-weight: 800; font-size: .82rem;
+    cursor: pointer;
+    box-shadow: 0 6px 18px rgba(0,0,0,.25);
+    transition: all .15s ease;
+  }
+  .htp-btn:hover { transform: translateY(-2px); }
+
+  .htp-modal {
+    position: fixed; inset: 0;
+    background: rgba(30, 27, 75, .72);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    display: none; place-items: center;
+    z-index: 4000; padding: 20px;
+  }
+  .htp-modal.show { display: grid; }
+  .htp-box {
+    background: #fff; color: var(--ink);
+    border-radius: 22px; padding: 24px 26px;
+    max-width: 480px; width: 100%;
+    max-height: 85vh; overflow-y: auto;
+    box-shadow: 0 28px 60px rgba(0,0,0,.5);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+  }
+  .htp-box h3 {
+    margin: 0 0 12px; color: var(--bg2);
+    font-size: 1.35rem; font-weight: 800;
+  }
+  .htp-box ol { padding-left: 22px; margin: 0 0 14px; font-size: .9rem; line-height: 1.6; }
+  .htp-box ol li { margin-bottom: 7px; }
+  .htp-box ol li b { color: var(--bg3); }
+  .htp-box .at-h { color: var(--at); font-weight: 800; }
+  .htp-box .in-h { color: var(--in); font-weight: 800; }
+  .htp-box .on-h { color: var(--on); font-weight: 800; }
+  .htp-close {
+    appearance: none; border: none;
+    background: linear-gradient(135deg, var(--bg1), var(--bg2));
+    color: #fff;
+    padding: 11px 22px; border-radius: 999px;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    font-weight: 800; font-size: .95rem;
+    cursor: pointer; width: 100%;
+  }
+  .htp-close:hover { filter: brightness(1.08); }
+
+  .site-footer {
+    text-align: center; margin-top: 14px; padding: 14px 0;
+    font-size: .76rem; color: rgba(255,255,255,.85);
+    font-weight: 700;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    text-shadow: 0 1px 3px rgba(0,0,0,.25);
+  }
+</style>
+</head>
+<body>
+
+<a href="app.html" class="back-link back-top">← Powrót do Sowie Fiszki</a>
+
+<button class="htp-btn" id="htpBtn" type="button">ℹ️ Jak grać?</button>
+<div class="htp-modal" id="htpModal" role="dialog" aria-modal="true">
+  <div class="htp-box">
+    <h3>🕐 IN, ON, AT — Przyimki czasu</h3>
+    <ol>
+      <li>Wybierz zakładkę na górze:
+        <ul style="margin-top:4px;padding-left:18px">
+          <li>🎯 <b>Ćwicz</b> — losowe zadania, wybierz <span class="at-h">at</span>/<span class="in-h">in</span>/<span class="on-h">on</span></li>
+          <li>📘 <b>Naucz się</b> — wizualizacja „lejka czasu" + klikalne karty z regułami</li>
+          <li>🖨️ <b>Drukuj</b> — karta pracy A4 z 8/12/16/20 zadaniami + osobna strona z odpowiedziami</li>
+        </ul>
+      </li>
+      <li>W trybie <b>Ćwicz</b>: kliknij <b>🎲 Generuj</b>, wybierz odpowiedź i naciśnij <b>✓ Sprawdź</b>. Wynik liczy się w pasku na dole.</li>
+      <li>W trybie <b>Naucz się</b>: kliknij dowolną kolorową kartę, by zobaczyć przykłady i reguły. „Lejek" pokazuje od dużych okresów (<span class="in-h">in</span>) do dokładnych momentów (<span class="at-h">at</span>).</li>
+      <li>W trybie <b>Drukuj</b>: ustaw liczbę zadań, wygeneruj <b>nowy zestaw</b> i kliknij <b>🖨️</b> — wydrukujesz 2 strony A4 (zadania + odpowiedzi).</li>
+      <li>💡 Zapamiętaj wyjątek: <b class="at-h">at night</b> (nie „in the night")!</li>
+    </ol>
+    <button class="htp-close" id="htpClose" type="button">Zaczynamy!</button>
+  </div>
+</div>
+
+  <div class="card">
+    <h1><span class="at">at</span> / <span class="in">in</span> / <span class="on">on</span></h1>
+    <p class="subtitle">Przyimki czasu — ucz się i ćwicz!</p>
+
+    <div class="tabs">
+      <button class="tab active" data-tab="practice">🎯 Ćwicz</button>
+      <button class="tab" data-tab="learn">📘 Naucz się</button>
+      <button class="tab" data-tab="print">🖨️ Drukuj</button>
+    </div>
+
+    <!-- ===== WIDOK: ĆWICZ ===== -->
+    <div id="practice" class="view active">
+    <div class="word-box">
+      <span id="word" class="word placeholder">Kliknij „Generuj”, aby zacząć</span>
+      <span id="hint" class="hint"></span>
+    </div>
+
+    <div class="options">
+      <button class="opt" data-v="at" disabled>at</button>
+      <button class="opt" data-v="in" disabled>in</button>
+      <button class="opt" data-v="on" disabled>on</button>
+    </div>
+
+    <div class="buttons">
+      <button class="action btn-gen" id="genBtn">🎲 Generuj</button>
+      <button class="action btn-check" id="checkBtn" disabled>✓ Sprawdź</button>
+    </div>
+
+    <div class="result" id="result"></div>
+
+    <div class="score">Wynik: <b><span id="correct">0</span></b> / <span id="total">0</span></div>
+    </div><!-- /practice -->
+
+    <!-- ===== WIDOK: NAUCZ SIĘ ===== -->
+    <div id="learn" class="view">
+      <p class="learn-intro">Im <b>krótszy i dokładniejszy</b> czas, tym „mniejszy" przyimek. Najedź myszką lub kliknij kartę 👇</p>
+
+      <!-- Wizualizacja zoomu czasu -->
+      <div class="funnel">
+        <div class="funnel-row in">
+          <span class="badge in">in</span>
+          <span class="funnel-txt">duże okresy — <b>in 2025</b></span>
+        </div>
+        <div class="funnel-arrow">↓ zbliżamy się…</div>
+        <div class="funnel-row in2">
+          <span class="badge in">in</span>
+          <span class="funnel-txt">miesiąc / pora roku — <b>in July</b></span>
+        </div>
+        <div class="funnel-arrow">↓</div>
+        <div class="funnel-row on">
+          <span class="badge on">on</span>
+          <span class="funnel-txt">konkretny dzień — <b>on Monday</b></span>
+        </div>
+        <div class="funnel-arrow">↓</div>
+        <div class="funnel-row at">
+          <span class="badge at">at</span>
+          <span class="funnel-txt">dokładna godzina — <b>at 7 o'clock</b></span>
+        </div>
+      </div>
+
+      <!-- Klikalne karty -->
+      <div class="flip-card" data-c="at">
+        <div class="flip-inner">
+          <div class="flip-front at">
+            <span class="big">at</span>
+            <span class="lbl">dokładny punkt w czasie ⏰</span>
+            <span class="tap">kliknij, aby zobaczyć</span>
+          </div>
+          <div class="flip-back">
+            <ul>
+              <li>🕐 godziny — <b>at 7 o'clock</b>, <b>at 8:30</b></li>
+              <li>🌙 momenty — <b>at noon</b>, <b>at midnight</b>, <b>at night</b></li>
+              <li>🎉 <b>at the weekend</b>, <b>at lunchtime</b></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="flip-card" data-c="on">
+        <div class="flip-inner">
+          <div class="flip-front on">
+            <span class="big">on</span>
+            <span class="lbl">konkretne dni i daty 📅</span>
+            <span class="tap">kliknij, aby zobaczyć</span>
+          </div>
+          <div class="flip-back">
+            <ul>
+              <li>📆 dni tygodnia — <b>on Monday</b>, <b>on Friday</b></li>
+              <li>🎂 daty i święta — <b>on 1st May</b>, <b>on my birthday</b></li>
+              <li>🌅 dzień + pora — <b>on Sunday morning</b></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="flip-card" data-c="in">
+        <div class="flip-inner">
+          <div class="flip-front in">
+            <span class="big">in</span>
+            <span class="lbl">długie okresy czasu 🗓️</span>
+            <span class="tap">kliknij, aby zobaczyć</span>
+          </div>
+          <div class="flip-back">
+            <ul>
+              <li>🗓️ miesiące — <b>in July</b>, <b>in December</b></li>
+              <li>🍂 pory roku — <b>in summer</b>, <b>in winter</b></li>
+              <li>📈 lata — <b>in 2025</b></li>
+              <li>🌞 pory dnia — <b>in the morning</b>, <b>in the evening</b></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <p class="learn-tip">💡 Wyjątek: mówimy <b>at night</b> (nie „in the night")!</p>
+    </div><!-- /learn -->
+
+    <!-- ===== WIDOK: DRUKUJ ===== -->
+    <div id="print" class="view">
+      <div class="print-controls">
+        <label class="pc-label">Liczba zadań:
+          <select id="exCount">
+            <option>8</option>
+            <option selected>12</option>
+            <option>16</option>
+            <option>20</option>
+          </select>
+        </label>
+        <button class="action btn-gen" id="newSetBtn">🔄 Nowy zestaw</button>
+        <button class="action btn-check" id="printBtn">🖨️ Drukuj</button>
+      </div>
+      <p class="print-note">Wydruk obejmuje 2 strony A4: <b>zadania</b> + <b>odpowiedzi</b>.</p>
+
+      <div class="sheets-preview">
+        <!-- Strona 1: zadania -->
+        <div class="print-sheet">
+          <h2 class="sheet-title">IN/ON/AT</h2>
+          <p class="sheet-instr">Wstaw właściwy przyimek in/on/at:</p>
+          <ol class="sheet-list" id="exList"></ol>
+          <div class="sheet-footer">🦉 sowiefiszki.com</div>
+        </div>
+        <!-- Strona 2: odpowiedzi -->
+        <div class="print-sheet">
+          <h2 class="sheet-title">Odpowiedzi:</h2>
+          <p class="sheet-instr">Odpowiedzi do poszczególnych zadań:</p>
+          <ol class="sheet-list" id="ansList"></ol>
+          <div class="sheet-footer">🦉 sowiefiszki.com</div>
+        </div>
+      </div>
+    </div><!-- /print -->
+  </div>
+
+<script>
+  const ITEMS = [
+    // ON — wszystkie dni tygodnia (7) + daty i święta
+    { word: "Monday",            answer: "on", example: "I have English on Monday.", pl: "Mam angielski w poniedziałek.", rule: "ON — dni tygodnia" },
+    { word: "Tuesday",           answer: "on", example: "We swim on Tuesday.", pl: "Pływamy we wtorek.", rule: "ON — dni tygodnia" },
+    { word: "Wednesday",         answer: "on", example: "She works on Wednesday.", pl: "Ona pracuje w środę.", rule: "ON — dni tygodnia" },
+    { word: "Thursday",          answer: "on", example: "We play football on Thursday.", pl: "Gramy w piłkę w czwartek.", rule: "ON — dni tygodnia" },
+    { word: "Friday",            answer: "on", example: "We meet on Friday.", pl: "Spotykamy się w piątek.", rule: "ON — dni tygodnia" },
+    { word: "Saturday",          answer: "on", example: "I sleep late on Saturday.", pl: "W sobotę śpię długo.", rule: "ON — dni tygodnia" },
+    { word: "Sunday",            answer: "on", example: "We rest on Sunday.", pl: "Odpoczywamy w niedzielę.", rule: "ON — dni tygodnia" },
+    { word: "Sunday morning",    answer: "on", example: "She runs on Sunday morning.", pl: "Ona biega w niedzielę rano.", rule: "ON — konkretny dzień + pora dnia" },
+    { word: "my birthday",       answer: "on", example: "I get presents on my birthday.", pl: "Dostaję prezenty w moje urodziny.", rule: "ON — konkretne dni/święta" },
+    { word: "Christmas Day",     answer: "on", example: "We eat a lot on Christmas Day.", pl: "Jemy dużo w dzień Bożego Narodzenia.", rule: "ON — konkretne dni/święta" },
+    { word: "1st May",           answer: "on", example: "School is closed on 1st May.", pl: "Szkoła jest zamknięta 1 maja.", rule: "ON — daty" },
+    { word: "New Year's Day",    answer: "on", example: "We relax on New Year's Day.", pl: "Odpoczywamy w Nowy Rok.", rule: "ON — konkretne dni/święta" },
+
+    // IN — wszystkie miesiące (12)
+    { word: "January",           answer: "in", example: "It is cold in January.", pl: "W styczniu jest zimno.", rule: "IN — miesiące" },
+    { word: "February",          answer: "in", example: "We ski in February.", pl: "W lutym jeździmy na nartach.", rule: "IN — miesiące" },
+    { word: "March",             answer: "in", example: "Spring starts in March.", pl: "Wiosna zaczyna się w marcu.", rule: "IN — miesiące" },
+    { word: "April",             answer: "in", example: "It often rains in April.", pl: "W kwietniu często pada.", rule: "IN — miesiące" },
+    { word: "May",               answer: "in", example: "Flowers grow in May.", pl: "W maju rosną kwiaty.", rule: "IN — miesiące" },
+    { word: "June",              answer: "in", example: "School ends in June.", pl: "Szkoła kończy się w czerwcu.", rule: "IN — miesiące" },
+    { word: "July",              answer: "in", example: "My holiday is in July.", pl: "Moje wakacje są w lipcu.", rule: "IN — miesiące" },
+    { word: "August",            answer: "in", example: "We travel in August.", pl: "W sierpniu podróżujemy.", rule: "IN — miesiące" },
+    { word: "September",         answer: "in", example: "School starts in September.", pl: "Szkoła zaczyna się we wrześniu.", rule: "IN — miesiące" },
+    { word: "October",           answer: "in", example: "Leaves fall in October.", pl: "W październiku spadają liście.", rule: "IN — miesiące" },
+    { word: "November",          answer: "in", example: "It is foggy in November.", pl: "W listopadzie jest mglisto.", rule: "IN — miesiące" },
+    { word: "December",          answer: "in", example: "It snows in December.", pl: "W grudniu pada śnieg.", rule: "IN — miesiące" },
+
+    // IN — wszystkie pory roku (4)
+    { word: "spring",            answer: "in", example: "Birds sing in spring.", pl: "Wiosną śpiewają ptaki.", rule: "IN — pory roku" },
+    { word: "summer",            answer: "in", example: "We swim in summer.", pl: "Pływamy latem.", rule: "IN — pory roku" },
+    { word: "autumn",            answer: "in", example: "It is windy in autumn.", pl: "Jesienią jest wietrznie.", rule: "IN — pory roku" },
+    { word: "winter",            answer: "in", example: "It is cold in winter.", pl: "Zimą jest zimno.", rule: "IN — pory roku" },
+
+    // IN — pory dnia (poranek, popołudnie, wieczór)
+    { word: "the morning",       answer: "in", example: "I drink coffee in the morning.", pl: "Rano piję kawę.", rule: "IN — pory dnia" },
+    { word: "the afternoon",     answer: "in", example: "She sleeps in the afternoon.", pl: "Ona śpi po południu.", rule: "IN — pory dnia" },
+    { word: "the evening",       answer: "in", example: "We watch TV in the evening.", pl: "Wieczorem oglądamy TV.", rule: "IN — pory dnia" },
+
+    // IN — lata
+    { word: "2025",              answer: "in", example: "I was born in 2025.", pl: "Urodziłem się w 2025.", rule: "IN — lata" },
+
+    // AT — kilkanaście różnych godzin (12)
+    { word: "6 o'clock",         answer: "at", example: "I get up at 6 o'clock.", pl: "Wstaję o 6:00.", rule: "AT — godziny" },
+    { word: "7 o'clock",         answer: "at", example: "I wake up at 7 o'clock.", pl: "Budzę się o 7:00.", rule: "AT — godziny" },
+    { word: "8:30",              answer: "at", example: "The bus comes at 8:30.", pl: "Autobus przyjeżdża o 8:30.", rule: "AT — godziny" },
+    { word: "9 o'clock",         answer: "at", example: "School starts at 9 o'clock.", pl: "Szkoła zaczyna się o 9:00.", rule: "AT — godziny" },
+    { word: "10:15",             answer: "at", example: "We have a break at 10:15.", pl: "Mamy przerwę o 10:15.", rule: "AT — godziny" },
+    { word: "11 o'clock",        answer: "at", example: "I go to bed at 11 o'clock.", pl: "Idę spać o 11:00.", rule: "AT — godziny" },
+    { word: "12:45",             answer: "at", example: "The film starts at 12:45.", pl: "Film zaczyna się o 12:45.", rule: "AT — godziny" },
+    { word: "1 o'clock",         answer: "at", example: "We have lunch at 1 o'clock.", pl: "Jemy obiad o 13:00.", rule: "AT — godziny" },
+    { word: "2:30",              answer: "at", example: "The train leaves at 2:30.", pl: "Pociąg odjeżdża o 14:30.", rule: "AT — godziny" },
+    { word: "3 o'clock",         answer: "at", example: "School ends at 3 o'clock.", pl: "Szkoła kończy się o 15:00.", rule: "AT — godziny" },
+    { word: "5:20",              answer: "at", example: "I come home at 5:20.", pl: "Wracam do domu o 17:20.", rule: "AT — godziny" },
+    { word: "9:45",              answer: "at", example: "The shop closes at 9:45.", pl: "Sklep zamyka się o 21:45.", rule: "AT — godziny" },
+
+    // AT — konkretne momenty + wyjątki
+    { word: "midnight",          answer: "at", example: "The party ends at midnight.", pl: "Impreza kończy się o północy.", rule: "AT — konkretne momenty" },
+    { word: "noon",              answer: "at", example: "We eat lunch at noon.", pl: "Jemy obiad w południe.", rule: "AT — konkretne momenty" },
+    { word: "night",             answer: "at", example: "Owls hunt at night.", pl: "Sowy polują w nocy.", rule: "AT — at night (wyjątek)" },
+    { word: "the weekend",       answer: "at", example: "I relax at the weekend.", pl: "W weekend odpoczywam.", rule: "AT — at the weekend (BrE)" },
+    { word: "lunchtime",         answer: "at", example: "We talk at lunchtime.", pl: "Rozmawiamy w porze obiadu.", rule: "AT — konkretne momenty" },
+  ];
+
+  const wordEl    = document.getElementById('word');
+  const hintEl    = document.getElementById('hint');
+  const resultEl  = document.getElementById('result');
+  const genBtn    = document.getElementById('genBtn');
+  const checkBtn  = document.getElementById('checkBtn');
+  const opts      = Array.from(document.querySelectorAll('.opt'));
+  const correctEl = document.getElementById('correct');
+  const totalEl   = document.getElementById('total');
+
+  let current = null;
+  let selected = null;
+  let answered = false;
+  let score = 0;
+  let total = 0;
+  let lastIndex = -1;
+
+  function generate() {
+    let idx;
+    do { idx = Math.floor(Math.random() * ITEMS.length); }
+    while (idx === lastIndex && ITEMS.length > 1);
+    lastIndex = idx;
+    current = ITEMS[idx];
+    selected = null;
+    answered = false;
+
+    wordEl.textContent = current.word;
+    wordEl.classList.remove('placeholder');
+    hintEl.textContent = "Co pasuje? at, in czy on?";
+
+    opts.forEach(o => {
+      o.disabled = false;
+      o.classList.remove('selected', 'correct', 'wrong');
+    });
+
+    resultEl.className = 'result';
+    resultEl.innerHTML = '';
+    checkBtn.disabled = true;
+  }
+
+  function select(btn) {
+    if (answered) return;
+    selected = btn.dataset.v;
+    opts.forEach(o => o.classList.remove('selected'));
+    btn.classList.add('selected');
+    checkBtn.disabled = false;
+  }
+
+  function check() {
+    if (!current || selected === null || answered) return;
+    answered = true;
+    total++;
+
+    const isRight = selected === current.answer;
+    if (isRight) score++;
+
+    opts.forEach(o => {
+      o.disabled = true;
+      if (o.dataset.v === current.answer) o.classList.add('correct');
+      else if (o.dataset.v === selected) o.classList.add('wrong');
+    });
+
+    resultEl.className = 'result show ' + (isRight ? 'good' : 'no');
+    resultEl.innerHTML = `
+      <div class="verdict">${isRight ? '🎉 Brawo, dobrze!' : '❌ Nie tym razem.'}</div>
+      <div class="answer">Poprawnie: <b>${current.answer} ${current.word}</b></div>
+      <div class="example">
+        ${current.example}
+        <span class="pl">${current.pl}</span>
+      </div>
+      <div class="rule">💡 ${current.rule}</div>
+    `;
+
+    correctEl.textContent = score;
+    totalEl.textContent = total;
+    checkBtn.disabled = true;
+  }
+
+  genBtn.addEventListener('click', generate);
+  checkBtn.addEventListener('click', check);
+  opts.forEach(o => o.addEventListener('click', () => select(o)));
+
+  // Przełączanie zakładek
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById(tab.dataset.tab).classList.add('active');
+    });
+  });
+
+  // Obracanie kart "Naucz się"
+  document.querySelectorAll('.flip-card').forEach(card => {
+    card.addEventListener('click', () => card.classList.toggle('flipped'));
+  });
+
+  // ===== Drukuj: generowanie zestawu =====
+  const exList   = document.getElementById('exList');
+  const ansList  = document.getElementById('ansList');
+  const exCount  = document.getElementById('exCount');
+  const newSetBtn = document.getElementById('newSetBtn');
+  const printBtn  = document.getElementById('printBtn');
+
+  function buildWorksheet() {
+    const n = Math.min(parseInt(exCount.value, 10), ITEMS.length);
+    // losowy wybór n unikalnych zadań
+    const pool = [...ITEMS];
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    const chosen = pool.slice(0, n);
+
+    exList.innerHTML = '';
+    ansList.innerHTML = '';
+
+    chosen.forEach(item => {
+      const target = `${item.answer} ${item.word}`;
+      const blank  = item.example.replace(target, `<span class="blank">_____</span> ${item.word}`);
+      const filled = item.example.replace(target, `<b>${item.answer}</b> ${item.word}`);
+
+      const li1 = document.createElement('li');
+      li1.innerHTML = blank;
+      exList.appendChild(li1);
+
+      const li2 = document.createElement('li');
+      li2.innerHTML = filled;
+      ansList.appendChild(li2);
+    });
+  }
+
+  newSetBtn.addEventListener('click', buildWorksheet);
+  exCount.addEventListener('change', buildWorksheet);
+  printBtn.addEventListener('click', () => window.print());
+  buildWorksheet();
+
+  /* ========= "JAK GRAC?" MODAL ========= */
+  (function(){
+    const btn   = document.getElementById("htpBtn");
+    const modal = document.getElementById("htpModal");
+    const close = document.getElementById("htpClose");
+    if (!btn || !modal || !close) return;
+    const open  = () => modal.classList.add("show");
+    const hide  = () => modal.classList.remove("show");
+    btn.addEventListener("click", open);
+    close.addEventListener("click", hide);
+    modal.addEventListener("click", (e) => { if (e.target === modal) hide(); });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") hide(); });
+  })();
+</script>
+
+<a href="app.html" class="back-link back-bottom">← Wróć do Sowie Fiszki</a>
+<div class="site-footer">© 2026 Sowie Fiszki</div>
+
+<script src="consent.js"></script>
+</body>
+</html>
