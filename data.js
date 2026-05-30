@@ -5890,6 +5890,41 @@ const BOOKS = {
           ['Czy potrafisz zrobić pięć pompek?', 'Can you do five press-ups?'],
           ['Potrafię wykonać 15 przysiadów.', 'I can do fifteen squats.'],
         ]
+      },
+      unit6: {
+        name: 'Unit 6', icon: '🏖️', color: '#fdcb6e',
+        words: [
+          ['zbieranie muszli', 'collecting shells', '🐚'],
+          ['robienie zamku z piasku', 'making a sandcastle', '🏰'],
+          ['granie w siatkówkę', 'playing volleyball', '🏐'],
+          ['zabawa z Frisbee', 'playing Frisbee', '🥏'],
+          ['granie w badmintona', 'playing badminton', '🏸'],
+          ['pływanie', 'swimming', '🏊'],
+          ['łowienie ryb', 'fishing', '🎣'],
+          ['nurkowanie z rurką', 'snorkelling', '🤿'],
+          ['nakładanie kremu z filtrem', 'putting on sun cream', '🧴'],
+          ['puszczanie latawca', 'flying a kite', '🪁'],
+          ['rekin', 'shark', '🦈'],
+          ['delfin', 'dolphin', '🐬'],
+          ['rozgwiazda', 'starfish', '⭐'],
+          ['ślimak', 'snail', '🐌'],
+          ['meduza', 'jellyfish', '🪼'],
+          ['konik morski', 'seahorse', '🐴'],
+          ['krab', 'crab', '🦀'],
+          ['wieloryb', 'whale', '🐋'],
+          ['pingwin', 'penguin', '🐧'],
+          ['żółw wodny', 'turtle', '🐢'],
+          ['Robię zamek z piasku.', "I'm making a sandcastle."],
+          ['On zbiera muszle.', "He's collecting shells."],
+          ['Ona buduje zamek z piasku.', "She's making a sandcastle."],
+          ['Gramy w siatkówkę.', "We're playing volleyball."],
+          ['Ja pływam.', "I'm swimming."],
+          ['On nakłada krem z filtrem.', "He's putting on sun cream."],
+          ['Ona bawi się Frisbee.', "She's playing Frisbee."],
+          ['Ty łowisz ryby.', "You're fishing."],
+          ['Wy puszczacie latawca.', "You're flying a kite."],
+          ['Oni łowią ryby.', "They're fishing."],
+        ]
       }
     }
   }
