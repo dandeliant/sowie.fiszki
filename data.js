@@ -5703,6 +5703,35 @@ const BOOKS = {
           ['Czy ćwiczysz codziennie? Nie.', "Do you do exercise every day? No, I don't."],
           ['bawić się', 'play'],
         ]
+      },
+      unit6: {
+        name: 'Unit 6', icon: '🎡', color: '#fdcb6e',
+        words: [
+          ['oceanarium', 'aquarium', '🐠'],
+          ['park', 'park', '🌳'],
+          ['wesołe miasteczko', 'funfair', '🎡'],
+          ['basen', 'swimming pool', '🏊'],
+          ['lodowisko', 'ice rink', '⛸️'],
+          ['zoo', 'zoo', '🦁'],
+          ['plaża', 'beach', '🏖️'],
+          ['park wodny', 'water park', '💦'],
+          ['zatrzymaj się', 'stop', '🛑'],
+          ['stój na chodniku', 'stand on the pavement', '🚶'],
+          ['spójrz w lewo', 'look left', '👈'],
+          ['spójrz w prawo', 'look right', '👉'],
+          ['słuchaj', 'listen', '👂'],
+          ['przejdź przez ulicę', 'cross the road', '🚸'],
+          ['Czy jest zoo? Tak.', "Is there a zoo? Yes, there is."],
+          ['Czy jest basen? Nie.', "Is there a swimming pool? No, there isn't."],
+          ['Jest lodowisko.', "There's an ice rink."],
+          ['Jest basen.', "There's a swimming pool."],
+          ['Pójdźmy na plażę.', "Let's go to the beach."],
+          ['Pójdźmy do wesołego miasteczka.', "Let's go to the funfair."],
+          ['Chcę pójść do parku wodnego.', 'I want to go to the water park.'],
+          ['Chcę pójść na plażę.', 'I want to go to the beach.'],
+          ['W naszym mieście jest park i zoo.', "In our town, there's a park and a zoo."],
+          ['Nie przechodź przez ulicę!', "Don't cross the road!"],
+        ]
       }
     }
   }
