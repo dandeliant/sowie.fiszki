@@ -5436,6 +5436,37 @@ const BOOKS = {
           ['Krokodyl potrafi pływać.', 'A crocodile can swim.'],
           ['Papuga potrafi latać.', 'A parrot can fly.'],
         ]
+      },
+      unit6: {
+        name: 'Unit 6', icon: '🛹', color: '#fdcb6e',
+        words: [
+          ['deskorolka', 'skateboard', '🛹'],
+          ['latawiec', 'kite', '🪁'],
+          ['lalka', 'doll', '🪆'],
+          ['gra planszowa', 'board game', '🎲'],
+          ['hulajnoga', 'scooter', '🛴'],
+          ['samochód', 'car', '🚗'],
+          ['rower', 'bike', '🚲'],
+          ['gra komputerowa', 'computer game', '🎮'],
+          ['drewno', 'wood', '🪵'],
+          ['plastik', 'plastic', '♳'],
+          ['metal', 'metal', '🔩'],
+          ['papier', 'paper', '📄'],
+          ['Gdzie jest moja deskorolka?', 'Where is my skateboard?'],
+          ['Czy on jest w szafce? Tak.', "Is it in the cupboard? Yes, it is."],
+          ['Czy on jest na stole? Nie.', "Is it on the table? No, it isn't."],
+          ['Czy on jest pod stołem? Tak.', "Is it under the table? Yes, it is."],
+          ['On jest w szafce.', 'It is in the cupboard.'],
+          ['On jest na stole.', 'It is on the table.'],
+          ['On jest pod stołem.', 'It is under the table.'],
+          ['Latawiec jest na stole.', 'The kite is on the table.'],
+          ['Deskorolka jest w szafce.', 'The skateboard is in the cupboard.'],
+          ['Gra planszowa jest pod stołem.', 'The board game is under the table.'],
+          ['Mój ołówek jest z drewna.', 'My pencil is made of wood.'],
+          ['Moja książka jest z papieru.', 'My book is made of paper.'],
+          ['Moja lalka jest z plastiku.', 'My doll is made of plastic.'],
+          ['Mój rower jest z metalu.', 'My bike is made of metal.'],
+        ]
       }
     }
   }
