@@ -254,11 +254,17 @@
   .line:hover { transform: translateX(3px); }
   .line .emoji { font-size: 1.7rem; flex: 0 0 auto; line-height: 1.2; }
   .line .texts { flex: 1 1 auto; min-width: 0; }
-  .line .en {
+  .line .pl {
     font-family: "Fredoka", sans-serif; font-weight: 500;
     font-size: 1.18rem; color: var(--plum-2); line-height: 1.3;
   }
-  .line .pl { font-size: .92rem; font-weight: 700; color: #8a7aa2; margin-top: 3px; }
+  .line .en {
+    display: none;
+    font-family: "Fredoka", sans-serif; font-weight: 500;
+    font-size: 1.18rem; color: var(--teal-dk); line-height: 1.3;
+  }
+  .dialog.revealed .pl { display: none; }
+  .dialog.revealed .en { display: block; }
   .say-btn {
     flex: 0 0 auto;
     border: none; cursor: pointer;
@@ -270,8 +276,8 @@
   }
   .say-btn:hover { transform: scale(1.08); filter: brightness(1.08); }
   .say-btn:active { transform: scale(.94); }
-
-  .hide-pl .pl { display: none; }
+  .line .say-btn { display: none; }
+  .dialog.revealed .say-btn { display: inline-flex; align-items: center; justify-content: center; }
 
   /* ============ MADE OF ============ */
   .madeof {
@@ -310,6 +316,7 @@
   .btn-primary { background: linear-gradient(135deg, var(--coral), var(--coral-dk)); color: #fff; }
   .btn-ghost { background: #fff; color: var(--plum); }
   .btn-say { background: linear-gradient(135deg, var(--mustard), var(--mustard-dk)); color: #fff; }
+  .btn-reveal { background: linear-gradient(135deg, #5ac776, #3aa85a); color: #fff; }
 
   /* ============ VOCAB GRID ============ */
   .vocab-section-title {
@@ -411,9 +418,9 @@
     <ol>
       <li>Wybierz tryb na górze: <b>📍 Gdzie to jest?</b> (przyimki in / on / under), <b>🧱 Z czego to jest?</b> (materiały) lub <b>📚 Słówka</b>.</li>
       <li>Kliknij <b>🎲 Nowe losowanie</b>, żeby wygenerować nową scenę albo zdanie.</li>
-      <li>Naciśnij <b>🔊</b> przy każdej linijce, aby usłyszeć wymowę (Google UK English Female).</li>
-      <li>Najpierw posłuchaj, potem <b>powtórz na głos</b> — całą rozmowę lub zdanie.</li>
-      <li>Przycisk <b>👁️ Tłumaczenie</b> chowa lub pokazuje polskie podpisy — sprawdź, czy rozumiesz bez nich.</li>
+      <li>W trybie „Gdzie to jest?" najpierw widzisz tylko <b>polską wersję</b> — spróbuj powiedzieć całość po angielsku na głos.</li>
+      <li>Kliknij <b>✅ Odpowiedź</b>, aby odsłonić wersję angielską i sprawdzić się.</li>
+      <li>Naciśnij <b>🔊</b> przy każdej linijce lub <b>🔊 Odtwórz całość</b>, aby usłyszeć wymowę (Google UK English Female).</li>
       <li>W zakładce <b>📚 Słówka</b> kliknij dowolną kartę, aby usłyszeć słówko.</li>
     </ol>
     <button class="htp-close" id="htpClose">Zaczynamy! 🚀</button>
@@ -451,8 +458,8 @@
       <div class="dialog" id="whereDialog"></div>
       <div class="controls">
         <button class="btn btn-primary" id="whereNew">🎲 Nowe losowanie</button>
+        <button class="btn btn-reveal" id="whereReveal">✅ Odpowiedź</button>
         <button class="btn btn-say" id="whereSayAll">🔊 Odtwórz całość</button>
-        <button class="btn btn-ghost" id="whereTogglePl">👁️ Tłumaczenie</button>
       </div>
     </div>
   </div>
@@ -624,7 +631,10 @@ function genWhere() {
 
   whereData = { toy, correct, wrong };
   buildScene(toy, correct);
-  locBadge.textContent = `${toy.emoji} ${toy.en} → ${correct.en}`;
+  locBadge.dataset.pl = `${toy.emoji} ${toy.pl} → ${correct.pl}`;
+  locBadge.dataset.en = `${toy.emoji} ${toy.en} → ${correct.en}`;
+  locBadge.textContent = locBadge.dataset.pl;
+  whereDialog.classList.remove("revealed");
 
   const toyPlCap = toy.pls.charAt(0).toUpperCase() + toy.pls.slice(1);
   whereDialog.innerHTML =
@@ -644,13 +654,18 @@ function bindSayButtons(container) {
   });
 }
 
+function revealWhere() {
+  whereDialog.classList.add("revealed");
+  locBadge.textContent = locBadge.dataset.en;
+}
+
 document.getElementById("whereNew").onclick = genWhere;
+document.getElementById("whereReveal").onclick = revealWhere;
 document.getElementById("whereSayAll").onclick = () => {
+  revealWhere();
   const texts = [...whereDialog.querySelectorAll(".say-btn")].map(b => b.dataset.say);
   speakSequence(texts);
 };
-document.getElementById("whereTogglePl").onclick = () =>
-  whereDialog.classList.toggle("hide-pl");
 
 /* =========================================================
    PANEL: MADE OF
