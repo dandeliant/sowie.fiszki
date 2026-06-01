@@ -23916,6 +23916,11 @@ if ('serviceWorker' in navigator) {
     area.innerHTML = html;
   }
 
+  // Helper: QR code PNG ze sluzby publicznej. Sluzy do drukowanych kart
+  // logowania — uczen/opiekun skanuje telefonem i laduje na /login.
+  const _LOGIN_URL = 'https://sowiefiszki.com/login';
+  const _QR_LOGIN_URL = 'https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=2&data=' + encodeURIComponent(_LOGIN_URL);
+
   window.printBulkCredentials = function(){
     if (!_bulkLastCredentials.length) return;
     const w = window.open('', '_blank');
@@ -23927,19 +23932,29 @@ if ('serviceWorker' in navigator) {
         ${branding.logo ? `<img src="${escHtml(branding.logo)}" onerror="this.style.display='none'">` : ''}
         ${branding.name ? `<div class="branding-name">${escHtml(branding.name)}</div>` : ''}
       </div>` : '';
+    // QR — wspolny dla wszystkich (caly czas linkuje do /login). Mniejszy w karcie
+    // (72px), wiekszy w trybie tabeli (84px).
+    const qrCardHtml = `<div class="qr-wrap"><img src="${_QR_LOGIN_URL}" alt="QR — sowiefiszki.com/login" class="qr-img-card"><div class="qr-caption">Zeskanuj telefonem</div></div>`;
+    const qrTableHtml = `<div class="qr-wrap"><img src="${_QR_LOGIN_URL}" alt="QR — sowiefiszki.com/login" class="qr-img-table"><div class="qr-caption">Zeskanuj telefonem</div></div>`;
     const instrUczen = `
-      <ol style="margin:0;padding-left:16px;font-size:10px;line-height:1.4;color:#222">
-        <li>Przejdź na stronę <b style="font-family:'Courier New',monospace">sowiefiszki.com/login</b></li>
-        <li>Wybierz „Zacznij naukę" lub „Mam już konto → zaloguj się"</li>
-        <li>Wpisz Nazwę użytkownika (Login) i Hasło, kliknij „Zaloguj się"</li>
-        <li>Wybierz podręcznik, rozdział i zacznij naukę!</li>
-      </ol>`;
+      <div class="instr-flex">
+        ${qrCardHtml}
+        <ol style="margin:0;padding-left:16px;font-size:10px;line-height:1.4;color:#222;flex:1">
+          <li>Przejdź na stronę <b style="font-family:'Courier New',monospace">sowiefiszki.com/login</b> (lub zeskanuj QR)</li>
+          <li>Wybierz „Zacznij naukę" lub „Mam już konto → zaloguj się"</li>
+          <li>Wpisz Nazwę użytkownika (Login) i Hasło, kliknij „Zaloguj się"</li>
+          <li>Wybierz podręcznik, rozdział i zacznij naukę!</li>
+        </ol>
+      </div>`;
     const instrOpiekun = `
-      <ol style="margin:0;padding-left:16px;font-size:10px;line-height:1.4;color:#222">
-        <li>Przejdź na stronę <b style="font-family:'Courier New',monospace">sowiefiszki.com/login</b></li>
-        <li>Wybierz „Zacznij naukę" lub „Mam już konto → zaloguj się"</li>
-        <li>Wpisz Nazwę użytkownika (Login) i Hasło, kliknij „Zaloguj się"</li>
-      </ol>`;
+      <div class="instr-flex">
+        ${qrCardHtml}
+        <ol style="margin:0;padding-left:16px;font-size:10px;line-height:1.4;color:#222;flex:1">
+          <li>Przejdź na stronę <b style="font-family:'Courier New',monospace">sowiefiszki.com/login</b> (lub zeskanuj QR)</li>
+          <li>Wybierz „Zacznij naukę" lub „Mam już konto → zaloguj się"</li>
+          <li>Wpisz Nazwę użytkownika (Login) i Hasło, kliknij „Zaloguj się"</li>
+        </ol>
+      </div>`;
 
     let bodyHtml = '';
     if (hasParents) {
@@ -23972,12 +23987,15 @@ if ('serviceWorker' in navigator) {
     } else {
       // Klasyczny tryb tabeli — bez opiekunow
       const instructionHtml = `
-        <ol style="margin:0;padding-left:18px;font-size:11px;line-height:1.45;color:#222">
-          <li>Przejdź na stronę <b style="font-family:'Courier New',monospace">sowiefiszki.com/login</b></li>
-          <li>Wybierz <b>„Zacznij naukę"</b> lub <b>„Mam już konto → zaloguj się"</b></li>
-          <li>Wpisz <b>Nazwę użytkownika (Login)</b> i <b>Hasło</b>, kliknij <b>„Zaloguj się"</b></li>
-          <li>Wybierz podręcznik, rozdział i zacznij naukę!</li>
-        </ol>`;
+        <div class="instr-flex">
+          ${qrTableHtml}
+          <ol style="margin:0;padding-left:18px;font-size:11px;line-height:1.45;color:#222;flex:1">
+            <li>Przejdź na stronę <b style="font-family:'Courier New',monospace">sowiefiszki.com/login</b> (lub zeskanuj QR)</li>
+            <li>Wybierz <b>„Zacznij naukę"</b> lub <b>„Mam już konto → zaloguj się"</b></li>
+            <li>Wpisz <b>Nazwę użytkownika (Login)</b> i <b>Hasło</b>, kliknij <b>„Zaloguj się"</b></li>
+            <li>Wybierz podręcznik, rozdział i zacznij naukę!</li>
+          </ol>
+        </div>`;
       const rows = _bulkLastCredentials.map((c,i)=>`<tr><td>${i+1}</td><td><span style="color:#888;font-weight:400">login:</span> ${escHtml(c.username)}</td><td><span style="color:#888;font-weight:400">hasło:</span> ${escHtml(c.password)}</td><td>${instructionHtml}</td></tr>`).join('');
       bodyHtml = `<table><thead><tr><th>#</th><th>Login</th><th>Hasło</th><th>Instrukcja logowania (dla rodzica i dziecka)</th></tr></thead><tbody>${rows}</tbody></table>`;
     }
@@ -24001,6 +24019,12 @@ if ('serviceWorker' in navigator) {
         .card-creds{font-family:'Courier New',monospace;font-size:12px;line-height:1.7;margin-bottom:6px}
         .card-creds .lbl{color:#888;font-weight:400;font-family:Arial,sans-serif}
         .card-instr{border-top:1px dashed #ccc;padding-top:6px;margin-top:4px}
+        /* QR kod do logowania (sowiefiszki.com/login) */
+        .instr-flex{display:flex;gap:8px;align-items:flex-start}
+        .qr-wrap{display:flex;flex-direction:column;align-items:center;flex-shrink:0}
+        .qr-img-card{width:60px;height:60px;background:#fff;padding:2px;border:1px solid #ccc;display:block}
+        .qr-img-table{width:72px;height:72px;background:#fff;padding:2px;border:1px solid #ccc;display:block}
+        .qr-caption{font-size:7px;color:#666;font-weight:600;margin-top:2px;text-align:center;line-height:1.1;font-family:Arial,sans-serif}
         /* Tryb tabeli (bez opiekunow) */
         table{border-collapse:collapse;width:100%;font-size:13px}
         th,td{border:1px solid #aaa;padding:8px 10px;text-align:left;vertical-align:top}
@@ -24567,20 +24591,45 @@ ${bodyHtml}
     }
   };
 
-  window.downloadBulkCredentialsPdf = function(){
+  // Helper: pobiera obraz z URL i konwertuje na data URL (do jsPDF.addImage)
+  function _loadImageAsDataUrl(url) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.naturalWidth || 240;
+          canvas.height = img.naturalHeight || 240;
+          const ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0);
+          resolve(canvas.toDataURL('image/png'));
+        } catch(e) { reject(e); }
+      };
+      img.onerror = () => reject(new Error('Nie udało się załadować QR'));
+      img.src = url;
+    });
+  }
+
+  window.downloadBulkCredentialsPdf = async function(){
     if (!_bulkLastCredentials.length) return;
     try {
       const jsPDFConstructor = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
       if (!jsPDFConstructor) { if (typeof toast==='function') toast('❌ Biblioteka PDF niedostępna.', 3200); return; }
+      // Pre-fetch QR — robi sie raz, potem ten sam obraz embedowany w kazdym wierszu
+      let qrDataUrl = null;
+      try { qrDataUrl = await _loadImageAsDataUrl(_QR_LOGIN_URL); }
+      catch(e) { console.warn('[downloadBulkCredentialsPdf] QR fetch failed:', e.message); }
+
       const doc = new jsPDFConstructor({ unit:'pt', format:'a4' });
       // Helvetica w jsPDF nie ma polskich znakow — uzywamy uproszczonych form ASCII
-      // Instrukcja powtarzana w kazdym wierszu (do wyciecia dla kazdego dziecka)
       const instrLines = [
-        '1. Otworz w przegladarce:',
-        '   sowiefiszki.com/login.html',
-        '2. Wpisz Login (Z kolumny obok)',
-        '3. Wpisz Haslo (Z kolumny obok)',
-        '4. Kliknij przycisk "Zaloguj sie"',
+        '1. Otworz: sowiefiszki.com/login',
+        '   (lub zeskanuj QR z prawej)',
+        '2. Wpisz Login (z kolumny obok)',
+        '3. Wpisz Haslo (z kolumny obok)',
+        '4. Kliknij "Zaloguj sie"',
         '5. Wybierz podrecznik i ucz sie.'
       ];
 
@@ -24596,18 +24645,18 @@ ${bodyHtml}
         doc.text('Login',     78, 96);
         doc.text('Haslo',    180, 96);
         doc.text('Instrukcja logowania', 290, 96);
+        doc.text('QR', 500, 96);
         doc.setDrawColor(120);
         doc.line(40, 101, 555, 101);
       }
 
       drawHeader();
-      const startY = 118;     // pierwszy wiersz body
-      const rowH   = 78;       // wysokosc wiersza (6 linii instrukcji + padding)
+      const startY = 118;
+      const rowH   = 78;
       const pageBottom = 800;
       let y = startY;
 
       _bulkLastCredentials.forEach((c, i) => {
-        // Pageblock — czy zmiesci sie w aktualnej stronie?
         if (y + rowH > pageBottom) {
           doc.addPage();
           drawHeader();
@@ -24615,19 +24664,22 @@ ${bodyHtml}
         }
         doc.setFont('helvetica','normal'); doc.setFontSize(11); doc.setTextColor(0);
         doc.text(String(i+1),  48, y);
-        // Prefiks "login:" / "haslo:" — szary, normalny krój
         doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(140);
         doc.text('login:', 78, y - 10);
         doc.text('haslo:', 180, y - 10);
-        // Wartosc — Courier bold, czarny
         doc.setFont('courier','bold'); doc.setFontSize(11); doc.setTextColor(0);
         doc.text(c.username,   78, y);
         doc.text(c.password,  180, y);
-        // Instrukcja: 6 linii
-        doc.setFont('helvetica','normal'); doc.setFontSize(9.5);
+        // Instrukcja — 6 linii
+        doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(0);
         instrLines.forEach((line, li) => {
           doc.text(line, 290, y + li * 11);
         });
+        // QR — 56x56pt po prawej stronie (rowH=78, wiec ~22pt zapasu)
+        if (qrDataUrl) {
+          try { doc.addImage(qrDataUrl, 'PNG', 495, y - 12, 56, 56); }
+          catch(e) { console.warn('[pdf] addImage failed:', e.message); }
+        }
         // separator wiersza
         doc.setDrawColor(220);
         doc.line(40, y + rowH - 12, 555, y + rowH - 12);
