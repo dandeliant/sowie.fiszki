@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>🏞️ The great outdoors — Speaking Generator (Bugs Team 3, Unit 6)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --cream:     #FFF6E9;
+    --cream-2:   #FFEAD3;
+    --coral:     #FF6B6B;
+    --coral-dk:  #E85555;
+    --teal:      #2EC4B6;
+    --teal-dk:   #1E9A8E;
+    --mustard:   #FFB627;
+    --mustard-dk:#E09A0E;
+    --plum:      #3D2C5F;
+    --plum-2:    #2A1F44;
+    --leaf:      #4CAF50;
+    --leaf-dk:   #388E3C;
+    --sky:       #38B6D9;
+    --sky-dk:    #2196B5;
+    --shadow:    0 10px 30px rgba(61, 44, 95, .15);
+    --shadow-hi: 0 20px 50px rgba(61, 44, 95, .25);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+
+  body {
+    font-family: "Nunito", system-ui, sans-serif;
+    font-weight: 700;
+    color: var(--plum);
+    min-height: 100vh;
+    background:
+      radial-gradient(circle at 12% 8%, #C8EFB0 0, transparent 42%),
+      radial-gradient(circle at 88% 16%, #BEE3F8 0, transparent 46%),
+      radial-gradient(circle at 50% 96%, #FFD8A8 0, transparent 48%),
+      linear-gradient(180deg, var(--cream) 0%, var(--cream-2) 100%);
+    background-attachment: fixed;
+    overflow-x: hidden;
+  }
+
+  body::before {
+    content: "🏞️ 📸 🪁 🧺 🎣 🐚 🏰 🤿 🔥 🥾 🌲 ⛰️";
+    position: fixed;
+    inset: 0;
+    font-size: 40px;
+    color: rgba(61, 44, 95, .05);
+    word-spacing: 90px;
+    line-height: 175px;
+    letter-spacing: 18px;
+    pointer-events: none;
+    z-index: 0;
+    transform: rotate(-9deg);
+    overflow: hidden;
+  }
+
+  .wrap { position: relative; z-index: 1; max-width: 980px; margin: 0 auto; padding: 24px 20px 60px; }
+
+  /* ============ HEADER ============ */
+  header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .logo-badge { width: 66px; height: 66px; border-radius: 22px; background: linear-gradient(135deg, var(--leaf), var(--sky)); display: grid; place-items: center; font-size: 36px; box-shadow: var(--shadow); transform: rotate(-8deg); transition: transform .4s ease; }
+  .logo-badge:hover { transform: rotate(8deg) scale(1.05); }
+  h1 { font-family: "Fredoka", sans-serif; font-weight: 700; font-size: clamp(1.4rem, 2.2vw + 1rem, 2.1rem); margin: 0; line-height: 1; color: var(--plum-2); letter-spacing: -.01em; }
+  h1 em { font-style: normal; color: var(--leaf-dk); }
+  .tagline { font-size: .92rem; font-weight: 700; color: #7a6a92; margin-top: 4px; }
+
+  /* ============ VOICE STATUS ============ */
+  .voice-pill { display: flex; align-items: center; gap: 9px; background: #fff; border: 2px solid rgba(61,44,95,.08); border-radius: 999px; padding: 8px 14px; box-shadow: var(--shadow); font-size: .8rem; font-weight: 800; color: #6a5a82; max-width: 280px; }
+  .voice-dot { width: 12px; height: 12px; border-radius: 50%; background: #cbb9e0; flex: 0 0 auto; transition: background .3s; }
+  .voice-dot.ready { background: var(--teal); }
+  .voice-dot.speaking { background: var(--coral); animation: pulse .7s infinite; }
+  @keyframes pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.5); } }
+  #voiceName { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* ============ TABS ============ */
+  .tabs { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px; }
+  .tab { flex: 1 1 0; min-width: 140px; border: none; cursor: pointer; font-family: "Fredoka", sans-serif; font-size: 1.02rem; font-weight: 600; padding: 14px 12px; border-radius: 18px; background: #fff; color: var(--plum); box-shadow: var(--shadow); transition: transform .2s, box-shadow .2s, background .2s, color .2s; }
+  .tab:hover { transform: translateY(-3px); box-shadow: var(--shadow-hi); }
+  .tab.active { background: linear-gradient(135deg, var(--leaf), var(--leaf-dk)); color: #fff; }
+
+  /* ============ PANELS ============ */
+  .panel { display: none; }
+  .panel.active { display: block; animation: fade .35s ease; }
+  @keyframes fade { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+  .card { background: #fff; border-radius: 28px; box-shadow: var(--shadow-hi); padding: 26px 24px 30px; position: relative; overflow: hidden; }
+  .card::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 8px; background: linear-gradient(90deg, var(--leaf), var(--sky), var(--mustard)); }
+
+  /* ============ PROMPT + HERO ============ */
+  .prompt-tip { text-align: center; font-family: "Fredoka", sans-serif; font-weight: 500; color: #8a7aa2; font-size: .95rem; margin: 0 0 6px; }
+  .hero { text-align: center; margin: 4px 0 4px; }
+  .hero-emojis { font-size: 84px; line-height: 1; filter: drop-shadow(0 8px 14px rgba(0,0,0,.18)); animation: drop .5s ease; }
+  .hero-emojis .sep { font-size: 50px; opacity: .35; margin: 0 4px; }
+  @keyframes drop { from { opacity: 0; transform: translateY(-22px); } to { opacity: 1; transform: none; } }
+  .loc-badge { text-align: center; margin: 6px 0 16px; font-family: "Fredoka", sans-serif; font-size: 1.15rem; font-weight: 600; color: var(--leaf-dk); }
+
+  /* ============ DIALOG LINES ============ */
+  .dialog { display: flex; flex-direction: column; gap: 11px; margin-top: 6px; }
+  .line { display: flex; align-items: flex-start; gap: 12px; background: var(--cream); border: 2px solid rgba(61,44,95,.06); border-radius: 18px; padding: 13px 14px; transition: transform .15s; }
+  .line.a { background: #EFFBF0; border-color: rgba(76,175,80,.25); }
+  .line.b { background: #EAF3FB; border-color: rgba(56,182,217,.28); }
+  .line.c { background: #FFF6E0; border-color: rgba(255,182,39,.3); }
+  .line:hover { transform: translateX(3px); }
+  .line .emoji { font-size: 1.7rem; flex: 0 0 auto; line-height: 1.2; }
+  .line .texts { flex: 1 1 auto; min-width: 0; }
+  .line .pl { font-family: "Fredoka", sans-serif; font-weight: 500; font-size: 1.15rem; color: var(--plum-2); line-height: 1.3; }
+  .line .en { display: none; font-family: "Fredoka", sans-serif; font-weight: 500; font-size: 1.15rem; color: var(--leaf-dk); line-height: 1.3; }
+  .dialog.revealed .pl { display: none; }
+  .dialog.revealed .en { display: block; }
+  .say-btn { flex: 0 0 auto; border: none; cursor: pointer; width: 44px; height: 44px; border-radius: 14px; background: linear-gradient(135deg, var(--teal), var(--teal-dk)); color: #fff; font-size: 1.2rem; box-shadow: var(--shadow); transition: transform .15s, filter .15s; }
+  .say-btn:hover { transform: scale(1.08); filter: brightness(1.08); }
+  .say-btn:active { transform: scale(.94); }
+  .line .say-btn { display: none; }
+  .dialog.revealed .say-btn { display: inline-flex; align-items: center; justify-content: center; }
+
+  /* ============ CONTROLS ============ */
+  .controls { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 22px; }
+  .btn { border: none; cursor: pointer; font-family: "Fredoka", sans-serif; font-weight: 500; font-size: 1.02rem; padding: 13px 22px; border-radius: 16px; box-shadow: var(--shadow); transition: transform .18s, box-shadow .18s, filter .18s; }
+  .btn:hover { transform: translateY(-3px); box-shadow: var(--shadow-hi); }
+  .btn:active { transform: translateY(0); }
+  .btn-primary { background: linear-gradient(135deg, var(--coral), var(--coral-dk)); color: #fff; }
+  .btn-say { background: linear-gradient(135deg, var(--mustard), var(--mustard-dk)); color: #fff; }
+  .btn-reveal { background: linear-gradient(135deg, #8ed39a, var(--leaf-dk)); color: #fff; }
+
+  /* ============ VOCAB GRID ============ */
+  .vocab-section-title { font-family: "Fredoka", sans-serif; font-weight: 600; font-size: 1.15rem; color: var(--leaf-dk); margin: 4px 0 12px; display: flex; align-items: center; gap: 8px; }
+  .vocab-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); margin-bottom: 22px; }
+  .vcard { background: var(--cream); border: 2px solid rgba(61,44,95,.06); border-radius: 18px; padding: 14px 12px; text-align: center; cursor: pointer; transition: transform .15s, box-shadow .15s, background .15s; }
+  .vcard:hover { transform: translateY(-4px); box-shadow: var(--shadow); background: #fff; }
+  .vcard .vemoji { font-size: 46px; line-height: 1; }
+  .vcard .ven { font-family: "Fredoka", sans-serif; font-weight: 500; font-size: 1.05rem; color: var(--plum-2); margin-top: 8px; }
+  .vcard .vpl { font-size: .85rem; font-weight: 700; color: #8a7aa2; margin-top: 2px; }
+
+  /* ============ BACK LINKS ============ */
+  .back-link { display: inline-flex; align-items: center; gap: 6px; text-decoration: none; font-family: "Fredoka", sans-serif; font-weight: 500; font-size: .98rem; color: var(--plum); background: #fff; padding: 10px 18px; border-radius: 14px; box-shadow: var(--shadow); transition: transform .18s, box-shadow .18s; }
+  .back-link:hover { transform: translateX(-4px); box-shadow: var(--shadow-hi); }
+
+  /* ============ HTP MODAL ============ */
+  .htp-btn { position: fixed; top: 16px; right: 16px; z-index: 50; border: none; cursor: pointer; width: 50px; height: 50px; border-radius: 16px; background: linear-gradient(135deg, var(--mustard), var(--mustard-dk)); color: #fff; font-size: 1.3rem; box-shadow: var(--shadow-hi); transition: transform .2s; }
+  .htp-btn:hover { transform: scale(1.1) rotate(8deg); }
+  .htp-modal { display: none; position: fixed; inset: 0; z-index: 100; background: rgba(42,31,68,.55); backdrop-filter: blur(4px); place-items: center; padding: 20px; }
+  .htp-modal.show { display: grid; }
+  .htp-box { background: #fff; border-radius: 26px; max-width: 540px; width: 100%; max-height: 85vh; overflow-y: auto; padding: 28px 26px; box-shadow: var(--shadow-hi); animation: fade .3s ease; }
+  .htp-box h2 { font-family: "Fredoka", sans-serif; font-weight: 600; color: var(--plum-2); margin: 0 0 14px; font-size: 1.5rem; }
+  .htp-box ol { margin: 0 0 18px; padding-left: 22px; }
+  .htp-box li { margin-bottom: 10px; line-height: 1.45; font-weight: 600; color: #4a3a62; }
+  .htp-close { border: none; cursor: pointer; width: 100%; font-family: "Fredoka", sans-serif; font-weight: 500; font-size: 1.05rem; padding: 13px; border-radius: 16px; background: linear-gradient(135deg, var(--teal), var(--teal-dk)); color: #fff; }
+
+  footer { text-align: center; margin-top: 34px; font-size: .85rem; font-weight: 700; color: #9a8ab2; }
+
+  @media (max-width: 520px) { .line .en, .line .pl { font-size: 1.02rem; } }
+  @media print { .back-link, .htp-btn, .htp-modal, .voice-pill, .tabs, .controls, .say-btn { display: none !important; } body::before { display: none; } body { background: #fff; } }
+</style>
+</head>
+<body>
+
+<button class="htp-btn" id="htpBtn" title="Jak grać?">ℹ️</button>
+
+<div class="htp-modal" id="htpModal" role="dialog" aria-modal="true">
+  <div class="htp-box">
+    <h2>ℹ️ Jak grać?</h2>
+    <ol>
+      <li>To <b>generator promptów</b> — losuje polskie zdania, a Ty mówisz je po angielsku.</li>
+      <li>Wybierz tryb: <b>🏞️ Co robią?</b> (Present Continuous: <i>He's fishing, We're fishing in the lake</i>), <b>🗺️ Gdzie są?</b> (miejsca: <i>We're in the forest</i>) lub <b>📚 Słówka</b>.</li>
+      <li>Kliknij <b>🎲 Nowy prompt</b> — zobaczysz tylko polską wersję. Powiedz całość po angielsku na głos.</li>
+      <li>Kliknij <b>✅ Odpowiedź</b>, aby odsłonić angielski i sprawdzić się.</li>
+      <li>Naciśnij <b>🔊</b> przy zdaniu lub <b>🔊 Odtwórz całość</b> — usłyszysz wymowę (Google UK English Female).</li>
+      <li>W <b>📚 Słówka</b> kliknij dowolną kartę, aby usłyszeć słówko.</li>
+    </ol>
+    <button class="htp-close" id="htpClose">Zaczynamy! 🚀</button>
+  </div>
+</div>
+
+<a href="app.html" class="back-link back-top">← Powrót do Sowie Fiszki</a>
+
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <div class="logo-badge">🏞️</div>
+      <div>
+        <h1>The great <em>outdoors</em></h1>
+        <div class="tagline">Generator promptów — Bugs Team 3 · Unit 6</div>
+      </div>
+    </div>
+    <div class="voice-pill">
+      <span class="voice-dot" id="voiceDot"></span>
+      <span id="voiceName">Ładowanie głosu…</span>
+    </div>
+  </header>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="act">🏞️ Co robią?</button>
+    <button class="tab" data-tab="place">🗺️ Gdzie są?</button>
+    <button class="tab" data-tab="vocab">📚 Słówka</button>
+  </div>
+
+  <!-- ============ PANEL: ACTIVITIES ============ -->
+  <div class="panel active" id="panel-act">
+    <div class="card">
+      <p class="prompt-tip">🗣️ Powiedz po angielsku, potem sprawdź się:</p>
+      <div class="hero"><span class="hero-emojis" id="actHero">🎣</span></div>
+      <div class="loc-badge" id="actBadge"></div>
+      <div class="dialog" id="actDialog"></div>
+      <div class="controls">
+        <button class="btn btn-primary" id="actNew">🎲 Nowy prompt</button>
+        <button class="btn btn-reveal" id="actReveal">✅ Odpowiedź</button>
+        <button class="btn btn-say" id="actSayAll">🔊 Odtwórz całość</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ PANEL: PLACES ============ -->
+  <div class="panel" id="panel-place">
+    <div class="card">
+      <p class="prompt-tip">🗣️ Powiedz po angielsku, potem sprawdź się:</p>
+      <div class="hero"><span class="hero-emojis" id="placeHero">🌲</span></div>
+      <div class="loc-badge" id="placeBadge"></div>
+      <div class="dialog" id="placeDialog"></div>
+      <div class="controls">
+        <button class="btn btn-primary" id="placeNew">🎲 Nowy prompt</button>
+        <button class="btn btn-reveal" id="placeReveal">✅ Odpowiedź</button>
+        <button class="btn btn-say" id="placeSayAll">🔊 Odtwórz całość</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ PANEL: VOCAB ============ -->
+  <div class="panel" id="panel-vocab">
+    <div class="card">
+      <div class="vocab-section-title">🏞️ Czynności na świeżym powietrzu</div>
+      <div class="vocab-grid" id="vocabAct"></div>
+      <div class="vocab-section-title">🗺️ Miejsca i krajobrazy</div>
+      <div class="vocab-grid" id="vocabPlace"></div>
+    </div>
+  </div>
+
+  <div style="text-align:center;margin:22px 0 6px">
+    <a href="app.html" class="back-link back-bottom">← Wróć do Sowie Fiszki</a>
+  </div>
+
+  <footer>© 2026 Sowie Fiszki</footer>
+</div>
+
+<script>
+/* =========================================================
+   DANE — Bugs Team 3, Unit 6
+========================================================= */
+/* Podmioty: idx -> forma czasownika PL [ja, ty, on/ona, my, wy, oni]; plBe -> być */
+const SUBJECTS = [
+  { pron: "I",    be: "I'm",     plPron: "Ja",  plBe: "jestem",    idx: 0, emoji: "🧒" },
+  { pron: "You",  be: "You're",  plPron: "Ty",  plBe: "jesteś",    idx: 1, emoji: "🧑" },
+  { pron: "He",   be: "He's",    plPron: "On",  plBe: "jest",      idx: 2, emoji: "👦" },
+  { pron: "She",  be: "She's",   plPron: "Ona", plBe: "jest",      idx: 2, emoji: "👧" },
+  { pron: "We",   be: "We're",   plPron: "My",  plBe: "jesteśmy",  idx: 3, emoji: "👫" },
+  { pron: "You",  be: "You're",  plPron: "Wy",  plBe: "jesteście", idx: 4, emoji: "🧒🧒" },
+  { pron: "They", be: "They're", plPron: "Oni", plBe: "są",        idx: 5, emoji: "🧑🧑" },
+];
+
+/* Czynności: inf = bezokolicznik (fiszka), ger = gerund EN, pl = 6 form czasownika */
+const ACTS = [
+  { ger: "taking photos",       inf: "robić zdjęcia",          emoji: "📸",
+    pl: ["robię zdjęcia","robisz zdjęcia","robi zdjęcia","robimy zdjęcia","robicie zdjęcia","robią zdjęcia"] },
+  { ger: "flying a kite",       inf: "puszczać latawiec",      emoji: "🪁",
+    pl: ["puszczam latawca","puszczasz latawca","puszcza latawca","puszczamy latawca","puszczacie latawca","puszczają latawca"] },
+  { ger: "having a picnic",     inf: "urządzać piknik",        emoji: "🧺",
+    pl: ["urządzam piknik","urządzasz piknik","urządza piknik","urządzamy piknik","urządzacie piknik","urządzają piknik"] },
+  { ger: "fishing",             inf: "łowić ryby",             emoji: "🎣",
+    pl: ["łowię ryby","łowisz ryby","łowi ryby","łowimy ryby","łowicie ryby","łowią ryby"] },
+  { ger: "collecting shells",   inf: "zbierać muszle",         emoji: "🐚",
+    pl: ["zbieram muszle","zbierasz muszle","zbiera muszle","zbieramy muszle","zbieracie muszle","zbierają muszle"] },
+  { ger: "building a sandcastle",inf: "budować zamek z piasku",emoji: "🏰",
+    pl: ["buduję zamek z piasku","budujesz zamek z piasku","buduje zamek z piasku","budujemy zamek z piasku","budujecie zamek z piasku","budują zamek z piasku"] },
+  { ger: "snorkelling",         inf: "nurkować z rurką",       emoji: "🤿",
+    pl: ["nurkuję z rurką","nurkujesz z rurką","nurkuje z rurką","nurkujemy z rurką","nurkujecie z rurką","nurkują z rurką"] },
+  { ger: "making a fire",       inf: "rozpalać ognisko",       emoji: "🔥",
+    pl: ["rozpalam ognisko","rozpalasz ognisko","rozpala ognisko","rozpalamy ognisko","rozpalacie ognisko","rozpalają ognisko"] },
+  { ger: "hiking",              inf: "wędrować",               emoji: "🥾",
+    pl: ["wędruję","wędrujesz","wędruje","wędrujemy","wędrujecie","wędrują"] },
+];
+
+/* Miejsca: prepEn/prepPl = przyimek + miejsce; stmt = czy pasuje do "We're ___" */
+const PLACES = [
+  { en: "beach",     pl: "plaża",   emoji: "🏖️", prepEn: "on the beach",     prepPl: "na plaży",     stmt: true },
+  { en: "mountains", pl: "góry",    emoji: "⛰️", prepEn: "in the mountains", prepPl: "w górach",     stmt: true },
+  { en: "forest",    pl: "las",     emoji: "🌲", prepEn: "in the forest",    prepPl: "w lesie",      stmt: true },
+  { en: "lake",      pl: "jezioro", emoji: "🏞️", prepEn: "in the lake",      prepPl: "nad jeziorem", stmt: false },
+  { en: "city",      pl: "miasto",  emoji: "🏙️", prepEn: "in the city",      prepPl: "w mieście",    stmt: true },
+  { en: "village",   pl: "wieś",    emoji: "🏘️", prepEn: "in the village",   prepPl: "na wsi",       stmt: true },
+];
+
+const rand = arr => arr[Math.floor(Math.random() * arr.length)];
+
+/* =========================================================
+   TEXT-TO-SPEECH (Google UK English Female preferred)
+========================================================= */
+let voice = null;
+const rate = 0.9;
+const voiceDot  = document.getElementById("voiceDot");
+const voiceName = document.getElementById("voiceName");
+
+function getV() {
+  const vs = speechSynthesis.getVoices();
+  if (!vs.length) return;
+  voice =
+    vs.find(v => v.name === "Google UK English Female") ||
+    vs.find(v => /en-GB/i.test(v.lang) && /female/i.test(v.name)) ||
+    vs.find(v => v.name === "Google UK English Male") ||
+    vs.find(v => /en-GB/i.test(v.lang)) ||
+    vs.find(v => /^en/i.test(v.lang)) ||
+    vs[0];
+  if (voice) {
+    voiceDot.classList.add("ready");
+    voiceName.textContent = voice.name + " · " + voice.lang;
+  }
+}
+if ("speechSynthesis" in window) {
+  speechSynthesis.onvoiceschanged = getV;
+  getV();
+} else {
+  voiceName.textContent = "TTS niedostępne";
+}
+
+function spk(text, onEnd) {
+  if (!("speechSynthesis" in window)) { if (onEnd) onEnd(); return; }
+  if (!voice) getV();
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  if (voice) u.voice = voice;
+  u.lang = "en-GB";
+  u.pitch = 1;
+  u.rate = rate;
+  voiceDot.classList.add("speaking");
+  u.onend = () => { voiceDot.classList.remove("speaking"); if (onEnd) onEnd(); };
+  u.onerror = () => { voiceDot.classList.remove("speaking"); if (onEnd) onEnd(); };
+  speechSynthesis.speak(u);
+}
+function speakSequence(texts, i = 0) {
+  if (i >= texts.length) return;
+  spk(texts[i], () => setTimeout(() => speakSequence(texts, i + 1), 380));
+}
+
+/* =========================================================
+   TABS
+========================================================= */
+document.querySelectorAll(".tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
+    tab.classList.add("active");
+    document.getElementById("panel-" + tab.dataset.tab).classList.add("active");
+    speechSynthesis.cancel();
+  });
+});
+
+function lineHtml(cls, emoji, en, pl) {
+  return `<div class="line ${cls}">
+    <span class="emoji">${emoji}</span>
+    <span class="texts"><span class="pl">${pl}</span><span class="en">${en}</span></span>
+    <button class="say-btn" data-say="${en.replace(/"/g, "&quot;")}">🔊</button>
+  </div>`;
+}
+function bindSay(c) { c.querySelectorAll(".say-btn").forEach(b => b.onclick = () => spk(b.dataset.say)); }
+
+const enPC = (s, a) => `${s.be} ${a.ger}.`;
+const plPC = (s, a) => `${s.plPron} ${a.pl[s.idx]}.`;
+
+/* =========================================================
+   PANEL: ACTIVITIES (Present Continuous)
+========================================================= */
+const actHero   = document.getElementById("actHero");
+const actBadge  = document.getElementById("actBadge");
+const actDialog = document.getElementById("actDialog");
+
+function genAct() {
+  const s1 = rand(SUBJECTS), a1 = rand(ACTS);
+  const s2 = rand(SUBJECTS), a2 = rand(ACTS.filter(a => a.ger !== a1.ger));
+  const s3 = rand(SUBJECTS), a3 = rand(ACTS), pl = rand(PLACES);
+
+  actHero.innerHTML = `${s1.emoji}<span class="sep">·</span>${a1.emoji}`;
+  actBadge.dataset.pl = `${a1.emoji} ${a1.inf}`;
+  actBadge.dataset.en = `${a1.emoji} ${a1.ger}`;
+  actBadge.textContent = actBadge.dataset.pl;
+  actDialog.classList.remove("revealed");
+
+  actDialog.innerHTML =
+    lineHtml("a", a1.emoji, enPC(s1, a1), plPC(s1, a1)) +
+    lineHtml("b", a2.emoji, enPC(s2, a2), plPC(s2, a2)) +
+    lineHtml("c", pl.emoji,
+      `${s3.be} ${a3.ger} ${pl.prepEn}.`,
+      `${s3.plPron} ${a3.pl[s3.idx]} ${pl.prepPl}.`);
+
+  bindSay(actDialog);
+}
+function revealAct() { actDialog.classList.add("revealed"); actBadge.textContent = actBadge.dataset.en; }
+document.getElementById("actNew").onclick = genAct;
+document.getElementById("actReveal").onclick = revealAct;
+document.getElementById("actSayAll").onclick = () => { revealAct(); speakSequence([...actDialog.querySelectorAll(".say-btn")].map(b => b.dataset.say)); };
+
+/* =========================================================
+   PANEL: PLACES
+========================================================= */
+const placeHero   = document.getElementById("placeHero");
+const placeBadge  = document.getElementById("placeBadge");
+const placeDialog = document.getElementById("placeDialog");
+
+function genPlace() {
+  const stmtPlace = rand(PLACES.filter(p => p.stmt));
+  const s1 = rand(SUBJECTS);
+  const s2 = rand(SUBJECTS), a2 = rand(ACTS), p2 = rand(PLACES);
+
+  placeHero.textContent = stmtPlace.emoji;
+  placeBadge.dataset.pl = `${stmtPlace.emoji} ${stmtPlace.pl}`;
+  placeBadge.dataset.en = `${stmtPlace.emoji} ${stmtPlace.en}`;
+  placeBadge.textContent = placeBadge.dataset.pl;
+  placeDialog.classList.remove("revealed");
+
+  placeDialog.innerHTML =
+    lineHtml("a", stmtPlace.emoji,
+      `${s1.be} ${stmtPlace.prepEn}.`,
+      `${s1.plPron} ${s1.plBe} ${stmtPlace.prepPl}.`) +
+    lineHtml("c", a2.emoji,
+      `${s2.be} ${a2.ger} ${p2.prepEn}.`,
+      `${s2.plPron} ${a2.pl[s2.idx]} ${p2.prepPl}.`);
+
+  bindSay(placeDialog);
+}
+function revealPlace() { placeDialog.classList.add("revealed"); placeBadge.textContent = placeBadge.dataset.en; }
+document.getElementById("placeNew").onclick = genPlace;
+document.getElementById("placeReveal").onclick = revealPlace;
+document.getElementById("placeSayAll").onclick = () => { revealPlace(); speakSequence([...placeDialog.querySelectorAll(".say-btn")].map(b => b.dataset.say)); };
+
+/* =========================================================
+   PANEL: VOCAB
+========================================================= */
+function buildVocab(arr, container, enKey, plKey) {
+  container.innerHTML = arr.map(w =>
+    `<div class="vcard" data-say="${w[enKey].replace(/"/g, "&quot;")}">
+       <div class="vemoji">${w.emoji}</div>
+       <div class="ven">${w[enKey]}</div>
+       <div class="vpl">${w[plKey]}</div>
+     </div>`).join("");
+  container.querySelectorAll(".vcard").forEach(c => c.onclick = () => spk(c.dataset.say));
+}
+buildVocab(ACTS, document.getElementById("vocabAct"), "ger", "inf");
+buildVocab(PLACES, document.getElementById("vocabPlace"), "en", "pl");
+
+/* =========================================================
+   HTP MODAL
+========================================================= */
+const htpModal = document.getElementById("htpModal");
+document.getElementById("htpBtn").onclick = () => htpModal.classList.add("show");
+document.getElementById("htpClose").onclick = () => htpModal.classList.remove("show");
+htpModal.onclick = e => { if (e.target === htpModal) htpModal.classList.remove("show"); };
+
+/* =========================================================
+   INIT
+========================================================= */
+genAct();
+genPlace();
+</script>
+</body>
+</html>
