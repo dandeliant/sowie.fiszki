@@ -5759,19 +5759,19 @@ function refreshGrid() {
 function getDiffDot(bId, uKey, wordIdx) {
   if (uKey === 'all') return '';
   const saved = DB.getUnitProgress(currentUser, bId, uKey);
-  if (!saved || !saved.wordStates) return '<span title="Nowe słowo">🌱</span>';
+  if (!saved || !saved.wordStates) return '<span title="Nie ćwiczone">⬜</span>';
   const s = saved.wordStates[wordIdx];
-  if (!s) return '<span title="Nowe słowo">🌱</span>';
+  if (!s) return '<span title="Nie ćwiczone">⬜</span>';
   const stg = (typeof wordStage === 'function') ? wordStage(s) : null;
   if (stg) {
     const ttl = stg.label + ' · pewność ' + stg.confidence + (s.reps ? ' (×' + s.reps + ')' : '');
     return '<span title="' + ttl + '">' + stg.icon + '</span>';
   }
-  // Fallback (gdyby helper nie byl dostepny)
-  if (s.reps >= 4 && s.interval >= 30) return '🏆';
-  if (s.reps >= 3) return '🌳';
-  if (s.reps >= 1) return '🌿';
-  return '🌱';
+  // Fallback (gdyby helper nie byl dostepny) — kolorowe kropki zgodne z legenda
+  if (s.reps >= 3) return '🟢';
+  if (s.reps >= 1) return '🟡';
+  if (s.lastError) return '🔴';
+  return '⬜';
 }
 
 let wlSelectedIndices = new Set(); // globalny zestaw zaznaczonych indeksów
@@ -5923,7 +5923,7 @@ function openWordList(key) {
   // Nagłówek tabeli — z kolumną akcji dla edytujacego
   const thead = document.getElementById('wlHead');
   const adminTh = isAdmin ? '<th></th>' : '';
-  thead.innerHTML = `<th class="th-cb"><input type="checkbox" class="wl-cb" id="cbAll" title="Zaznacz/odznacz wszystkie" onchange="wlToggleAll(this.checked)"></th><th>#</th><th>Polski</th><th>🔊</th><th>Angielski</th><th>🔊</th><th title="🌱 Nowe · 🌿 Uczę się · 🌳 Opanowane · 🏆 Mistrzostwo">Stan</th>${adminTh}`;
+  thead.innerHTML = `<th class="th-cb"><input type="checkbox" class="wl-cb" id="cbAll" title="Zaznacz/odznacz wszystkie" onchange="wlToggleAll(this.checked)"></th><th>#</th><th>Polski</th><th>🔊</th><th>Angielski</th><th>🔊</th><th title="🟢 Opanowane · 🟡 W trakcie · 🔴 Trudne · ⬜ Nie ćwiczone">Stan</th>${adminTh}`;
 
   const body = document.getElementById('wlBody');
   body.innerHTML = '';
@@ -7299,31 +7299,28 @@ function sm2Update(s, r) {
 //  STAGE / CONFIDENCE — wizualny stan slowa
 // ══════════════════════════════════════════════
 // Zwraca {stage, icon, label, confidence} dla danego stanu SM-2.
-// Confidence = reps + bonus za interval (im rzadziej trzeba przypominac, tym pewniej).
-//   🌱 Sapling   — confidence 0-1   (nowe / pomylone)
-//   🌿 Rosnaca   — confidence 2-4   (uczone, jeszcze nie opanowane)
-//   🌳 Opanowane — confidence 5-10  (znane, reps >= 3)
-//   🏆 Mistrzostwo — confidence >= 11 (dlugoterminowo, reps >= 4 + odstep >=30 dni)
+// Klasyczne kolorowe kropki (zgodne z legenda w sWordList):
+//   🟢 Opanowane     — reps >= 3 (znane na pamiec, dluzszy odstep)
+//   🟡 W trakcie     — reps 1-2 (uczone, jeszcze nie opanowane)
+//   🔴 Trudne        — ostatnio pomylone (lastError)
+//   ⬜ Nie cwiczone  — slowo bez postepu (reps = 0, brak bledu)
 function wordStage(state) {
   if (!state || typeof state !== 'object') {
-    return { stage: 'new', icon: '🌱', label: 'Nowe', confidence: 0 };
+    return { stage: 'new', icon: '⬜', label: 'Nie ćwiczone', confidence: 0 };
   }
   const reps = state.reps || 0;
   const interval = state.interval || 0;
   const conf = reps + Math.floor(interval / 7);
-  if (state.mastered || (reps >= 4 && interval >= 30)) {
-    return { stage: 'mastered', icon: '🏆', label: 'Mistrzostwo', confidence: conf };
-  }
-  if (reps >= 3) {
-    return { stage: 'known', icon: '🌳', label: 'Opanowane', confidence: conf };
+  if (state.mastered || reps >= 3) {
+    return { stage: 'known', icon: '🟢', label: 'Opanowane', confidence: conf };
   }
   if (reps >= 1) {
-    return { stage: 'growing', icon: '🌿', label: 'Uczę się', confidence: conf };
+    return { stage: 'growing', icon: '🟡', label: 'W trakcie', confidence: conf };
   }
-  return { stage: state.lastError ? 'error' : 'new',
-           icon: state.lastError ? '🌱' : '🌱',
-           label: state.lastError ? 'Pomyłka' : 'Nowe',
-           confidence: conf };
+  if (state.lastError) {
+    return { stage: 'error', icon: '🔴', label: 'Trudne', confidence: conf };
+  }
+  return { stage: 'new', icon: '⬜', label: 'Nie ćwiczone', confidence: conf };
 }
 window.wordStage = wordStage;
 
