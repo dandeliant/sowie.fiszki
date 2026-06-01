@@ -185,6 +185,7 @@ body::before{
   display:inline-flex;align-items:center;gap:4px;justify-content:center;
 }
 .q-opt .lt{color:var(--neon-yellow);font-family:'Press Start 2P',monospace;font-size:.7rem;}
+.q-hint{grid-column:1/-1;color:var(--neon-cyan);font-weight:800;font-size:.82rem;padding:2px;}
 
 /* === MAZE === */
 .maze-stage{display:flex;justify-content:center;margin-bottom:14px;position:relative;}
@@ -227,14 +228,28 @@ body::before{
   animation:dot-glow .6s ease-in-out infinite;
 }
 .cell.answer{
-  font-size:.78rem;
-  background:linear-gradient(135deg,var(--neon-purple),var(--neon-pink));
-  color:#fff;font-weight:800;
+  background:radial-gradient(circle,var(--neon-purple),var(--neon-pink));
   border-radius:50%;
-  box-shadow:0 0 12px rgba(168,85,247,.7);
-  animation:answer-pulse 1.6s ease-in-out infinite;
+  box-shadow:0 0 14px rgba(168,85,247,.8);
+  animation:answer-pulse 1.4s ease-in-out infinite;
+  z-index:5;
 }
-@keyframes answer-pulse{0%,100%{box-shadow:0 0 12px rgba(168,85,247,.7);}50%{box-shadow:0 0 22px rgba(236,72,153,.9);}}
+@keyframes answer-pulse{0%,100%{box-shadow:0 0 14px rgba(168,85,247,.7);transform:scale(1);}50%{box-shadow:0 0 24px rgba(236,72,153,1);transform:scale(1.14);}}
+
+/* Etykieta odpowiedzi (zwykly tekst) przy polu docelowym */
+.answer-label{
+  position:absolute;z-index:8;white-space:nowrap;
+  background:linear-gradient(135deg,var(--neon-purple),var(--neon-pink));
+  color:#fff;font-weight:800;font-family:'Nunito',system-ui,sans-serif;
+  font-size:.72rem;line-height:1.1;padding:3px 8px;border-radius:8px;
+  box-shadow:0 0 12px rgba(168,85,247,.75);
+  pointer-events:none;
+}
+@media(max-width:520px){.answer-label{font-size:.6rem;padding:2px 5px;}}
+.answer-label.top{bottom:100%;margin-bottom:3px;}
+.answer-label.bottom{top:100%;margin-top:3px;}
+.answer-label.left{left:0;}
+.answer-label.right{right:0;}
 
 .entity{
   position:absolute;
@@ -252,7 +267,7 @@ body::before{
   z-index:9;
   filter:drop-shadow(0 0 6px rgba(239,68,68,.7));
   animation:ghost-bob 1.2s ease-in-out infinite;
-  transition:transform .22s linear;
+  transition:transform .42s linear;
 }
 @keyframes ghost-bob{0%,100%{margin-top:0;}50%{margin-top:-2px;}}
 
@@ -345,7 +360,7 @@ body::before{
       <li>Idziesz w prawo → 🚶‍♂️‍➡️, idziesz w lewo → 🚶‍♂️</li>
       <li><strong>Unikaj 💀</strong> — kontakt = utrata życia (masz 3).</li>
       <li>Zbieraj <strong>żółte kropki</strong> w labiryncie (+10 pkt) — duże kropki to bonus (+50 pkt).</li>
-      <li>Na 4 fioletowych polach <strong>A · B · C · D</strong> czekają odpowiedzi — wejdź do <strong>poprawnej</strong>:
+      <li>W 4 rogach planszy świecą <strong>pola z odpowiedziami</strong> (zwykłe słowa) — wejdź do <strong>poprawnej</strong>:
         <ul style="margin-top:6px;padding-left:18px;color:#dbeafe">
           <li>✓ poprawna → <strong>+100 pkt</strong> + nowe pytanie</li>
           <li>✗ błędna → <strong>−1 życie</strong>, spróbuj jeszcze raz</li>
@@ -624,7 +639,7 @@ function startGame(){
   if (playerInterval) clearInterval(playerInterval);
   if (ghostInterval) clearInterval(ghostInterval);
   playerInterval = setInterval(playerTick, 140);
-  ghostInterval = setInterval(ghostTick, 240);
+  ghostInterval = setInterval(ghostTick, 440);
 }
 
 function buildMaze(){
@@ -646,7 +661,6 @@ function buildMaze(){
     } else if (ch==='A'||ch==='B'||ch==='C'||ch==='D') {
       cell.classList.add('answer');
       cell.dataset.letter=ch;
-      cell.textContent=ch;
       answerSlots[ch] = { r, c, el: cell };
     } else if (ch==='G') {
       ghostSpawns.push({r,c});
@@ -743,12 +757,19 @@ function newQuestion(){
   // Render question bar
   document.getElementById('qWord').textContent = word[promptIdx];
   const optsEl = document.getElementById('qOptions');
-  optsEl.innerHTML = '';
+  optsEl.innerHTML = '<div class="q-hint">🚶‍♂️ Wejdź do pola z poprawną odpowiedzią!</div>';
+
+  // Etykiety odpowiedzi na planszy (zwykly tekst przy kazdym polu A/B/C/D)
+  const cornerClass = { A:'top left', B:'top right', C:'bottom left', D:'bottom right' };
   letters.forEach(L => {
-    const div = document.createElement('div');
-    div.className = 'q-opt';
-    div.innerHTML = `<span class="lt">${L}</span> <span>${escHtml(assign[L])}</span>`;
-    optsEl.appendChild(div);
+    const slot = answerSlots[L];
+    if (!slot) return;
+    const old = slot.el.querySelector('.answer-label');
+    if (old) old.remove();
+    const lab = document.createElement('div');
+    lab.className = 'answer-label ' + (cornerClass[L] || 'top left');
+    lab.textContent = assign[L];
+    slot.el.appendChild(lab);
   });
 }
 
