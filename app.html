@@ -4361,8 +4361,21 @@ szkoła	school"></textarea>
     }
   } catch(e) {}
 })();
-const currentUser = sessionStorage.getItem('fiszki_user');
-if (!currentUser) { window.location.href = 'index.html'; }
+// sessionStorage jest PER-KARTA — gdy user otworzy kafelek "w nowej karcie",
+// jest puste i normalnie nastapilby redirect do logowania (mimo aktywnej sesji
+// Supabase w localStorage). localStorage 'fiszki_user_persist' to wspolny most:
+// zapisywany przy logowaniu w innej karcie (index.html), uzywany tu jako fallback
+// do odtworzenia sesji w nowej karcie. Zachowuje hash z URL (#/book/...).
+// Gdy Supabase session i tak wygasla, DB.init() to wykryje i zrobi redirect.
+let currentUser = sessionStorage.getItem('fiszki_user');
+if (!currentUser) {
+  try { currentUser = localStorage.getItem('fiszki_user_persist'); } catch(e) {}
+  if (currentUser) {
+    try { sessionStorage.setItem('fiszki_user', currentUser); } catch(e) {}
+  } else {
+    window.location.href = 'index.html';
+  }
+}
 const isGuest = currentUser === '__guest__';
 {
   const p = document.getElementById('helloUser');
@@ -4375,6 +4388,7 @@ async function logout() {
   }
   await DB.logout();
   sessionStorage.removeItem('fiszki_user');
+  try { localStorage.removeItem('fiszki_user_persist'); } catch(e) {}
   // Hard refresh (cache-bust) — pewność że nastepne logowanie startuje ze swiezymi danymi
   window.location.replace('index.html?t=' + Date.now());
 }
@@ -17775,8 +17789,9 @@ if ('serviceWorker' in navigator) {
       await DB.init(currentUser);
     } catch (e) {
       console.warn('[BOOT] Błąd inicjalizacji DB:', e.message);
-      // Sesja wygasła — wróć do logowania
+      // Sesja wygasła — wróć do logowania, wyczysc oba storage
       sessionStorage.removeItem('fiszki_user');
+      try { localStorage.removeItem('fiszki_user_persist'); } catch(e2) {}
       window.location.replace('index.html?t=' + Date.now());
       return;
     }
