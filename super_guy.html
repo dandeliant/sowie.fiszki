@@ -356,7 +356,7 @@ body::before{
     <h2>👾 SUPER GUY</h2>
     <ol>
       <li>Wybierz <strong>podręcznik</strong> i <strong>unit</strong>, kliknij <strong>START</strong>.</li>
-      <li>Sterujesz postacią <strong>🚶‍♂️</strong> strzałkami / WASD (PC) lub D-padem na dole (mobile).</li>
+      <li>Sterujesz postacią <strong>🚶‍♂️</strong> strzałkami / WASD (PC) lub D-padem na dole (mobile). <strong>Krótkie naciśnięcie = jedno pole, przytrzymanie = ciągły ruch.</strong></li>
       <li>Idziesz w prawo → 🚶‍♂️‍➡️, idziesz w lewo → 🚶‍♂️</li>
       <li><strong>Unikaj 💀</strong> — kontakt = utrata życia (masz 3).</li>
       <li>Zbieraj <strong>żółte kropki</strong> w labiryncie (+10 pkt) — duże kropki to bonus (+50 pkt).</li>
@@ -627,6 +627,7 @@ function startGame(){
   // Reset state
   lives=3; score=0; correctCount=0; dotsEaten=0;
   isPaused=false; tickPaused=false;
+  clearHeld();
   document.getElementById('setupPanel').classList.add('hidden');
   document.getElementById('endScreen').classList.add('hidden');
   document.getElementById('gameArea').classList.remove('hidden');
@@ -776,29 +777,80 @@ function newQuestion(){
 /* ============================================================
    PLAYER TICK
 ============================================================ */
-let pressedKey = null;
+/* Ruch tylko gdy klawisz wcisniety:
+   krotkie nacisniecie = 1 pole, przytrzymanie = ciagly ruch, puszczenie = stop. */
+const HOLD_DELAY = 220;     // ms zanim ruszy ruch ciagly (jak auto-repeat klawiatury)
+let heldDirs = [];          // aktualnie wcisniete kierunki (ostatni = najnowszy)
+let holdRepeatAt = 0;       // od kiedy wolno robic ruch ciagly
 
-function setDesired(d){ player.desired = d; }
+function clearHeld(){ heldDirs.length = 0; }
 
-document.addEventListener('keydown', (e) => {
+function stepPlayer(d){
+  if (!d) return;
+  player.dir = d;
+  if (d === 'left') player.lastFacing = 'left';
+  else if (d === 'right') player.lastFacing = 'right';
+  const playerEl = document.getElementById('player');
+  if (playerEl) playerEl.textContent = (player.lastFacing === 'left') ? '🚶‍♂️' : '🚶‍♂️‍➡️';
+  const [dr,dc] = DIRS[d];
+  const nr = player.r + dr, nc = player.c + dc;
+  if (!canMove(nr, nc)) return;     // sciana — tylko obrot, bez ruchu
+  player.r = nr; player.c = nc;
+  if (playerEl) positionEntity(playerEl, player.r, player.c);
+  handleCellEnter(player.r, player.c);
+}
+
+// Przy ruchu ciaglym wybierz najnowszy wcisniety kierunek, ktory da sie isc
+function chooseHeldDir(){
+  for (let i = heldDirs.length - 1; i >= 0; i--) {
+    const d = heldDirs[i];
+    const [dr,dc] = DIRS[d];
+    if (canMove(player.r + dr, player.c + dc)) return d;
+  }
+  return heldDirs.length ? heldDirs[heldDirs.length - 1] : null;
+}
+
+function pressDir(d){
+  if (!d) return;
   if (document.getElementById('gameArea').classList.contains('hidden')) return;
-  let d = null;
-  if (e.key==='ArrowUp'||e.key==='w'||e.key==='W') d='up';
-  else if (e.key==='ArrowDown'||e.key==='s'||e.key==='S') d='down';
-  else if (e.key==='ArrowLeft'||e.key==='a'||e.key==='A') d='left';
-  else if (e.key==='ArrowRight'||e.key==='d'||e.key==='D') d='right';
-  if (d) { e.preventDefault(); setDesired(d); }
-});
+  if (heldDirs.includes(d)) return;   // ignoruj auto-repeat klawiatury
+  heldDirs.push(d);
+  stepPlayer(d);                      // natychmiastowy 1 krok przy wcisnieciu
+  holdRepeatAt = performance.now() + HOLD_DELAY;
+}
+function releaseDir(d){
+  const i = heldDirs.indexOf(d);
+  if (i >= 0) heldDirs.splice(i, 1);
+}
 
+function keyToDir(e){
+  if (e.key==='ArrowUp'||e.key==='w'||e.key==='W') return 'up';
+  if (e.key==='ArrowDown'||e.key==='s'||e.key==='S') return 'down';
+  if (e.key==='ArrowLeft'||e.key==='a'||e.key==='A') return 'left';
+  if (e.key==='ArrowRight'||e.key==='d'||e.key==='D') return 'right';
+  return null;
+}
+document.addEventListener('keydown', (e) => {
+  const d = keyToDir(e);
+  if (d) { e.preventDefault(); pressDir(d); }
+});
+document.addEventListener('keyup', (e) => {
+  const d = keyToDir(e);
+  if (d) { e.preventDefault(); releaseDir(d); }
+});
+window.addEventListener('blur', clearHeld);  // utrata fokusu -> stop
+
+// D-pad (mobile): przytrzymaj = ciagly ruch, dotyk = 1 pole
 document.querySelectorAll('.dpad-btn').forEach(btn => {
   const d = btn.dataset.dir;
   if (!d) return;
-  ['touchstart','mousedown'].forEach(evt => {
-    btn.addEventListener(evt, (e) => { e.preventDefault(); setDesired(d); }, { passive:false });
-  });
+  ['touchstart','mousedown'].forEach(evt =>
+    btn.addEventListener(evt, (e) => { e.preventDefault(); pressDir(d); }, { passive:false }));
+  ['touchend','touchcancel','mouseup','mouseleave'].forEach(evt =>
+    btn.addEventListener(evt, (e) => { e.preventDefault(); releaseDir(d); }, { passive:false }));
 });
 
-// Touch swipe na labirycie
+// Swipe na labiryncie — pojedynczy krok w kierunku gestu
 (function(){
   const m = document.getElementById('maze');
   let sx=0, sy=0;
@@ -810,35 +862,18 @@ document.querySelectorAll('.dpad-btn').forEach(btn => {
     if (!e.changedTouches[0]) return;
     const dx = e.changedTouches[0].clientX - sx;
     const dy = e.changedTouches[0].clientY - sy;
-    if (Math.abs(dx) > Math.abs(dy)) {
-      if (Math.abs(dx) > 20) setDesired(dx > 0 ? 'right' : 'left');
-    } else {
-      if (Math.abs(dy) > 20) setDesired(dy > 0 ? 'down' : 'up');
-    }
+    let d = null;
+    if (Math.abs(dx) > Math.abs(dy)) { if (Math.abs(dx) > 20) d = dx > 0 ? 'right' : 'left'; }
+    else { if (Math.abs(dy) > 20) d = dy > 0 ? 'down' : 'up'; }
+    if (d) stepPlayer(d);
   }, { passive: true });
 })();
 
 function playerTick(){
   if (tickPaused) return;
-  // Jesli desired moze, zmien dir
-  if (player.desired) {
-    const [dr,dc] = DIRS[player.desired];
-    if (canMove(player.r+dr, player.c+dc)) {
-      player.dir = player.desired;
-      player.desired = null;
-    }
-  }
-  const [dr,dc] = DIRS[player.dir];
-  const nr = player.r + dr, nc = player.c + dc;
-  if (!canMove(nr, nc)) return; // blokada — czekaj
-  player.r = nr; player.c = nc;
-  if (player.dir === 'left') player.lastFacing = 'left';
-  else if (player.dir === 'right') player.lastFacing = 'right';
-  // Update emoji
-  const playerEl = document.getElementById('player');
-  playerEl.textContent = (player.lastFacing === 'left') ? '🚶‍♂️' : '🚶‍♂️‍➡️';
-  positionEntity(playerEl, player.r, player.c);
-  handleCellEnter(player.r, player.c);
+  if (!heldDirs.length) return;                  // nic nie wcisniete -> stoi
+  if (performance.now() < holdRepeatAt) return;  // poczekaj zanim ruszy ruch ciagly
+  stepPlayer(chooseHeldDir());
 }
 
 function handleCellEnter(r, c){
@@ -950,9 +985,11 @@ function loseLife(){
   if (lives <= 0) { endGame(false); return; }
   // Reset positions
   tickPaused = true;
+  clearHeld();
   setTimeout(() => {
     player.r = playerSpawn.r; player.c = playerSpawn.c;
     player.dir = 'right'; player.lastFacing = 'right'; player.desired = null;
+    clearHeld();
     const pe = document.getElementById('player');
     pe.textContent = '🚶‍♂️‍➡️'; positionEntity(pe, player.r, player.c);
     ghosts.forEach(g => {
@@ -986,6 +1023,7 @@ function endGame(won){
   if (window.SF_LIVE && window.SF_LIVE.end(typeof score !== "undefined" ? score : 0)) return;
   if (playerInterval) { clearInterval(playerInterval); playerInterval = null; }
   if (ghostInterval) { clearInterval(ghostInterval); ghostInterval = null; }
+  clearHeld();
   document.getElementById('gameArea').classList.add('hidden');
   const screen = document.getElementById('endScreen');
   screen.classList.remove('hidden');
