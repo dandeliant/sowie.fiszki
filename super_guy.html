@@ -194,7 +194,7 @@ body::before{
   --cell:28px;
   grid-template-columns:repeat(19, var(--cell));
   grid-auto-rows:var(--cell);
-  background:#000;
+  background:radial-gradient(ellipse at 70% 35%,#2a1a52 0%,#140d2e 55%,#0b0820 100%);
   border:3px solid var(--neon-blue);
   border-radius:8px;
   box-shadow:0 0 30px rgba(59,130,246,.5),inset 0 0 20px rgba(0,0,0,.6);
@@ -209,11 +209,20 @@ body::before{
   position:relative;
   font-family:'Press Start 2P',monospace;
 }
-.cell.wall{
-  background:linear-gradient(135deg,#1e40af,#1e3a8a);
-  box-shadow:inset 0 0 6px rgba(59,130,246,.7);
-  border-radius:3px;
+/* Cienkie sciany — wask pasek rysowany przez ::before, laczy sie z sasiadami */
+.cell.wall{ background:transparent; }
+.cell.wall::before{
+  content:'';position:absolute;
+  top:33%;bottom:33%;left:33%;right:33%;
+  background:linear-gradient(135deg,#3b6bf6,#5b54e6);
+  border-radius:7px;
+  box-shadow:0 0 7px rgba(59,130,246,.75), inset 0 0 4px rgba(255,255,255,.3),
+             inset 0 0 0 1.5px rgba(253,224,71,.25);
 }
+.cell.wall.wu::before{ top:-1px;border-top-left-radius:0;border-top-right-radius:0; }
+.cell.wall.wd::before{ bottom:-1px;border-bottom-left-radius:0;border-bottom-right-radius:0; }
+.cell.wall.wl::before{ left:-1px;border-top-left-radius:0;border-bottom-left-radius:0; }
+.cell.wall.wr::before{ right:-1px;border-top-right-radius:0;border-bottom-right-radius:0; }
 .cell.dot::after{
   content:'';position:absolute;width:5px;height:5px;
   background:#fde047;border-radius:50%;
@@ -513,17 +522,17 @@ function playLose(){ beep(220,0.2,'sawtooth',0.16); setTimeout(()=>beep(165,0.25
 ============================================================ */
 const MAZE = [
   '#########.#########',
-  '#########.#########',
-  '##A######.######B##',
-  '##...............##',
-  '##.##.###.###.##.##',
-  '##.##.###.###.##.##',
-  '........G.G........',
-  '##.##.###.###.##.##',
-  '##.##.###.###.##.##',
-  '##...............##',
-  '##C######.######D##',
-  '#########.#########',
+  '#.................#',
+  '#.#####.....#####.#',
+  '#.#.A.#.....#.B.#.#',
+  '#.##.##.....##.##.#',
+  '#.................#',
+  '...###..G.G..###...',
+  '#.................#',
+  '#.##.##.....##.##.#',
+  '#.#.C.#.....#.D.#.#',
+  '#.#####.....#####.#',
+  '#.................#',
   '#########.#########'
 ];
 const ROWS = MAZE.length;     // 13
@@ -573,6 +582,11 @@ function key(r,c){ return r+','+c; }
 function canMove(r,c){
   if (r<0||c<0||r>=ROWS||c>=COLS) return false;
   return MAZE[r][c] !== '#';
+}
+// Czy w danej komorce jest sciana? (poza plansza -> sciana, by zamknac ramke)
+function wallAt(r,c){
+  if (r<0||c<0||r>=ROWS||c>=COLS) return true;
+  return MAZE[r][c] === '#';
 }
 
 /* ============================================================
@@ -685,6 +699,11 @@ function buildMaze(){
     cell.dataset.r=r; cell.dataset.c=c;
     if (ch==='#') {
       cell.classList.add('wall');
+      // Cienka sciana: pasek laczy sie tylko z sasiednimi scianami
+      if (wallAt(r-1,c)) cell.classList.add('wu');
+      if (wallAt(r+1,c)) cell.classList.add('wd');
+      if (wallAt(r,c-1)) cell.classList.add('wl');
+      if (wallAt(r,c+1)) cell.classList.add('wr');
     } else if (ch==='A'||ch==='B'||ch==='C'||ch==='D') {
       cell.classList.add('answer');
       cell.dataset.letter=ch;
