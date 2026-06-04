@@ -25581,6 +25581,12 @@ ${bodyHtml}
   .sf-node-sub{font-size:.62rem;color:var(--muted,#aaa);font-weight:700;margin-top:1px;}
   .sf-node .sf-bar{height:7px;margin-top:4px;}
   @media(max-width:520px){ .sf-node{width:80%;} .sf-stop.l,.sf-stop.r{justify-content:center;} }
+  /* Animacja "odkrywania" wysp (mgla -> ostrosc, wyspa wyrasta) */
+  @keyframes sfReveal{from{opacity:0;transform:translateY(16px) scale(.8);filter:blur(5px);}60%{filter:blur(0);}to{opacity:1;transform:none;filter:none;}}
+  @keyframes sfPop{0%{transform:scale(.4);}70%{transform:scale(1.18);}100%{transform:scale(1);}}
+  .sf-journey .sf-stop, .sf-journey .sf-marker{animation:sfReveal .55s cubic-bezier(.22,1,.36,1) both;}
+  .sf-journey .sf-dot{animation:sfPop .5s ease both;animation-delay:inherit;}
+  @media(prefers-reduced-motion:reduce){ .sf-journey .sf-stop,.sf-journey .sf-marker,.sf-journey .sf-dot{animation:none!important;} }
   `;
   document.head.appendChild(st);
 
@@ -25773,7 +25779,8 @@ ${bodyHtml}
     const opts=books.map(x=>`<option value="${x.id}"${x.id===bookId?' selected':''}>${(x.icon||'📖')+' '+escTxt(x.name)}</option>`).join('');
     let pr={}; try{ pr=DB.getBookProgress(curUser(),b); }catch(e){}
     const ukeys=Object.keys(b.units);
-    let journey='<div class="sf-journey"><div class="sf-marker">🏁 Start</div>';
+    const dly=i=>'animation-delay:'+Math.min(1.8,(i*0.08)).toFixed(2)+'s';
+    let journey='<div class="sf-journey"><div class="sf-marker" style="'+dly(0)+'">🏁 Start</div>';
     let prevPct=100; // pierwsza wyspa zawsze odblokowana
     ukeys.forEach((uk,i)=>{
       const u=b.units[uk]; const p=pr[uk]||{known:0,total:(u.words||[]).length,pct:0};
@@ -25788,10 +25795,10 @@ ${bodyHtml}
       } else {
         node=`<div class="sf-node ${done?'done':''}"><div class="sf-node-em">${ti.emoji}</div><div class="sf-node-body"><div class="sf-node-name">${escTxt((u.icon?u.icon+' ':'')+(u.name||uk))}</div><div class="sf-node-sub">${ti.deco?ti.deco+' ':''}${ti.label} • ${p.known}/${p.total}</div><div class="sf-bar"><i style="width:${p.pct}%;background:${done?'#ffd166':'var(--accent2,#06d6a0)'}"></i></div></div></div>`;
       }
-      journey+=`<div class="sf-stop ${side}"><span class="sf-dot ${dotCls}"></span>${node}</div>`;
+      journey+=`<div class="sf-stop ${side}" style="${dly(i+1)}"><span class="sf-dot ${dotCls}"></span>${node}</div>`;
       prevPct=p.pct;
     });
-    journey+=`<div class="sf-marker">${ov.pct>=100?'🏆 Cały podręcznik opanowany!':'🏆 Meta'}</div></div>`;
+    journey+=`<div class="sf-marker" style="${dly(ukeys.length+1)}">${ov.pct>=100?'🏆 Cały podręcznik opanowany!':'🏆 Meta'}</div></div>`;
     box.innerHTML=`<button class="sf-x" data-close>✕</button>
       <h2 class="sf-h">🗺️ Mapa wiedzy — Twoja podróż</h2>
       <select id="sfMapBook" class="sf-inp" style="margin-bottom:8px">${opts}</select>
