@@ -25747,12 +25747,28 @@ ${bodyHtml}
   }
 
   /* ---- MAPA WIEDZY ---- */
+  // BOOKS to `const` w data.js -> jest w globalnym scope, ale NIE na window.
+  function getBOOKS(){ try{ if(typeof BOOKS!=='undefined' && BOOKS) return BOOKS; }catch(e){} return (window.BOOKS||{}); }
   function accessibleBooks(){
-    const out=[];
-    try{
-      const staff = !!(window.DB && ((DB.isAdmin&&DB.isAdmin())||(DB.isTeacher&&DB.isTeacher())||(DB.isParent&&DB.isParent())));
-      Object.values(window.BOOKS||{}).forEach(b=>{ if(!b||!b.units) return; if(b.adminOnly && !staff) return; out.push(b); });
-    }catch(e){}
+    const out=[]; const B=getBOOKS();
+    let isAdmin=false,isTeach=false,isPar=false,assigned=null;
+    try{ isAdmin=!!(window.DB&&DB.isAdmin&&DB.isAdmin()); }catch(e){}
+    try{ isTeach=!!(window.DB&&DB.isTeacher&&DB.isTeacher()); }catch(e){}
+    try{ isPar=!!(window.DB&&DB.isParent&&DB.isParent()); }catch(e){}
+    try{ assigned=(window.DB&&DB.getUserBooks)?DB.getUserBooks():null; }catch(e){}
+    const staff=isAdmin||isTeach||isPar;
+    Object.values(B).forEach(b=>{
+      if(!b||!b.units) return;
+      if(isAdmin){ out.push(b); return; }              // admin: wszystko
+      if(b.adminOnly) return;                          // adminOnly tylko dla admina
+      if(staff){ out.push(b); return; }                // nauczyciel/opiekun: wszystkie nie-admin
+      // UCZEN: pokaz to, co realnie dostepne (przydzielone + domyslne + z postepem)
+      let ok=false;
+      if(Array.isArray(assigned) && assigned.indexOf(b.id)>=0) ok=true;
+      if(!ok){ try{ if(typeof getEffectiveBookAccess==='function'){ const a=getEffectiveBookAccess(b); if(a&&a.visibleToStudent) ok=true; } else if(b.defaultAccess) ok=true; }catch(e){ if(b.defaultAccess) ok=true; } }
+      if(!ok){ try{ const pr=DB.getBookProgress(curUser(),b); if(pr&&Object.values(pr).some(u=>(u.known||0)>0)) ok=true; }catch(e){} }
+      if(ok) out.push(b);
+    });
     out.sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'pl'));
     return out;
   }
@@ -25769,12 +25785,12 @@ ${bodyHtml}
     const o=modal('sfMapModal'); const box=$('sfMapModal_box');
     const books=accessibleBooks();
     if(!books.length){ box.innerHTML='<button class="sf-x" data-close>✕</button><h2 class="sf-h">🗺️ Mapa wiedzy</h2><p class="sf-sub">Brak dostępnych podręczników.</p>'; bindClose(box); o.classList.add('show'); return; }
-    let sel = (typeof currentBookId!=='undefined' && currentBookId && window.BOOKS && BOOKS[currentBookId]) ? currentBookId : null;
+    let sel = (typeof currentBookId!=='undefined' && currentBookId && getBOOKS()[currentBookId]) ? currentBookId : null;
     if(!sel){ let best=null,bp=-1; books.forEach(b=>{ const ov=bookOverall(b); if(ov.pct>bp){bp=ov.pct;best=b.id;} }); sel=best||books[0].id; }
     renderMap(box, sel, books); o.classList.add('show');
   }
   function renderMap(box, bookId, books){
-    const b=window.BOOKS[bookId]; if(!b){ return; }
+    const b=getBOOKS()[bookId]; if(!b){ return; }
     const ov=bookOverall(b);
     const opts=books.map(x=>`<option value="${x.id}"${x.id===bookId?' selected':''}>${(x.icon||'📖')+' '+escTxt(x.name)}</option>`).join('');
     let pr={}; try{ pr=DB.getBookProgress(curUser(),b); }catch(e){}
