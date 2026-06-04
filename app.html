@@ -25562,6 +25562,25 @@ ${bodyHtml}
   .sf-island-name{font-size:.72rem;font-weight:800;margin:2px 0 6px;color:var(--text,#fff);}
   .sf-island .sf-bar{height:8px;}
   .sf-island-pct{font-size:.64rem;color:var(--muted,#aaa);font-weight:700;margin-top:4px;}
+  /* Mapa-podroz (journey) */
+  .sf-journey{position:relative;margin:16px 0 4px;padding:6px 0;}
+  .sf-journey::before{content:'';position:absolute;left:50%;top:6px;bottom:6px;width:0;border-left:4px dashed rgba(124,77,255,.45);transform:translateX(-50%);z-index:0;}
+  .sf-marker{position:relative;z-index:1;text-align:center;font-size:1.5rem;margin:2px 0;}
+  .sf-stop{position:relative;z-index:1;display:flex;margin:4px 0;min-height:62px;}
+  .sf-stop.l{justify-content:flex-start;}
+  .sf-stop.r{justify-content:flex-end;}
+  .sf-dot{position:absolute;left:50%;top:24px;transform:translate(-50%,-50%);width:16px;height:16px;border-radius:50%;background:var(--accent2,#06d6a0);box-shadow:0 0 0 3px var(--surface,#1a1733);z-index:2;}
+  .sf-dot.lock{background:#888;}
+  .sf-dot.done{background:#ffd166;}
+  .sf-node{width:46%;display:flex;align-items:center;gap:9px;background:rgba(255,255,255,.06);border:1.5px solid rgba(255,255,255,.14);border-radius:14px;padding:9px 11px;}
+  .sf-node.lock{opacity:.6;}
+  .sf-node.done{border-color:#ffd166;}
+  .sf-node-em{font-size:2rem;line-height:1;flex:0 0 auto;}
+  .sf-node-body{flex:1;min-width:0;}
+  .sf-node-name{font-size:.74rem;font-weight:800;color:var(--text,#fff);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .sf-node-sub{font-size:.62rem;color:var(--muted,#aaa);font-weight:700;margin-top:1px;}
+  .sf-node .sf-bar{height:7px;margin-top:4px;}
+  @media(max-width:520px){ .sf-node{width:80%;} .sf-stop.l,.sf-stop.r{justify-content:center;} }
   `;
   document.head.appendChild(st);
 
@@ -25753,22 +25772,31 @@ ${bodyHtml}
     const ov=bookOverall(b);
     const opts=books.map(x=>`<option value="${x.id}"${x.id===bookId?' selected':''}>${(x.icon||'📖')+' '+escTxt(x.name)}</option>`).join('');
     let pr={}; try{ pr=DB.getBookProgress(curUser(),b); }catch(e){}
-    let isl='';
-    Object.keys(b.units).forEach(uk=>{
+    const ukeys=Object.keys(b.units);
+    let journey='<div class="sf-journey"><div class="sf-marker">🏁 Start</div>';
+    let prevPct=100; // pierwsza wyspa zawsze odblokowana
+    ukeys.forEach((uk,i)=>{
       const u=b.units[uk]; const p=pr[uk]||{known:0,total:(u.words||[]).length,pct:0};
+      const locked = i>0 && prevPct<=0;                 // odblokuj gdy poprzednia ruszona
+      const side = (i%2===0)?'l':'r';
       const ti=islandTier(p.pct);
-      isl+=`<div class="sf-island">
-        <div class="sf-island-vis">${ti.emoji}${ti.deco?('<div style="font-size:1rem">'+ti.deco+'</div>'):''}</div>
-        <div class="sf-island-name">${escTxt((u.icon?u.icon+' ':'')+(u.name||uk))}</div>
-        <div class="sf-bar"><i style="width:${p.pct}%;background:${p.pct>=100?'#ffd166':'var(--accent2,#06d6a0)'}"></i></div>
-        <div class="sf-island-pct">${p.known}/${p.total} • ${ti.label}</div>
-      </div>`;
+      const done=p.pct>=100;
+      const dotCls = locked?'lock':(done?'done':'');
+      let node;
+      if(locked){
+        node=`<div class="sf-node lock"><div class="sf-node-em">🔒</div><div class="sf-node-body"><div class="sf-node-name">${escTxt((u.icon?u.icon+' ':'')+(u.name||uk))}</div><div class="sf-node-sub">Zablokowane — ukończ poprzednie</div></div></div>`;
+      } else {
+        node=`<div class="sf-node ${done?'done':''}"><div class="sf-node-em">${ti.emoji}</div><div class="sf-node-body"><div class="sf-node-name">${escTxt((u.icon?u.icon+' ':'')+(u.name||uk))}</div><div class="sf-node-sub">${ti.deco?ti.deco+' ':''}${ti.label} • ${p.known}/${p.total}</div><div class="sf-bar"><i style="width:${p.pct}%;background:${done?'#ffd166':'var(--accent2,#06d6a0)'}"></i></div></div></div>`;
+      }
+      journey+=`<div class="sf-stop ${side}"><span class="sf-dot ${dotCls}"></span>${node}</div>`;
+      prevPct=p.pct;
     });
+    journey+=`<div class="sf-marker">${ov.pct>=100?'🏆 Cały podręcznik opanowany!':'🏆 Meta'}</div></div>`;
     box.innerHTML=`<button class="sf-x" data-close>✕</button>
-      <h2 class="sf-h">🗺️ Mapa wiedzy</h2>
+      <h2 class="sf-h">🗺️ Mapa wiedzy — Twoja podróż</h2>
       <select id="sfMapBook" class="sf-inp" style="margin-bottom:8px">${opts}</select>
-      <p class="sf-sub">${escTxt(b.name)} — opanowane <b>${ov.pct}%</b> (${ov.known}/${ov.total} słów). Ucz się, by rozwijać wyspy: 🌫️→🏝️→🏕️→🏘️→🏙️→🏰</p>
-      <div class="sf-islands">${isl}</div>`;
+      <p class="sf-sub">${escTxt(b.name)} — opanowane <b>${ov.pct}%</b> (${ov.known}/${ov.total} słów). Każda wyspa rośnie z nauką: 🌫️→🏝️→🏕️→🏘️→🏙️→🏰</p>
+      ${journey}`;
     bindClose(box);
     const se=$('sfMapBook'); if(se) se.onchange=()=>renderMap(box, se.value, books);
   }

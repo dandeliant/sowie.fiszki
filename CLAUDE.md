@@ -137,7 +137,7 @@ Kolejność uruchamiania w SQL Editor (każda jest idempotentna — można ponow
 
 **Odznaki pupila (Wave 1 cd.):** do katalogu `ACHIEVES` w app.html dodane `pet_adopt` (🐾 adopcja), `pet_teen` (🐣 etap nastolatka), `pet_adult` (👑 dorosły). Wyzwalane z modułu pet (`petAch()` → `checkAndUnlock()`) przy adopcji i wzroście pupila. Czysto klient — bez migracji.
 
-**Mapa wiedzy z listy unitów:** przycisk „🗗️ Mapa" w nagłówku `sWordList` → `window.openKnowledgeMap()` (alias na `openMap` z modułu pet/mapa), kontekstowo dla aktualnego podręcznika.
+**Mapa wiedzy z listy unitów:** przycisk „🗺️ Mapa" w nagłówku `sWordList` → `window.openKnowledgeMap()` (alias na `openMap` z modułu pet/mapa), kontekstowo dla aktualnego podręcznika. Sama mapa renderowana jako **„podróż"** (`renderMap`): wyspy wzdłuż wijącej się przerywanej drogi (oś czasu, naprzemiennie lewo/prawo), sekwencyjne odblokowywanie (🔒 dopóki poprzednia wyspa nie ruszona), start 🏁 / meta 🏆.
 
 **Zawsze przypominaj użytkownikowi** o uruchomieniu nowej migracji w Supabase, kiedy tworzysz nową.
 
