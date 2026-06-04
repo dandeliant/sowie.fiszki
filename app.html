@@ -4693,7 +4693,7 @@ function showScreen(id) {
         DB.startActivity(activity, {
           bookId: typeof currentBookId !== 'undefined' ? currentBookId : null,
           unitKey: typeof currentUnitKey !== 'undefined' ? currentUnitKey : null,
-          meta: id === 'sStudy' && typeof currentMode === 'string' ? { mode: currentMode } : null
+          meta: id === 'sStudy' && typeof mode === 'string' ? { mode: mode } : null
         });
       }
     } catch(e) {}
@@ -8801,6 +8801,19 @@ function setMode(m) {
     else if (m === 'typeSent') document.getElementById('typeSentArea').style.display = 'block';
     else if (m === 'dictSent') document.getElementById('dictSentArea').style.display = 'block';
   }
+  // Sledzenie aktywnosci per tryb: restart sesji ze wlasciwym trybem (tylko gdy
+  // jestesmy na ekranie nauki). Dzieki temu dziennik pokazuje KONKRETNY tryb,
+  // a nie ogolne "Nauka (tryby)". Krotkie przelaczenia (<3s) nie sa logowane.
+  try {
+    const sS = document.getElementById('sStudy');
+    if (typeof DB !== 'undefined' && DB.startActivity && !isGuest && sS && sS.classList.contains('active')) {
+      DB.startActivity('study', {
+        bookId: typeof currentBookId !== 'undefined' ? currentBookId : null,
+        unitKey: typeof currentUnitKey !== 'undefined' ? currentUnitKey : null,
+        meta: { mode: m }
+      });
+    }
+  } catch(e) {}
 }
 
 function setDir(d) {
@@ -15227,19 +15240,21 @@ document.addEventListener('DOMContentLoaded', () => {
 (function(){
   let accumSec = 0;
   let lastTick = null;
-  function isActive() {
+  function loggedIn() {
     return !isGuest
         && typeof DB !== 'undefined'
         && typeof DB.logStudyMinutes === 'function'
         && typeof DB.getUserId === 'function'
-        && DB.getUserId()
-        && document.visibilityState === 'visible';
+        && DB.getUserId();
   }
+  function isActive() { return loggedIn() && document.visibilityState === 'visible'; }
   setInterval(() => {
     if (!isActive()) { lastTick = null; return; }
     const now = Date.now();
     if (lastTick !== null) {
-      const delta = Math.min(2, (now - lastTick) / 1000); // max 2s na tick (zapobiega skokom po uspieniu)
+      // Cap 6s/tick: toleruje throttling timerow (gdy karta widoczna, ale
+      // przegladarka opoznia setInterval), a wciaz odrzuca duze skoki po uspieniu.
+      const delta = Math.min(6, (now - lastTick) / 1000);
       accumSec += delta;
     }
     lastTick = now;
@@ -15249,7 +15264,15 @@ document.addEventListener('DOMContentLoaded', () => {
       try { DB.logStudyMinutes(minutes); } catch(e) {}
     }
   }, 1000);
-  document.addEventListener('visibilitychange', () => { lastTick = null; });
+  // Zapis niepelnej minuty przy ukryciu/opuszczeniu strony (nawigacja do gry
+  // w osobnym pliku, zamkniecie karty). Bez tego czas <60s gubil sie przy
+  // kazdym wyjsciu. >=30s liczymy jako 1 min (zaokraglenie w gore).
+  function flushPartial() {
+    if (loggedIn() && accumSec >= 30) { try { DB.logStudyMinutes(1); } catch(e) {} }
+    accumSec = 0;
+  }
+  document.addEventListener('visibilitychange', () => { if (document.hidden) flushPartial(); lastTick = null; });
+  window.addEventListener('pagehide', flushPartial);
 })();
 
 // ══════════════════════════════════════════════
@@ -17099,7 +17122,29 @@ const ACTIVITY_LABELS = {
   'most': '🌉 Most',
   'motyle': '🦋 Motyle'
 };
+// Szczegolowe etykiety trybow nauki (activity='study', meta.mode).
+const STUDY_MODE_LABELS = {
+  card:'📚 Nauka — Fiszki', quiz:'📚 Nauka — Quiz', speed:'📚 Nauka — Speed Quiz',
+  match:'📚 Nauka — Znajdź parę', tf:'📚 Nauka — Prawda/Fałsz',
+  type:'✏️ Pisanie — Wpisz', missing:'✏️ Pisanie — Litery', gap:'✏️ Pisanie — Luka',
+  scramble:'✏️ Pisanie — Rozsypana', sentscr:'✏️ Pisanie — Zdanie', typeSent:'✏️ Pisanie — Wpisz zd.',
+  dictate:'🎧 Słuchanie — Dyktando', dictSent:'🎧 Słuchanie — Dyktando zd.',
+  speak:'🎤 Mówienie — Mów', speakSent:'🎤 Mówienie — Mów zd.',
+  jump:'🏝️ Skoczek', bridge:'🌉 Most', butterfly:'🦋 Motyle'
+};
 function activityLabel(a){ return ACTIVITY_LABELS[a] || ('🎯 ' + (a || '?')); }
+// Klucz grupujacy: dla 'study' rozbij na konkretny tryb (meta.mode).
+function activityKeyEv(ev){
+  if (ev && ev.activity === 'study') { const m = ev.meta && ev.meta.mode; if (m) return 'study:' + m; }
+  return ev ? ev.activity : null;
+}
+function activityKeyLabel(key){
+  if (key && key.indexOf('study:') === 0) {
+    const m = key.slice(6);
+    return STUDY_MODE_LABELS[m] || '📚 Nauka (tryby)';
+  }
+  return activityLabel(key);
+}
 function fmtSeconds(s){
   s = Number(s) || 0;
   if (s < 60) return s + ' s';
@@ -17145,8 +17190,9 @@ async function loadAndRenderActivityLog(userId){
     if (ev.kind === 'session') {
       totalSessions++;
       totalActiveSec += (ev.seconds_active || 0);
-      if (!byActivity.has(ev.activity)) byActivity.set(ev.activity, { sec: 0, sessions: 0 });
-      const r = byActivity.get(ev.activity);
+      const key = activityKeyEv(ev);
+      if (!byActivity.has(key)) byActivity.set(key, { sec: 0, sessions: 0 });
+      const r = byActivity.get(key);
       r.sec += (ev.seconds_active || 0);
       r.sessions++;
     } else if (ev.kind === 'game_open') {
@@ -17178,7 +17224,7 @@ async function loadAndRenderActivityLog(userId){
       const opensStr = info.opens ? ` · ${info.opens} otwarć` : '';
       const sessStr = info.sessions ? ` · ${info.sessions} sesji` : '';
       html += `<div style="display:grid;grid-template-columns:1.6fr 1fr;gap:8px;padding:8px 12px;font-size:.78rem;border-top:1px solid var(--border)">
-        <div style="font-weight:700;color:var(--text)">${esc(activityLabel(act))}</div>
+        <div style="font-weight:700;color:var(--text)">${esc(activityKeyLabel(act))}</div>
         <div style="font-weight:700;color:var(--accent);text-align:right">${fmtSeconds(info.sec)}<span style="font-size:.65rem;color:var(--muted);font-weight:600">${esc(sessStr)}${esc(opensStr)}</span></div>
       </div>`;
     });
@@ -17197,7 +17243,7 @@ async function loadAndRenderActivityLog(userId){
       const ctx = bookName ? (bookName + (unitName ? ' · ' + unitName : '')) : '';
       html += `<div style="display:grid;grid-template-columns:.7fr 1.4fr 1fr .7fr;gap:8px;padding:8px 12px;font-size:.76rem;border-top:1px solid var(--border)">
         <div style="color:var(--muted);font-weight:600">${esc(dateStr)}</div>
-        <div style="font-weight:700;color:var(--text)">${esc(activityLabel(ev.activity))}</div>
+        <div style="font-weight:700;color:var(--text)">${esc(activityKeyLabel(activityKeyEv(ev)))}</div>
         <div style="color:var(--muted);font-size:.7rem;font-weight:600">${esc(ctx)}</div>
         <div style="color:var(--accent);font-weight:800;text-align:right">${fmtSeconds(ev.seconds_active || 0)}</div>
       </div>`;
@@ -25640,14 +25686,31 @@ ${bodyHtml}
     return s;
   }
 
+  /* ---- KTO MA PUPILA ---- */
+  // Pupil to funkcja dla UCZNIA. Admin/nauczyciel/opiekun i gość go nie maja
+  // (inaczej pet wybrany przez ucznia "pojawialby sie" na koncie admina —
+  // m.in. przez wspolny klucz 'guest' zanim DB.getUserId() sie ustawi).
+  function petAllowed(){
+    try{
+      if(uid()==='guest') return false;
+      if(window.DB){
+        if((DB.isAdmin&&DB.isAdmin())||(DB.isTeacher&&DB.isTeacher())||(DB.isParent&&DB.isParent())) return false;
+      }
+      return true;
+    }catch(e){ return false; }
+  }
+
   /* ---- HEADER BUTTONS ---- */
   function ensureButtons(){
     const ha = document.querySelector('.header-actions'); if(!ha) return;
     const logout = $('btnLogout');
-    if(!$('sfPetBtn')){
-      const b=document.createElement('button'); b.className='btn-hdr'; b.id='sfPetBtn'; b.title='Mój pupil'; b.textContent='🥚'; b.onclick=openPet;
-      ha.insertBefore(b, logout||null);
-    }
+    const petBtn = $('sfPetBtn');
+    if(petAllowed()){
+      if(!petBtn){
+        const b=document.createElement('button'); b.className='btn-hdr'; b.id='sfPetBtn'; b.title='Mój pupil'; b.textContent='🥚'; b.onclick=openPet;
+        ha.insertBefore(b, logout||null);
+      }
+    } else if(petBtn){ petBtn.remove(); }
     if(!$('sfMapBtn')){
       const b=document.createElement('button'); b.className='btn-hdr'; b.id='sfMapBtn'; b.title='Mapa wiedzy'; b.textContent='🗺️'; b.onclick=openMap;
       ha.insertBefore(b, logout||null);
@@ -25849,6 +25912,7 @@ ${bodyHtml}
   /* ---- KARTA PUPILA na ekranie glownym (Wave 1, #2) ---- */
   function renderPetCard(){
     try{
+      if(!petAllowed()){ const e0=$('sfPetCard'); if(e0) e0.innerHTML=''; return; }
       engageTop(); const el=$('sfPetCard'); if(!el) return;
       let s=petLoad();
       if(!s || !s.type){
