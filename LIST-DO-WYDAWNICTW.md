@@ -1,3 +1,5 @@
+https://claude.ai/chat/0be40941-e266-4847-af08-465182b80249 - list rady claude
+
 # Listy do wydawnictw — szablon
 
 > Ten plik jest **roboczym dokumentem** dla Daniela. **Nie deploy'owany** na sowiefiszki.com — żyje tylko w repo.
