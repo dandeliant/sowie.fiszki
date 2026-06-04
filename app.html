@@ -25750,20 +25750,56 @@ ${bodyHtml}
     try{
       if(window.DB && typeof DB.addDailyXP==='function' && !DB.__petWrap){
         const orig=DB.addDailyXP.bind(DB);
-        DB.addDailyXP=function(){ const r=orig.apply(null,arguments); try{ petTick(); petRefresh(); }catch(e){} return r; };
+        DB.addDailyXP=function(){ const r=orig.apply(null,arguments); try{ petTick(); petRefresh(); renderPetCard(); }catch(e){} return r; };
         DB.__petWrap=true;
       }
     }catch(e){}
   }
+  /* ---- KONTENER GORNYCH KART (pet -> wyzwanie -> ranking), stala kolejnosc ---- */
+  function engageTop(){
+    const host=$('sLang'); if(!host) return null;
+    let w=$('sfEngageTop');
+    if(!w){
+      w=document.createElement('div'); w.id='sfEngageTop'; w.style.cssText='width:100%';
+      w.innerHTML='<div id="sfPetCard" style="width:100%"></div><div id="sfChallengeBanner" style="width:100%"></div><div id="sfRankCard" style="width:100%"></div>';
+      host.insertBefore(w, host.firstChild);
+    }
+    return w;
+  }
+
+  /* ---- KARTA PUPILA na ekranie glownym (Wave 1, #2) ---- */
+  function renderPetCard(){
+    try{
+      engageTop(); const el=$('sfPetCard'); if(!el) return;
+      let s=petLoad();
+      if(!s || !s.type){
+        if(uid()==='guest'){ el.innerHTML=''; return; }  // gosc nie persistuje — bez zachety
+        el.innerHTML='<div style="background:linear-gradient(135deg,rgba(6,214,160,.14),rgba(124,77,255,.12));border:2px dashed rgba(6,214,160,.5);border-radius:16px;padding:13px 16px;margin-bottom:14px;display:flex;align-items:center;gap:12px;cursor:pointer" onclick="var b=document.getElementById(\'sfPetBtn\');b&&b.click()">'
+          +'<div style="font-size:1.9rem">🥚</div><div style="flex:1;min-width:0"><div style="font-weight:800;color:var(--text);font-size:.9rem">Adoptuj swojego pupila! 🐾</div><div style="font-size:.7rem;color:var(--muted);font-weight:600">Ucz się codziennie, a będzie rósł i będzie szczęśliwy.</div></div><div style="font-weight:800;color:var(--accent2,#06d6a0)">→</div></div>';
+        return;
+      }
+      try{ petTick(); }catch(e){} s=petLoad();
+      const P=PETS[s.type]; const si=stageIdx(s.gp||0); const em=P.s[si];
+      const h=s.happy==null?70:s.happy; const m=petMood(h);
+      const stName=(P.plant?PLANT_STAGE_NAMES:STAGE_NAMES)[si];
+      const fed=studiedToday();
+      el.innerHTML='<div style="background:linear-gradient(135deg,rgba(124,77,255,.12),rgba(6,214,160,.10));border:2px solid rgba(124,77,255,.35);border-radius:16px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;gap:12px;cursor:pointer" onclick="var b=document.getElementById(\'sfPetBtn\');b&&b.click()">'
+        +'<div style="font-size:2.4rem;line-height:1">'+em+'</div>'
+        +'<div style="flex:1;min-width:0">'
+        +'<div style="font-weight:800;color:var(--text);font-size:.92rem">'+escTxt(s.name||P.n)+' '+m.em+'</div>'
+        +'<div style="font-size:.7rem;color:var(--muted);font-weight:600">'+P.n+' • '+stName+' • '+(fed?'✅ nakarmiony dziś':'🍽️ poucz się, żeby nakarmić')+'</div>'
+        +'<div style="height:8px;background:var(--surface2,rgba(255,255,255,.12));border-radius:6px;overflow:hidden;margin-top:5px"><div style="height:100%;width:'+h+'%;background:'+m.col+';transition:width .4s"></div></div>'
+        +'</div></div>';
+    }catch(e){}
+  }
+
   /* ---- WYZWANIA KLASOWE — baner dla ucznia (Wave 2, #8) ---- */
   async function renderChallengeBanner(){
     try{
       if(!(window.DB && DB.listMyActiveChallenges && DB.getUserId && DB.getUserId())) return;
-      const host=$('sLang'); if(!host) return;
+      engageTop(); const b=$('sfChallengeBanner'); if(!b) return;
       let list=[]; try{ list=await DB.listMyActiveChallenges(); }catch(e){ return; }
-      let b=$('sfChallengeBanner');
-      if(!list || !list.length){ if(b) b.remove(); return; }
-      if(!b){ b=document.createElement('div'); b.id='sfChallengeBanner'; b.style.cssText='width:100%;margin-bottom:14px'; host.insertBefore(b, host.firstChild); }
+      if(!list || !list.length){ b.innerHTML=''; return; }
       let h='';
       list.slice(0,3).forEach(c=>{
         const goal=c.goal_amount||1; const pr=c.progress||0; const pct=Math.min(100,Math.round(pr/goal*100)); const done=pr>=goal;
@@ -25800,21 +25836,15 @@ ${bodyHtml}
   async function renderStudentRank(){
     try{
       if(!(window.DB && DB.loadMyClassRankings && DB.getUserId && DB.getUserId())) return;
-      const host=$('sLang'); if(!host) return;
+      engageTop(); const card=$('sfRankCard'); if(!card) return;
       let rows=[]; try{ rows=await DB.loadMyClassRankings(); }catch(e){ return; }
       const groups={}; (rows||[]).forEach(r=>{ (groups[r.class_id]=groups[r.class_id]||{id:r.class_id,name:r.class_name,members:[]}).members.push(r); });
       const cls=Object.values(groups).sort((a,b)=>b.members.length-a.members.length)[0];
-      let card=$('sfRankCard');
-      if(!cls || cls.members.length<2){ if(card) card.remove(); return; }
+      if(!cls || cls.members.length<2){ _srData=null; card.innerHTML=''; return; }
       _srData=cls;
-      if(!card){
-        card=document.createElement('div'); card.id='sfRankCard'; card.style.cssText='width:100%;margin-bottom:14px';
-        const ban=$('sfChallengeBanner');
-        if(ban && ban.parentNode===host){ host.insertBefore(card, ban.nextSibling); } else { host.insertBefore(card, host.firstChild); }
-      }
       let chips='';
       SR_CATS.forEach(c=>{ const r=srMyRank(cls.members,c.k); if(r.place) chips+='<span style="display:inline-block;background:rgba(255,255,255,.10);border-radius:100px;padding:3px 9px;font-size:.66rem;font-weight:800;margin:2px">'+c.ic+' '+c.t+': #'+r.place+'</span>'; });
-      card.innerHTML='<div style="background:linear-gradient(135deg,rgba(255,209,102,.14),rgba(124,77,255,.12));border:2px solid rgba(255,209,102,.4);border-radius:16px;padding:13px 16px">'
+      card.innerHTML='<div style="background:linear-gradient(135deg,rgba(255,209,102,.14),rgba(124,77,255,.12));border:2px solid rgba(255,209,102,.4);border-radius:16px;padding:13px 16px;margin-bottom:14px">'
         +'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
         +'<div style="font-size:1.6rem">🏆</div>'
         +'<div style="flex:1;min-width:160px">'
@@ -25852,10 +25882,10 @@ ${bodyHtml}
     const el=$('srList'); if(el) el.innerHTML=h;
   };
 
-  function init(){ ensureButtons(); tryWrap(); try{petTick();}catch(e){} petRefresh(); renderChallengeBanner(); renderStudentRank(); }
+  function init(){ ensureButtons(); tryWrap(); try{petTick();}catch(e){} petRefresh(); renderPetCard(); renderChallengeBanner(); renderStudentRank(); }
   if(document.readyState!=='loading') init(); else document.addEventListener('DOMContentLoaded', init);
-  let n=0, chDone=false; const iv=setInterval(()=>{ n++; ensureButtons(); tryWrap(); petRefresh(); if(!chDone && uid()!=='guest'){ chDone=true; renderChallengeBanner(); renderStudentRank(); } if(n>=12) clearInterval(iv); }, 2000);
-  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden){ try{petTick();}catch(e){} petRefresh(); renderChallengeBanner(); renderStudentRank(); } });
+  let n=0, chDone=false; const iv=setInterval(()=>{ n++; ensureButtons(); tryWrap(); petRefresh(); renderPetCard(); if(!chDone && uid()!=='guest'){ chDone=true; renderChallengeBanner(); renderStudentRank(); } if(n>=12) clearInterval(iv); }, 2000);
+  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden){ try{petTick();}catch(e){} petRefresh(); renderPetCard(); renderChallengeBanner(); renderStudentRank(); } });
 })();
 </script>
 <script src="consent.js"></script>
