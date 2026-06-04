@@ -26,6 +26,7 @@ const DB = (() => {
   let _myBooks        = null;   // null=brak ograniczeń, [bookId,...]=dozwolone podręczniki
   let _myLabels       = {};     // Grupa: targetUserId -> label (tylko moje — admin/teacher/parent)
   let _myPrivateNotes = {};     // Prywatna etykieta: targetUserId -> private_note (migracja #35)
+  let _hasBestCombo   = false;  // czy istnieje kolumna profiles.best_correct_streak (migracja add-ranking-stats.sql)
 
   // ─── Domyślny profil ─────────────────────────────────────────
   function emptyProfile(username) {
@@ -35,6 +36,7 @@ const DB = (() => {
       streak: 0, longestStreak: 0,
       lastStudyDate: null,
       totalSessions: 0, totalAnswers: 0, correctAnswers: 0,
+      bestCorrectStreak: 0,
       unitProgress: {},
       achievements: [],
       dailyXP: 0, dailyXPDate: null,
@@ -64,6 +66,7 @@ const DB = (() => {
       totalSessions: row.total_sessions  || 0,
       totalAnswers:  row.total_answers   || 0,
       correctAnswers:row.correct_answers || 0,
+      bestCorrectStreak: row.best_correct_streak || 0,
       achievements:  row.achievements    || [],
       dailyXP:       row.daily_xp        || 0,
       dailyXPDate:   row.daily_xp_date   || null,
@@ -81,7 +84,7 @@ const DB = (() => {
 
   // ─── Budowanie payloadu profilu ──────────────────────────────
   function _profilePayload() {
-    return {
+    const payload = {
       id:              _userId,
       username:        _profile.username,
       xp:              _profile.xp,
@@ -97,6 +100,10 @@ const DB = (() => {
       daily_xp_date:   _profile.dailyXPDate,
       speed_best:      _profile.speedBest
     };
+    // Tylko gdy kolumna istnieje (migracja add-ranking-stats.sql), inaczej upsert
+    // by sie wywalil i przestalby zapisywac XP/streak.
+    if (_hasBestCombo) payload.best_correct_streak = _profile.bestCorrectStreak || 0;
+    return payload;
   }
 
   // ─── Zapis profilu do Supabase — debounce 600ms ───────────────
@@ -130,6 +137,7 @@ const DB = (() => {
 
     if (profRes.error) throw profRes.error;
 
+    _hasBestCombo = !!(profRes.data && Object.prototype.hasOwnProperty.call(profRes.data, 'best_correct_streak'));
     _profile = _rowToProfile(profRes.data, unitRes.data || []);
 
     // Załaduj przypisane podręczniki (user_books) — z deduplikacja
@@ -1879,6 +1887,118 @@ const DB = (() => {
       console.warn('[loadClassLeaderboard]', e.message || e);
       return [];
     }
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  WAVE 2 — rekordy do rankingow + slowa dzienne
+  // ═══════════════════════════════════════════════════════════════
+  // Rekord najdluzszej serii poprawnych odpowiedzi pod rzad.
+  function recordBestCombo(combo) {
+    if (!_profile || !combo) return;
+    if (combo > (_profile.bestCorrectStreak || 0)) {
+      _profile.bestCorrectStreak = combo;
+      _save();
+    }
+  }
+  // Loguj N opanowanych slow do dzisiejszego dnia (daily_xp_log.words).
+  // Fire-and-forget; gdy RPC nie istnieje (brak migracji) — cicho ignoruj.
+  function logDailyWords(n) {
+    if (!_userId || !n || n <= 0) return;
+    try {
+      supabase.rpc('log_daily_words', { p_delta: n }).then(() => {}).catch(() => {});
+    } catch(e) {}
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  RANKINGI KLASOWE — 5 kategorii (Wave 2, #10)
+  // ═══════════════════════════════════════════════════════════════
+  // Zwraca [{ user_id, username, xpToday, xpWeek, xpMonth, longestStreak,
+  //          bestCombo }] dla uczniow klasy (admin/nauczyciel only — RLS).
+  async function loadClassRankings(classId) {
+    if (!classId) return [];
+    if (!_profile?.isAdmin && !_profile?.isTeacher) return [];
+    try {
+      const { data: members, error: mErr } = await supabase
+        .from('class_members').select('user_id').eq('class_id', classId);
+      if (mErr) throw new Error(mErr.message);
+      const ids = (members || []).map(m => m.user_id);
+      if (!ids.length) return [];
+
+      // Profile + statystyki (longest_streak, best_correct_streak gdy istnieje)
+      let pRes = await supabase.from('profiles')
+        .select('id, username, is_admin, is_teacher, longest_streak, best_correct_streak').in('id', ids);
+      if (pRes.error) {
+        pRes = await supabase.from('profiles')
+          .select('id, username, is_admin, is_teacher, longest_streak').in('id', ids);
+        if (pRes.error) throw new Error(pRes.error.message);
+      }
+      const agg = {};
+      (pRes.data || []).forEach(p => {
+        if (p.is_admin || p.is_teacher) return;
+        agg[p.id] = {
+          user_id: p.id, username: p.username,
+          xpToday: 0, xpWeek: 0, xpMonth: 0,
+          longestStreak: p.longest_streak || 0,
+          bestCombo: p.best_correct_streak || 0
+        };
+      });
+
+      // daily_xp_log z ostatnich 31 dni
+      const from = new Date(); from.setDate(from.getDate() - 31);
+      const fromStr = from.toISOString().slice(0, 10);
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const week = new Date(); week.setDate(week.getDate() - 6);
+      const weekStr = week.toISOString().slice(0, 10);
+      const { data: xp } = await supabase
+        .from('daily_xp_log').select('user_id, day, xp').in('user_id', ids).gte('day', fromStr);
+      (xp || []).forEach(r => {
+        const e = agg[r.user_id]; if (!e) return;
+        const v = r.xp || 0;
+        e.xpMonth += v;
+        if (r.day >= weekStr) e.xpWeek += v;
+        if (r.day === todayStr) e.xpToday += v;
+      });
+      return Object.values(agg);
+    } catch(e) {
+      console.warn('[loadClassRankings]', e.message || e);
+      return [];
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  WYZWANIA KLASOWE (Wave 2, #8) — wymaga class-challenges-schema.sql
+  // ═══════════════════════════════════════════════════════════════
+  async function listClassChallenges(classId) {
+    if (!classId) return [];
+    const { data, error } = await supabase
+      .from('class_challenges').select('*').eq('class_id', classId).order('ends_at', { ascending: true });
+    if (error) { console.warn('[listClassChallenges]', error.message); return []; }
+    return data || [];
+  }
+  async function getChallengeProgress(challengeId) {
+    if (!challengeId) return 0;
+    const { data, error } = await supabase.rpc('class_challenge_progress', { p_challenge_id: challengeId });
+    if (error) { console.warn('[getChallengeProgress]', error.message); return 0; }
+    return data || 0;
+  }
+  async function createChallenge({ classId, title, goalType, goalAmount, endsAt }) {
+    if (!_profile?.isAdmin && !_profile?.isTeacher) throw new Error('Brak uprawnień');
+    const { data, error } = await supabase.from('class_challenges')
+      .insert({ class_id: classId, title: title, goal_type: goalType, goal_amount: goalAmount, ends_at: endsAt })
+      .select().single();
+    if (error) throw new Error(error.message);
+    return data;
+  }
+  async function deleteChallenge(id) {
+    if (!_profile?.isAdmin && !_profile?.isTeacher) throw new Error('Brak uprawnień');
+    const { error } = await supabase.from('class_challenges').delete().eq('id', id);
+    if (error) throw new Error(error.message);
+  }
+  async function listMyActiveChallenges() {
+    if (!_userId) return [];
+    const { data, error } = await supabase.rpc('list_my_active_challenges');
+    if (error) { console.warn('[listMyActiveChallenges]', error.message); return []; }
+    return data || [];
   }
 
   async function loadParentChildLinksForChildren(childIds) {
@@ -3805,6 +3925,14 @@ const DB = (() => {
     removeChild,
     loadParentChildLinksForChildren,
     loadClassLeaderboard,
+    loadClassRankings,
+    recordBestCombo,
+    logDailyWords,
+    listClassChallenges,
+    getChallengeProgress,
+    createChallenge,
+    deleteChallenge,
+    listMyActiveChallenges,
     loadAdminStats,
     loadDialogsForBook,
     saveDialog,

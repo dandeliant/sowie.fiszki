@@ -3572,7 +3572,8 @@ szkoła	school"></textarea>
         <button class="btn-sm accent" onclick="openBulkForCurrentClass()" title="Wygeneruj wielu uczniów masowo">👥 Generuj wielu</button>
         <button class="btn-sm" onclick="openAddStudentModal()" title="Dołącz istniejącego ucznia po loginie">🔗 Dołącz istniejącego</button>
         <button class="btn-sm" id="btnPrintClassPasswords" onclick="printClassPasswords()" title="Drukuj wszystkie znane hasła klasy" style="display:none">🖨️ Drukuj hasła</button>
-        <button class="btn-sm accent" onclick="openClassLeaderboard()" title="Ranking tygodnia + wyzwanie 100 XP">🏆 Ranking</button>
+        <button class="btn-sm accent" onclick="openClassLeaderboard()" title="Rankingi: XP dziś/tydzień/miesiąc, streak, seria">🏆 Rankingi</button>
+        <button class="btn-sm accent" onclick="openClassChallenges()" title="Wspólne wyzwania klasy">🎯 Wyzwania</button>
         <button class="btn-sm" onclick="showScreen('sAdminClasses')">← Klasy</button>
       </div>
     </div>
@@ -7036,55 +7037,105 @@ window.copyAdminStatsAsText = function() {
 // ══════════════════════════════════════════════
 window.openClassLeaderboard = async function(){
   if (!_curClassId) { toast('⚠️ Wybierz najpierw klasę.', 2400); return; }
-  const days = 7;
-  const challengeXp = 100;
-  openGenericModal('🏆 Ranking klasowy', '<div style="text-align:center;padding:20px;color:var(--muted)">⏳ Ładuję ranking…</div>');
+  openGenericModal('🏆 Rankingi klasy', '<div style="text-align:center;padding:20px;color:var(--muted)">⏳ Ładuję rankingi…</div>');
   let list = [];
-  try { list = await DB.loadClassLeaderboard(_curClassId, days, challengeXp); }
+  try { list = await DB.loadClassRankings(_curClassId); }
   catch(e) { console.warn('[openClassLeaderboard]', e); }
+  window._rankData = list;
   if (!list.length) {
-    openGenericModal('🏆 Ranking klasowy',
+    openGenericModal('🏆 Rankingi klasy',
       '<div style="text-align:center;padding:20px"><div style="font-size:2.5rem;margin-bottom:8px">📭</div>'
-      + '<div style="color:var(--muted);font-weight:600">Brak danych — uczniowie jeszcze nie zdobywali XP w tym tygodniu.</div>'
+      + '<div style="color:var(--muted);font-weight:600">Brak danych — uczniowie jeszcze nie zdobywali XP.</div>'
       + '<div style="margin-top:14px"><button class="btn-modal-cancel" onclick="closeGenericModal()">Zamknij</button></div></div>');
     return;
   }
-  const total = list.length;
-  const metCount = list.filter(x => x.met_challenge).length;
-  const podiumEmojis = ['🥇','🥈','🥉'];
-  let html = '<div style="font-family:Nunito,sans-serif;color:var(--text);max-width:560px;margin:0 auto">';
-  html += '<div style="text-align:center;font-size:.78rem;color:var(--muted);font-weight:600;margin-bottom:10px">Klasa: <b style="color:var(--text)">' + escHtml(_curClassName || '?') + '</b> · ostatnie ' + days + ' dni</div>';
-  // Wyzwanie tygodniowe
-  const challengePct = total > 0 ? Math.round((metCount / total) * 100) : 0;
-  html += '<div style="background:linear-gradient(135deg,rgba(255,209,102,.15),rgba(255,107,157,.10));border:1.5px solid rgba(255,209,102,.4);border-radius:14px;padding:12px 14px;margin-bottom:14px">';
-  html += '<div style="display:flex;justify-content:space-between;align-items:center;font-size:.85rem;margin-bottom:6px"><b style="color:var(--accent)">🎯 Wyzwanie tygodnia</b><span style="color:var(--muted);font-weight:600">' + metCount + ' z ' + total + ' (' + challengePct + '%)</span></div>';
-  html += '<div style="font-size:.75rem;color:var(--muted);font-weight:600;margin-bottom:6px">Zdobądź <b style="color:var(--accent)">' + challengeXp + ' XP</b> w tym tygodniu</div>';
-  html += '<div style="height:10px;background:var(--surface2);border-radius:6px;overflow:hidden"><div style="height:100%;width:' + challengePct + '%;background:linear-gradient(90deg,var(--accent),var(--pink));transition:width .4s"></div></div>';
-  html += '</div>';
-  // Ranking
-  html += '<div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:8px;max-height:48vh;overflow-y:auto">';
-  list.forEach((u, i) => {
-    const place = i + 1;
-    const podium = place <= 3 ? podiumEmojis[place-1] : '<span style="color:var(--muted);font-weight:700;font-size:.78rem">#' + place + '</span>';
-    const pctOfChallenge = Math.min(100, Math.round((u.totalXp / challengeXp) * 100));
-    const barColor = u.met_challenge ? 'var(--success)' : (pctOfChallenge >= 50 ? 'var(--accent)' : 'var(--muted)');
-    html += '<div style="display:flex;align-items:center;gap:10px;padding:9px 6px;border-bottom:1px dashed var(--border)">';
-    html += '<div style="width:32px;text-align:center;font-size:1.2rem">' + podium + '</div>';
-    html += '<div style="flex:1;min-width:0">';
-    html += '<div style="font-weight:700;font-size:.92rem;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escHtml(u.username) + (u.met_challenge ? ' ✅' : '') + '</div>';
-    html += '<div style="display:flex;gap:8px;font-size:.7rem;color:var(--muted);font-weight:600;margin-top:2px">';
-    html += '<span>⚡ ' + u.totalXp + ' XP</span>';
-    if (u.totalMinutes > 0) html += '<span>⏱ ' + u.totalMinutes + ' min</span>';
-    html += '<span>📅 ' + u.daysActive + (u.daysActive === 1 ? ' dzień' : ' dni') + '</span>';
-    html += '</div>';
-    html += '<div style="height:5px;background:var(--surface2);border-radius:3px;overflow:hidden;margin-top:4px"><div style="height:100%;width:' + pctOfChallenge + '%;background:' + barColor + ';transition:width .3s"></div></div>';
-    html += '</div>';
-    html += '</div>';
+  const cats = [
+    { k:'xpToday', ic:'⚡', t:'XP dziś',  unit:' XP' },
+    { k:'xpWeek',  ic:'📅', t:'Tydzień',  unit:' XP' },
+    { k:'xpMonth', ic:'🗓️', t:'Miesiąc',  unit:' XP' },
+    { k:'longestStreak', ic:'🔥', t:'Streak', unit:' dni' },
+    { k:'bestCombo', ic:'🎯', t:'Seria', unit:'' },
+  ];
+  window._rankCats = cats;
+  let tabs = '<div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-bottom:12px">';
+  cats.forEach((c,i)=>{ tabs += '<button id="rankTab'+i+'" class="btn-sm" onclick="_renderRankCat('+i+')" style="font-size:.72rem">'+c.ic+' '+c.t+'</button>'; });
+  tabs += '</div>';
+  const html = '<div style="font-family:Nunito,sans-serif;color:var(--text);max-width:560px;margin:0 auto">'
+    + '<div style="text-align:center;font-size:.78rem;color:var(--muted);font-weight:600;margin-bottom:10px">Klasa: <b style="color:var(--text)">'+escHtml(_curClassName||'?')+'</b> · osobny ranking w każdej kategorii</div>'
+    + tabs + '<div id="rankList"></div>'
+    + '<div style="margin-top:14px;display:flex;justify-content:center"><button class="btn-modal-cancel" onclick="closeGenericModal()">Zamknij</button></div></div>';
+  openGenericModal('🏆 Rankingi klasy', html);
+  _renderRankCat(0);
+};
+window._renderRankCat = function(idx){
+  const cats = window._rankCats || []; const c = cats[idx]; if (!c) return;
+  const data = (window._rankData || []).slice().sort((a,b)=>(b[c.k]||0)-(a[c.k]||0)).slice(0,10);
+  cats.forEach((_,i)=>{ const t=document.getElementById('rankTab'+i); if(t){ t.style.background=i===idx?'var(--accent)':''; t.style.color=i===idx?'#fff':''; } });
+  const podium=['🥇','🥈','🥉'];
+  let h='<div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:8px;max-height:50vh;overflow-y:auto">';
+  let shown=0;
+  data.forEach((u,i)=>{ const val=u[c.k]||0; if(val===0) return; shown++; const place=i+1;
+    const md=place<=3?podium[place-1]:'<span style="color:var(--muted);font-weight:700;font-size:.78rem">#'+place+'</span>';
+    h+='<div style="display:flex;align-items:center;gap:10px;padding:9px 6px;border-bottom:1px dashed var(--border)">'
+      +'<div style="width:32px;text-align:center;font-size:1.2rem">'+md+'</div>'
+      +'<div style="flex:1;min-width:0;font-weight:700;font-size:.92rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(u.username)+'</div>'
+      +'<div style="font-weight:800;color:var(--accent)">'+val+c.unit+'</div></div>';
   });
-  html += '</div>';
-  html += '<div style="margin-top:14px;display:flex;gap:8px;justify-content:center"><button class="btn-modal-cancel" onclick="closeGenericModal()">Zamknij</button></div>';
-  html += '</div>';
-  openGenericModal('🏆 Ranking klasowy', html);
+  if(!shown) h+='<div style="text-align:center;padding:18px;color:var(--muted);font-weight:600">Brak wyników w tej kategorii.</div>';
+  h+='</div>';
+  const el=document.getElementById('rankList'); if(el) el.innerHTML=h;
+};
+
+// ══════════════════════════════════════════════
+//  WYZWANIA KLASOWE (Wave 2, #8) — nauczyciel/admin
+//  Wymaga class-challenges-schema.sql
+// ══════════════════════════════════════════════
+window.openClassChallenges = async function(){
+  if (!_curClassId) { toast('⚠️ Wybierz najpierw klasę.', 2400); return; }
+  openGenericModal('🎯 Wyzwania klasowe', '<div style="text-align:center;padding:20px;color:var(--muted)">⏳ Ładuję…</div>');
+  await _renderClassChallenges();
+};
+async function _renderClassChallenges(){
+  let list=[]; try{ list=await DB.listClassChallenges(_curClassId); }catch(e){ console.warn(e); }
+  const prog={}; await Promise.all((list||[]).map(async c=>{ try{ prog[c.id]=await DB.getChallengeProgress(c.id); }catch(e){ prog[c.id]=0; } }));
+  const today=new Date().toISOString().slice(0,10);
+  let h='<div style="font-family:Nunito,sans-serif;color:var(--text);max-width:560px;margin:0 auto">';
+  h+='<div style="text-align:center;font-size:.78rem;color:var(--muted);font-weight:600;margin-bottom:10px">Klasa: <b style="color:var(--text)">'+escHtml(_curClassName||'?')+'</b></div>';
+  if(!list.length){ h+='<div style="text-align:center;padding:14px;color:var(--muted);font-weight:600">Brak wyzwań. Stwórz pierwsze poniżej! 👇</div>'; }
+  (list||[]).forEach(c=>{ const p=prog[c.id]||0; const pct=Math.min(100,Math.round(p/c.goal_amount*100)); const done=p>=c.goal_amount; const expired=c.ends_at<today; const unit=c.goal_type==='words'?'słów':'XP';
+    h+='<div style="background:var(--surface);border:1.5px solid '+(done?'var(--success)':'var(--border)')+';border-radius:14px;padding:12px 14px;margin-bottom:10px">'
+      +'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px"><b style="font-size:.95rem">'+(done?'✅ ':'🎯 ')+escHtml(c.title)+'</b><button class="btn-sm danger" style="font-size:.62rem;padding:3px 7px" onclick="_deleteChallenge(\''+c.id+'\')">🗑️</button></div>'
+      +'<div style="font-size:.72rem;color:var(--muted);font-weight:600;margin:4px 0 6px">Cel: <b style="color:var(--accent)">'+c.goal_amount+' '+unit+'</b> · do '+c.ends_at+(expired?' (zakończone)':'')+'</div>'
+      +'<div style="height:12px;background:var(--surface2);border-radius:7px;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:'+(done?'var(--success)':'linear-gradient(90deg,var(--accent),var(--pink))')+';transition:width .4s"></div></div>'
+      +'<div style="font-size:.7rem;color:var(--muted);font-weight:700;margin-top:4px;text-align:right">'+p+' / '+c.goal_amount+' '+unit+' ('+pct+'%)</div>'
+      +'</div>';
+  });
+  const defEnd=new Date(Date.now()+7*86400000).toISOString().slice(0,10);
+  h+='<div style="background:var(--surface);border:1px dashed var(--border);border-radius:14px;padding:12px 14px;margin-top:6px">'
+    +'<div style="font-weight:800;font-size:.8rem;color:var(--accent);margin-bottom:8px">➕ Nowe wyzwanie</div>'
+    +'<input id="chTitle" class="sf-inp" maxlength="120" placeholder="np. Cała klasa: 500 słów do piątku" style="margin-bottom:6px">'
+    +'<div style="display:flex;gap:6px;margin-bottom:6px"><select id="chType" class="sf-inp" style="flex:1"><option value="words">Słowa opanowane</option><option value="xp">Punkty XP</option></select><input id="chAmount" type="number" min="1" class="sf-inp" style="flex:1" placeholder="np. 500"></div>'
+    +'<label class="sf-lab" style="margin-top:0">Termin (do kiedy)</label><input id="chEnd" type="date" class="sf-inp" value="'+defEnd+'" style="margin-bottom:8px">'
+    +'<button class="sf-btn sf-btn-main" style="width:100%" onclick="_createChallenge()">Utwórz wyzwanie 🚀</button>'
+    +'</div>';
+  h+='<div style="margin-top:12px;display:flex;justify-content:center"><button class="btn-modal-cancel" onclick="closeGenericModal()">Zamknij</button></div></div>';
+  openGenericModal('🎯 Wyzwania klasowe', h);
+}
+window._createChallenge = async function(){
+  const g=id=>document.getElementById(id);
+  const title=(g('chTitle')&&g('chTitle').value||'').trim();
+  const type=(g('chType')&&g('chType').value)||'words';
+  const amount=parseInt((g('chAmount')&&g('chAmount').value),10);
+  const end=(g('chEnd')&&g('chEnd').value)||'';
+  if(!title){ toast('Podaj nazwę wyzwania.',2400); return; }
+  if(!amount||amount<1){ toast('Podaj cel (liczbę).',2400); return; }
+  if(!end){ toast('Podaj termin.',2400); return; }
+  try{ await DB.createChallenge({classId:_curClassId,title:title,goalType:type,goalAmount:amount,endsAt:end}); toast('✅ Wyzwanie utworzone!',2600); await _renderClassChallenges(); }
+  catch(e){ toast('Błąd: '+(e.message||e),3800); }
+};
+window._deleteChallenge = async function(id){
+  if(!confirm('Usunąć to wyzwanie?')) return;
+  try{ await DB.deleteChallenge(id); await _renderClassChallenges(); }catch(e){ toast('Błąd: '+(e.message||e),3800); }
 };
 
 // Generyczny modal pomocniczy (używany przez „🔥 Trudne słowa" i podobne).
@@ -8656,8 +8707,11 @@ function rate(r) {
   if (curIdx === null) return;
   clearInterval(studySpeedTimer); // zatrzymaj timer speed jeśli aktywny
 
+  const _wasKnown = !!(ws[curIdx] && ws[curIdx].known);
   ws[curIdx] = sm2Update(ws[curIdx], r);
   if (ws[curIdx].known) pool = pool.filter(i => i !== curIdx);
+  // Wave 2: zaloguj opanowane slowo (wyzwania klasowe typu 'words')
+  if (!_wasKnown && ws[curIdx].known) { try { DB.logDailyWords(1); } catch(e) {} }
 
   const xp = XPV[r]; addXP(xp);
 
@@ -8682,6 +8736,7 @@ function rate(r) {
     owlR(r);
   }
   if (r !== 'hard') streak++; else streak = 0;
+  if (streak > 0) { try { DB.recordBestCombo(streak); } catch(e) {} }
   if (streak > 0 && streak % 5 === 0) giveReward();
 
   // Zapisz postęp do DB
@@ -25700,10 +25755,38 @@ ${bodyHtml}
       }
     }catch(e){}
   }
-  function init(){ ensureButtons(); tryWrap(); try{petTick();}catch(e){} petRefresh(); }
+  /* ---- WYZWANIA KLASOWE — baner dla ucznia (Wave 2, #8) ---- */
+  async function renderChallengeBanner(){
+    try{
+      if(!(window.DB && DB.listMyActiveChallenges && DB.getUserId && DB.getUserId())) return;
+      const host=$('sLang'); if(!host) return;
+      let list=[]; try{ list=await DB.listMyActiveChallenges(); }catch(e){ return; }
+      let b=$('sfChallengeBanner');
+      if(!list || !list.length){ if(b) b.remove(); return; }
+      if(!b){ b=document.createElement('div'); b.id='sfChallengeBanner'; b.style.cssText='width:100%;margin-bottom:14px'; host.insertBefore(b, host.firstChild); }
+      let h='';
+      list.slice(0,3).forEach(c=>{
+        const goal=c.goal_amount||1; const pr=c.progress||0; const pct=Math.min(100,Math.round(pr/goal*100)); const done=pr>=goal;
+        const unit=c.goal_type==='words'?'słów':'XP';
+        h+=`<div style="background:linear-gradient(135deg,rgba(124,77,255,.16),rgba(6,214,160,.12));border:2px solid rgba(124,77,255,.45);border-radius:16px;padding:13px 16px;margin-bottom:8px">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <div style="font-size:1.6rem">🎯</div>
+            <div style="flex:1;min-width:160px">
+              <div style="font-weight:800;color:var(--text);font-size:.9rem">${escTxt(c.title)} ${done?'✅':''}</div>
+              <div style="font-size:.7rem;color:var(--muted);font-weight:600">Wyzwanie klasy ${escTxt(c.class_name||'')} • razem <b>${pr}</b> / ${goal} ${unit} • do ${c.ends_at}</div>
+              <div style="height:9px;background:var(--surface2,rgba(255,255,255,.12));border-radius:6px;overflow:hidden;margin-top:5px"><div style="height:100%;width:${pct}%;background:${done?'var(--success,#06d6a0)':'linear-gradient(90deg,var(--accent,#7c4dff),var(--accent2,#06d6a0))'};transition:width .4s"></div></div>
+            </div>
+            <div style="font-weight:900;color:var(--accent,#ffd166);font-size:1.1rem">${pct}%</div>
+          </div></div>`;
+      });
+      b.innerHTML=h;
+    }catch(e){}
+  }
+
+  function init(){ ensureButtons(); tryWrap(); try{petTick();}catch(e){} petRefresh(); renderChallengeBanner(); }
   if(document.readyState!=='loading') init(); else document.addEventListener('DOMContentLoaded', init);
-  let n=0; const iv=setInterval(()=>{ n++; ensureButtons(); tryWrap(); petRefresh(); if(n>=12) clearInterval(iv); }, 2000);
-  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden){ try{petTick();}catch(e){} petRefresh(); } });
+  let n=0, chDone=false; const iv=setInterval(()=>{ n++; ensureButtons(); tryWrap(); petRefresh(); if(!chDone && uid()!=='guest'){ chDone=true; renderChallengeBanner(); } if(n>=12) clearInterval(iv); }, 2000);
+  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden){ try{petTick();}catch(e){} petRefresh(); renderChallengeBanner(); } });
 })();
 </script>
 <script src="consent.js"></script>
