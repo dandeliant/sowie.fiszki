@@ -25425,6 +25425,287 @@ ${bodyHtml}
   </div>
 </div>
 
+<script>
+/* ============================================================
+   WIRTUALNY PET + MAPA WIEDZY (Wave 1) — Sowie Fiszki
+   Czysto klient (localStorage). Bez migracji SQL.
+   - Pet (Tamagotchi): codzienna nauka = karmienie + wzrost; brak = smutek.
+   - Mapa wiedzy: kazdy unit = wyspa, rozwija sie wraz z opanowaniem slow.
+============================================================ */
+(function(){
+  'use strict';
+  if (window.__sfPetMap) return; window.__sfPetMap = true;
+
+  const $ = (id)=>document.getElementById(id);
+  const today = ()=> new Date().toDateString();
+  function uid(){ try{ return (window.DB && DB.getUserId && DB.getUserId()) || 'guest'; }catch(e){ return 'guest'; } }
+  function curUser(){ try{ return (typeof currentUser!=='undefined' && currentUser) || ''; }catch(e){ return ''; } }
+  function safeToast(m){ try{ if(typeof toast==='function') toast(m); }catch(e){} }
+  function goLearn(){ try{ if(typeof showScreen==='function') showScreen('sLang'); else location.hash='#/'; }catch(e){} }
+  function escTxt(t){ return String(t==null?'':t).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m])); }
+
+  /* ---- STYLE ---- */
+  const st=document.createElement('style');
+  st.textContent=`
+  .sf-ov{position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(5px);z-index:6000;display:none;align-items:center;justify-content:center;padding:18px;}
+  .sf-ov.show{display:flex;}
+  .sf-box{background:var(--surface,#1a1733);color:var(--text,#fff);border:2px solid var(--accent,#7c4dff);border-radius:20px;max-width:560px;width:100%;max-height:88vh;overflow-y:auto;padding:22px 22px 26px;position:relative;box-shadow:0 20px 60px rgba(0,0,0,.5);}
+  .sf-x{position:absolute;top:10px;right:12px;background:transparent;border:none;color:var(--muted,#aaa);font-size:1.3rem;cursor:pointer;line-height:1;}
+  .sf-h{font-family:'Playfair Display',serif;font-size:1.3rem;color:var(--accent,#ffd166);margin:0 0 4px;}
+  .sf-sub{color:var(--muted,#aaa);font-size:.85rem;margin:0 0 14px;line-height:1.4;}
+  .sf-pet-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:10px;margin-bottom:8px;}
+  .sf-pet-pick{display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 6px;background:rgba(255,255,255,.05);border:2px solid transparent;border-radius:14px;cursor:pointer;color:inherit;font-weight:700;font-size:.76rem;font-family:inherit;}
+  .sf-pet-pick:hover{background:rgba(255,255,255,.1);}
+  .sf-pet-pick.sel{border-color:var(--accent2,#06d6a0);background:rgba(6,214,160,.14);}
+  .sf-pet-em{font-size:2.2rem;line-height:1;}
+  .sf-lab{display:block;font-size:.74rem;font-weight:800;color:var(--accent2,#06d6a0);margin:10px 0 5px;text-transform:uppercase;letter-spacing:.05em;}
+  .sf-inp{width:100%;padding:10px 12px;border-radius:10px;border:1.5px solid rgba(255,255,255,.2);background:rgba(0,0,0,.3);color:inherit;font-family:inherit;font-size:.95rem;font-weight:700;}
+  .sf-btn{border:none;border-radius:100px;padding:12px 16px;font-weight:800;font-family:inherit;cursor:pointer;font-size:.92rem;}
+  .sf-btn-main{background:linear-gradient(135deg,var(--accent,#7c4dff),var(--accent2,#06d6a0));color:#fff;}
+  .sf-btn-main:disabled{opacity:.4;cursor:not-allowed;}
+  .sf-btn-ghost{background:rgba(255,255,255,.08);color:inherit;}
+  #sfPetCreate{width:100%;margin-top:12px;}
+  .sf-pet-big{font-size:5.5rem;line-height:1;animation:sfbob 2.2s ease-in-out infinite;display:inline-block;}
+  @keyframes sfbob{0%,100%{transform:translateY(0) rotate(-2deg);}50%{transform:translateY(-8px) rotate(2deg);}}
+  .sf-bar{height:14px;border-radius:100px;background:rgba(255,255,255,.12);overflow:hidden;margin:4px 0 2px;}
+  .sf-bar>i{display:block;height:100%;border-radius:100px;transition:width .4s;}
+  .sf-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;}
+  .sf-row .sf-btn{flex:1;min-width:130px;}
+  .sf-stat{display:flex;justify-content:space-around;text-align:center;margin:14px 0 4px;}
+  .sf-stat b{display:block;font-size:1.2rem;color:var(--accent,#ffd166);}
+  .sf-stat span{font-size:.62rem;color:var(--muted,#aaa);text-transform:uppercase;letter-spacing:.05em;}
+  .sf-islands{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;margin-top:14px;}
+  .sf-island{width:118px;text-align:center;background:rgba(255,255,255,.05);border:1.5px solid rgba(255,255,255,.12);border-radius:16px;padding:12px 8px;}
+  .sf-island-vis{font-size:2.3rem;line-height:1.05;min-height:54px;}
+  .sf-island-name{font-size:.72rem;font-weight:800;margin:2px 0 6px;color:var(--text,#fff);}
+  .sf-island .sf-bar{height:8px;}
+  .sf-island-pct{font-size:.64rem;color:var(--muted,#aaa);font-weight:700;margin-top:4px;}
+  `;
+  document.head.appendChild(st);
+
+  /* ---- PET DATA ---- */
+  const PETS = {
+    owl:    {n:'Sowa',       s:['🥚','🐣','🦉','🦉']},
+    cat:    {n:'Kotek',      s:['🥚','🐱','🐈','🐈']},
+    dog:    {n:'Piesek',     s:['🥚','🐶','🐕','🐕']},
+    rabbit: {n:'Króliczek',  s:['🥚','🐰','🐇','🐇']},
+    fox:    {n:'Lisek',      s:['🥚','🦊','🦊','🦊']},
+    dragon: {n:'Smok',       s:['🥚','🐲','🐉','🐉']},
+    unicorn:{n:'Jednorożec', s:['🥚','🦄','🦄','🦄']},
+    phoenix:{n:'Feniks',     s:['🔥','🐣','🦅','🦅']},
+    plant:  {n:'Roślinka',   s:['🌱','🌿','🪴','🌳'], plant:true},
+    flower: {n:'Kwiatek',    s:['🌱','🌿','🌷','🌸'], plant:true},
+  };
+  const STAGE_NAMES = ['Maluch','Podrostek','Nastolatek','Dorosły'];
+  const PLANT_STAGE_NAMES = ['Kiełek','Listek','Roślinka','Drzewko'];
+  const GP_THRESH = [3,8,20];
+  function stageIdx(gp){ if(gp>=20)return 3; if(gp>=8)return 2; if(gp>=3)return 1; return 0; }
+  function petKey(){ return 'fiszki_pet_' + uid(); }
+  function petLoad(){ try{ return JSON.parse(localStorage.getItem(petKey())||'null'); }catch(e){ return null; } }
+  function petSave(s){ try{ localStorage.setItem(petKey(), JSON.stringify(s)); }catch(e){} }
+  function studiedToday(){ try{ return !!(window.DB && DB.getDailyXP && DB.getDailyXP(curUser())>0); }catch(e){ return false; } }
+  function petMood(h){
+    if(h>=80)return{em:'😻',txt:'przeszczęśliwy!',col:'var(--accent2,#06d6a0)'};
+    if(h>=55)return{em:'🙂',txt:'zadowolony',col:'var(--accent2,#06d6a0)'};
+    if(h>=30)return{em:'😟',txt:'trochę smutny',col:'#ffd166'};
+    if(h>=10)return{em:'😢',txt:'smutny — pouczcie się!',col:'var(--danger,#ef4444)'};
+    return{em:'😭',txt:'bardzo tęskni!',col:'var(--danger,#ef4444)'};
+  }
+
+  function petTick(){
+    const s = petLoad(); if(!s || !s.type) return null;
+    const t = today();
+    if (s.lastCheck && s.lastCheck !== t && !studiedToday() && s.fedDate !== t){
+      const gap = Math.max(1, Math.round((new Date(t) - new Date(s.lastCheck))/86400000));
+      s.happy = Math.max(0, (s.happy==null?80:s.happy) - 12*Math.min(gap,5));
+    }
+    s.lastCheck = t;
+    if (studiedToday() && s.fedDate !== t){
+      const prev = stageIdx(s.gp||0);
+      s.happy = Math.min(100, (s.happy==null?60:s.happy) + 30);
+      s.gp = (s.gp||0) + 1;
+      s.fedDate = t;
+      const ns = stageIdx(s.gp);
+      if (ns>prev){ const P=PETS[s.type]; safeToast('🎉 '+(s.name||P.n)+' urósł: '+(P.plant?PLANT_STAGE_NAMES:STAGE_NAMES)[ns]+'!'); }
+    }
+    if (s.happy==null) s.happy = 70;
+    petSave(s);
+    return s;
+  }
+
+  /* ---- HEADER BUTTONS ---- */
+  function ensureButtons(){
+    const ha = document.querySelector('.header-actions'); if(!ha) return;
+    const logout = $('btnLogout');
+    if(!$('sfPetBtn')){
+      const b=document.createElement('button'); b.className='btn-hdr'; b.id='sfPetBtn'; b.title='Mój pupil'; b.textContent='🥚'; b.onclick=openPet;
+      ha.insertBefore(b, logout||null);
+    }
+    if(!$('sfMapBtn')){
+      const b=document.createElement('button'); b.className='btn-hdr'; b.id='sfMapBtn'; b.title='Mapa wiedzy'; b.textContent='🗺️'; b.onclick=openMap;
+      ha.insertBefore(b, logout||null);
+    }
+  }
+  function petRefresh(){
+    const b=$('sfPetBtn'); if(!b) return;
+    const s=petLoad();
+    if(!s||!s.type){ b.textContent='🥚'; b.style.boxShadow=''; b.title='Wybierz pupila!'; return; }
+    const P=PETS[s.type];
+    b.textContent=P.s[stageIdx(s.gp||0)];
+    const h=s.happy==null?70:s.happy; const m=petMood(h);
+    b.style.boxShadow='inset 0 0 0 2px '+m.col;
+    b.title=(s.name||P.n)+' — '+m.txt;
+  }
+
+  /* ---- MODAL HELPERS ---- */
+  function modal(id){
+    let o=$(id);
+    if(!o){
+      o=document.createElement('div'); o.id=id; o.className='sf-ov';
+      o.addEventListener('click',e=>{ if(e.target===o) o.classList.remove('show'); });
+      const box=document.createElement('div'); box.className='sf-box'; box.id=id+'_box';
+      o.appendChild(box); document.body.appendChild(o);
+    }
+    return o;
+  }
+  function bindClose(box){ box.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>{ const o=box.closest('.sf-ov'); if(o)o.classList.remove('show'); }); }
+
+  /* ---- PET MODAL ---- */
+  function openPet(){
+    petTick();
+    const o=modal('sfPetModal'); const box=$('sfPetModal_box');
+    const s=petLoad();
+    if(!s||!s.type){ box.innerHTML=petSelectHTML(); bindPetSelect(box); }
+    else { box.innerHTML=petStatusHTML(s); bindPetStatus(box,s); }
+    o.classList.add('show');
+  }
+  function petSelectHTML(){
+    let g=''; Object.keys(PETS).forEach(k=>{ const P=PETS[k]; g+=`<button class="sf-pet-pick" data-k="${k}"><span class="sf-pet-em">${P.s[2]}</span><span>${P.n}</span></button>`; });
+    return `<button class="sf-x" data-close>✕</button>
+      <h2 class="sf-h">🐾 Wybierz swojego pupila</h2>
+      <p class="sf-sub">Ucz się codziennie, a Twój pupil będzie rósł i będzie szczęśliwy! Brak nauki = smutek 🥺</p>
+      <div class="sf-pet-grid">${g}</div>
+      <label class="sf-lab">Nadaj mu imię</label>
+      <input id="sfPetName" class="sf-inp" maxlength="20" placeholder="np. Pysio">
+      <button id="sfPetCreate" class="sf-btn sf-btn-main" disabled>Adoptuj 💚</button>`;
+  }
+  function bindPetSelect(box){
+    bindClose(box);
+    let chosen=null;
+    box.querySelectorAll('.sf-pet-pick').forEach(btn=>btn.onclick=()=>{
+      box.querySelectorAll('.sf-pet-pick').forEach(x=>x.classList.remove('sel'));
+      btn.classList.add('sel'); chosen=btn.dataset.k;
+      const c=$('sfPetCreate'); if(c)c.disabled=false;
+      const ni=$('sfPetName'); if(ni && !ni.value) ni.placeholder='np. '+PETS[chosen].n;
+    });
+    const create=$('sfPetCreate');
+    if(create) create.onclick=()=>{
+      if(!chosen)return;
+      const nm=(($('sfPetName')&&$('sfPetName').value.trim())||PETS[chosen].n).slice(0,20);
+      petSave({type:chosen,name:nm,gp:0,happy:80,fedDate:null,lastCheck:today(),born:Date.now()});
+      petTick(); petRefresh(); openPet(); safeToast('💚 Adoptowano: '+nm+'!');
+    };
+  }
+  function petStatusHTML(s){
+    const P=PETS[s.type]; const si=stageIdx(s.gp||0); const em=P.s[si];
+    const h=s.happy==null?70:s.happy; const m=petMood(h);
+    const stName=(P.plant?PLANT_STAGE_NAMES:STAGE_NAMES)[si];
+    const nextGp = si<3 ? GP_THRESH[si] : null;
+    return `<button class="sf-x" data-close>✕</button>
+      <div style="text-align:center">
+        <div class="sf-pet-big">${em}</div>
+        <h2 class="sf-h" style="text-align:center">${escTxt(s.name||P.n)}</h2>
+        <p class="sf-sub" style="text-align:center;margin-bottom:8px">${m.em} ${P.n} • ${stName} ${nextGp?('• '+(s.gp||0)+'/'+nextGp+' do wzrostu'):'• MAX 👑'}</p>
+      </div>
+      <label class="sf-lab">Nastrój: ${m.txt}</label>
+      <div class="sf-bar"><i style="width:${h}%;background:${m.col}"></i></div>
+      <div class="sf-stat">
+        <div><b>${s.gp||0}</b><span>Dni karmienia</span></div>
+        <div><b>${h}%</b><span>Szczęście</span></div>
+        <div><b>${si+1}/4</b><span>Etap</span></div>
+      </div>
+      <p class="sf-sub">${ studiedToday()? '✅ Dziś już nakarmiony! Świetna robota.' : '🍽️ Poucz się dziś (zdobądź XP), żeby nakarmić pupila.' }</p>
+      <div class="sf-row">
+        <button class="sf-btn sf-btn-main" id="sfPetLearn" style="flex:2">📚 Ucz się (nakarm)</button>
+        <button class="sf-btn sf-btn-ghost" id="sfPetRename">✏️ Imię</button>
+      </div>
+      <div class="sf-row"><button class="sf-btn sf-btn-ghost" id="sfPetReset" style="font-size:.78rem">🔄 Wybierz nowego pupila</button></div>`;
+  }
+  function bindPetStatus(box,s){
+    bindClose(box);
+    const L=$('sfPetLearn'); if(L)L.onclick=()=>{ const o=box.closest('.sf-ov'); if(o)o.classList.remove('show'); goLearn(); };
+    const R=$('sfPetRename'); if(R)R.onclick=()=>{ const nm=prompt('Nowe imię pupila:',s.name||''); if(nm&&nm.trim()){ s.name=nm.trim().slice(0,20); petSave(s); petRefresh(); openPet(); } };
+    const X=$('sfPetReset'); if(X)X.onclick=()=>{ if(confirm('Wybrać nowego pupila? Obecny zniknie i zaczniesz od nowa.')){ try{localStorage.removeItem(petKey());}catch(e){} petRefresh(); openPet(); } };
+  }
+
+  /* ---- MAPA WIEDZY ---- */
+  function accessibleBooks(){
+    const out=[];
+    try{
+      const staff = !!(window.DB && ((DB.isAdmin&&DB.isAdmin())||(DB.isTeacher&&DB.isTeacher())||(DB.isParent&&DB.isParent())));
+      Object.values(window.BOOKS||{}).forEach(b=>{ if(!b||!b.units) return; if(b.adminOnly && !staff) return; out.push(b); });
+    }catch(e){}
+    out.sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'pl'));
+    return out;
+  }
+  function bookOverall(b){ let k=0,t=0; try{ const pr=DB.getBookProgress(curUser(),b); Object.values(pr).forEach(u=>{k+=u.known||0;t+=u.total||0;}); }catch(e){} return {known:k,total:t,pct:t>0?Math.round(k/t*100):0}; }
+  function islandTier(pct){
+    if(pct>=100)return{emoji:'🏰',deco:'🎉',label:'Opanowane!'};
+    if(pct>=75) return{emoji:'🏙️',deco:'🌳',label:'Miasto'};
+    if(pct>=50) return{emoji:'🏘️',deco:'🌳',label:'Wioska'};
+    if(pct>=25) return{emoji:'🏕️',deco:'🌴',label:'Osada'};
+    if(pct>0)   return{emoji:'🏝️',deco:'🌴',label:'Wysepka'};
+    return{emoji:'🌫️',deco:'',label:'Nieodkryta'};
+  }
+  function openMap(){
+    const o=modal('sfMapModal'); const box=$('sfMapModal_box');
+    const books=accessibleBooks();
+    if(!books.length){ box.innerHTML='<button class="sf-x" data-close>✕</button><h2 class="sf-h">🗺️ Mapa wiedzy</h2><p class="sf-sub">Brak dostępnych podręczników.</p>'; bindClose(box); o.classList.add('show'); return; }
+    let sel = (typeof currentBookId!=='undefined' && currentBookId && window.BOOKS && BOOKS[currentBookId]) ? currentBookId : null;
+    if(!sel){ let best=null,bp=-1; books.forEach(b=>{ const ov=bookOverall(b); if(ov.pct>bp){bp=ov.pct;best=b.id;} }); sel=best||books[0].id; }
+    renderMap(box, sel, books); o.classList.add('show');
+  }
+  function renderMap(box, bookId, books){
+    const b=window.BOOKS[bookId]; if(!b){ return; }
+    const ov=bookOverall(b);
+    const opts=books.map(x=>`<option value="${x.id}"${x.id===bookId?' selected':''}>${(x.icon||'📖')+' '+escTxt(x.name)}</option>`).join('');
+    let pr={}; try{ pr=DB.getBookProgress(curUser(),b); }catch(e){}
+    let isl='';
+    Object.keys(b.units).forEach(uk=>{
+      const u=b.units[uk]; const p=pr[uk]||{known:0,total:(u.words||[]).length,pct:0};
+      const ti=islandTier(p.pct);
+      isl+=`<div class="sf-island">
+        <div class="sf-island-vis">${ti.emoji}${ti.deco?('<div style="font-size:1rem">'+ti.deco+'</div>'):''}</div>
+        <div class="sf-island-name">${escTxt((u.icon?u.icon+' ':'')+(u.name||uk))}</div>
+        <div class="sf-bar"><i style="width:${p.pct}%;background:${p.pct>=100?'#ffd166':'var(--accent2,#06d6a0)'}"></i></div>
+        <div class="sf-island-pct">${p.known}/${p.total} • ${ti.label}</div>
+      </div>`;
+    });
+    box.innerHTML=`<button class="sf-x" data-close>✕</button>
+      <h2 class="sf-h">🗺️ Mapa wiedzy</h2>
+      <select id="sfMapBook" class="sf-inp" style="margin-bottom:8px">${opts}</select>
+      <p class="sf-sub">${escTxt(b.name)} — opanowane <b>${ov.pct}%</b> (${ov.known}/${ov.total} słów). Ucz się, by rozwijać wyspy: 🌫️→🏝️→🏕️→🏘️→🏙️→🏰</p>
+      <div class="sf-islands">${isl}</div>`;
+    bindClose(box);
+    const se=$('sfMapBook'); if(se) se.onchange=()=>renderMap(box, se.value, books);
+  }
+
+  /* ---- INIT ---- */
+  function tryWrap(){
+    try{
+      if(window.DB && typeof DB.addDailyXP==='function' && !DB.__petWrap){
+        const orig=DB.addDailyXP.bind(DB);
+        DB.addDailyXP=function(){ const r=orig.apply(null,arguments); try{ petTick(); petRefresh(); }catch(e){} return r; };
+        DB.__petWrap=true;
+      }
+    }catch(e){}
+  }
+  function init(){ ensureButtons(); tryWrap(); try{petTick();}catch(e){} petRefresh(); }
+  if(document.readyState!=='loading') init(); else document.addEventListener('DOMContentLoaded', init);
+  let n=0; const iv=setInterval(()=>{ n++; ensureButtons(); tryWrap(); petRefresh(); if(n>=12) clearInterval(iv); }, 2000);
+  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden){ try{petTick();}catch(e){} petRefresh(); } });
+})();
+</script>
 <script src="consent.js"></script>
 </body>
 </html>
