@@ -25783,10 +25783,79 @@ ${bodyHtml}
     }catch(e){}
   }
 
-  function init(){ ensureButtons(); tryWrap(); try{petTick();}catch(e){} petRefresh(); renderChallengeBanner(); }
+  /* ---- RANKING KLASY DLA UCZNIA (Wave 2, #10) ---- */
+  const SR_CATS=[
+    {k:'xp_today',ic:'⚡',t:'XP dziś',unit:' XP'},
+    {k:'xp_week', ic:'📅',t:'Tydzień',unit:' XP'},
+    {k:'xp_month',ic:'🗓️',t:'Miesiąc',unit:' XP'},
+    {k:'longest_streak',ic:'🔥',t:'Streak',unit:' dni'},
+    {k:'best_combo',ic:'🎯',t:'Seria',unit:''},
+  ];
+  let _srData=null;
+  function srMyRank(members,k){
+    const me=uid(); const sorted=members.slice().sort((a,b)=>(b[k]||0)-(a[k]||0));
+    const idx=sorted.findIndex(x=>x.user_id===me);
+    return { place: idx>=0?idx+1:null };
+  }
+  async function renderStudentRank(){
+    try{
+      if(!(window.DB && DB.loadMyClassRankings && DB.getUserId && DB.getUserId())) return;
+      const host=$('sLang'); if(!host) return;
+      let rows=[]; try{ rows=await DB.loadMyClassRankings(); }catch(e){ return; }
+      const groups={}; (rows||[]).forEach(r=>{ (groups[r.class_id]=groups[r.class_id]||{id:r.class_id,name:r.class_name,members:[]}).members.push(r); });
+      const cls=Object.values(groups).sort((a,b)=>b.members.length-a.members.length)[0];
+      let card=$('sfRankCard');
+      if(!cls || cls.members.length<2){ if(card) card.remove(); return; }
+      _srData=cls;
+      if(!card){
+        card=document.createElement('div'); card.id='sfRankCard'; card.style.cssText='width:100%;margin-bottom:14px';
+        const ban=$('sfChallengeBanner');
+        if(ban && ban.parentNode===host){ host.insertBefore(card, ban.nextSibling); } else { host.insertBefore(card, host.firstChild); }
+      }
+      let chips='';
+      SR_CATS.forEach(c=>{ const r=srMyRank(cls.members,c.k); if(r.place) chips+='<span style="display:inline-block;background:rgba(255,255,255,.10);border-radius:100px;padding:3px 9px;font-size:.66rem;font-weight:800;margin:2px">'+c.ic+' '+c.t+': #'+r.place+'</span>'; });
+      card.innerHTML='<div style="background:linear-gradient(135deg,rgba(255,209,102,.14),rgba(124,77,255,.12));border:2px solid rgba(255,209,102,.4);border-radius:16px;padding:13px 16px">'
+        +'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
+        +'<div style="font-size:1.6rem">🏆</div>'
+        +'<div style="flex:1;min-width:160px">'
+        +'<div style="font-weight:800;color:var(--text);font-size:.9rem">Ranking klasy '+escTxt(cls.name||'')+'</div>'
+        +'<div style="margin-top:3px">'+(chips||'<span style="font-size:.7rem;color:var(--muted)">Ucz się, aby wejść do rankingu!</span>')+'</div>'
+        +'</div>'
+        +'<button class="sf-btn sf-btn-ghost" style="font-size:.78rem;padding:8px 12px" onclick="window.__sfOpenStudentRank&&window.__sfOpenStudentRank()">Pełny ranking</button>'
+        +'</div></div>';
+    }catch(e){}
+  }
+  window.__sfOpenStudentRank=function(){
+    if(!_srData) return;
+    const o=modal('sfRankModal'); const box=$('sfRankModal_box');
+    let tabs='<div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-bottom:12px">';
+    SR_CATS.forEach((c,i)=>{ tabs+='<button id="srTab'+i+'" class="sf-btn sf-btn-ghost" style="font-size:.72rem;padding:7px 10px" onclick="window.__sfRankCat('+i+')">'+c.ic+' '+c.t+'</button>'; });
+    tabs+='</div>';
+    box.innerHTML='<button class="sf-x" data-close>✕</button><h2 class="sf-h">🏆 Ranking klasy '+escTxt(_srData.name||'')+'</h2><p class="sf-sub">Twoja klasa • osobny ranking w każdej kategorii</p>'+tabs+'<div id="srList"></div>';
+    bindClose(box); o.classList.add('show'); window.__sfRankCat(0);
+  };
+  window.__sfRankCat=function(idx){
+    const c=SR_CATS[idx]; if(!c||!_srData) return;
+    SR_CATS.forEach((_,i)=>{ const t=$('srTab'+i); if(t){ t.style.background=i===idx?'var(--accent,#7c4dff)':''; t.style.color=i===idx?'#fff':''; } });
+    const me=uid(); const sorted=_srData.members.slice().sort((a,b)=>(b[c.k]||0)-(a[c.k]||0));
+    const podium=['🥇','🥈','🥉'];
+    let h='<div style="background:rgba(255,255,255,.04);border-radius:14px;padding:8px;max-height:50vh;overflow-y:auto">'; let shown=0;
+    sorted.forEach((u,i)=>{ const val=u[c.k]||0; const isMe=u.user_id===me; if(val===0 && !isMe) return; if(i>=10 && !isMe) return; shown++;
+      const place=i+1; const md=place<=3?podium[place-1]:('#'+place);
+      h+='<div style="display:flex;align-items:center;gap:10px;padding:8px 6px;border-bottom:1px dashed rgba(255,255,255,.12);'+(isMe?'background:rgba(124,77,255,.18);border-radius:8px':'')+'">'
+        +'<div style="width:30px;text-align:center;font-weight:700">'+md+'</div>'
+        +'<div style="flex:1;min-width:0;font-weight:700;font-size:.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escTxt(u.username)+(isMe?' (Ty)':'')+'</div>'
+        +'<div style="font-weight:800;color:var(--accent,#ffd166)">'+val+c.unit+'</div></div>';
+    });
+    if(!shown) h+='<div style="text-align:center;padding:18px;color:var(--muted);font-weight:600">Brak wyników w tej kategorii.</div>';
+    h+='</div>';
+    const el=$('srList'); if(el) el.innerHTML=h;
+  };
+
+  function init(){ ensureButtons(); tryWrap(); try{petTick();}catch(e){} petRefresh(); renderChallengeBanner(); renderStudentRank(); }
   if(document.readyState!=='loading') init(); else document.addEventListener('DOMContentLoaded', init);
-  let n=0, chDone=false; const iv=setInterval(()=>{ n++; ensureButtons(); tryWrap(); petRefresh(); if(!chDone && uid()!=='guest'){ chDone=true; renderChallengeBanner(); } if(n>=12) clearInterval(iv); }, 2000);
-  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden){ try{petTick();}catch(e){} petRefresh(); renderChallengeBanner(); } });
+  let n=0, chDone=false; const iv=setInterval(()=>{ n++; ensureButtons(); tryWrap(); petRefresh(); if(!chDone && uid()!=='guest'){ chDone=true; renderChallengeBanner(); renderStudentRank(); } if(n>=12) clearInterval(iv); }, 2000);
+  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden){ try{petTick();}catch(e){} petRefresh(); renderChallengeBanner(); renderStudentRank(); } });
 })();
 </script>
 <script src="consent.js"></script>

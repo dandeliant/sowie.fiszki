@@ -1965,6 +1965,16 @@ const DB = (() => {
     }
   }
 
+  // Ranking widoczny dla UCZNIA (jego klasa) — RPC SECURITY DEFINER.
+  // Zwraca [{ class_id, class_name, user_id, username, xp_today, xp_week,
+  //          xp_month, longest_streak, best_combo }]. Wymaga student-class-ranking.sql.
+  async function loadMyClassRankings() {
+    if (!_userId) return [];
+    const { data, error } = await supabase.rpc('my_class_rankings');
+    if (error) { console.warn('[loadMyClassRankings]', error.message); return []; }
+    return data || [];
+  }
+
   // ═══════════════════════════════════════════════════════════════
   //  WYZWANIA KLASOWE (Wave 2, #8) — wymaga class-challenges-schema.sql
   // ═══════════════════════════════════════════════════════════════
@@ -3926,6 +3936,7 @@ const DB = (() => {
     loadParentChildLinksForChildren,
     loadClassLeaderboard,
     loadClassRankings,
+    loadMyClassRankings,
     recordBestCombo,
     logDailyWords,
     listClassChallenges,
