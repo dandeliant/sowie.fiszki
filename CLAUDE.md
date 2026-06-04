@@ -133,6 +133,12 @@ Kolejność uruchamiania w SQL Editor (każda jest idempotentna — można ponow
 
 47. `student-class-ranking.sql` — **ranking klasy widoczny dla ucznia (Wave 2, #10 cd.)**. RPC `my_class_rankings()` (`SECURITY DEFINER`) — uczeń nie może czytać `daily_xp_log`/`profiles` kolegów (RLS), więc ten RPC zwraca zagregowane statystyki wszystkich nie-staff członków klas, do których należy zalogowany uczeń (xp_today/week/month + longest_streak + best_combo). Wymaga wcześniej `add-ranking-stats.sql` (#45). `db.js`: `loadMyClassRankings()`. UI (moduł pet/mapa w app.html): karta `#sfRankCard` na górze `sLang` z pozycją ucznia w 5 kategoriach (#chips) + przycisk „Pełny ranking" → modal `sfRankModal` z 5 zakładkami, top 10 + podświetlenie „(Ty)" nawet poza pierwszą dziesiątką. Idempotentna.
 
+48. `child-active-challenges.sql` — **wyzwania klasy ucznia w widoku postępu (Wave 2, #8 cd.)**. RPC `child_active_challenges(p_child_id)` (`SECURITY DEFINER`, autoryzacja `_is_admin() OR _is_teacher() OR _is_parent_of(child)`) — zwraca aktywne wyzwania klas, do których należy dany uczeń, ze wspólnym postępem klasy. Wymaga #45 + #46. `db.js`: `loadChildActiveChallenges(childId)`. UI: `openStudentProgress` (wspólny widok nauczyciela i opiekuna) dostaje sekcję „🎯 Wyzwania klasy" nad „📅 Aktywność nauki". Idempotentna.
+
+**Odznaki pupila (Wave 1 cd.):** do katalogu `ACHIEVES` w app.html dodane `pet_adopt` (🐾 adopcja), `pet_teen` (🐣 etap nastolatka), `pet_adult` (👑 dorosły). Wyzwalane z modułu pet (`petAch()` → `checkAndUnlock()`) przy adopcji i wzroście pupila. Czysto klient — bez migracji.
+
+**Mapa wiedzy z listy unitów:** przycisk „🗗️ Mapa" w nagłówku `sWordList` → `window.openKnowledgeMap()` (alias na `openMap` z modułu pet/mapa), kontekstowo dla aktualnego podręcznika.
+
 **Zawsze przypominaj użytkownikowi** o uruchomieniu nowej migracji w Supabase, kiedy tworzysz nową.
 
 ## 🎭 Role i uprawnienia

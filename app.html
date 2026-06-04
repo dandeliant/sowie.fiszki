@@ -2719,6 +2719,7 @@ body.guest-mode .progress-wrap{opacity:.4;}
   <div class="wl-header">
     <h2 id="wlTitle">Lista słówek</h2>
     <div class="wl-header-actions">
+      <button class="btn-sm" onclick="window.openKnowledgeMap&&window.openKnowledgeMap()" title="Mapa wiedzy tego podręcznika">🗺️ Mapa</button>
       <button class="btn-sm" onclick="toggleCustomSection()" id="btnCustomToggle">➕</button>
       <button class="btn-sm" onclick="exitWordList()">← Wróć</button>
     </div>
@@ -4459,6 +4460,9 @@ const ACHIEVES = [
   {id:'xp_2500',       icon:'👑', name:'2500 XP',        desc:'Zdobyto 2500 XP — korona zasłużona!'},
   {id:'xp_5000',       icon:'🏆', name:'5000 XP',        desc:'5000 XP — legenda!'},
   {id:'memory_win',    icon:'🧠', name:'Mistrz Memory',  desc:'Ukończono grę Memory'},
+  {id:'pet_adopt',     icon:'🐾', name:'Nowy przyjaciel', desc:'Adoptowano wirtualnego pupila'},
+  {id:'pet_teen',      icon:'🐣', name:'Pupil rośnie',    desc:'Pupil osiągnął etap nastolatka'},
+  {id:'pet_adult',     icon:'👑', name:'Wychowawca',      desc:'Pupil dorósł — dorosły etap!'},
 ];
 
 // ══════════════════════════════════════════════
@@ -16924,6 +16928,28 @@ async function openStudentProgress(userId, username, returnTo) {
     const unitsEl = document.getElementById('studProgUnits');
     unitsEl.innerHTML = '';
 
+    // ═══ SEKCJA: WYZWANIA KLASY ucznia (Wave 2, #8) ═══
+    try {
+      if (DB.loadChildActiveChallenges) {
+        const chs = await DB.loadChildActiveChallenges(userId);
+        if (Array.isArray(chs) && chs.length) {
+          const cw = document.createElement('div'); cw.style.cssText = 'margin-bottom:16px';
+          let ch = '<div style="font-size:.78rem;font-weight:800;color:var(--accent);margin:6px 0 8px;text-transform:uppercase;letter-spacing:.06em">🎯 Wyzwania klasy</div>';
+          chs.forEach(c => {
+            const goal = c.goal_amount || 1; const pr = c.progress || 0;
+            const pct = Math.min(100, Math.round(pr / goal * 100)); const done = pr >= goal;
+            const unit = c.goal_type === 'words' ? 'słów' : 'XP';
+            ch += '<div style="background:var(--surface);border:1.5px solid ' + (done ? 'var(--success)' : 'var(--border)') + ';border-radius:12px;padding:10px 12px;margin-bottom:8px">'
+              + '<div style="font-weight:700;font-size:.85rem">' + (done ? '✅ ' : '🎯 ') + escHtml(c.title) + '</div>'
+              + '<div style="font-size:.68rem;color:var(--muted);font-weight:600;margin:3px 0 5px">Klasa ' + escHtml(c.class_name || '') + ' • ' + pr + ' / ' + goal + ' ' + unit + ' • do ' + c.ends_at + '</div>'
+              + '<div style="height:9px;background:var(--surface2);border-radius:6px;overflow:hidden"><div style="height:100%;width:' + pct + '%;background:' + (done ? 'var(--success)' : 'linear-gradient(90deg,var(--accent),var(--pink))') + '"></div></div>'
+              + '</div>';
+          });
+          cw.innerHTML = ch; unitsEl.appendChild(cw);
+        }
+      }
+    } catch(e) {}
+
     // ═══ SEKCJA: AKTYWNOSC (kiedy uczen wchodzil i jak dlugo sie uczyl) ═══
     if (Array.isArray(activityRows) && activityRows.length) {
       const actHeader = document.createElement('div');
@@ -25498,6 +25524,7 @@ ${bodyHtml}
   function safeToast(m){ try{ if(typeof toast==='function') toast(m); }catch(e){} }
   function goLearn(){ try{ if(typeof showScreen==='function') showScreen('sLang'); else location.hash='#/'; }catch(e){} }
   function escTxt(t){ return String(t==null?'':t).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m])); }
+  function petAch(id){ try{ if(typeof checkAndUnlock==='function') checkAndUnlock(id); }catch(e){} }
 
   /* ---- STYLE ---- */
   const st=document.createElement('style');
@@ -25581,7 +25608,7 @@ ${bodyHtml}
       s.gp = (s.gp||0) + 1;
       s.fedDate = t;
       const ns = stageIdx(s.gp);
-      if (ns>prev){ const P=PETS[s.type]; safeToast('🎉 '+(s.name||P.n)+' urósł: '+(P.plant?PLANT_STAGE_NAMES:STAGE_NAMES)[ns]+'!'); }
+      if (ns>prev){ const P=PETS[s.type]; safeToast('🎉 '+(s.name||P.n)+' urósł: '+(P.plant?PLANT_STAGE_NAMES:STAGE_NAMES)[ns]+'!'); if(ns>=2) petAch('pet_teen'); if(ns>=3) petAch('pet_adult'); }
     }
     if (s.happy==null) s.happy = 70;
     petSave(s);
@@ -25658,7 +25685,8 @@ ${bodyHtml}
       if(!chosen)return;
       const nm=(($('sfPetName')&&$('sfPetName').value.trim())||PETS[chosen].n).slice(0,20);
       petSave({type:chosen,name:nm,gp:0,happy:80,fedDate:null,lastCheck:today(),born:Date.now()});
-      petTick(); petRefresh(); openPet(); safeToast('💚 Adoptowano: '+nm+'!');
+      petAch('pet_adopt');
+      petTick(); petRefresh(); renderPetCard(); openPet(); safeToast('💚 Adoptowano: '+nm+'!');
     };
   }
   function petStatusHTML(s){
@@ -25882,6 +25910,7 @@ ${bodyHtml}
     const el=$('srList'); if(el) el.innerHTML=h;
   };
 
+  window.openKnowledgeMap = openMap;
   function init(){ ensureButtons(); tryWrap(); try{petTick();}catch(e){} petRefresh(); renderPetCard(); renderChallengeBanner(); renderStudentRank(); }
   if(document.readyState!=='loading') init(); else document.addEventListener('DOMContentLoaded', init);
   let n=0, chDone=false; const iv=setInterval(()=>{ n++; ensureButtons(); tryWrap(); petRefresh(); renderPetCard(); if(!chDone && uid()!=='guest'){ chDone=true; renderChallengeBanner(); renderStudentRank(); } if(n>=12) clearInterval(iv); }, 2000);

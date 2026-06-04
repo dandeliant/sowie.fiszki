@@ -2010,6 +2010,13 @@ const DB = (() => {
     if (error) { console.warn('[listMyActiveChallenges]', error.message); return []; }
     return data || [];
   }
+  // Aktywne wyzwania klas konkretnego ucznia — dla opiekuna/nauczyciela/admina.
+  async function loadChildActiveChallenges(childId) {
+    if (!childId) return [];
+    const { data, error } = await supabase.rpc('child_active_challenges', { p_child_id: childId });
+    if (error) { console.warn('[loadChildActiveChallenges]', error.message); return []; }
+    return data || [];
+  }
 
   async function loadParentChildLinksForChildren(childIds) {
     if (!Array.isArray(childIds) || !childIds.length) return [];
@@ -3944,6 +3951,7 @@ const DB = (() => {
     createChallenge,
     deleteChallenge,
     listMyActiveChallenges,
+    loadChildActiveChallenges,
     loadAdminStats,
     loadDialogsForBook,
     saveDialog,
