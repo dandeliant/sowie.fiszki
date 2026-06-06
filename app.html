@@ -25691,13 +25691,12 @@ ${bodyHtml}
   // (inaczej pet wybrany przez ucznia "pojawialby sie" na koncie admina —
   // m.in. przez wspolny klucz 'guest' zanim DB.getUserId() sie ustawi).
   function petAllowed(){
-    try{
-      if(uid()==='guest') return false;
-      if(window.DB){
-        if((DB.isAdmin&&DB.isAdmin())||(DB.isTeacher&&DB.isTeacher())||(DB.isParent&&DB.isParent())) return false;
-      }
-      return true;
-    }catch(e){ return false; }
+    // Pupil = dla ZALOGOWANEGO ucznia. Wykluczamy tylko admina (to jego konto
+    // "lapalo" pupila ucznia przez wspolny klucz 'guest'). Klucz jest per-uid,
+    // wiec konta i tak sie nie mieszaja. Gosc (uid='guest') nie ma pupila.
+    if(uid()==='guest') return false;
+    try{ if(window.DB && DB.isAdmin && DB.isAdmin()) return false; }catch(e){}
+    return true;
   }
 
   /* ---- HEADER BUTTONS ---- */
@@ -26026,7 +26025,18 @@ ${bodyHtml}
   };
 
   window.openKnowledgeMap = openMap;
-  function init(){ ensureButtons(); tryWrap(); try{petTick();}catch(e){} petRefresh(); renderPetCard(); renderChallengeBanner(); renderStudentRank(); }
+  // Re-render pupila/kart przy kazdej nawigacji (gdy DB zaladuje sie po
+  // wygasnieciu petli init). showScreen to globalna funkcja z glownego skryptu.
+  function wrapShowScreen(){
+    try{
+      if(typeof window.showScreen==='function' && !window.__sfShowWrap){
+        const _os=window.showScreen;
+        window.showScreen=function(){ const r=_os.apply(this,arguments); try{ ensureButtons(); petRefresh(); renderPetCard(); }catch(e){} return r; };
+        window.__sfShowWrap=true;
+      }
+    }catch(e){}
+  }
+  function init(){ wrapShowScreen(); ensureButtons(); tryWrap(); try{petTick();}catch(e){} petRefresh(); renderPetCard(); renderChallengeBanner(); renderStudentRank(); }
   if(document.readyState!=='loading') init(); else document.addEventListener('DOMContentLoaded', init);
   let n=0, chDone=false; const iv=setInterval(()=>{ n++; ensureButtons(); tryWrap(); petRefresh(); renderPetCard(); if(!chDone && uid()!=='guest'){ chDone=true; renderChallengeBanner(); renderStudentRank(); } if(n>=12) clearInterval(iv); }, 2000);
   document.addEventListener('visibilitychange', ()=>{ if(!document.hidden){ try{petTick();}catch(e){} petRefresh(); renderPetCard(); renderChallengeBanner(); renderStudentRank(); } });
