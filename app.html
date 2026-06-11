@@ -4305,6 +4305,12 @@ szkoła	school"></textarea>
       <option value="blank_pl">✏️ Pusta — wpisz polski (uczeń widzi EN)</option>
       <option value="mixed">🎲 Pomieszana (losowo PL lub EN do uzupełnienia)</option>
       <option value="gap_sentences">📝 Zdania z lukami (Premium) 🔒</option>
+      <option value="bingo">🎲 Bingo (karty dla klasy)</option>
+      <option value="domino">🁢 Domino do wycięcia</option>
+      <option value="wheel">🎡 Koło fortuny</option>
+      <option value="maze">🧩 Labirynt słowny</option>
+      <option value="minibook">📕 Mini-książeczka</option>
+      <option value="weekly">📅 Karta domowa na tydzień</option>
     </select>
 
     <div id="wsMsg" style="font-size:.72rem;color:var(--muted);margin-bottom:6px;min-height:16px;font-weight:600"></div>
@@ -24544,6 +24550,183 @@ if ('serviceWorker' in navigator) {
 
   function escHtmlWs(s){ return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
+  // ═══════════════════════════════════════════════
+  //  DODATKOWE KARTY PRACY (Bingo / Domino / Koło / Labirynt / Książeczka / Karta domowa)
+  // ═══════════════════════════════════════════════
+  function wsPairs(words){
+    return (words||[]).map(w=>({
+      pl:(w[0]||'').trim(), en:(w[1]||'').trim(),
+      emoji:(w[2] && typeof w[2]==='string' && w[2].length<=4 && !/\s/.test(w[2]) && !/[a-zA-Z0-9]/.test(w[2])) ? w[2] : ''
+    })).filter(p=>p.pl && p.en);
+  }
+  function wsShuffle(a){ a=a.slice(); for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); const t=a[i];a[i]=a[j];a[j]=t; } return a; }
+  function wsPage(title, subtitle, body, css){
+    const branding=(typeof getSchoolBranding==='function')?getSchoolBranding():{name:'',logo:''};
+    const b=(branding.logo||branding.name)?`<div class="branding">${branding.logo?`<img src="${escHtmlWs(branding.logo)}" onerror="this.style.display='none'">`:''}${branding.name?`<div class="branding-name">${escHtmlWs(branding.name)}</div>`:''}</div>`:'';
+    return `<!DOCTYPE html><html lang="pl"><head><meta charset="UTF-8"><title>${escHtmlWs(title)}</title><style>
+    *{box-sizing:border-box}
+    body{font-family:Arial,Helvetica,sans-serif;padding:18px;color:#111;max-width:900px;margin:0 auto}
+    h1{font-size:1.2rem;margin:0 0 3px} h2{font-size:.8rem;color:#666;margin:0 0 14px;font-weight:normal}
+    .branding{display:flex;align-items:center;gap:12px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px dashed #ccc}
+    .branding img{max-height:46px;max-width:140px;object-fit:contain}.branding-name{font-weight:700;color:#333}
+    .wsfields{display:flex;gap:12px;margin:0 0 14px;font-size:.78rem}
+    .wsfields .f{flex:1;border-bottom:1px solid #bbb;padding-bottom:2px}.wsfields label{color:#888;font-size:.66rem;display:block}
+    .tip{background:#f5f7ff;border:1px solid #d6deff;border-radius:8px;padding:10px 12px;font-size:.82rem;color:#333;margin:10px 0;line-height:1.5}
+    .footer{margin-top:16px;padding-top:8px;border-top:1px solid #ddd;font-size:.68rem;color:#888;text-align:center}
+    .noprint{position:fixed;top:12px;right:12px;display:flex;gap:8px;z-index:9}
+    .noprint button{background:#333;color:#fff;border:none;padding:8px 14px;border-radius:100px;font-size:.8rem;font-weight:700;cursor:pointer}
+    .noprint button.alt{background:#888}
+    @media print{body{padding:6px}.noprint{display:none}.pagebreak{page-break-before:always}}
+    ${css||''}
+    </style></head><body>
+    <div class="noprint"><button onclick="window.print()">🖨️ Drukuj</button><button class="alt" onclick="window.close()">Zamknij</button></div>
+    ${b}<h1>${escHtmlWs(title)}</h1><h2>${escHtmlWs(subtitle)}</h2>${body}
+    <div class="footer">© 2026 Sowie Fiszki (sowiefiszki.com)${branding.name?' · '+escHtmlWs(branding.name):''}</div>
+    </body></html>`;
+  }
+  function wsHead(book, unitLabel){ return (book.icon?book.icon+' ':'')+book.name+' — '+unitLabel; }
+  function wsDate(){ return new Date().toLocaleDateString('pl-PL'); }
+
+  function wsBingo(book, unitLabel, words){
+    const pairs=wsPairs(words);
+    if(pairs.length<4) return {error:'⚠️ Potrzeba min. 4 słów do Bingo.'};
+    const size=pairs.length>=16?4:(pairs.length>=9?3:2), cells=size*size, CARDS=6;
+    const call=wsShuffle(pairs).map((p,i)=>`<span class="cl">${i+1}. <b>${escHtmlWs(p.pl)}</b> → ${escHtmlWs(p.en)}</span>`).join('');
+    let cards='';
+    for(let c=0;c<CARDS;c++){
+      const sample=wsShuffle(pairs).slice(0,cells);
+      let grid=sample.map(p=>`<div class="bcell">${p.emoji?`<span class="be">${p.emoji}</span>`:''}<span class="bw">${escHtmlWs(p.en)}</span></div>`).join('');
+      cards+=`<div class="bcard"><div class="bhd">B I N G O 🎲 — karta ${c+1}</div><div class="bgrid" style="grid-template-columns:repeat(${size},1fr)">${grid}</div></div>`;
+    }
+    const body=`<div class="tip">🎲 <b>Jak grać:</b> Nauczyciel czyta <b>polskie</b> słowo z listy poniżej. Uczniowie zakreślają pasujące <b>angielskie</b> słowo na swojej karcie. Kto pierwszy zaznaczy cały rząd lub kolumnę — krzyczy <b>BINGO!</b></div>
+      <div style="font-weight:700;font-size:.82rem;margin:8px 0 4px">📢 Lista do wyczytywania (dla nauczyciela)</div>
+      <div class="calllist">${call}</div>
+      <div class="pagebreak"></div>
+      <div style="font-weight:700;font-size:.82rem;margin-bottom:8px">✂️ Karty do rozdania (wytnij)</div>
+      <div class="bcards">${cards}</div>`;
+    const css=`.calllist{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:.8rem}
+      .bcards{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+      .bcard{border:2px solid #333;border-radius:10px;padding:8px;break-inside:avoid}
+      .bhd{text-align:center;font-weight:800;font-size:.82rem;margin-bottom:6px;color:#7c3aed;letter-spacing:.06em}
+      .bgrid{display:grid;gap:4px}
+      .bcell{border:1px solid #999;border-radius:6px;min-height:52px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:4px;text-align:center}
+      .be{font-size:1.2rem}.bw{font-size:.76rem;font-weight:600}`;
+    return {html: wsPage('Bingo — '+wsHead(book,unitLabel), 'Karta pracy · '+CARDS+' kart · '+wsDate(), body, css)};
+  }
+
+  function wsDomino(book, unitLabel, words){
+    let pairs=wsPairs(words);
+    if(pairs.length<4) return {error:'⚠️ Potrzeba min. 4 słów do domina.'};
+    pairs=wsShuffle(pairs).slice(0, Math.min(12, pairs.length));
+    const n=pairs.length;
+    const tiles=pairs.map((p,i)=>({left:p.pl, le:p.emoji, right:pairs[(i+1)%n].en}));
+    const html=wsShuffle(tiles).map(t=>`<div class="dtile"><div class="dhalf dl">${t.le?`<span class="de">${t.le}</span>`:''}<span>${escHtmlWs(t.left)}</span></div><div class="dhalf dr">${escHtmlWs(t.right)}</div></div>`).join('');
+    const body=`<div class="tip">🁢 <b>Jak grać:</b> Wytnij kostki wzdłuż przerywanych linii. Dokładaj je tak, aby <b>polskie</b> słowo na jednej połówce stykało się ze swoim <b>angielskim</b> tłumaczeniem na sąsiedniej kostce. Ułóż zamkniętą pętlę!</div>
+      <div class="dtiles">${html}</div>`;
+    const css=`.dtiles{display:flex;flex-wrap:wrap;gap:10px}
+      .dtile{display:flex;border:2px dashed #333;border-radius:6px;overflow:hidden;break-inside:avoid;min-width:240px}
+      .dhalf{flex:1;padding:12px 10px;display:flex;align-items:center;justify-content:center;gap:6px;font-size:.9rem;font-weight:600;min-height:46px;text-align:center}
+      .dl{border-right:2px solid #333;background:#fafafa}.dr{background:#fff}.de{font-size:1.1rem}`;
+    return {html: wsPage('Domino do wycięcia — '+wsHead(book,unitLabel), 'Karta pracy · '+n+' kostek · '+wsDate(), body, css)};
+  }
+
+  function wsWheel(book, unitLabel, words){
+    let pairs=wsPairs(words);
+    if(pairs.length<3) return {error:'⚠️ Potrzeba min. 3 słów do koła.'};
+    pairs=wsShuffle(pairs).slice(0, Math.min(10, pairs.length));
+    const N=pairs.length, cx=260, cy=260, R=240, ang=360/N;
+    const colors=['#FFE0B2','#C8E6C9','#BBDEFB','#F8BBD0','#D1C4E9','#FFF9C4','#B2DFDB','#FFCCBC','#E1BEE7','#DCEDC8'];
+    const polar=(r,deg)=>{ const rad=(deg-90)*Math.PI/180; return [cx+r*Math.cos(rad), cy+r*Math.sin(rad)]; };
+    let svg='';
+    for(let i=0;i<N;i++){
+      const a0=i*ang, a1=(i+1)*ang, mid=a0+ang/2;
+      const [x0,y0]=polar(R,a0), [x1,y1]=polar(R,a1), large=ang>180?1:0;
+      svg+=`<path d="M${cx},${cy} L${x0.toFixed(1)},${y0.toFixed(1)} A${R},${R} 0 ${large} 1 ${x1.toFixed(1)},${y1.toFixed(1)} Z" fill="${colors[i%colors.length]}" stroke="#333" stroke-width="1.5"/>`;
+      const [tx,ty]=polar(R*0.60, mid); let rot=mid; if(mid>90&&mid<270) rot=mid+180;
+      const label=(pairs[i].emoji?pairs[i].emoji+' ':'')+pairs[i].en;
+      svg+=`<text x="${tx.toFixed(1)}" y="${ty.toFixed(1)}" transform="rotate(${rot.toFixed(1)} ${tx.toFixed(1)} ${ty.toFixed(1)})" text-anchor="middle" dominant-baseline="middle" font-size="14" font-weight="700" fill="#222">${escHtmlWs(label)}</text>`;
+    }
+    const body=`<div class="tip">🎡 <b>Jak grać:</b> Wbij spinacz biurowy w środek koła i przytrzymaj go ołówkiem (jako oś). Zakręć spinaczem — gdy się zatrzyma, przeczytaj słowo, na które wskazuje, i ułóż z nim zdanie po angielsku!</div>
+      <div style="text-align:center"><svg viewBox="0 0 520 560" width="470" style="max-width:100%">
+        <polygon points="260,6 242,42 278,42" fill="#e53935" stroke="#333" stroke-width="1.5"/>
+        <g transform="translate(0,34)">${svg}<circle cx="${cx}" cy="${cy}" r="15" fill="#fff" stroke="#333" stroke-width="2"/><text x="${cx}" y="${cy+5}" text-anchor="middle" font-size="14">📌</text></g>
+      </svg></div>`;
+    return {html: wsPage('Koło fortuny — '+wsHead(book,unitLabel), 'Karta pracy · '+N+' pól · '+wsDate(), body, '')};
+  }
+
+  function wsMaze(book, unitLabel, words){
+    const pairs=wsPairs(words);
+    if(pairs.length<6) return {error:'⚠️ Potrzeba min. 6 słów do labiryntu.'};
+    const n=pairs.length>=20?6:(pairs.length>=12?5:4), pathLen=2*n-1;
+    const pool=wsShuffle(pairs), pathWords=pool.slice(0,pathLen), rest=pool.slice(pathLen);
+    let r=0,c=0; const path=[[0,0]];
+    wsShuffle(Array(n-1).fill('R').concat(Array(n-1).fill('D'))).forEach(m=>{ if(m==='R')c++; else r++; path.push([r,c]); });
+    const grid=Array.from({length:n},()=>Array(n).fill(''));
+    path.forEach((cell,i)=>{ grid[cell[0]][cell[1]]=pathWords[i].en; });
+    const distract=wsShuffle((rest.length?rest:pairs).map(p=>p.en)); let di=0;
+    for(let i=0;i<n;i++)for(let j=0;j<n;j++){ if(!grid[i][j]){ grid[i][j]=distract[di%distract.length]||'—'; di++; } }
+    let gh='<table class="maze">';
+    for(let i=0;i<n;i++){ gh+='<tr>'; for(let j=0;j<n;j++){ const s=(i===0&&j===0), e=(i===n-1&&j===n-1); gh+=`<td class="${s?'mstart':''} ${e?'mend':''}">${s?'🏁 ':''}${e?'🏆 ':''}${escHtmlWs(grid[i][j])}</td>`; } gh+='</tr>'; }
+    gh+='</table>';
+    const clues=pathWords.map(p=>`<li>${escHtmlWs(p.pl)}</li>`).join('');
+    const key=path.map(p=>`(${p[0]+1},${p[1]+1})`).join(' → ');
+    const body=`<div class="tip">🧩 <b>Jak przejść labirynt:</b> Start w polu <b>🏁</b> (lewy górny róg). Idź tylko <b>w prawo</b> lub <b>w dół</b>. Na każdym kroku wybierz sąsiednie pole, którego <b>angielskie</b> słowo pasuje do kolejnego <b>polskiego</b> hasła z listy. Dojdź do mety <b>🏆</b>!</div>
+      ${gh}
+      <div style="margin-top:12px"><b>Hasła po kolei (po polsku):</b><ol class="clues">${clues}</ol></div>
+      <div class="pagebreak"></div>
+      <div class="tip">🔑 <b>Klucz (dla nauczyciela):</b> kolejne pola ścieżki (wiersz, kolumna): ${escHtmlWs(key)}</div>`;
+    const css=`table.maze{border-collapse:collapse;margin:8px auto}
+      table.maze td{border:2px solid #333;width:92px;height:58px;text-align:center;font-size:.8rem;font-weight:600;padding:4px}
+      td.mstart{background:#c8e6c9}td.mend{background:#fff3c4}
+      ol.clues{columns:2;font-size:.85rem;line-height:1.7;margin-top:6px}`;
+    return {html: wsPage('Labirynt słowny — '+wsHead(book,unitLabel), 'Karta pracy · '+wsDate(), body, css)};
+  }
+
+  function wsMiniBook(book, unitLabel, words){
+    let pairs=wsPairs(words);
+    if(!pairs.length) return {error:'⚠️ Brak słów.'};
+    pairs=pairs.slice(0,8);
+    const title=wsHead(book,unitLabel);
+    let cards=`<div class="mb cover"><div class="mbtitle">Moja mini-książeczka słówek</div><div class="mbsub">${escHtmlWs(title)}</div><div class="mbname">Imię: ____________</div><div class="mbemoji">📖</div></div>`;
+    pairs.forEach((p,i)=>{ cards+=`<div class="mb"><div class="mbnum">${i+1}</div><div class="mbemoji">${p.emoji||'✏️'}</div><div class="mben">${escHtmlWs(p.en)}</div><div class="mbpl">${escHtmlWs(p.pl)}</div><div class="mbdraw">narysuj 👇</div></div>`; });
+    const body=`<div class="tip">📕 <b>Jak zrobić książeczkę:</b> Wytnij wszystkie karty, ułóż po kolei (okładka na wierzchu), złóż na pół i zszyj wzdłuż lewej krawędzi. Na każdej stronie narysuj swoje słówko!</div>
+      <div class="mbgrid">${cards}</div>`;
+    const css=`.mbgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+      .mb{border:1.5px dashed #333;border-radius:10px;min-height:230px;padding:10px;display:flex;flex-direction:column;align-items:center;text-align:center;break-inside:avoid;position:relative}
+      .mb.cover{background:#f3e9ff;justify-content:center;gap:6px}
+      .mbtitle{font-weight:800;font-size:1rem;color:#7c3aed}.mbsub{font-size:.78rem;color:#555}.mbname{font-size:.8rem;margin-top:8px}
+      .mbnum{position:absolute;top:6px;left:8px;font-size:.7rem;color:#999;font-weight:700}
+      .mbemoji{font-size:2.6rem;margin:6px 0}.mben{font-size:1.1rem;font-weight:800}.mbpl{font-size:.85rem;color:#666;margin-bottom:6px}
+      .mbdraw{margin-top:auto;width:100%;border:1px solid #ccc;border-radius:8px;flex:1;min-height:90px;padding:4px 6px;font-size:.7rem;color:#aaa;text-align:left}`;
+    return {html: wsPage('Mini-książeczka — '+title, 'Karta pracy · wytnij i złóż · '+wsDate(), body, css)};
+  }
+
+  function wsWeekly(book, unitLabel, words){
+    let pairs=wsPairs(words);
+    if(!pairs.length) return {error:'⚠️ Brak słów.'};
+    pairs=pairs.slice(0,16);
+    const title=wsHead(book,unitLabel);
+    const wr=pairs.map((p,i)=>`<tr><td class="n">${i+1}</td><td>${p.emoji?p.emoji+' ':''}${escHtmlWs(p.pl)}</td><td>${escHtmlWs(p.en)}</td><td class="chk">☐</td></tr>`).join('');
+    const days=['Pon','Wt','Śr','Czw','Pt','Sob','Nd'];
+    const acts=['Przeczytałem słówka','Ćwiczyłem w aplikacji 🦉','Powtórzyłem z rodzicem'];
+    const dh='<tr><th>Aktywność</th>'+days.map(d=>`<th>${d}</th>`).join('')+'</tr>';
+    const dr=acts.map(a=>`<tr><td class="al">${escHtmlWs(a)}</td>`+days.map(()=>'<td class="chk">☐</td>').join('')+'</tr>').join('');
+    const body=`<div class="wsfields"><div class="f"><label>Imię i nazwisko</label>&nbsp;</div><div class="f"><label>Klasa</label>&nbsp;</div><div class="f"><label>Tydzień</label>&nbsp;</div></div>
+      <h3 style="font-size:.95rem;margin:6px 0">📚 Słówka na ten tydzień</h3>
+      <table class="wtab"><thead><tr><th>#</th><th>Polski</th><th>Angielski</th><th>Umiem</th></tr></thead><tbody>${wr}</tbody></table>
+      <h3 style="font-size:.95rem;margin:14px 0 6px">📅 Mój tydzień nauki (zaznacz ✔)</h3>
+      <table class="wtab"><thead>${dh}</thead><tbody>${dr}</tbody></table>
+      <div class="tip">👨‍👩‍👧 <b>Dla rodzica:</b> Codziennie poświęćcie 5–10 minut. Poproś dziecko, by przeczytało słówko po polsku i powiedziało po angielsku (i odwrotnie). Pochwal za każdy dzień! Powtórki w aplikacji 🦉 Sowie Fiszki utrwalają materiał najlepiej.</div>
+      <div class="wsfields" style="margin-top:16px"><div class="f"><label>Podpis rodzica</label>&nbsp;</div><div class="f"><label>Liczba dni nauki w tygodniu</label>&nbsp;</div></div>`;
+    const css=`table.wtab{width:100%;border-collapse:collapse;font-size:.85rem;margin-bottom:4px}
+      table.wtab th,table.wtab td{border:1px solid #aaa;padding:6px 8px;text-align:left}
+      table.wtab th{background:#eee;font-size:.7rem;text-transform:uppercase;color:#444}
+      table.wtab td.n{width:30px;text-align:center;color:#888}
+      table.wtab td.chk{text-align:center;font-size:1.1rem;width:42px}
+      table.wtab td.al{font-weight:600}`;
+    return {html: wsPage('Karta domowa na tydzień — '+title, 'Karta pracy dla rodzica · '+wsDate(), body, css)};
+  }
+
   window.generateWorksheet = function(){
     const bookId = document.getElementById('wsBook').value;
     const unitKey = document.getElementById('wsUnit').value;
@@ -24576,6 +24759,16 @@ if ('serviceWorker' in navigator) {
     }
 
     if (!words.length) { msg.style.color='var(--danger)'; msg.textContent='⚠️ Unit nie zawiera słów.'; return; }
+
+    // Nowe typy kart pracy (Bingo/Domino/Koło/Labirynt/Książeczka/Karta domowa)
+    const WS_CUSTOM = { bingo: wsBingo, domino: wsDomino, wheel: wsWheel, maze: wsMaze, minibook: wsMiniBook, weekly: wsWeekly };
+    if (WS_CUSTOM[variant]) {
+      const res = WS_CUSTOM[variant](book, unitLabel, words);
+      if (res.error) { msg.style.color='var(--danger)'; msg.textContent = res.error; return; }
+      const w = window.open('', '_blank');
+      if (!w) { msg.style.color='var(--danger)'; msg.textContent='⚠️ Popup zablokowany przez przeglądarkę — zezwól na otwieranie okien.'; return; }
+      w.document.write(res.html); w.document.close(); closeWorksheetModal(); return;
+    }
 
     // Wariant "Zdania z lukami" — zastepuje slowo anglojezyczne w zdaniu przykladowym ______
     // Zbiera wiersze do osobnej listy, a nie tabeli. Dalej renderujemy dedykowany HTML.
