@@ -4311,6 +4311,7 @@ szkoła	school"></textarea>
       <option value="maze">🧩 Labirynt słowny</option>
       <option value="minibook">📕 Mini-książeczka</option>
       <option value="weekly">📅 Karta domowa na tydzień</option>
+      <option value="bookmark">🔖 Zakładka do książki</option>
     </select>
 
     <div id="wsMsg" style="font-size:.72rem;color:var(--muted);margin-bottom:6px;min-height:16px;font-weight:600"></div>
@@ -24727,6 +24728,34 @@ if ('serviceWorker' in navigator) {
     return {html: wsPage('Karta domowa na tydzień — '+title, 'Karta pracy dla rodzica · '+wsDate(), body, css)};
   }
 
+  function wsBookmark(book, unitLabel, words){
+    let pairs=wsPairs(words);
+    if(!pairs.length) return {error:'⚠️ Brak słów.'};
+    const PER=12, chunks=[];
+    for(let i=0;i<pairs.length;i+=PER) chunks.push(pairs.slice(i,i+PER));
+    let strips=chunks.slice();
+    while(strips.length<4 && chunks.length) strips=strips.concat(chunks);
+    strips=strips.slice(0,8);
+    const title=wsHead(book,unitLabel);
+    const bm=strips.map(chunk=>{
+      const list=chunk.map(p=>`<div class="bmw"><span class="bme">${p.emoji||'•'}</span><span class="bmt"><b>${escHtmlWs(p.en)}</b><i>${escHtmlWs(p.pl)}</i></span></div>`).join('');
+      return `<div class="bm"><div class="bmhole"></div><div class="bmhd">🦉 Sowie Fiszki</div><div class="bmunit">${escHtmlWs(unitLabel)}</div><div class="bmlist">${list}</div><div class="bmname">Imię: ________</div></div>`;
+    }).join('');
+    const body=`<div class="tip">🔖 <b>Jak zrobić:</b> Wytnij zakładki wzdłuż przerywanych linii. (Opcjonalnie: zrób dziurkę u góry i przewlecz wstążkę.) Trzymaj swoje słówka zawsze w książce!</div>
+      <div class="bmrow">${bm}</div>`;
+    const css=`.bmrow{display:flex;flex-wrap:wrap;gap:14px}
+      .bm{width:168px;min-height:540px;border:2px dashed #333;border-radius:14px 14px 8px 8px;padding:10px 10px 12px;display:flex;flex-direction:column;align-items:center;text-align:center;break-inside:avoid;background:linear-gradient(180deg,#f3e9ff 0%,#fff 22%)}
+      .bmhole{width:14px;height:14px;border:2px solid #777;border-radius:50%;margin:2px 0 6px}
+      .bmhd{font-weight:800;color:#7c3aed;font-size:.82rem}
+      .bmunit{font-size:.66rem;color:#666;margin-bottom:8px;border-bottom:1px solid #ddd;padding-bottom:6px;width:100%}
+      .bmlist{display:flex;flex-direction:column;gap:5px;width:100%;flex:1}
+      .bmw{display:flex;align-items:center;gap:5px;text-align:left;line-height:1.15}
+      .bme{font-size:.95rem;min-width:18px;text-align:center}
+      .bmt{display:flex;flex-direction:column}.bmt b{font-size:.74rem}.bmt i{color:#888;font-size:.64rem;font-style:normal}
+      .bmname{font-size:.62rem;color:#aaa;margin-top:6px;width:100%}`;
+    return {html: wsPage('Zakładka do książki — '+title, 'Karta pracy · wytnij zakładki · '+wsDate(), body, css)};
+  }
+
   window.generateWorksheet = function(){
     const bookId = document.getElementById('wsBook').value;
     const unitKey = document.getElementById('wsUnit').value;
@@ -24761,7 +24790,7 @@ if ('serviceWorker' in navigator) {
     if (!words.length) { msg.style.color='var(--danger)'; msg.textContent='⚠️ Unit nie zawiera słów.'; return; }
 
     // Nowe typy kart pracy (Bingo/Domino/Koło/Labirynt/Książeczka/Karta domowa)
-    const WS_CUSTOM = { bingo: wsBingo, domino: wsDomino, wheel: wsWheel, maze: wsMaze, minibook: wsMiniBook, weekly: wsWeekly };
+    const WS_CUSTOM = { bingo: wsBingo, domino: wsDomino, wheel: wsWheel, maze: wsMaze, minibook: wsMiniBook, weekly: wsWeekly, bookmark: wsBookmark };
     if (WS_CUSTOM[variant]) {
       const res = WS_CUSTOM[variant](book, unitLabel, words);
       if (res.error) { msg.style.color='var(--danger)'; msg.textContent = res.error; return; }
