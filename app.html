@@ -4312,6 +4312,7 @@ szkoła	school"></textarea>
       <option value="minibook">📕 Mini-książeczka</option>
       <option value="weekly">📅 Karta domowa na tydzień</option>
       <option value="bookmark">🔖 Zakładka do książki</option>
+      <option value="ihave">🔗 Ja mam, kto ma? (łańcuch)</option>
     </select>
 
     <div id="wsMsg" style="font-size:.72rem;color:var(--muted);margin-bottom:6px;min-height:16px;font-weight:600"></div>
@@ -24756,6 +24757,31 @@ if ('serviceWorker' in navigator) {
     return {html: wsPage('Zakładka do książki — '+title, 'Karta pracy · wytnij zakładki · '+wsDate(), body, css)};
   }
 
+  function wsIHave(book, unitLabel, words){
+    let pairs=wsPairs(words);
+    let short=pairs.filter(p=>p.en.split(/\s+/).length<=2 && p.pl.split(/\s+/).length<=2);
+    if(short.length<3) short=pairs;
+    if(short.length<3) return {error:'⚠️ Potrzeba min. 3 słów do gry „Ja mam, kto ma?".'};
+    const chain=wsShuffle(short).slice(0, Math.min(40, short.length));
+    const n=chain.length;
+    let cards='';
+    for(let i=0;i<n;i++){
+      const cur=chain[i].en, nextPl=chain[(i+1)%n].pl;
+      cards+=`<div class="ih"><div class="ihn">${i+1}${i===0?' 🟢':''}</div><div class="ihhave">I've got <b>${escHtmlWs(cur)}</b>.</div><div class="ihwho">Who has <b>${escHtmlWs(nextPl)}</b>?</div></div>`;
+    }
+    const key=chain.map((p,i)=>`${i+1}. ${escHtmlWs(p.en)} → ${escHtmlWs(chain[(i+1)%n].pl)}`).join('  ·  ');
+    const body=`<div class="tip">🔗 <b>Jak grać:</b> Rozdaj karty uczniom. Zaczyna osoba z kartą <b>🟢 nr 1</b> — czyta na głos swoje „<i>Who has…?</i>". Uczeń, który ma pasujące <b>angielskie</b> tłumaczenie po „<i>I've got…</i>", odpowiada i czyta swoje „<i>Who has…?</i>". Gra trwa, aż łańcuch wróci do początku — to <b>zamknięta pętla</b>!</div>
+      <div class="ihgrid">${cards}</div>
+      <div class="pagebreak"></div>
+      <div class="tip">🔑 <b>Klucz (kolejność łańcucha):</b> ${key}</div>`;
+    const css=`.ihgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+      .ih{position:relative;border:2px dashed #333;border-radius:10px;padding:16px 14px 12px;break-inside:avoid;min-height:92px;display:flex;flex-direction:column;justify-content:center;gap:6px}
+      .ihn{position:absolute;top:6px;right:10px;font-size:.72rem;color:#999;font-weight:800}
+      .ihhave{font-size:1.05rem}
+      .ihwho{font-size:1rem;color:#7c3aed;font-weight:600}`;
+    return {html: wsPage('Ja mam, kto ma? — '+wsHead(book,unitLabel), 'Karta pracy · '+n+' kart · '+wsDate(), body, css)};
+  }
+
   window.generateWorksheet = function(){
     const bookId = document.getElementById('wsBook').value;
     const unitKey = document.getElementById('wsUnit').value;
@@ -24790,7 +24816,7 @@ if ('serviceWorker' in navigator) {
     if (!words.length) { msg.style.color='var(--danger)'; msg.textContent='⚠️ Unit nie zawiera słów.'; return; }
 
     // Nowe typy kart pracy (Bingo/Domino/Koło/Labirynt/Książeczka/Karta domowa)
-    const WS_CUSTOM = { bingo: wsBingo, domino: wsDomino, wheel: wsWheel, maze: wsMaze, minibook: wsMiniBook, weekly: wsWeekly, bookmark: wsBookmark };
+    const WS_CUSTOM = { bingo: wsBingo, domino: wsDomino, wheel: wsWheel, maze: wsMaze, minibook: wsMiniBook, weekly: wsWeekly, bookmark: wsBookmark, ihave: wsIHave };
     if (WS_CUSTOM[variant]) {
       const res = WS_CUSTOM[variant](book, unitLabel, words);
       if (res.error) { msg.style.color='var(--danger)'; msg.textContent = res.error; return; }
