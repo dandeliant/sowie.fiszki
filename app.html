@@ -2740,6 +2740,7 @@ body.guest-mode .progress-wrap{opacity:.4;}
     <button class="btn-sm" onclick="printFlashcards()" style="font-size:.68rem">🃏 Fiszki do druku</button>
     <button class="btn-sm" onclick="printScrambleSheet()" style="font-size:.68rem">🔀 Rozsypanka literowa</button>
     <button class="btn-sm" onclick="printSentScrSheet()" style="font-size:.68rem">📜 Rozsypanka zdaniowa</button>
+    <button class="btn-sm accent" onclick="openWorksheetModal(currentBookId, currentUnitKey)" style="font-size:.68rem">🖨️ Karty pracy (więcej)</button>
     <button class="btn-sm" id="btnBulkAudio" onclick="openBulkAudioModal()" style="font-size:.68rem;display:none;background:linear-gradient(135deg,#ff6b6b,#ee5253);color:#fff">🎙️ Nagrania wymowy</button>
   </div>
   <table class="wl-table" id="wlTable">
@@ -24518,14 +24519,19 @@ if ('serviceWorker' in navigator) {
     closeGenericModal();
   };
 
-  window.openWorksheetModal = function(){
-    if (!isCurrentUserAdmin() && !isCurrentUserTeacher()) {
+  window.openWorksheetModal = function(preBook, preUnit){
+    const fromBook = !!preBook;
+    // Z poziomu podręcznika (przekazany preBook) — dostępne dla każdego.
+    // Z panelu nauczyciela (bez argumentu) — tylko nauczyciel/admin.
+    if (!fromBook && !isCurrentUserAdmin() && !isCurrentUserTeacher()) {
       if (typeof toast === 'function') toast('Dostępne tylko dla nauczyciela i administratora.', 2600);
       return;
     }
     const bookSel = document.getElementById('wsBook');
     bookSel.innerHTML = '';
-    const books = wsAvailableBooks().sort((a,b) => a.name.localeCompare(b.name, 'pl'));
+    let books = wsAvailableBooks().sort((a,b) => a.name.localeCompare(b.name, 'pl'));
+    // Wejście z podręcznika: upewnij się, że aktualny podręcznik jest na liście
+    if (fromBook && BOOKS[preBook] && !books.some(b=>b.id===preBook)) books = [BOOKS[preBook]].concat(books);
     if (!books.length) {
       bookSel.innerHTML = '<option value="">— brak dostępnych podręczników —</option>';
     } else {
@@ -24536,8 +24542,16 @@ if ('serviceWorker' in navigator) {
         bookSel.appendChild(opt);
       });
     }
+    if (fromBook && BOOKS[preBook]) bookSel.value = preBook;
     document.getElementById('wsMsg').textContent = '';
     wsUpdateUnits();
+    if (fromBook) {
+      const us = document.getElementById('wsUnit');
+      const hasUnit = BOOKS[preBook] && BOOKS[preBook].units && BOOKS[preBook].units[preUnit];
+      const target = (preUnit && hasUnit) ? preUnit : '__all__';
+      if ([...us.options].some(o=>o.value===target)) us.value = target;
+      wsPopulateWords();
+    }
     document.getElementById('worksheetModal').style.display = 'flex';
   };
 
@@ -24808,8 +24822,6 @@ if ('serviceWorker' in navigator) {
     const wrap=document.getElementById('wsWordSelectWrap');
     const cont=document.getElementById('wsWordChips');
     if(!wrap||!cont) return;
-    const variant=document.getElementById('wsVariant').value;
-    if(variant!=='ihave'){ wrap.style.display='none'; cont.innerHTML=''; _wsWords=[]; return; }
     const book=BOOKS[document.getElementById('wsBook').value];
     const unitKey=document.getElementById('wsUnit').value;
     let words=[];
@@ -24818,6 +24830,7 @@ if ('serviceWorker' in navigator) {
       else if(book.units[unitKey]){ words=(book.units[unitKey].words||[]).slice(); }
     }
     _wsWords = words.filter(w=>(w[0]||'').trim() && (w[1]||'').trim());
+    if(!_wsWords.length){ wrap.style.display='none'; cont.innerHTML=''; return; }
     cont.innerHTML='';
     _wsWords.forEach((w,i)=>{
       const pl=(w[0]||'').trim(), en=(w[1]||'').trim();
@@ -24872,10 +24885,11 @@ if ('serviceWorker' in navigator) {
 
     if (!words.length) { msg.style.color='var(--danger)'; msg.textContent='⚠️ Unit nie zawiera słów.'; return; }
 
-    // „Ja mam, kto ma?" — używa konkretnie zaznaczonych słówek z panelu chipów
-    if (variant === 'ihave') {
+    // Pełna kontrola: jeśli panel wyboru słówek jest aktywny, użyj zaznaczonych
+    // słówek (dla KAŻDEGO wariantu). Domyślnie zaznaczone są pojedyncze słowa.
+    if (_wsWords && _wsWords.length) {
       const sel = wsSelectedWords();
-      if (sel.length < 3) { msg.style.color='var(--danger)'; msg.textContent='⚠️ Zaznacz min. 3 słówka do gry „Ja mam, kto ma?".'; return; }
+      if (!sel.length) { msg.style.color='var(--danger)'; msg.textContent='⚠️ Zaznacz przynajmniej jedno słówko.'; return; }
       words = sel;
     }
 
