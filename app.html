@@ -1870,10 +1870,8 @@ body.guest-mode .progress-wrap{opacity:.4;}
     <span class="cw-row-label" style="color:var(--blue)">📚 Słownik obrazkowy:</span>
     <div class="cw-row-btns" id="speakItRowBtns"></div>
   </div>
-  <div class="cw-row" id="wkRow" style="border-color:rgba(124,58,237,.35);background:linear-gradient(135deg,rgba(124,58,237,.06),rgba(255,107,157,.05))">
-    <span class="cw-row-label" style="color:var(--accent)">🖨️ Karty pracy (Bingo, Domino, Koło, Labirynt, Zakładka, „Ja mam, kto ma?"…):</span>
-    <div class="cw-row-btns" id="wkRowBtns"></div>
-  </div>
+  <!-- Karty pracy do druku — osobny rządek na każdy typ (wypełniane przez refreshGrid) -->
+  <div id="wkRowsWrap"></div>
 
   <!-- ════ BLOK 2: NA LEKCJI — aktywności klasowe ════ -->
   <div style="width:100%;font-size:.62rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin:18px 4px 6px;display:flex;align-items:center;gap:8px">
@@ -5726,19 +5724,50 @@ function refreshGrid() {
     });
   }
 
-  // Karty pracy do druku (Bingo/Domino/Koło/Labirynt/Zakładka/„Ja mam kto ma"/…)
-  // -> modal generatora z podglądem na żywo + wyborem słów (preselekcja book+unit).
-  const wkBtns = document.getElementById('wkRowBtns');
-  if (wkBtns) {
-    wkBtns.innerHTML = '';
-    ['all', ...Object.keys(book.units)].forEach(k => {
-      const u = units[k];
-      const btn = document.createElement('button');
-      btn.className = 'btn-cw';
-      btn.style.cssText = 'border-color:rgba(124,58,237,.4);color:var(--accent);';
-      btn.textContent = u.icon + ' ' + u.name;
-      btn.addEventListener('click', () => openWorksheetModal(book.id, k));
-      wkBtns.appendChild(btn);
+  // Karty pracy do druku — OSOBNY rządek na każdy typ (jak krzyżówka/wordsearch).
+  // Każdy przycisk per unit otwiera generator preselektowany na book+unit+wariant
+  // (z podglądem na żywo i wyborem słów).
+  const wkWrap = document.getElementById('wkRowsWrap');
+  if (wkWrap) {
+    const WK_VARIANTS = [
+      ['full','📋','Lista z odpowiedziami'],
+      ['blank_en','✏️','Wpisz angielski (uczeń widzi PL)'],
+      ['blank_pl','✏️','Wpisz polski (uczeń widzi EN)'],
+      ['mixed','🎲','Pomieszana'],
+      ['gap_sentences','📝','Zdania z lukami 🔒'],
+      ['bingo','🎲','Bingo'],
+      ['domino','🁢','Domino'],
+      ['wheel','🎡','Koło fortuny'],
+      ['maze','🧩','Labirynt słowny'],
+      ['minibook','📕','Mini-książeczka'],
+      ['weekly','📅','Karta domowa na tydzień'],
+      ['bookmark','🔖','Zakładka do książki'],
+      ['ihave','🔗','Ja mam, kto ma?']
+    ];
+    const wkUnitKeys = ['all', ...Object.keys(book.units)];
+    wkWrap.innerHTML = '';
+    WK_VARIANTS.forEach(([variant, icon, label]) => {
+      const row = document.createElement('div');
+      row.className = 'cw-row';
+      row.style.borderColor = 'rgba(124,58,237,.22)';
+      const lbl = document.createElement('span');
+      lbl.className = 'cw-row-label';
+      lbl.style.color = 'var(--accent)';
+      lbl.textContent = icon + ' ' + label + ':';
+      const btns = document.createElement('div');
+      btns.className = 'cw-row-btns';
+      wkUnitKeys.forEach(k => {
+        const u = units[k];
+        const btn = document.createElement('button');
+        btn.className = 'btn-cw';
+        btn.style.cssText = 'border-color:rgba(124,58,237,.4);color:var(--accent);';
+        btn.textContent = u.icon + ' ' + u.name;
+        btn.addEventListener('click', () => openWorksheetModal(book.id, k, variant));
+        btns.appendChild(btn);
+      });
+      row.appendChild(lbl);
+      row.appendChild(btns);
+      wkWrap.appendChild(row);
     });
   }
 
@@ -24538,7 +24567,7 @@ if ('serviceWorker' in navigator) {
     closeGenericModal();
   };
 
-  window.openWorksheetModal = function(preBook, preUnit){
+  window.openWorksheetModal = function(preBook, preUnit, preVariant){
     const fromBook = !!preBook;
     // Z poziomu podręcznika (przekazany preBook) — dostępne dla każdego.
     // Z panelu nauczyciela (bez argumentu) — tylko nauczyciel/admin.
@@ -24569,6 +24598,10 @@ if ('serviceWorker' in navigator) {
       const hasUnit = BOOKS[preBook] && BOOKS[preBook].units && BOOKS[preBook].units[preUnit];
       const target = (preUnit && hasUnit) ? preUnit : '__all__';
       if ([...us.options].some(o=>o.value===target)) us.value = target;
+      if (preVariant) {
+        const vs = document.getElementById('wsVariant');
+        if ([...vs.options].some(o=>o.value===preVariant)) vs.value = preVariant;
+      }
       wsPopulateWords();
     }
     document.getElementById('worksheetModal').style.display = 'flex';
