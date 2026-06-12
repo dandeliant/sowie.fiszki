@@ -12,7 +12,7 @@
 - **Hosting:** Vercel → **https://sowiefiszki.com** (custom domain, od 29.04.2026; wcześniej GitHub Pages)
 - **Backend:** Supabase (auth + Postgres + RLS), projekt `kofenaaeleyhwhbkytcz`
 - **Charakter:** osoba fizyczna prowadząca Platformę; **model freemium** (30-dniowy trial Premium → Free / Premium po opłacie). Wcześniej projekt był non-commercial — od ~2026-04-29 przygotowywany do monetyzacji.
-- **Service Worker:** aktualnie `v1.43` (stan na 20 maja 2026). Format `vMAJOR.MINOR` z zerem wiodącym, od `v1.00` (zresetowane od maja 2026 dla porządku; wcześniej luźna numeracja `v50`–`v233`).
+- **Service Worker:** aktualnie `v1.001`. Format `vMAJOR.NNN` (3-cyfrowy minor z zerami wiodącymi), kolejne wersje: `v1.001` → `v1.002` → `v1.003` … `v1.999` → `v2.000`. **Numeracja zresetowana do `v1.001`** (wcześniej `vMAJOR.MINOR` 2-cyfrowy doszedł do `v2.02`; jeszcze wcześniej luźna `v50`–`v233`).
 - **Statystyki platformy (admin)**: kafelek „📈 Statystyki platformy" w `teacher.html` (admin only) → `app.html?go=stats` → modal z dashboardem. `DB.loadAdminStats()` agreguje: konta per rola (total/active30/active7/new30/new7), DAU/WAU/MAU z `daily_xp_log`, stickiness DAU/MAU, top 10 podręczników z `user_books`, klasy/uczniowie/teacher_sets/book_notes/dialogs/customAudio/conversations/contactMessages/unit_progress. Sekcja „📰 Dla mediów i wydawnictw" z gotowymi liczbami. Przycisk „📋 Skopiuj jako tekst" — formatowany dump do schowka, gotowy do wklejenia w mailu do mediów.
 - **SEO:** `sitemap.xml` (5 publicznych URL-i: `/`, `/faq`, `/regulamin`, `/polityka`, `/aktualnosci.html`), `robots.txt` (allow publicznych, disallow `app/teacher/words/login/index/play` + skrypty, sitemap-link), `og-image.svg` (1200×630 — Facebook/LinkedIn/Twitter Cards), JSON-LD w `home.html` (Organization + WebSite + WebApplication + FAQPage). Każda publiczna strona (home/faq/regulamin/polityka/aktualnosci) ma: canonical, OG (title/description/image/locale/site_name/dimensions), Twitter Cards, robots meta. `vercel.json`: 301 redirect (`/` → `/home.html` `permanent: true` dla konsolidacji page rank), security headers (X-Content-Type-Options, Referrer-Policy, Permissions-Policy bez FLoC/Topics, X-Frame-Options), long cache (1 rok immutable) dla SVG/PNG/fonts.
 - **Promocja Premium:** **wszyscy zalogowani użytkownicy mają Premium za darmo do 31.08.2026** (override po stronie kodu w `db.js isPremium()` — `isPromoActive()` zwraca `true` gdy `Date.now() < 2026-09-01 00:00`). Po 1.09.2026 promocja samoczynnie wygasa — wraca normalna logika: nowi użytkownicy mają 30-dniowy trial gratis, reszta przechodzi na Free.
@@ -185,7 +185,7 @@ Krzyżówka · Wordsearch · Memory · Snake (Wąż wyrazowy) · Hangman · Rozs
 - **Nigdy nie używaj `--amend`** ani `git push --force` bez wyraźnej zgody.
 
 ### Deploy — bump Service Worker
-- **Po każdej zauważalnej zmianie** w `app.html`, `data.js`, `db.js`, `index.html` zbumpuj `CACHE_NAME` w `sw.js`. Format: `vMAJOR.MINOR` z zerem wiodącym, np. `v1.00` → `v1.01` → `v1.02` … `v1.99` → `v2.00`. (Wcześniej była luźna numeracja `v50`–`v233` — zresetowane do `v1.00` od maja 2026 dla porządku.)
+- **Po każdej zauważalnej zmianie** w `app.html`, `data.js`, `db.js`, `index.html` zbumpuj `CACHE_NAME` w `sw.js`. Format: `vMAJOR.NNN` (3-cyfrowy minor z zerami wiodącymi), np. `v1.001` → `v1.002` → `v1.003` … `v1.999` → `v2.000`. (Numeracja zresetowana do `v1.001`; wcześniej 2-cyfrowy `vMAJOR.MINOR` doszedł do `v2.02`.)
 - Bez bumpa: przeglądarka nie wykryje nowej wersji → baner nie pojawi się u użytkowników.
 - Mechanizm: user dostaje baner „Nowa wersja dostępna. Kliknij OK, aby odświeżyć." → klik → `postMessage SKIP_WAITING` → `controllerchange` → `location.reload()`.
 
@@ -241,7 +241,7 @@ Krzyżówka · Wordsearch · Memory · Snake (Wąż wyrazowy) · Hangman · Rozs
 - Przy zmianach w `app.html` (widocznych w preview): informuj że „`app.html` jest widoczny w panelu Launch preview".
 - Przy niejasnościach pytaj przez `AskUserQuestion` zamiast zgadywać.
 
-## 📋 Status funkcji (stan na 20 maja 2026, SW v1.43)
+## 📋 Status funkcji (SW v1.001 — numeracja zresetowana z v2.02)
 
 ✅ Działa:
 - Logowanie/rejestracja z Supabase Auth (3 role: Uczeń / Nauczyciel / Rodzic-Opiekun)
