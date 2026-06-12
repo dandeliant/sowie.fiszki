@@ -4300,7 +4300,7 @@ szkoła	school"></textarea>
     <select id="wsUnit" onchange="wsPopulateWords()" style="width:100%;padding:9px 11px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.85rem;font-weight:600;outline:none;margin-bottom:10px;font-family:inherit"></select>
 
     <label style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px">Wariant karty pracy</label>
-    <select id="wsVariant" onchange="wsPopulateWords()" style="width:100%;padding:9px 11px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.85rem;font-weight:600;outline:none;margin-bottom:10px;font-family:inherit">
+    <select id="wsVariant" style="width:100%;padding:9px 11px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.85rem;font-weight:600;outline:none;margin-bottom:10px;font-family:inherit">
       <option value="full">📋 Z odpowiedziami (do nauki)</option>
       <option value="blank_en">✏️ Pusta — wpisz angielski (uczeń widzi PL)</option>
       <option value="blank_pl">✏️ Pusta — wpisz polski (uczeń widzi EN)</option>
@@ -24815,6 +24815,7 @@ if ('serviceWorker' in navigator) {
   // Wybór konkretnych słówek (panel chipów, jak w krzyżówce/wordsearch).
   // UWAGA: id-y MUSZA byc inne niz wordsearcha (ws*) -> uzywamy wk* (worksheet/karty).
   let _wsWords = [];
+  let _wsKey = '';   // book|unit — by nie przebudowywac (i nie kasowac zaznaczen) gdy kontekst sie nie zmienil
   function wkUpdateCount(){
     const all=document.querySelectorAll('#wkWordChips .cw-word-chip').length;
     const sel=document.querySelectorAll('#wkWordChips .cw-word-chip.selected').length;
@@ -24825,16 +24826,21 @@ if ('serviceWorker' in navigator) {
     const wrap=document.getElementById('wsWordSelectWrap');
     const cont=document.getElementById('wkWordChips');
     if(!wrap||!cont) return;
-    const book=BOOKS[document.getElementById('wsBook').value];
+    const bookId=document.getElementById('wsBook').value;
     const unitKey=document.getElementById('wsUnit').value;
+    const key=bookId+'|'+unitKey;
+    const book=BOOKS[bookId];
     let words=[];
     if(book && book.units){
       if(unitKey==='__all__'||!unitKey){ Object.values(book.units).forEach(u=>{ if(Array.isArray(u.words)) words=words.concat(u.words); }); }
       else if(book.units[unitKey]){ words=(book.units[unitKey].words||[]).slice(); }
     }
     _wsWords = words.filter(w=>(w[0]||'').trim() && (w[1]||'').trim());
+    if(!_wsWords.length){ wrap.style.display='none'; cont.innerHTML=''; _wsKey=key; return; }
+    // Ten sam podrecznik+unit i chipy juz sa -> NIE przebudowuj (zachowaj zaznaczenia)
+    if(key===_wsKey && cont.children.length){ wrap.style.display='block'; return; }
+    _wsKey=key;
     cont.innerHTML='';
-    if(!_wsWords.length){ wrap.style.display='none'; return; }
     _wsWords.forEach((w,i)=>{
       const pl=(w[0]||'').trim(), en=(w[1]||'').trim();
       const single = !/\s/.test(en); // pojedyncze slowo (jak w krzyzowce) = brak spacji w EN
