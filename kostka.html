@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Kostka do gry · Sowie Fiszki</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  :root{
+    --bg1:#6d5dfc; --bg2:#8b7cff; --accent:#ffd166;
+  }
+  body{
+    font-family:'Nunito','Segoe UI',system-ui,sans-serif;
+    min-height:100vh;
+    background:linear-gradient(135deg,var(--bg1),var(--bg2));
+    color:#fff;
+    display:flex; flex-direction:column; align-items:center;
+    overflow-x:hidden;
+  }
+
+  .back-link{
+    display:inline-block;
+    margin:14px 0 4px;
+    color:#fff; text-decoration:none;
+    background:rgba(255,255,255,.16);
+    padding:8px 16px; border-radius:999px;
+    font-weight:700; font-size:.95rem;
+    transition:background .2s;
+  }
+  .back-link:hover{ background:rgba(255,255,255,.28); }
+
+  h1{
+    font-size:2rem; font-weight:900; margin:8px 0 2px;
+    text-shadow:0 3px 10px rgba(0,0,0,.18);
+    text-align:center;
+  }
+  .sub{ opacity:.9; font-size:1rem; margin-bottom:6px; text-align:center; }
+
+  /* Liczba kostek */
+  .controls{
+    display:flex; gap:8px; flex-wrap:wrap; justify-content:center;
+    margin:10px 0 4px;
+  }
+  .pill{
+    background:rgba(255,255,255,.16);
+    border:2px solid transparent;
+    color:#fff; font-weight:800; font-size:1rem;
+    padding:8px 16px; border-radius:999px; cursor:pointer;
+    transition:all .18s;
+  }
+  .pill:hover{ background:rgba(255,255,255,.28); }
+  .pill.active{ background:#fff; color:var(--bg1); border-color:var(--accent); }
+
+  .stage{
+    flex:1;
+    display:flex; flex-wrap:wrap; gap:70px;
+    align-items:center; justify-content:center;
+    width:100%;
+    padding:60px 16px 30px;
+    perspective:650px;
+    perspective-origin:50% 28%;
+    min-height:320px;
+  }
+
+  .scene{
+    width:140px; height:140px;
+    perspective:650px;
+    perspective-origin:50% 28%;
+    position:relative;
+  }
+
+  /* Cień rzucany na "podłogę" — kotwiczy bryłę w przestrzeni */
+  .scene::after{
+    content:'';
+    position:absolute;
+    left:50%; bottom:-34px;
+    width:130px; height:34px;
+    transform:translateX(-50%);
+    background:radial-gradient(ellipse at center, rgba(0,0,0,.42), rgba(0,0,0,0) 70%);
+    filter:blur(2px);
+    z-index:-1;
+  }
+
+  .cube{
+    width:140px; height:140px;
+    position:relative;
+    transform-style:preserve-3d;
+    transform:rotateX(-26deg) rotateY(-34deg);
+    transition:transform 1.2s cubic-bezier(.18,.85,.25,1.15);
+    cursor:pointer;
+  }
+
+  .face{
+    position:absolute;
+    width:140px; height:140px;
+    background:#fffdf7;
+    border-radius:20px;
+    box-shadow:inset 0 0 0 2px rgba(0,0,0,.06), inset 0 0 22px rgba(0,0,0,.05);
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    grid-template-rows:repeat(3,1fr);
+    padding:18px;
+    gap:4px;
+    backface-visibility:hidden;
+  }
+  .dot{
+    width:26px; height:26px; border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, #5a5a5a, #111);
+    align-self:center; justify-self:center;
+    box-shadow:inset 0 2px 3px rgba(255,255,255,.4), inset 0 -2px 3px rgba(0,0,0,.5);
+  }
+
+  /* Pozycje oczek w siatce 3x3 */
+  .p1{ grid-area:1/1; } .p2{ grid-area:1/2; } .p3{ grid-area:1/3; }
+  .p4{ grid-area:2/1; } .p5{ grid-area:2/2; } .p6{ grid-area:2/3; }
+  .p7{ grid-area:3/1; } .p8{ grid-area:3/2; } .p9{ grid-area:3/3; }
+
+  /* Geometria kostki — przeciwległe ściany sumują się do 7 (połowa boku = 70px) */
+  .front  { transform:rotateY(0deg)    translateZ(70px); } /* 1 */
+  .back   { transform:rotateY(180deg)  translateZ(70px); } /* 6 */
+  .right  { transform:rotateY(90deg)   translateZ(70px); } /* 3 */
+  .left   { transform:rotateY(-90deg)  translateZ(70px); } /* 4 */
+  .top    { transform:rotateX(90deg)   translateZ(70px); } /* 2 */
+  .bottom { transform:rotateX(-90deg)  translateZ(70px); } /* 5 */
+
+  /* Cieniowanie ścian — symulacja światła z góry, daje wrażenie bryły 3D */
+  .top    { background:linear-gradient(160deg,#ffffff,#fdf8ec); }
+  .front  { background:linear-gradient(160deg,#fbf3e2,#efe2c8); }
+  .right   { background:linear-gradient(160deg,#efe1c4,#d9c79e); }
+  .left    { background:linear-gradient(160deg,#efe1c4,#d9c79e); }
+  .bottom { background:linear-gradient(160deg,#e7d8b6,#cdb985); }
+  .back   { background:linear-gradient(160deg,#e7d8b6,#cdb985); }
+
+  /* UWAGA: nie używać filter/opacity na .cube — spłaszcza bryłę preserve-3d
+     podczas animacji. Efekt "potoczenia" robimy wyłącznie transformacją. */
+  .cube.rolling .face{ animation:facePulse .55s ease; }
+  @keyframes facePulse{
+    0%,100%{ box-shadow:inset 0 0 0 2px rgba(0,0,0,.06), inset 0 0 22px rgba(0,0,0,.05); }
+    50%{ box-shadow:inset 0 0 0 2px rgba(0,0,0,.06), inset 0 0 30px rgba(255,255,255,.4); }
+  }
+
+  .result{
+    font-size:1.6rem; font-weight:900;
+    min-height:2rem; margin:6px 0 2px;
+    text-shadow:0 2px 8px rgba(0,0,0,.18);
+    text-align:center;
+  }
+
+  .roll-btn{
+    margin:10px 0 4px;
+    background:var(--accent); color:#5a3d00;
+    border:none; font-weight:900; font-size:1.25rem;
+    padding:14px 40px; border-radius:999px; cursor:pointer;
+    box-shadow:0 6px 0 #d9a800, 0 10px 20px rgba(0,0,0,.2);
+    transition:transform .1s, box-shadow .1s;
+  }
+  .roll-btn:active{ transform:translateY(4px); box-shadow:0 2px 0 #d9a800, 0 6px 12px rgba(0,0,0,.2); }
+  .roll-btn:disabled{ opacity:.6; cursor:default; }
+
+  .hint{ opacity:.85; font-size:.92rem; margin:4px 0 14px; text-align:center; }
+
+  /* ── modal „Jak grać?" ── */
+  .htp-btn{
+    position:fixed; top:14px; right:14px; z-index:50;
+    background:rgba(255,255,255,.2); color:#fff;
+    border:none; border-radius:999px; padding:9px 15px;
+    font-weight:800; font-size:.95rem; cursor:pointer;
+    backdrop-filter:blur(4px);
+  }
+  .htp-btn:hover{ background:rgba(255,255,255,.32); }
+  .htp-modal{
+    position:fixed; inset:0; z-index:100;
+    background:rgba(0,0,0,.55);
+    display:none; align-items:center; justify-content:center;
+    padding:18px;
+  }
+  .htp-modal.open{ display:flex; }
+  .htp-box{
+    background:#fff; color:#2c2c40;
+    border-radius:20px; padding:26px 24px;
+    max-width:440px; width:100%;
+    box-shadow:0 20px 50px rgba(0,0,0,.3);
+    max-height:85vh; overflow:auto;
+  }
+  .htp-box h2{ font-size:1.4rem; margin-bottom:12px; color:var(--bg1); }
+  .htp-box ol{ padding-left:20px; line-height:1.7; }
+  .htp-box li{ margin-bottom:7px; }
+  .htp-box .close{
+    margin-top:16px; width:100%;
+    background:var(--bg1); color:#fff; border:none;
+    padding:12px; border-radius:12px; font-weight:800; font-size:1rem; cursor:pointer;
+  }
+
+  footer{
+    margin-top:auto;
+    padding:14px; text-align:center;
+    font-size:.85rem; opacity:.85;
+  }
+  footer a{ color:#fff; }
+
+  @media print{
+    .back-link, .htp-btn, .htp-modal, .controls, .roll-btn, .hint { display:none !important; }
+    body{ background:#fff; color:#000; }
+  }
+</style>
+</head>
+<body>
+
+  <button class="htp-btn" onclick="document.getElementById('htp').classList.add('open')">ℹ️ Jak grać?</button>
+
+  <a href="app.html" class="back-link">← Powrót do Sowie Fiszki</a>
+
+  <h1>🎲 Kostka do gry</h1>
+  <div class="sub">Kliknij kostkę lub przycisk „Rzuć!", aby wylosować liczbę.</div>
+
+  <div class="controls" id="diceCount">
+    <button class="pill active" data-n="1">1 kostka</button>
+    <button class="pill" data-n="2">2 kostki</button>
+    <button class="pill" data-n="3">3 kostki</button>
+  </div>
+
+  <div class="stage" id="stage"></div>
+
+  <div class="result" id="result"></div>
+
+  <button class="roll-btn" id="rollBtn" onclick="rollAll()">🎲 Rzuć!</button>
+  <div class="hint">Możesz też kliknąć dowolną kostkę, aby ją przerzucić.</div>
+
+  <div style="text-align:center;margin:6px 0 14px">
+    <a href="app.html" class="back-link">← Wróć do Sowie Fiszki</a>
+  </div>
+
+  <!-- ── modal „Jak grać?" ── -->
+  <div class="htp-modal" id="htp">
+    <div class="htp-box">
+      <h2>🎲 Jak grać?</h2>
+      <ol>
+        <li>Wybierz liczbę kostek u góry (1, 2 lub 3).</li>
+        <li>Kliknij przycisk <b>„🎲 Rzuć!"</b> — wszystkie kostki się obrócą i wylosują liczby.</li>
+        <li>Możesz też kliknąć <b>pojedynczą kostkę</b>, aby przerzucić tylko ją.</li>
+        <li>Pod kostkami pokaże się wynik (a przy kilku kostkach — także ich suma).</li>
+        <li>Świetne do gier planszowych, losowania zadań, ćwiczeń z liczebnikami i mówienia po angielsku.</li>
+      </ol>
+      <button class="close" onclick="document.getElementById('htp').classList.remove('open')">Zamknij</button>
+    </div>
+  </div>
+
+  <footer>© 2026 Sowie Fiszki</footer>
+
+<script>
+  // Mapa: liczba oczek → obrót kostki tak, by ta ściana była z przodu.
+  // Geometria: front=1, back=6, right=3, left=4, top=2, bottom=5.
+  const SHOW = {
+    1: { x:   0, y:   0 },
+    2: { x: -90, y:   0 },
+    3: { x:   0, y: -90 },
+    4: { x:   0, y:  90 },
+    5: { x:  90, y:   0 },
+    6: { x:   0, y: 180 }
+  };
+
+  // Układ oczek (numery komórek 1-9 siatki 3x3) dla każdej wartości.
+  const PIPS = {
+    1: [5],
+    2: [1, 9],
+    3: [1, 5, 9],
+    4: [1, 3, 7, 9],
+    5: [1, 3, 5, 7, 9],
+    6: [1, 3, 4, 6, 7, 9]
+  };
+
+  function faceHtml(value){
+    const cells = PIPS[value] || [];
+    let dots = '';
+    for (let i = 1; i <= 9; i++){
+      if (cells.includes(i)) dots += `<span class="dot p${i}"></span>`;
+    }
+    return dots;
+  }
+
+  // Stan każdej kostki: aktualny "spin" (akumulowany, by zawsze kręciło naprzód).
+  const dice = [];
+
+  function buildScene(value){
+    const scene = document.createElement('div');
+    scene.className = 'scene';
+    const cube = document.createElement('div');
+    cube.className = 'cube';
+    cube.innerHTML =
+      `<div class="face front">${faceHtml(1)}</div>` +
+      `<div class="face back">${faceHtml(6)}</div>` +
+      `<div class="face right">${faceHtml(3)}</div>` +
+      `<div class="face left">${faceHtml(4)}</div>` +
+      `<div class="face top">${faceHtml(2)}</div>` +
+      `<div class="face bottom">${faceHtml(5)}</div>`;
+    scene.appendChild(cube);
+    const d = { cube, value: value || 1, spinX: 0, spinY: 0 };
+    cube.addEventListener('click', () => rollOne(d));
+    setFace(d, d.value, false);
+    dice.push(d);
+    return scene;
+  }
+
+  function setFace(d, value, animate){
+    d.value = value;
+    const base = SHOW[value];
+    if (animate){
+      // Dodaj pełne obroty, aby kostka "potoczyła się".
+      d.spinX += 360 * (2 + Math.floor(Math.random() * 2));
+      d.spinY += 360 * (2 + Math.floor(Math.random() * 2));
+    }
+    const rx = base.x + d.spinX;
+    const ry = base.y + d.spinY;
+    d.cube.style.transform = `rotateX(${rx}deg) rotateY(${ry}deg)`;
+  }
+
+  function rollOne(d){
+    const v = 1 + Math.floor(Math.random() * 6);
+    d.cube.classList.remove('rolling');
+    void d.cube.offsetWidth;
+    d.cube.classList.add('rolling');
+    setFace(d, v, true);
+    updateResult();
+  }
+
+  function rollAll(){
+    const btn = document.getElementById('rollBtn');
+    btn.disabled = true;
+    dice.forEach(d => rollOne(d));
+    setTimeout(() => { btn.disabled = false; }, 700);
+  }
+
+  function updateResult(){
+    const vals = dice.map(d => d.value);
+    const el = document.getElementById('result');
+    if (vals.length === 1){
+      el.textContent = `Wypadło: ${vals[0]}`;
+    } else {
+      const sum = vals.reduce((a, b) => a + b, 0);
+      el.textContent = `${vals.join(' + ')} = ${sum}`;
+    }
+  }
+
+  function setDiceCount(n){
+    const stage = document.getElementById('stage');
+    dice.length = 0;
+    stage.innerHTML = '';
+    for (let i = 0; i < n; i++){
+      stage.appendChild(buildScene(1 + Math.floor(Math.random() * 6)));
+    }
+    updateResult();
+  }
+
+  document.getElementById('diceCount').addEventListener('click', (e) => {
+    const btn = e.target.closest('.pill');
+    if (!btn) return;
+    document.querySelectorAll('#diceCount .pill').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    setDiceCount(parseInt(btn.dataset.n, 10));
+  });
+
+  // start
+  setDiceCount(1);
+</script>
+<script src="consent.js"></script>
+</body>
+</html>
