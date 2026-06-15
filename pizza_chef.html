@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;700&family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
 <script src="distractors.js"></script>
+<script src="data.js"></script>
 <style>
 :root{
   --wall-1:#fef3c7; --wall-2:#fde68a;
@@ -414,6 +415,37 @@ body{
 .bottom-back{text-align:center;margin:30px 0 16px;}
 .footer{text-align:center;font-size:.7rem;color:var(--muted);font-weight:600;padding:12px;}
 
+/* === TEXT INGREDIENTS (slowka z unitu bez emoji) === */
+.ingr-emoji.word{
+  font-size:.82rem;font-weight:900;line-height:1.05;
+  padding:2px;text-align:center;word-break:break-word;
+  display:flex;align-items:center;justify-content:center;height:100%;
+}
+.pizza-topping.txt{
+  font-size:.7rem;font-weight:900;background:rgba(255,255,255,.92);
+  color:var(--brick-2);border:1.5px solid var(--brick-1);border-radius:8px;
+  padding:1px 5px;white-space:nowrap;
+}
+
+/* === EASY/HARD MODE TOGGLE === */
+.mode-toggle{
+  display:inline-flex;gap:0;border:2px solid var(--border);border-radius:100px;
+  overflow:hidden;background:#fff;margin-top:6px;
+}
+.mode-toggle button{
+  border:none;background:transparent;cursor:pointer;font-family:'Fredoka',sans-serif;
+  font-weight:700;font-size:.8rem;padding:8px 16px;color:var(--muted);transition:all .15s;
+}
+.mode-toggle button.on{background:var(--tomato);color:#fff;}
+.mode-pill{
+  position:absolute;right:8px;top:8px;z-index:10;
+  display:inline-flex;align-items:center;gap:6px;
+  background:rgba(255,251,235,.96);border:1.5px solid var(--border);border-radius:100px;
+  padding:4px;backdrop-filter:blur(8px);box-shadow:0 2px 8px rgba(0,0,0,.25);
+}
+.mode-pill .mode-toggle{margin-top:0;border-width:0;}
+.mode-pill .mode-toggle button{padding:5px 11px;font-size:.72rem;}
+
 @media print{.back-link,.htp-btn,.snd-btn,.bottom-back{display:none!important;}body{background:#fff;}}
 </style>
 </head>
@@ -427,8 +459,8 @@ body{
   <div class="htp-box">
     <h2>🍕 Jak grać w Pizza Chef?</h2>
     <ol>
-      <li>Wybierz <strong>podręcznik</strong> i <strong>unit</strong> ze słówkami.</li>
       <li>Klient mówi po angielsku, np. <em>„I'd like a pizza with cheese, ham and olives"</em>. Słówka pochodzą z Twojego unitu.</li>
+      <li><strong>🔥 Trudny</strong>: słuchasz zamówienia — słowa są ukryte. <strong>💡 Łatwy</strong>: pod pizzą widać listę składników (możesz zmienić tryb w każdej chwili).</li>
       <li>Słuchaj uważnie! Możesz <strong>kliknąć 🔊 Powtórz</strong>, aby usłyszeć zamówienie ponownie.</li>
       <li>Klikaj <strong>składniki</strong> z palety u dołu — będą lądować na pizzy w czasie rzeczywistym.</li>
       <li>Gdy masz wszystkie składniki — klik <strong>🔥 Do pieca!</strong>. Pizza piecze się i wraca gotowa.</li>
@@ -460,6 +492,14 @@ body{
       <div class="cat-card" data-cat="meat" onclick="pickCat(this,'meat')">
         <div class="ico">🥩</div><div class="nm">Mięso i nabiał</div><div class="sub">10 składników</div>
       </div>
+    </div>
+    <label>🎚️ Poziom trudności</label>
+    <div class="mode-toggle" id="setupMode" style="width:100%;justify-content:center">
+      <button type="button" class="on" data-easy="0" onclick="setEasy(false)">🔥 Trudny (słuchaj)</button>
+      <button type="button" data-easy="1" onclick="setEasy(true)">💡 Łatwy (podpowiedzi)</button>
+    </div>
+    <div style="font-size:.72rem;color:var(--muted);margin-top:6px;text-align:center;font-style:italic">
+      Trudny: słuchasz zamówienia. Łatwy: pod pizzą widać listę składników.
     </div>
     <button class="btn-launch" id="launchBtn" onclick="startGame()">🍕 OTWÓRZ PIZZERIĘ</button>
   </div>
@@ -513,6 +553,13 @@ body{
       </div>
 
       <div class="order-checklist" id="orderChecklist"></div>
+
+      <div class="mode-pill">
+        <div class="mode-toggle" id="gameMode">
+          <button type="button" class="on" data-easy="0" onclick="setEasy(false)">🔥 Trudny</button>
+          <button type="button" data-easy="1" onclick="setEasy(true)">💡 Łatwy</button>
+        </div>
+      </div>
 
       <div class="palette">
         <div class="palette-title">🧑‍🍳 Słuchaj zamówienia i klikaj składniki (najedź = podpowiedź)</div>
@@ -696,7 +743,7 @@ const FOOD_VOCAB = {
 /* === STATE === */
 let pool = [];
 let category = 'all';
-let menuItems = [];     // [{pl, en, emoji}, ...] - 8 dostepnych skladnikow
+let menuItems = [];     // [{pl, en, emoji}, ...] - dostepne skladniki
 let currentOrder = [];  // [{pl, en, emoji}, ...] - to co klient chce
 let pizzaItems = [];    // [{pl, en, emoji}, ...] - co dotychczas dodano
 let tips = 0;
@@ -709,6 +756,24 @@ let running = false;
 let busy = false;       // animacja w toku — block clicks
 let currentCustomerEmoji = '👨';
 
+/* Tryb z unitu podrecznika (slowka z data.js) */
+let unitMode = false;
+let unitPool = [];      // [[pl, en, emoji], ...]
+let bookLang = 'en';    // jezyk podrecznika dla TTS
+
+/* Tryb latwy: pokazuje liste skladnikow pod pizza + napis w dymku.
+   Domyslnie TRUDNY (false) — uczen sluchaja zamowienia. */
+let easyMode = false;
+try { if (localStorage.getItem('pc_easy') === '1') easyMode = true; } catch(e) {}
+
+/* Czy ciag znakow to (prawdopodobnie) emoji a nie zdanie/slowo */
+function looksLikeEmoji(s){
+  if (!s) return false;
+  s = String(s).trim();
+  if (!s || s.length > 5 || /\s/.test(s)) return false;
+  return /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}\u{FE0F}\u{2122}\u{2139}]/u.test(s);
+}
+
 /* === SETUP === */
 function pickCat(card, cat){
   document.querySelectorAll('.cat-card').forEach(c => c.classList.remove('active'));
@@ -716,7 +781,23 @@ function pickCat(card, cat){
   category = cat;
 }
 
+/* Przelacz tryb latwy/trudny (dziala tez w trakcie gry) */
+function setEasy(val){
+  easyMode = !!val;
+  try { localStorage.setItem('pc_easy', easyMode ? '1' : '0'); } catch(e) {}
+  document.querySelectorAll('#setupMode button, #gameMode button').forEach(b => {
+    b.classList.toggle('on', (b.dataset.easy === '1') === easyMode);
+  });
+  // Odswiez widok jesli gra w toku
+  if (running) {
+    const sb = document.getElementById('speechBubble');
+    if (sb && sb.style.display !== 'none') showSpeechBubble();
+    updateOrderChecklist();
+  }
+}
+
 function buildPool(){
+  if (unitMode) return unitPool.slice();
   if (category === 'vegetables') return FOOD_VOCAB.vegetables.slice();
   if (category === 'fruits') return FOOD_VOCAB.fruits.slice();
   if (category === 'meat') return FOOD_VOCAB.meat.slice();
@@ -724,10 +805,64 @@ function buildPool(){
   return [...FOOD_VOCAB.vegetables, ...FOOD_VOCAB.fruits, ...FOOD_VOCAB.meat];
 }
 
+/* Wczytaj slowka z unitu podrecznika (URL: ?book=...&unit=...) */
+(function initUnitMode(){
+  if (typeof BOOKS === 'undefined') return;
+  let params;
+  try { params = new URLSearchParams(window.location.search); } catch(e) { return; }
+  const bookParam = params.get('book');
+  const unitParam = params.get('unit');
+  if (!bookParam || !BOOKS[bookParam]) return;
+
+  const book = BOOKS[bookParam];
+  bookLang = book.language || 'en';
+  const words = [];
+  if (!unitParam || unitParam === 'all' || unitParam === '__all__') {
+    Object.values(book.units || {}).forEach(u => (u.words || []).forEach(w => words.push(w)));
+  } else if (book.units?.[unitParam]) {
+    (book.units[unitParam].words || []).forEach(w => words.push(w));
+  } else {
+    Object.values(book.units || {}).forEach(u => (u.words || []).forEach(w => words.push(w)));
+  }
+  // Mapuj na [pl, en, emoji] — emoji tylko gdy w[2] faktycznie nim jest
+  unitPool = words
+    .filter(w => w && w[0] && w[1])
+    .map(w => [w[0], w[1], looksLikeEmoji(w[2]) ? w[2] : '']);
+
+  if (unitPool.length < 3) return; // za malo slowek — zostaw tryb klasyczny
+
+  unitMode = true;
+  // Przekieruj linki powrotu do wlasciwego unitu
+  const backUrl = (unitParam && unitParam !== 'all')
+    ? 'app.html#/book/' + encodeURIComponent(bookParam) + '/' + encodeURIComponent(unitParam)
+    : 'app.html#/book/' + encodeURIComponent(bookParam);
+  document.querySelectorAll('a[href="app.html"]').forEach(a => { a.href = backUrl; });
+
+  // Ukryj wybor menu pizzerii — gramy slowkami z unitu
+  document.addEventListener('DOMContentLoaded', () => {
+    const setup = document.getElementById('setup');
+    if (setup) {
+      const catLabel = setup.querySelector('label');
+      const catGrid = setup.querySelector('.dino-pick');
+      if (catLabel) catLabel.style.display = 'none';
+      if (catGrid) catGrid.style.display = 'none';
+      const sub = setup.querySelector('.subtitle');
+      if (sub) sub.textContent = (book.icon || '📚') + ' ' + book.name + ' · słuchaj i twórz pizzę!';
+    }
+    setEasy(easyMode); // ustaw stan przyciskow
+    // Auto-start
+    setTimeout(() => { try { startGame(); } catch(e) {} }, 250);
+  });
+})();
+
 /* === START GAME === */
 function startGame(){
   pool = buildPool();
-  if (pool.length < 8) { alert('Za mało składników w wybranej kategorii (min. 8).'); return; }
+  const minNeeded = unitMode ? 3 : 8;
+  if (pool.length < minNeeded) {
+    alert(unitMode ? 'Ten unit ma za mało słówek (min. 3).' : 'Za mało składników w wybranej kategorii (min. 8).');
+    return;
+  }
 
   tips = 0; timeLeft = 120; custCount = 0; perfectCount = 0; totalScores = [];
   pizzaItems = []; currentOrder = [];
@@ -765,13 +900,15 @@ function nextCustomer(){
   if (!running) return;
   busy = false;
   pizzaItems = [];
-  // Wybierz losowo 8 menu items z poola
-  const menuShuffled = shuffle([...pool]).slice(0, 8);
+  // Wybierz losowo menu items z poola (do 8, mniej jesli unit ma malo slow)
+  const menuSize = Math.min(8, pool.length);
+  const menuShuffled = shuffle([...pool]).slice(0, menuSize);
   menuItems = menuShuffled.map(w => ({
-    pl: w[0], en: w[1], emoji: w[2] || '🍽️'
+    pl: w[0], en: w[1], emoji: w[2] || ''
   }));
-  // Wybierz 2-4 z menu jako zamowienie
-  const orderCount = 2 + Math.floor(Math.random() * 3); // 2, 3 lub 4
+  // Wybierz 2-4 z menu jako zamowienie (max tyle ile jest w menu)
+  const maxOrder = Math.min(4, menuSize);
+  const orderCount = Math.min(maxOrder, 2 + Math.floor(Math.random() * 3));
   currentOrder = shuffle([...menuItems]).slice(0, orderCount);
   // Customer
   currentCustomerEmoji = CUSTOMER_EMOJIS[Math.floor(Math.random() * CUSTOMER_EMOJIS.length)];
@@ -799,11 +936,13 @@ function nextCustomer(){
 function updateOrderChecklist(){
   const cl = document.getElementById('orderChecklist');
   if (!cl) return;
+  // Tryb TRUDNY: nie pokazuj pod pizza, co ma byc dodane (uczen sluchaja).
+  if (!easyMode) { cl.innerHTML = ''; return; }
   if (!currentOrder || !currentOrder.length) { cl.innerHTML = ''; return; }
   cl.innerHTML = currentOrder.map(o => {
     const done = pizzaItems.some(p => p.en === o.en);
     return '<div class="checklist-item' + (done ? ' done' : '') + '">'
-      + '<span class="emo">' + o.emoji + '</span>'
+      + (o.emoji ? '<span class="emo">' + o.emoji + '</span>' : '')
       + '<span>' + escHtml(o.en) + '</span>'
       + '</div>';
   }).join('');
@@ -827,16 +966,31 @@ function showSpeechBubble(){
     textPl += order.slice(0, -1).map(o => o.pl).join(', ') + ' i ' + order[order.length-1].pl;
   }
   textPl += '.';
-  // Wstaw do dymka — angielskie slowa podswietlone
-  let html = "I'd like a pizza with ";
-  if (order.length === 1) html += '<span class="item">' + escHtml(order[0].en) + '</span>';
-  else {
-    html += order.slice(0, -1).map(o => '<span class="item">' + escHtml(o.en) + '</span>').join(', ');
-    html += ' and <span class="item">' + escHtml(order[order.length-1].en) + '</span>';
+  // Wstaw do dymka
+  let html;
+  if (easyMode) {
+    // TRYB LATWY — pokaz angielskie slowa (podswietlone) + podpowiedz PL
+    html = "I'd like a pizza with ";
+    if (order.length === 1) html += '<span class="item">' + escHtml(order[0].en) + '</span>';
+    else {
+      html += order.slice(0, -1).map(o => '<span class="item">' + escHtml(o.en) + '</span>').join(', ');
+      html += ' and <span class="item">' + escHtml(order[order.length-1].en) + '</span>';
+    }
+    html += '.';
+  } else {
+    // TRYB TRUDNY — ukryj slowa (uczen sluchaja), pokaz tylko ile skladnikow
+    html = "I'd like a pizza with ";
+    if (order.length === 1) html += '<span class="item">❓</span>';
+    else {
+      html += order.slice(0, -1).map(() => '<span class="item">❓</span>').join(', ');
+      html += ' and <span class="item">❓</span>';
+    }
+    html += ' &nbsp;🔊';
   }
-  html += '.';
   document.getElementById('speechText').innerHTML = html;
-  document.getElementById('speechPl').textContent = '💭 ' + textPl;
+  const plEl = document.getElementById('speechPl');
+  plEl.textContent = easyMode ? ('💭 ' + textPl) : '';
+  plEl.style.display = easyMode ? '' : 'none';
   const sb = document.getElementById('speechBubble');
   sb.style.display = '';
   sb.dataset.textEn = textEn;
@@ -845,7 +999,7 @@ function showSpeechBubble(){
 function speakOrder(){
   const sb = document.getElementById('speechBubble');
   const txt = sb?.dataset?.textEn;
-  if (txt) speak(txt, 'en-GB', 0.9);
+  if (txt) speak(txt, (bookLang && bookLang !== 'en') ? bookLang : 'en-GB', 0.9);
 }
 
 function replayOrder(){ speakOrder(); }
@@ -877,7 +1031,12 @@ function renderPalette(){
     btn.dataset.idx = i;
     // Tylko emoji — title (tooltip) pokazuje slowo po najechaniu jako pomoc
     btn.title = m.en + ' (' + m.pl + ')';
-    btn.innerHTML = '<div class="ingr-emoji">' + m.emoji + '</div>';
+    if (m.emoji) {
+      btn.innerHTML = '<div class="ingr-emoji">' + m.emoji + '</div>';
+    } else {
+      // Slowko z unitu bez emoji — pokaz angielski wyraz na kafelku
+      btn.innerHTML = '<div class="ingr-emoji word">' + escHtml(m.en) + '</div>';
+    }
     btn.addEventListener('click', () => onIngrClick(btn, i));
     grid.appendChild(btn);
   });
@@ -922,8 +1081,13 @@ function onIngrClick(btn, idx){
 function addToppingToPizza(item){
   const pizzaArea = document.getElementById('pizzaArea');
   const t = document.createElement('div');
-  t.className = 'pizza-topping';
-  t.textContent = item.emoji;
+  if (item.emoji) {
+    t.className = 'pizza-topping';
+    t.textContent = item.emoji;
+  } else {
+    t.className = 'pizza-topping txt';
+    t.textContent = item.en;
+  }
   // Losowa pozycja w obrebie pizzy (ale ograniczona do ~70% promienia)
   const angle = Math.random() * Math.PI * 2;
   const radius = 30 + Math.random() * 50;
@@ -1065,12 +1229,18 @@ function restart(){
 }
 
 function backToSetup(){
-  document.getElementById('end').classList.remove('active');
-  document.getElementById('game').classList.remove('active');
-  document.getElementById('setup').style.display = '';
   if (timerHandle) clearInterval(timerHandle);
   timerHandle = null;
   running = false;
+  // W trybie unitu wracamy do aplikacji (tam wybierze inny unit/podrecznik)
+  if (unitMode) {
+    const back = document.querySelector('a[href^="app.html"]');
+    window.location.href = back ? back.getAttribute('href') : 'app.html';
+    return;
+  }
+  document.getElementById('end').classList.remove('active');
+  document.getElementById('game').classList.remove('active');
+  document.getElementById('setup').style.display = '';
 }
 
 function shuffle(arr){
@@ -1081,6 +1251,9 @@ function shuffle(arr){
   }
   return a;
 }
+
+// Zsynchronizuj przyciski trybu z zapisanym ustawieniem (tryb klasyczny z galerii)
+try { setEasy(easyMode); } catch(e) {}
 </script>
 <script src="consent.js"></script>
 </body>

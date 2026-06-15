@@ -128,7 +128,20 @@ body.live-mode .back-link{display:none;}
   cursor:pointer;text-decoration:none;font-family:inherit;
 }
 
-@media print{.back-link{display:none!important;}body{background:#fff;color:#000;}}
+/* Przełącznik trybu Trudny/Łatwy */
+.mode-toggle{
+  display:inline-flex;gap:0;background:rgba(0,0,0,.28);border:1.5px solid var(--border);
+  border-radius:100px;padding:3px;overflow:hidden;
+}
+.mode-toggle button{
+  appearance:none;border:none;cursor:pointer;font-family:'Nunito',sans-serif;font-weight:800;
+  font-size:.82rem;padding:8px 16px;border-radius:100px;color:var(--muted);background:transparent;
+  transition:all .18s;white-space:nowrap;
+}
+.mode-toggle button.on{background:linear-gradient(135deg,#fbbf24,#f59e0b);color:var(--ink);box-shadow:0 4px 12px rgba(245,158,11,.45);}
+.mode-pill{display:flex;justify-content:center;margin:14px 0 2px;}
+
+@media print{.back-link,.mode-toggle,.mode-pill{display:none!important;}body{background:#fff;color:#000;}}
 </style>
 </head>
 <body>
@@ -139,7 +152,15 @@ body.live-mode .back-link{display:none;}
   <div class="title-card">
     <div class="icon">🦘</div>
     <h1 class="title">Skoczek</h1>
-    <div class="subtitle">Skacz na właściwy kwadrat z poprawnym tłumaczeniem!<br>3 życia · 5 sekund na rundę.</div>
+    <div class="subtitle">Skacz na właściwy kwadrat z poprawnym tłumaczeniem!<br>3 życia · w trybie Trudnym masz 5 sekund na rundę.</div>
+
+    <label>🎚️ Poziom trudności</label>
+    <div class="mode-pill">
+      <div class="mode-toggle" id="skSetupMode">
+        <button type="button" onclick="setHard(true)">🔥 Trudny (na czas)</button>
+        <button type="button" onclick="setHard(false)">💡 Łatwy (bez czasu)</button>
+      </div>
+    </div>
 
     <label for="bookSel">📚 Podręcznik</label>
     <select id="bookSel" onchange="onBookChange()">
@@ -173,9 +194,11 @@ body.live-mode .back-link{display:none;}
     <div style="position:absolute;top:8px;left:10px;z-index:20;display:flex;gap:4px" id="jumpLives">❤️❤️❤️</div>
     <div style="position:absolute;top:8px;right:10px;z-index:20;background:rgba(0,0,0,.5);color:#fff;padding:4px 12px;border-radius:10px;font-size:.75rem;font-weight:800">⭐ <span id="jumpScore">0</span></div>
     <div style="position:absolute;top:34px;left:10px;right:10px;height:6px;background:rgba(0,0,0,.15);border-radius:3px;z-index:20"><div id="jumpTimerBar" style="width:100%;height:100%;background:var(--accent);border-radius:3px;transition:width .1s linear"></div></div>
+    <!-- Podest stoi w miejscu — NIE skacze razem z postacią -->
+    <div class="jump-block" id="jumpGuyPlatform" style="position:absolute;top:96px;left:50%;transform:translateX(-50%);width:90px;padding:8px;pointer-events:none;z-index:14"></div>
+    <!-- Skacze tylko postać (wrap zawiera już tylko ludzika) -->
     <div id="jumpGuyWrap" style="position:absolute;top:50px;left:50%;transform:translateX(-50%);z-index:15;text-align:center;pointer-events:none">
       <div id="jumpGuy" style="font-size:2.8rem;line-height:1;position:relative;top:6px;z-index:2">🧍</div>
-      <div class="jump-block" id="jumpGuyPlatform" style="width:90px;padding:8px;pointer-events:none;position:relative;z-index:1"></div>
     </div>
     <div id="jumpWord" style="position:absolute;bottom:150px;left:50%;transform:translateX(-50%);background:rgba(255,255,255,.95);padding:8px 20px;border-radius:12px;font-size:1rem;font-weight:800;color:#333;z-index:5;box-shadow:0 2px 8px rgba(0,0,0,.12);text-align:center;min-width:140px">Kliknij Start</div>
     <div id="jumpBlocks" style="position:absolute;bottom:30px;left:0;right:0;display:flex;justify-content:space-around;padding:0 12px;z-index:10"></div>
@@ -186,6 +209,13 @@ body.live-mode .back-link{display:none;}
         <div style="font-size:.78rem;color:#ddd;margin-bottom:14px" id="jumpOverlayDesc">Wybierz kwadrat z poprawnym tłumaczeniem</div>
         <button class="btn-start" onclick="jumpStart()" style="font-size:.95rem;padding:10px 24px;width:auto;margin:0">▶ Start</button>
       </div>
+    </div>
+  </div>
+
+  <div class="mode-pill" id="skModeWrap">
+    <div class="mode-toggle" id="skMode">
+      <button type="button" onclick="setHard(true)">🔥 Trudny (na czas)</button>
+      <button type="button" onclick="setHard(false)">💡 Łatwy (bez czasu)</button>
     </div>
   </div>
 
@@ -361,6 +391,34 @@ let jpTimer = null, jpTimeLeft = 5;
 let jpWords = [], jpIdx = 0;
 let jpFloatFrame = null;
 
+// Tryb trudności: true = Trudny (na czas), false = Łatwy (bez czasu). Domyślnie Trudny.
+let hardMode = true;
+try { hardMode = (localStorage.getItem('sk_hard') !== '0'); } catch(e) {}
+
+function setHard(val){
+  hardMode = !!val;
+  try { localStorage.setItem('sk_hard', hardMode ? '1' : '0'); } catch(e) {}
+  // Zsynchronizuj przyciski w obu przełącznikach (setup + w grze)
+  ['skSetupMode','skMode'].forEach(id => {
+    const wrap = document.getElementById(id);
+    if (!wrap) return;
+    const btns = wrap.querySelectorAll('button');
+    if (btns[0]) btns[0].classList.toggle('on', hardMode);
+    if (btns[1]) btns[1].classList.toggle('on', !hardMode);
+  });
+  // Pasek czasu widoczny tylko w trybie Trudnym
+  const bar = document.getElementById('jumpTimerBar');
+  if (bar) {
+    const barRow = bar.parentElement;
+    if (barRow) barRow.style.visibility = hardMode ? 'visible' : 'hidden';
+  }
+  // Jeśli przełączamy w trakcie gry — uruchom/zatrzymaj odliczanie bieżącej rundy
+  if (jpRunning && !jpLocked) {
+    if (hardMode) startRoundTimer();
+    else { clearInterval(jpTimer); }
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════
 //  SETUP — selektor podręcznika i unitu
 // ═══════════════════════════════════════════════════════════════
@@ -446,6 +504,10 @@ function startGameFromSelector(){
   document.getElementById('setupScreen').style.display = 'none';
 
   if (LIVE) {
+    // Tryb Live zawsze na czas (rywalizacja) — wymuś Trudny i ukryj przełącznik
+    setHard(true);
+    const skModeWrap = document.getElementById('skModeWrap');
+    if (skModeWrap) skModeWrap.style.display = 'none';
     document.getElementById('liveBanner').style.display = 'flex';
     document.getElementById('restartBtn').style.display = 'none';
     document.getElementById('backToMenuBtn').style.display = 'none';
@@ -532,9 +594,18 @@ function jpNextRound() {
 
   jpAnimateBlocks();
 
+  startRoundTimer();
+}
+
+function startRoundTimer() {
+  clearInterval(jpTimer);
+  // Tryb Łatwy — brak odliczania, pasek schowany
+  if (!hardMode) {
+    document.getElementById('jumpTimerBar').style.width = '100%';
+    return;
+  }
   jpTimeLeft = 5;
   document.getElementById('jumpTimerBar').style.width = '100%';
-  clearInterval(jpTimer);
   jpTimer = setInterval(() => {
     jpTimeLeft -= 0.1;
     document.getElementById('jumpTimerBar').style.width = Math.max(0, (jpTimeLeft / 5) * 100) + '%';
@@ -690,6 +761,9 @@ function jpGameOver() {
   document.getElementById('restartBtn').style.display = 'inline-block';
   document.getElementById('backToMenuBtn').style.display = 'inline-block';
 }
+
+// Zsynchronizuj przyciski przełącznika trudności na starcie
+try { setHard(hardMode); } catch(e) {}
 </script>
 <script src="consent.js"></script>
 </body>
