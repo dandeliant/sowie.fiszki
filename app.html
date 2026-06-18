@@ -343,6 +343,11 @@ header{width:100%;display:flex;align-items:flex-start;justify-content:space-betw
 .type-result{margin-top:8px;padding:10px 13px;border-radius:11px;font-size:.82rem;font-weight:600;display:none;line-height:1.5;}
 .type-result.ok{background:rgba(6,214,160,.08);border:1.5px solid rgba(6,214,160,.26);color:var(--success);display:block;}
 .type-result.err{background:rgba(255,118,117,.07);border:1.5px solid rgba(255,118,117,.26);color:var(--danger);display:block;}
+/* Podswietlanie literowek w trybach z wpisywaniem (1. proba) */
+.lddiff{font-weight:800;letter-spacing:1px;font-size:1.02rem;}
+.lddiff .ld-ok{color:var(--success);}
+.lddiff .ld-bad{color:var(--danger);text-decoration:underline wavy var(--danger);}
+.lddiff .ld-miss{color:var(--danger);opacity:.6;}
 .type-result .ar{color:var(--text);font-weight:700;}
 .type-speak-wrap{margin-top:7px;display:none;}
 .missing-hint{font-family:'Courier New',monospace;font-size:1.15rem;color:var(--purple);letter-spacing:3px;margin-top:8px;font-weight:700;word-break:break-all;}
@@ -4472,6 +4477,13 @@ const ACHIEVES = [
 // ══════════════════════════════════════════════
 //  STATE
 // ══════════════════════════════════════════════
+// Mechanizm "blad -> czerwone -> wybierz/wpisz jeszcze raz (za mniej punktow)".
+// answerMistake  – czy w aktualnej karcie (Quiz / Speed-nauka) padla juz zla odpowiedz
+// typeAttempts   – liczba blednych prob w trybach z wpisywaniem (Type/Missing/Dyktando)
+let answerMistake = false;
+let typeAttempts = 0;
+let speedRunMistake = false; // Speed Run (gra na czas): czy w aktualnym pytaniu byl blad
+let dqMistake = false;       // Codzienny quiz: czy w aktualnym pytaniu byl blad
 let currentBookId = null;
 let currentUnitKey = 'unit1';
 let activeWords = [], pool = [], ws = {};
@@ -7474,6 +7486,8 @@ function generate() {
 // ══════════════════════════════════════════════
 function renderCard() {
   if (curIdx === null) return;
+  // Nowa karta — wyzeruj liczniki "drugiej szansy"
+  answerMistake = false; typeAttempts = 0;
   const q = getQ(curIdx), a = getA(curIdx);
   hideAreas();
   // Pokaż/ukryj przycisk „✏️ Edytuj" na fiszce (tylko admin/nauczyciel)
@@ -8620,22 +8634,30 @@ function buildQuiz(ci) {
 }
 
 function onQuiz(btn, ok, correct) {
-  if (revealed) return; revealed = true;
+  if (revealed) return;
+  if (!ok) {
+    // Zla odpowiedz: podkresl na czerwono, zablokuj TYLKO ten przycisk,
+    // pozwol klikac dalej. Liczymy blad tylko raz na karte (mniej punktow pozniej).
+    if (btn.classList.contains('wrong')) return;
+    btn.classList.add('wrong'); btn.disabled = true;
+    playBad(); shake('quizArea'); owlR('hard');
+    if (!answerMistake) { loseLife(); trackMissed(); sessErrorCount++; }
+    answerMistake = true;
+    return;
+  }
+  // Poprawna odpowiedz — domknij karte
+  revealed = true;
+  const good = !answerMistake; // bez bledu = Latwe; po bledzie = Trudne (mniej punktow)
   document.querySelectorAll('.quiz-option').forEach(b => {
     b.disabled = true;
     if (b.textContent === correct) b.classList.add('correct');
   });
-  if (ok) {
-    btn.classList.add('correct'); playOk(); bounce('quizArea'); particles(true);
-    owlR('easy'); _recordAnswerLogged(true);
-  } else {
-    btn.classList.add('wrong'); playBad(); shake('quizArea');
-    owlR('hard'); loseLife(); _recordAnswerLogged(false);
-    trackMissed(); sessErrorCount++;
-  }
+  btn.classList.add('correct'); playOk(); bounce('quizArea'); particles(true);
+  owlR(good ? 'easy' : 'hard');
+  _recordAnswerLogged(good);
   document.getElementById('qSpeak').style.display = 'block';
   spkForeign(correct);
-  setTimeout(() => rate(ok ? 'easy' : 'hard'), 1500);
+  setTimeout(() => rate(good ? 'easy' : 'hard'), 1500);
 }
 
 // ══════════════════════════════════════════════
@@ -8645,24 +8667,39 @@ function checkType() {
   if (revealed) return;
   const inp = document.getElementById('tInp'), u = inp.value.trim();
   if (!u) return;
-  revealed = true; inp.disabled = true; document.getElementById('btnChk').disabled = true;
   const cor = getA(curIdx), ok = fuzzy(u, cor);
   const r = document.getElementById('tRes');
   if (ok) {
-    inp.classList.add('correct-inp'); r.className = 'type-result ok';
+    revealed = true; inp.disabled = true; document.getElementById('btnChk').disabled = true;
+    const good = (typeAttempts === 0);
+    inp.classList.remove('wrong-inp'); inp.classList.add('correct-inp');
+    r.className = 'type-result ok';
     r.innerHTML = '✓ Poprawnie! <span class="ar">' + esc(cor) + '</span>';
-    playOk(); bounce('typeArea'); particles(true); owlR('easy');
-    _recordAnswerLogged(true);
-  } else {
-    inp.classList.add('wrong-inp'); r.className = 'type-result err';
-    r.innerHTML = '✗ Odpowiedź: <span class="ar">' + esc(cor) + '</span>';
-    playBad(); shake('typeArea'); owlR('hard');
-    _recordAnswerLogged(false);
-    trackMissed(); sessErrorCount++;
+    playOk(); bounce('typeArea'); particles(true); owlR(good ? 'easy' : 'hard');
+    _recordAnswerLogged(good);
+    document.getElementById('tSpeak').style.display = 'block';
+    spkForeign(cor);
+    setTimeout(() => rate(good ? 'easy' : 'hard'), 1500);
+    return;
   }
-  document.getElementById('tSpeak').style.display = 'block';
-  spkForeign(cor);
-  setTimeout(() => rate(ok ? 'easy' : 'hard'), 1500);
+  // Zle wpisanie
+  typeAttempts++;
+  inp.classList.add('wrong-inp'); playBad(); shake('typeArea');
+  if (typeAttempts >= 2) {
+    // 2. blad — ujawnij poprawna odpowiedz, zakoncz karte (Trudne)
+    revealed = true; inp.disabled = true; document.getElementById('btnChk').disabled = true;
+    owlR('hard'); _recordAnswerLogged(false); trackMissed(); sessErrorCount++;
+    r.className = 'type-result err';
+    r.innerHTML = '✗ Poprawna odpowiedź: <span class="ar">' + esc(cor) + '</span><br>Twoja: ' + letterDiffHtml(u, cor);
+    document.getElementById('tSpeak').style.display = 'block';
+    spkForeign(cor);
+    setTimeout(() => rate('hard'), 1600);
+  } else {
+    // 1. blad — podkresl literki, pozwol wpisac jeszcze raz
+    r.className = 'type-result err';
+    r.innerHTML = '✗ Prawie! Popraw litery i spróbuj jeszcze raz:<br>' + letterDiffHtml(u, cor);
+    setTimeout(() => { inp.focus(); inp.select(); }, 60);
+  }
 }
 
 // ══════════════════════════════════════════════
@@ -8672,23 +8709,34 @@ function checkMissing() {
   if (revealed) return;
   const inp = document.getElementById('missingInp'), u = inp.value.trim();
   if (!u) return;
-  revealed = true; inp.disabled = true; document.getElementById('btnMissChk').disabled = true;
   const cor = getA(curIdx), ok = fuzzy(u, cor);
   const r = document.getElementById('missingRes');
   if (ok) {
-    inp.classList.add('correct-inp'); r.className = 'type-result ok';
+    revealed = true; inp.disabled = true; document.getElementById('btnMissChk').disabled = true;
+    const good = (typeAttempts === 0);
+    inp.classList.remove('wrong-inp'); inp.classList.add('correct-inp');
+    r.className = 'type-result ok';
     r.innerHTML = '✓ Poprawnie! <span class="ar">' + esc(cor) + '</span>';
-    playOk(); bounce('missingArea'); particles(true); owlR('easy');
-    _recordAnswerLogged(true);
-  } else {
-    inp.classList.add('wrong-inp'); r.className = 'type-result err';
-    r.innerHTML = '✗ Odpowiedź: <span class="ar">' + esc(cor) + '</span>';
-    playBad(); shake('missingArea'); owlR('hard');
-    _recordAnswerLogged(false);
-    trackMissed(); sessErrorCount++;
+    playOk(); bounce('missingArea'); particles(true); owlR(good ? 'easy' : 'hard');
+    _recordAnswerLogged(good);
+    spkForeign(cor);
+    setTimeout(() => rate(good ? 'easy' : 'hard'), 1500);
+    return;
   }
-  spkForeign(cor);
-  setTimeout(() => rate(ok ? 'easy' : 'hard'), 1500);
+  typeAttempts++;
+  inp.classList.add('wrong-inp'); playBad(); shake('missingArea');
+  if (typeAttempts >= 2) {
+    revealed = true; inp.disabled = true; document.getElementById('btnMissChk').disabled = true;
+    owlR('hard'); _recordAnswerLogged(false); trackMissed(); sessErrorCount++;
+    r.className = 'type-result err';
+    r.innerHTML = '✗ Poprawna odpowiedź: <span class="ar">' + esc(cor) + '</span><br>Twoja: ' + letterDiffHtml(u, cor);
+    spkForeign(cor);
+    setTimeout(() => rate('hard'), 1600);
+  } else {
+    r.className = 'type-result err';
+    r.innerHTML = '✗ Prawie! Popraw litery i spróbuj jeszcze raz:<br>' + letterDiffHtml(u, cor);
+    setTimeout(() => { inp.focus(); inp.select(); }, 60);
+  }
 }
 
 // ══════════════════════════════════════════════
@@ -8706,24 +8754,35 @@ function checkDictation() {
   if (revealed) return;
   const inp = document.getElementById('dictInp'), u = inp.value.trim();
   if (!u) return;
-  revealed = true; inp.disabled = true; document.getElementById('btnDictChk').disabled = true;
   const cor = activeWords[curIdx][1]; // dyktando zawsze EN
   const ok = fuzzy(u, cor);
   const r = document.getElementById('dictRes');
   if (ok) {
-    inp.classList.add('correct-inp'); r.className = 'type-result ok';
+    revealed = true; inp.disabled = true; document.getElementById('btnDictChk').disabled = true;
+    const good = (typeAttempts === 0);
+    inp.classList.remove('wrong-inp'); inp.classList.add('correct-inp');
+    r.className = 'type-result ok';
     r.innerHTML = '✓ Poprawnie! <span class="ar">' + esc(cor) + '</span>';
-    playOk(); bounce('dictateArea'); particles(true); owlR('easy');
-    _recordAnswerLogged(true);
-  } else {
-    inp.classList.add('wrong-inp'); r.className = 'type-result err';
-    r.innerHTML = '✗ Odpowiedź: <span class="ar">' + esc(cor) + '</span>';
-    playBad(); shake('dictateArea'); owlR('hard');
-    _recordAnswerLogged(false);
-    trackMissed(); sessErrorCount++;
+    playOk(); bounce('dictateArea'); particles(true); owlR(good ? 'easy' : 'hard');
+    _recordAnswerLogged(good);
+    document.getElementById('dictSpeak').style.display = 'block';
+    setTimeout(() => rate(good ? 'easy' : 'hard'), 1500);
+    return;
   }
-  document.getElementById('dictSpeak').style.display = 'block';
-  setTimeout(() => rate(ok ? 'easy' : 'hard'), 1500);
+  typeAttempts++;
+  inp.classList.add('wrong-inp'); playBad(); shake('dictateArea');
+  if (typeAttempts >= 2) {
+    revealed = true; inp.disabled = true; document.getElementById('btnDictChk').disabled = true;
+    owlR('hard'); _recordAnswerLogged(false); trackMissed(); sessErrorCount++;
+    r.className = 'type-result err';
+    r.innerHTML = '✗ Poprawna odpowiedź: <span class="ar">' + esc(cor) + '</span><br>Twoja: ' + letterDiffHtml(u, cor);
+    document.getElementById('dictSpeak').style.display = 'block';
+    setTimeout(() => rate('hard'), 1600);
+  } else {
+    r.className = 'type-result err';
+    r.innerHTML = '✗ Prawie! Posłuchaj jeszcze raz, popraw litery i spróbuj ponownie:<br>' + letterDiffHtml(u, cor);
+    setTimeout(() => { inp.focus(); inp.select(); }, 60);
+  }
 }
 
 // ══════════════════════════════════════════════
@@ -9427,6 +9486,7 @@ function startSpeed() {
 function nextSpeedQuestion() {
   if (!speedActive) return;
   clearInterval(speedTimer);
+  speedRunMistake = false;
   speedTimeLeft = 5;
   document.getElementById('spTimerNum').textContent = speedTimeLeft;
   document.getElementById('spTimerFill').style.width = '100%';
@@ -9472,23 +9532,30 @@ function nextSpeedQuestion() {
 }
 
 function onSpeedAnswer(btn, ok, ans) {
+  if (!ok) {
+    // Zla odpowiedz NIE konczy juz gry: czerwone, zablokuj tylko ten przycisk,
+    // graj dalej. Tylko wyczerpanie czasu konczy gre. Pytanie z bledem nie da punktu.
+    if (btn.classList.contains('wrong')) return;
+    btn.classList.add('wrong'); btn.disabled = true;
+    speedRunMistake = true;
+    playBad();
+    return;
+  }
   clearInterval(speedTimer);
   document.querySelectorAll('#spOpts .quiz-option').forEach(b => {
     b.disabled = true;
     if (b.textContent === ans) b.classList.add('correct');
   });
-  if (ok) {
-    btn.classList.add('correct'); speedScore++;
+  btn.classList.add('correct');
+  // Punkt tylko gdy bez bledu (za "drugie podejscie" — bez punktu, ale gramy dalej)
+  if (!speedRunMistake) {
+    speedScore++;
     document.getElementById('spScore').textContent = speedScore;
-    playOk(); particles(true);
     if (speedScore >= 5) checkAndUnlock('speed_5');
     if (speedScore >= 10) checkAndUnlock('speed_10');
-    setTimeout(nextSpeedQuestion, 800);
-  } else {
-    btn.classList.add('wrong');
-    playBad();
-    setTimeout(endSpeed, 1200);
   }
+  playOk(); particles(true);
+  setTimeout(nextSpeedQuestion, 800);
 }
 
 function endSpeed() {
@@ -9562,38 +9629,46 @@ function renderSpeedCard() {
 }
 
 function onSpeedStudyAnswer(btn, ok, correct) {
-  if (revealed) return; revealed = true;
+  if (revealed) return;
+  if (!ok) {
+    // Zla odpowiedz: czerwone, zablokuj tylko ten przycisk. Timer wciaz tyka —
+    // jak gracz nie zdazy wybrac poprawnej, runda i tak skonczy sie jako Trudne.
+    if (btn.classList.contains('wrong')) return;
+    btn.classList.add('wrong'); btn.disabled = true;
+    playBad(); owlR('hard'); streak = 0;
+    if (!answerMistake) { trackMissed(); sessErrorCount++; }
+    answerMistake = true;
+    const r = document.getElementById('speedStudyRes');
+    r.className = 'type-result err';
+    r.innerHTML = '✗ Pudło — wybierz jeszcze raz! ⏱️';
+    return;
+  }
+  // Poprawna — domknij runde
+  revealed = true;
   clearInterval(studySpeedTimer);
-
+  const good = !answerMistake;
   document.querySelectorAll('#speedStudyOpts .quiz-option').forEach(b => {
     b.disabled = true;
     if (b.textContent === correct) b.classList.add('correct');
   });
-
   const r = document.getElementById('speedStudyRes');
-  if (ok) {
-    btn.classList.add('correct');
+  btn.classList.add('correct');
+  if (good) {
     r.className = 'type-result ok';
     r.innerHTML = '✓ Poprawnie! ⚡ +16 XP';
     studySpeedSessionScore++;
     document.getElementById('studySpScore').textContent = studySpeedSessionScore;
-    playOk(); particles(true); owlR('easy'); streak++;
-    spkForeign(correct);
-    _recordAnswerLogged(true);
+    particles(true); streak++;
     if (studySpeedSessionScore >= 5)  checkAndUnlock('speed_5');
     if (studySpeedSessionScore >= 10) checkAndUnlock('speed_10');
-    // Auto-ocena: Łatwe
-    setTimeout(() => { if (mode === 'speed') rate('easy'); }, 900);
   } else {
-    btn.classList.add('wrong');
-    r.className = 'type-result err';
-    r.innerHTML = '✗ Odpowiedź: <span class="ar">' + esc(correct) + '</span> → Trudne 📌';
-    playBad(); owlR('hard'); streak = 0;
-    trackMissed(); sessErrorCount++;
-    _recordAnswerLogged(false);
-    // Auto-ocena: Trudne
-    setTimeout(() => { if (mode === 'speed') rate('hard'); }, 1400);
+    r.className = 'type-result ok';
+    r.innerHTML = '✓ Dobrze (za drugim razem) → Trudne 📌';
   }
+  playOk(); owlR(good ? 'easy' : 'hard');
+  spkForeign(correct);
+  _recordAnswerLogged(good);
+  setTimeout(() => { if (mode === 'speed') rate(good ? 'easy' : 'hard'); }, good ? 900 : 1200);
 }
 
 // ══════════════════════════════════════════════
@@ -9664,6 +9739,27 @@ window._printFooterHtml = function() {
 function lev(a,b){const m=a.length,n=b.length,dp=Array.from({length:m+1},(_,i)=>Array.from({length:n+1},(_,j)=>i===0?j:j===0?i:0));for(let i=1;i<=m;i++)for(let j=1;j<=n;j++)dp[i][j]=a[i-1]===b[j-1]?dp[i-1][j-1]:1+Math.min(dp[i-1][j],dp[i][j-1],dp[i-1][j-1]);return dp[m][n];}
 function norm(s){return s.toLowerCase().trim().replace(/[.,!?…'"''']/g,'').replace(/\s+/g,' ');}
 function fuzzy(u,c){const un=norm(u),cn=norm(c);if(un===cn)return true;return lev(un,cn)<=Math.max(1,Math.floor(cn.length*.13));}
+// Porownuje wpisany tekst z poprawnym znak po znaku i zwraca HTML, w ktorym
+// litery zgodne sa zielone, a bledne/nadmiarowe — czerwone. Uzywane w trybach
+// z wpisywaniem przy 1. blednej probie ("podkresl konkretne literki").
+function letterDiffHtml(userStr, correctStr) {
+  const u = String(userStr || '');
+  const c = String(correctStr || '');
+  let html = '';
+  const len = Math.max(u.length, c.length);
+  for (let i = 0; i < len; i++) {
+    const uc = u[i], cc = c[i];
+    if (uc === undefined) {
+      // Brakujaca litera (uzytkownik wpisal za krotko) — pokaz blado z poprawnej
+      html += '<span class="ld-miss">' + esc(cc) + '</span>';
+    } else if (cc !== undefined && uc.toLowerCase() === cc.toLowerCase()) {
+      html += '<span class="ld-ok">' + esc(uc) + '</span>';
+    } else {
+      html += '<span class="ld-bad">' + esc(uc) + '</span>';
+    }
+  }
+  return '<span class="lddiff">' + html + '</span>';
+}
 
 // ══════════════════════════════════════════════
 //  KEYBOARD
@@ -12315,6 +12411,7 @@ let duelEliminated = [];     // [N] — true/false
 let duelPowerUps = [];       // [N][] — tablice trzymanych power-upow
 let duelActiveBonus = {};    // { [playerIdx]: 'double'|'shield' } — aktywne bonusy do najbliższej odpowiedzi
 let duelRoundAnswers = [];   // [N] — odpowiedzi w biezacej rundzie: { chosen, btnEl, responseMs, ok } | null
+let duelRoundMistake = [];   // [N] — czy gracz pomylil sie w tej rundzie przed trafieniem (mniej pkt)
 let duelRoundStart = 0;      // Date.now()
 let duelTimerHandle = null;
 let duelGameStart = 0;       // Date.now() — start calej gry (dla limitu czasu Klasyczny)
@@ -12744,6 +12841,7 @@ function _renderTFGrid() {
 function duelStartTimer() {
   duelRoundStart = Date.now();
   duelRoundAnswers = new Array(duelConfig.playerCount).fill(null);
+  duelRoundMistake = new Array(duelConfig.playerCount).fill(false);
   if (duelTimerHandle) clearInterval(duelTimerHandle);
   const fill = document.getElementById('duelTimerFill');
   const preview = document.getElementById('duelPointsPreview');
@@ -12772,6 +12870,20 @@ function duelStopTimer() { if (duelTimerHandle) { clearInterval(duelTimerHandle)
 
 function duelTimeOut() {
   duelStopTimer();
+  // Od kiedy zle klikniecie daje "druga szanse" (nie jest rejestrowane jako odpowiedz),
+  // eliminacja opiera sie na nietrafieniu na czas: kto nie zdazyl trafic poprawnie,
+  // dostaje strike. Po 3 z rzedu — eliminacja (tryb eliminacja).
+  if (duelConfig.gameMode === 'elimination') {
+    for (let i = 0; i < duelConfig.playerCount; i++) {
+      if (duelEliminated[i]) continue;
+      const a = duelRoundAnswers[i];
+      if (!a || !a.ok) {
+        duelStreak[i] = 0;
+        duelWrongStreak[i]++;
+        if (duelWrongStreak[i] >= 3) duelEliminated[i] = true;
+      }
+    }
+  }
   // Gracze, ktorzy zdazyli odpowiedziec, dostaja punkty zgodnie z dotychczasowa logika.
   // Ci, ktorzy nie odpowiedzieli — bez punktow, ale slowko liczone jako trudne.
   let anyoneAnswered = false;
@@ -12827,13 +12939,24 @@ function duelPointsForElapsed(elapsedMs) {
 
 function duelAnswer(playerIdx, chosen, correct, btnEl) {
   if (duelLocked || duelEliminated[playerIdx]) return;
-  if (duelRoundAnswers[playerIdx]) return; // ten gracz juz odpowiedzial w tej rundzie
+  if (duelRoundAnswers[playerIdx]) return; // ten gracz juz trafil w tej rundzie
+  if (btnEl.classList.contains('duel-wrong')) return; // ten zly przycisk juz klikniety
 
-  const responseMs = Date.now() - duelRoundStart;
   const ok = chosen === correct;
-  duelRoundAnswers[playerIdx] = { chosen, btnEl, responseMs, ok };
+  if (!ok) {
+    // Zla odpowiedz: czerwone, zablokuj TYLKO ten przycisk — gracz wybiera dalej.
+    // Nie rejestrujemy odpowiedzi: runda czeka, az gracz trafi albo wygasnie czas.
+    // Pomylka -> polowa punktow przy trafieniu (duelRoundMistake).
+    btnEl.classList.add('duel-wrong');
+    btnEl.classList.add('duel-disabled');
+    duelRoundMistake[playerIdx] = true;
+    duelPlaySound('bad');
+    return;
+  }
+  const responseMs = Date.now() - duelRoundStart;
+  duelRoundAnswers[playerIdx] = { chosen, btnEl, responseMs, ok: true, hadMistake: !!duelRoundMistake[playerIdx] };
 
-  // Wizualnie: pokaz wybor gracza (neutralny, bez ujawniania czy dobrze/zle)
+  // Wizualnie: pokaz wybor gracza (neutralny)
   btnEl.classList.add('duel-selected');
   // Zablokuj TYLKO kolumne tego gracza (pozostali wciaz wybieraja)
   const cols = document.querySelectorAll('#duelPlayersGrid .duel-player-col');
@@ -12842,7 +12965,6 @@ function duelAnswer(playerIdx, chosen, correct, btnEl) {
       if (b !== btnEl) b.classList.add('duel-disabled');
     });
   }
-  // Drobny sound feedback (neutralny tick — gracz wie ze wybor zarejestrowany)
   duelPlaySound('tick');
 
   if (duelAllAnswered()) {
@@ -12863,7 +12985,7 @@ function duelResolveQuizRound(correct) {
     if (duelEliminated[i]) continue;
     const ans = duelRoundAnswers[i];
     if (!ans) continue; // gracz nie zdazyl (np. timer wygasl)
-    const { btnEl, responseMs, ok } = ans;
+    const { btnEl, responseMs, ok, hadMistake } = ans;
     const p = duelConfig.players[i];
     const col = DUEL_COLOR_PALETTE[p.colorIdx];
 
@@ -12872,18 +12994,26 @@ function duelResolveQuizRound(correct) {
 
     if (ok) {
       let pts = duelPointsForElapsed(responseMs);
-      duelStreak[i]++;
       duelStats.correct[i]++;
-      if (duelStreak[i] > duelStats.longestStreak[i]) duelStats.longestStreak[i] = duelStreak[i];
-      duelWrongStreak[i] = 0;
-      if (duelStreak[i] >= DUEL_STREAK_BONUS) pts = Math.round(pts * 1.5);
-      if (duelActiveBonus[i] === 'double') { pts *= 2; delete duelActiveBonus[i]; }
+      if (hadMistake) {
+        // Trafil za druga proba — polowa punktow, seria sie zeruje, bez bonusow
+        pts = Math.max(1, Math.round(pts / 2));
+        duelStreak[i] = 0;
+        duelWrongStreak[i] = 0;
+        delete duelActiveBonus[i];
+      } else {
+        duelStreak[i]++;
+        if (duelStreak[i] > duelStats.longestStreak[i]) duelStats.longestStreak[i] = duelStreak[i];
+        duelWrongStreak[i] = 0;
+        if (duelStreak[i] >= DUEL_STREAK_BONUS) pts = Math.round(pts * 1.5);
+        if (duelActiveBonus[i] === 'double') { pts *= 2; delete duelActiveBonus[i]; }
+      }
       btnEl.classList.remove('duel-selected');
       btnEl.classList.add('duel-correct');
       duelScore[i] += pts;
       duelSpawnEmojis(i);
       duelFloatScorePop(btnEl, '+' + pts, col.border);
-      summary.push(duelPlayerLabel(i) + ' +' + pts);
+      summary.push(duelPlayerLabel(i) + ' +' + pts + (hadMistake ? '½' : ''));
       if (responseMs < fastestCorrectMs) { fastestCorrectMs = responseMs; fastestCorrectIdx = i; }
     } else {
       duelStreak[i] = 0;
@@ -12937,11 +13067,21 @@ function duelResolveQuizRound(correct) {
 
 function duelTFAnswer(playerIdx, userSaysTrue, btnEl) {
   if (duelLocked || duelEliminated[playerIdx]) return;
-  if (duelRoundAnswers[playerIdx]) return; // ten gracz juz odpowiedzial
+  if (duelRoundAnswers[playerIdx]) return; // ten gracz juz trafil
+  if (btnEl.classList.contains('duel-wrong')) return; // ten zly przycisk juz klikniety
 
-  const responseMs = Date.now() - duelRoundStart;
   const ok = (userSaysTrue === duelTFCorrect);
-  duelRoundAnswers[playerIdx] = { chosen: userSaysTrue, btnEl, responseMs, ok };
+  if (!ok) {
+    // Zla odpowiedz: czerwone, zablokuj tylko ten przycisk — gracz wybiera drugi.
+    // Trafienie po pomylce -> polowa punktow (duelRoundMistake).
+    btnEl.classList.add('duel-wrong');
+    btnEl.classList.add('duel-disabled');
+    duelRoundMistake[playerIdx] = true;
+    duelPlaySound('bad');
+    return;
+  }
+  const responseMs = Date.now() - duelRoundStart;
+  duelRoundAnswers[playerIdx] = { chosen: userSaysTrue, btnEl, responseMs, ok: true, hadMistake: !!duelRoundMistake[playerIdx] };
 
   // Wizualnie: zaznacz wybor (neutralnie)
   btnEl.classList.add('duel-selected');
@@ -12973,7 +13113,7 @@ function duelResolveTFRound() {
     if (duelEliminated[i]) continue;
     const ans = duelRoundAnswers[i];
     if (!ans) continue;
-    const { btnEl, responseMs, ok } = ans;
+    const { btnEl, responseMs, ok, hadMistake } = ans;
     const p = duelConfig.players[i];
     const col = DUEL_COLOR_PALETTE[p.colorIdx];
 
@@ -12982,18 +13122,26 @@ function duelResolveTFRound() {
 
     if (ok) {
       let pts = duelPointsForElapsed(responseMs);
-      duelStreak[i]++;
       duelStats.correct[i]++;
-      if (duelStreak[i] > duelStats.longestStreak[i]) duelStats.longestStreak[i] = duelStreak[i];
-      duelWrongStreak[i] = 0;
-      if (duelStreak[i] >= DUEL_STREAK_BONUS) pts = Math.round(pts * 1.5);
-      if (duelActiveBonus[i] === 'double') { pts *= 2; delete duelActiveBonus[i]; }
+      if (hadMistake) {
+        // Trafil za druga proba — polowa punktow, seria sie zeruje, bez bonusow
+        pts = Math.max(1, Math.round(pts / 2));
+        duelStreak[i] = 0;
+        duelWrongStreak[i] = 0;
+        delete duelActiveBonus[i];
+      } else {
+        duelStreak[i]++;
+        if (duelStreak[i] > duelStats.longestStreak[i]) duelStats.longestStreak[i] = duelStreak[i];
+        duelWrongStreak[i] = 0;
+        if (duelStreak[i] >= DUEL_STREAK_BONUS) pts = Math.round(pts * 1.5);
+        if (duelActiveBonus[i] === 'double') { pts *= 2; delete duelActiveBonus[i]; }
+      }
       btnEl.classList.remove('duel-selected');
       btnEl.classList.add('duel-correct');
       duelScore[i] += pts;
       duelSpawnEmojis(i);
       duelFloatScorePop(btnEl, '+' + pts, col.border);
-      summary.push(duelPlayerLabel(i) + ' +' + pts);
+      summary.push(duelPlayerLabel(i) + ' +' + pts + (hadMistake ? '½' : ''));
       if (responseMs < fastestCorrectMs) { fastestCorrectMs = responseMs; fastestCorrectIdx = i; }
     } else {
       duelStreak[i] = 0;
@@ -15128,6 +15276,7 @@ function startDailyQuiz() {
 
 function renderDailyQ() {
   if (dqIdx >= dqTotal) { showDailyResult(); return; }
+  dqMistake = false;
   document.getElementById('dqProgress').textContent = 'Pytanie ' + (dqIdx + 1) + ' / ' + dqTotal;
   const [pl, en] = dqWords[dqIdx];
   document.getElementById('dqLabel').textContent = 'Przetłumacz na ' + (getBookLang().startsWith('fr') ? 'francuski' : 'angielski');
@@ -15154,24 +15303,28 @@ function renderDailyQ() {
 }
 
 function onDailyAnswer(btn, ok, correct) {
+  const r = document.getElementById('dqRes');
+  if (!ok) {
+    // Zla odpowiedz: czerwone, zablokuj tylko ten przycisk, wybieraj dalej.
+    // Pytanie z bledem nie liczy sie jako poprawne (mniej punktow).
+    if (btn.classList.contains('wrong')) return;
+    btn.classList.add('wrong'); btn.disabled = true;
+    if (!dqMistake) { dqMissed.push(dqWords[dqIdx]); dqMistake = true; }
+    r.className = 'type-result err';
+    r.innerHTML = '✗ Pudło — spróbuj jeszcze raz!';
+    playBad();
+    return;
+  }
+  // Poprawna — domknij pytanie
   document.querySelectorAll('#dqOpts .quiz-option').forEach(b => {
     b.disabled = true;
     if (b.textContent === correct) b.classList.add('correct');
   });
-  const r = document.getElementById('dqRes');
-  if (ok) {
-    btn.classList.add('correct');
-    r.className = 'type-result ok';
-    r.innerHTML = '✓ Poprawnie!';
-    dqCorrect++;
-    playOk(); particles(true);
-  } else {
-    btn.classList.add('wrong');
-    r.className = 'type-result err';
-    r.innerHTML = '✗ Poprawna: <span class="ar">' + esc(correct) + '</span>';
-    dqMissed.push(dqWords[dqIdx]);
-    playBad();
-  }
+  btn.classList.add('correct');
+  r.className = 'type-result ok';
+  if (!dqMistake) { dqCorrect++; r.innerHTML = '✓ Poprawnie!'; }
+  else r.innerHTML = '✓ Dobrze (za drugim razem)';
+  playOk(); particles(true);
   spkForeign(correct);
   dqIdx++;
   setTimeout(renderDailyQ, 1200);
