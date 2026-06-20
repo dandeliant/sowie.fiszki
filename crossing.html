@@ -277,8 +277,10 @@ body{
 @keyframes car-ltr{0%{left:-12%;transform:scaleX(-1);}100%{left:110%;transform:scaleX(-1);}}
 @keyframes car-rtl{0%{left:110%;transform:scaleX(1);}100%{left:-12%;transform:scaleX(1);}}
 
-/* PAUSE samochodow gdy zielone — animation-play-state */
-.scene.cars-paused .car{animation-play-state:paused;}
+/* STOP samochodow gdy zielone — pauzujemy TYLKO auta przed/za pasami.
+   Auto, ktore jest aktualnie NA pasach, nie dostaje klasy .stopped, wiec
+   jedzie dalej i zjezdza z zebry (klasa dodawana/zdejmowana z JS). */
+.car.stopped{animation-play-state:paused;}
 
 /* === SYGNALIZATOR — w prawym gornym rogu (dobrze widoczny!) === */
 .traffic-light{
@@ -1012,6 +1014,26 @@ function escHtml(s){
   return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+/* === STOP / RUSZ SAMOCHODY (zielone swiatlo) ===
+   Zatrzymujemy tylko auta, ktore NIE sa na pasach. Auto aktualnie na zebrze
+   jedzie dalej, zeby z niej zjechac (nie blokuje przejscia). */
+function stopCarsBeforeCrosswalk(){
+  const roadEl = document.querySelector('.road');
+  if (!roadEl) return;
+  const road = roadEl.getBoundingClientRect();
+  const zebraL = road.left + road.width * 0.38;  // .crosswalk: left:38%
+  const zebraR = road.left + road.width * 0.62;  // .crosswalk: right:38% -> 62%
+  document.querySelectorAll('.car').forEach(car => {
+    const r = car.getBoundingClientRect();
+    const onZebra = r.right > zebraL && r.left < zebraR;
+    if (onZebra) car.classList.remove('stopped'); // jest na pasach -> jedzie dalej
+    else car.classList.add('stopped');            // przed/za pasami -> staje
+  });
+}
+function releaseCars(){
+  document.querySelectorAll('.car').forEach(car => car.classList.remove('stopped'));
+}
+
 /* === ANIMAL CLICK === */
 function onAnimalClick(el, data){
   if (!running || busy) return;
@@ -1020,8 +1042,8 @@ function onAnimalClick(el, data){
     // 1. Zielone swiatlo
     setTrafficLight('green');
     sndCorrect();
-    // 2. Samochody sie zatrzymuja (animation-play-state: paused)
-    document.getElementById('scene').classList.add('cars-paused');
+    // 2. Samochody staja PRZED pasami; te ktore sa na pasach -> przejezdzaja dalej
+    stopCarsBeforeCrosswalk();
     score += 10;
     helped++;
     spawnReaction(el, true);
@@ -1051,7 +1073,7 @@ function onAnimalClick(el, data){
     }, 500);
     // 5. Po przejsciu -> reset, samochody jada, nowa runda
     setTimeout(() => {
-      document.getElementById('scene').classList.remove('cars-paused');
+      releaseCars();
       setTrafficLight('red');
       nextRound();
     }, 2700);
