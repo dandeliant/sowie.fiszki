@@ -4219,6 +4219,7 @@ szkoła	school"></textarea>
       <option value="domino">🁢 Domino do wycięcia</option>
       <option value="wheel">🎡 Koło fortuny</option>
       <option value="maze">🧩 Labirynt słowny</option>
+      <option value="spiral">🐍 Wyszukiwanka spiralna (wąż wyrazowy)</option>
       <option value="minibook">📕 Mini-książeczka</option>
       <option value="weekly">📅 Karta domowa na tydzień</option>
       <option value="monthly">📅 Karta domowa na miesiąc</option>
@@ -24945,6 +24946,103 @@ if ('serviceWorker' in navigator) {
     return {html: wsPage('Labirynt słowny — '+wsHead(book,unitLabel), 'Karta pracy · '+wsDate(), body, css)};
   }
 
+  // 🐍 Wyszukiwanka spiralna — angielskie slowka ukryte wzdluz spirali (waz wyrazowy).
+  // Litery rozlozone przez SVG <textPath> po sciezce spirali (od glowy weza do srodka).
+  // Pod spirala: polskie slowka alfabetycznie + wykropkowane miejsce na angielski odpowiednik.
+  function wsSpiral(book, unitLabel, words){
+    // Klucz = angielskie slowo, same litery (spacje/myslniki usuniete: "hot cross bun" -> HOTCROSSBUN)
+    let pairs = wsPairs(words).map(p => ({
+      pl: p.pl, en: p.en,
+      key: (p.en || '').replace(/[^\p{L}]/gu, '').toUpperCase()
+    })).filter(p => p.key.length >= 2);
+    // usun duplikaty wg klucza (ten sam angielski wyraz tylko raz)
+    const seen = {};
+    pairs = pairs.filter(p => { if (seen[p.key]) return false; seen[p.key] = 1; return true; });
+    if (pairs.length < 3) return { error:'⚠️ Potrzeba min. 3 słów (z literami) do wyszukiwanki spiralnej.' };
+
+    // Ogranicz liczbe slow, zeby spirala byla czytelna
+    let chosen = wsShuffle(pairs).slice(0, Math.min(14, pairs.length));
+
+    // Geometria spirali (Archimedesa) — od zewnatrz (glowa) do srodka
+    const cx = 300, cy = 312, maxR = 268, minR = 50, SPACING = 14;
+    function buildSpiral(turns){
+      const steps = Math.max(700, turns * 280);
+      let d = '', len = 0, px = 0, py = 0, start = null;
+      for (let i = 0; i <= steps; i++){
+        const t = i / steps;
+        const theta = t * turns * 2 * Math.PI;
+        const r = maxR - (maxR - minR) * t;
+        const x = cx + r * Math.cos(theta), y = cy + r * Math.sin(theta);
+        if (i === 0){ d = 'M' + x.toFixed(1) + ' ' + y.toFixed(1); start = [x, y]; }
+        else { d += ' L' + x.toFixed(1) + ' ' + y.toFixed(1); len += Math.hypot(x - px, y - py); }
+        px = x; py = y;
+      }
+      return { d, len, start };
+    }
+
+    // Dobierz liczbe zwojow tak, by wszystkie slowa (+ wypelniacze) sie zmiescily
+    const totalLetters = () => chosen.reduce((s, p) => s + p.key.length, 0);
+    let turns = 4, sp = buildSpiral(turns);
+    while (turns < 6 && (sp.len / SPACING) < totalLetters() / 0.5){ turns++; sp = buildSpiral(turns); }
+    let N = Math.floor(sp.len / SPACING);
+    // Gdyby nadal za ciasno — przytnij liste slow
+    while (chosen.length > 3 && totalLetters() > N * 0.62) chosen.pop();
+
+    // Rozmiesc slowa wzdluz spirali w LOSOWEJ kolejnosci, bez nakladania
+    const slots = new Array(N).fill(null);
+    const placed = [];
+    wsShuffle(chosen).forEach(p => {
+      const L = p.key.length; let ok = false;
+      for (let tr = 0; tr < 300 && !ok; tr++){
+        const start = Math.floor(Math.random() * Math.max(1, N - L));
+        let free = true;
+        for (let k = 0; k < L; k++){ if (slots[start + k] != null){ free = false; break; } }
+        if (free){ for (let k = 0; k < L; k++) slots[start + k] = p.key[k]; placed.push(p); ok = true; }
+      }
+    });
+    if (placed.length < 3) return { error:'⚠️ Za mało miejsca — wybierz mniej słów.' };
+
+    // Wypelniacze (losowe litery) w pustych polach
+    const ALPHA = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const letters = slots.map(c => c != null ? c : ALPHA[Math.floor(Math.random() * 26)]).join('');
+
+    // Glowa weza w punkcie startowym (zewnatrz spirali)
+    const hx = sp.start[0], hy = sp.start[1];
+    const head = `<g>
+      <ellipse cx="${hx.toFixed(0)}" cy="${hy.toFixed(0)}" rx="24" ry="17" fill="#fff" stroke="#222" stroke-width="2.5"/>
+      <circle cx="${(hx + 7).toFixed(0)}" cy="${(hy - 6).toFixed(0)}" r="2.8" fill="#222"/>
+      <path d="M ${(hx + 23).toFixed(0)} ${hy.toFixed(0)} l 15 -6 m -15 6 l 15 6" stroke="#c0392b" stroke-width="2" fill="none" stroke-linecap="round"/>
+    </g>`;
+
+    const svg = `<svg viewBox="0 0 600 640" width="100%" style="max-width:540px;display:block;margin:0 auto" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+      <defs><path id="sfSpiralPath" d="${sp.d}" fill="none"/></defs>
+      <text font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" fill="#111" textLength="${sp.len.toFixed(0)}" lengthAdjust="spacing"><textPath xlink:href="#sfSpiralPath" startOffset="0">${escHtmlWs(letters)}</textPath></text>
+      ${head}
+    </svg>`;
+
+    // Polskie slowka alfabetycznie + miejsce na angielski odpowiednik
+    const clueWords = placed.slice().sort((a, b) => a.pl.localeCompare(b.pl, 'pl'));
+    const clues = clueWords.map((p, i) => `<div class="sp-clue"><span class="sp-pl">${i + 1}. ${escHtmlWs(p.pl)}</span><span class="sp-line"></span></div>`).join('');
+    const keyList = clueWords.map(p => `<li>${escHtmlWs(p.pl)} — <b>${escHtmlWs(p.en)}</b></li>`).join('');
+
+    const body = `<div class="tip">🐍 <b>Jak grać:</b> W spirali — od głowy węża 🐍 aż do środka — ukryły się <b>angielskie</b> słówka. Czytaj litery po kolei wzdłuż węża i odszukaj wyrazy. Pod spiralą masz <b>polskie</b> słówka w kolejności alfabetycznej — wpisz obok nich <b>angielskie</b> odpowiedniki, które uda Ci się znaleźć.</div>
+      <div class="sp-wrap">${svg}</div>
+      <div class="sp-title">✍️ Znajdź w wężu i wpisz po angielsku (${clueWords.length} słów):</div>
+      <div class="sp-clues">${clues}</div>
+      <div class="pagebreak"></div>
+      <div class="tip">🔑 <b>Klucz (dla nauczyciela):</b></div>
+      <ol class="sp-key">${keyList}</ol>`;
+    const css = `.sp-wrap{text-align:center;margin:4px 0 8px}
+      .sp-title{font-weight:800;font-size:.92rem;margin:10px 0 8px}
+      .sp-clues{display:grid;grid-template-columns:1fr 1fr;gap:9px 24px}
+      .sp-clue{display:flex;align-items:flex-end;gap:6px;break-inside:avoid}
+      .sp-pl{font-size:.9rem;font-weight:600;white-space:nowrap}
+      .sp-line{flex:1;border-bottom:1.5px dotted #555;height:18px}
+      ol.sp-key{columns:2;font-size:.88rem;line-height:1.85;margin-top:4px}
+      @media print{.sp-wrap svg{max-width:470px}}`;
+    return { html: wsPage('Wyszukiwanka spiralna — ' + wsHead(book, unitLabel), 'Karta pracy · ' + clueWords.length + ' słów · ' + wsDate(), body, css) };
+  }
+
   function wsMiniBook(book, unitLabel, words){
     let pairs=wsPairs(words);
     if(!pairs.length) return {error:'⚠️ Brak słów.'};
@@ -25505,7 +25603,7 @@ if ('serviceWorker' in navigator) {
     }
 
     // Nowe typy kart pracy (Bingo/Domino/Koło/Labirynt/Książeczka/Karta domowa/...)
-    const WS_CUSTOM = { bingo: wsBingo, domino: wsDomino, wheel: wsWheel, maze: wsMaze, minibook: wsMiniBook, weekly: wsWeekly, monthly: wsMonthly, schoolyear: wsSchoolYear, holidays: wsHolidays, bookmark: wsBookmark, ihave: wsIHave, quiz: wsQuiz, test: wsTest, wordbank: wsWordBank, agree: wsAgree };
+    const WS_CUSTOM = { bingo: wsBingo, domino: wsDomino, wheel: wsWheel, maze: wsMaze, spiral: wsSpiral, minibook: wsMiniBook, weekly: wsWeekly, monthly: wsMonthly, schoolyear: wsSchoolYear, holidays: wsHolidays, bookmark: wsBookmark, ihave: wsIHave, quiz: wsQuiz, test: wsTest, wordbank: wsWordBank, agree: wsAgree };
     if (WS_CUSTOM[variant]) return WS_CUSTOM[variant](book, unitLabel, words);
 
     // Wariant "Zdania z lukami"
