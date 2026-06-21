@@ -4328,6 +4328,13 @@ Sam doesn't have a sister. Neither does Andy.</textarea>
       <div style="font-size:.6rem;color:var(--muted);margin-top:5px;line-height:1.5">Wiersze tabeli pochodzą z zaznaczonych słówek (lewa kolumna, do edycji wybierz inne słówka powyżej). Program losowo wstawia ✔ / ✘ w każdą kratkę — odśwież podgląd, by wylosować ponownie. Pod tabelą puste linie do pisania.</div>
     </div>
 
+    <!-- Opcje dla wariantu „Bingo" — liczba kart -->
+    <div id="wsBingoOpts" style="display:none;margin-bottom:10px">
+      <label style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px">🎲 Liczba kart Bingo (1–50)</label>
+      <input id="wsBingoCount" type="number" min="1" max="50" value="6" oninput="wsRenderPreview()" style="width:120px;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:.9rem;font-weight:700;outline:none;font-family:inherit">
+      <div style="font-size:.6rem;color:var(--muted);margin-top:5px;line-height:1.5">Każda karta ma inny, losowy układ słów. Domyślnie 6 — zmień, ile kart wydrukować dla klasy.</div>
+    </div>
+
     <label style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px">👁️ Podgląd na żywo</label>
     <iframe id="wsPreviewFrame" title="Podgląd karty pracy" style="width:100%;height:320px;border:1.5px solid var(--border);border-radius:8px;background:#fff;margin-bottom:10px"></iframe>
 
@@ -24913,7 +24920,11 @@ if ('serviceWorker' in navigator) {
   function wsBingo(book, unitLabel, words){
     const pairs=wsPairs(words);
     if(pairs.length<4) return {error:'⚠️ Potrzeba min. 4 słów do Bingo.'};
-    const size=pairs.length>=16?4:(pairs.length>=9?3:2), cells=size*size, CARDS=6;
+    const size=pairs.length>=16?4:(pairs.length>=9?3:2), cells=size*size;
+    // Liczba kart sterowana z modala (domyślnie 6, zakres 1–50)
+    let CARDS=6;
+    const cntEl=document.getElementById('wsBingoCount');
+    if(cntEl){ const v=parseInt(cntEl.value,10); if(!isNaN(v)) CARDS=Math.max(1, Math.min(50, v)); }
     const call=wsShuffle(pairs).map((p,i)=>`<span class="cl">${i+1}. <b>${escHtmlWs(p.pl)}</b> → ${escHtmlWs(p.en)}</span>`).join('');
     let cards='';
     for(let c=0;c<CARDS;c++){
@@ -24940,7 +24951,7 @@ if ('serviceWorker' in navigator) {
   function wsDomino(book, unitLabel, words){
     let pairs=wsPairs(words);
     if(pairs.length<4) return {error:'⚠️ Potrzeba min. 4 słów do domina.'};
-    pairs=wsShuffle(pairs).slice(0, Math.min(12, pairs.length));
+    pairs=wsShuffle(pairs); // bez limitu — tyle kostek, ile zaznaczonych słów
     const n=pairs.length;
     const tiles=pairs.map((p,i)=>({left:p.pl, le:p.emoji, right:pairs[(i+1)%n].en}));
     const html=wsShuffle(tiles).map(t=>`<div class="dtile"><div class="dhalf dl">${t.le?`<span class="de">${t.le}</span>`:''}<span>${escHtmlWs(t.left)}</span></div><div class="dhalf dr">${escHtmlWs(t.right)}</div></div>`).join('');
@@ -24956,18 +24967,21 @@ if ('serviceWorker' in navigator) {
   function wsWheel(book, unitLabel, words){
     let pairs=wsPairs(words);
     if(pairs.length<3) return {error:'⚠️ Potrzeba min. 3 słów do koła.'};
-    pairs=wsShuffle(pairs).slice(0, Math.min(10, pairs.length));
+    pairs=wsShuffle(pairs); // bez limitu — tyle pól, ile zaznaczonych słów
     const N=pairs.length, cx=260, cy=260, R=240, ang=360/N;
     const colors=['#FFE0B2','#C8E6C9','#BBDEFB','#F8BBD0','#D1C4E9','#FFF9C4','#B2DFDB','#FFCCBC','#E1BEE7','#DCEDC8'];
     const polar=(r,deg)=>{ const rad=(deg-90)*Math.PI/180; return [cx+r*Math.cos(rad), cy+r*Math.sin(rad)]; };
+    const fs = N>=24?10:(N>=16?12:14); // mniejsza czcionka przy wielu polach
     let svg='';
     for(let i=0;i<N;i++){
       const a0=i*ang, a1=(i+1)*ang, mid=a0+ang/2;
       const [x0,y0]=polar(R,a0), [x1,y1]=polar(R,a1), large=ang>180?1:0;
       svg+=`<path d="M${cx},${cy} L${x0.toFixed(1)},${y0.toFixed(1)} A${R},${R} 0 ${large} 1 ${x1.toFixed(1)},${y1.toFixed(1)} Z" fill="${colors[i%colors.length]}" stroke="#333" stroke-width="1.5"/>`;
-      const [tx,ty]=polar(R*0.60, mid); let rot=mid; if(mid>90&&mid<270) rot=mid+180;
+      // Tekst WZDŁUŻ promienia (radialnie), zawsze czytelny (nigdy do góry nogami).
+      const [tx,ty]=polar(R*0.56, mid);
+      let rot=mid-90; const rr=((rot%360)+360)%360; if(rr>90&&rr<270) rot+=180;
       const label=(pairs[i].emoji?pairs[i].emoji+' ':'')+pairs[i].en;
-      svg+=`<text x="${tx.toFixed(1)}" y="${ty.toFixed(1)}" transform="rotate(${rot.toFixed(1)} ${tx.toFixed(1)} ${ty.toFixed(1)})" text-anchor="middle" dominant-baseline="middle" font-size="14" font-weight="700" fill="#222">${escHtmlWs(label)}</text>`;
+      svg+=`<text x="${tx.toFixed(1)}" y="${ty.toFixed(1)}" transform="rotate(${rot.toFixed(1)} ${tx.toFixed(1)} ${ty.toFixed(1)})" text-anchor="middle" dominant-baseline="middle" font-size="${fs}" font-weight="700" fill="#222">${escHtmlWs(label)}</text>`;
     }
     const body=`<div class="tip">🎡 <b>Jak grać:</b> Wbij spinacz biurowy w środek koła i przytrzymaj go ołówkiem (jako oś). Zakręć spinaczem — gdy się zatrzyma, przeczytaj słowo, na które wskazuje, i ułóż z nim zdanie po angielsku!</div>
       <div style="text-align:center"><svg viewBox="0 0 520 560" width="470" style="max-width:100%">
@@ -24980,8 +24994,11 @@ if ('serviceWorker' in navigator) {
   function wsMaze(book, unitLabel, words){
     const pairs=wsPairs(words);
     if(pairs.length<6) return {error:'⚠️ Potrzeba min. 6 słów do labiryntu.'};
-    const n=pairs.length>=20?6:(pairs.length>=12?5:4), pathLen=2*n-1;
-    const pool=wsShuffle(pairs), pathWords=pool.slice(0,pathLen), rest=pool.slice(pathLen);
+    // Bez limitu: rozmiar siatki dobierany do liczby słów (ścieżka używa ~wszystkich).
+    const W=pairs.length, n=Math.max(3, Math.floor((W+1)/2)), pathLen=2*n-1;
+    const pool=wsShuffle(pairs);
+    const pathWords=[]; for(let i=0;i<pathLen;i++) pathWords.push(pool[i%pool.length]);
+    const rest=pool.slice(pathLen);
     let r=0,c=0; const path=[[0,0]];
     wsShuffle(Array(n-1).fill('R').concat(Array(n-1).fill('D'))).forEach(m=>{ if(m==='R')c++; else r++; path.push([r,c]); });
     const grid=Array.from({length:n},()=>Array(n).fill(''));
@@ -24998,8 +25015,10 @@ if ('serviceWorker' in navigator) {
       <div style="margin-top:12px"><b>Hasła po kolei (po polsku):</b><ol class="clues">${clues}</ol></div>
       <div class="pagebreak"></div>
       <div class="tip">🔑 <b>Klucz (dla nauczyciela):</b> kolejne pola ścieżki (wiersz, kolumna): ${escHtmlWs(key)}</div>`;
+    const cellPx=Math.max(26, Math.min(92, Math.floor(660/n)));
+    const fontPx=cellPx>=70?13:(cellPx>=52?11:(cellPx>=38?9:8));
     const css=`table.maze{border-collapse:collapse;margin:8px auto}
-      table.maze td{border:2px solid #333;width:92px;height:58px;text-align:center;font-size:.8rem;font-weight:600;padding:4px}
+      table.maze td{border:2px solid #333;width:${cellPx}px;height:${Math.round(cellPx*0.64)}px;text-align:center;font-size:${fontPx}px;font-weight:600;padding:2px;word-break:break-word}
       td.mstart{background:#c8e6c9}td.mend{background:#fff3c4}
       ol.clues{columns:2;font-size:.85rem;line-height:1.7;margin-top:6px}`;
     return {html: wsPage('Labirynt słowny — '+wsHead(book,unitLabel), 'Karta pracy · '+wsDate(), body, css)};
@@ -25945,6 +25964,9 @@ ${bodyHtml}
     // Pokaż opcje „So do I / Neither do I" tylko dla tego wariantu
     const agOpts = document.getElementById('wsAgreeOpts');
     if (agOpts && vSel) agOpts.style.display = (vSel.value === 'agree') ? 'block' : 'none';
+    // Pokaż opcje „Bingo" (liczba kart) tylko dla tego wariantu
+    const bOpts = document.getElementById('wsBingoOpts');
+    if (bOpts && vSel) bOpts.style.display = (vSel.value === 'bingo') ? 'block' : 'none';
     const res = wsComposeHtml();
     if (res.premium) { fr.srcdoc = '<body style="font-family:Arial;padding:24px;color:#888">🔒 „Zdania z lukami" — funkcja Premium. Podgląd niedostępny.</body>'; return; }
     if (res.error) { fr.srcdoc = '<body style="font-family:Arial;padding:24px;color:#888">'+escHtmlWs(res.error)+'</body>'; return; }
