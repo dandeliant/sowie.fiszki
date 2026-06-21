@@ -1735,6 +1735,10 @@ body.guest-mode .progress-wrap{opacity:.4;}
     <span class="cw-row-label" style="color:var(--accent)">🔀 Rozsypanka literowa:</span>
     <div class="cw-row-btns" id="scrGameRowBtns"></div>
   </div>
+  <div class="cw-row" id="scrPrintRow" style="border-color:rgba(124,58,237,.25);">
+    <span class="cw-row-label" style="color:var(--purple)">🔀 Rozsypanka literowa (do druku):</span>
+    <div class="cw-row-btns" id="scrPrintRowBtns"></div>
+  </div>
   <div class="cw-row" id="sentScrGameRow" style="border-color:rgba(116,185,255,.25);">
     <span class="cw-row-label" style="color:var(--blue)">📜 Rozsypanka zdaniowa:</span>
     <div class="cw-row-btns" id="sentScrGameRowBtns"></div>
@@ -4224,6 +4228,7 @@ szkoła	school"></textarea>
       <option value="wheel">🎡 Koło fortuny</option>
       <option value="maze">🧩 Labirynt słowny</option>
       <option value="spiral">🐍 Wyszukiwanka spiralna (wąż wyrazowy)</option>
+      <option value="scramble">🔀 Rozsypanka literowa</option>
       <option value="minibook">📕 Mini-książeczka</option>
       <option value="weekly">📅 Karta domowa na tydzień</option>
       <option value="monthly">📅 Karta domowa na miesiąc</option>
@@ -5690,6 +5695,21 @@ function refreshGrid() {
     btn.addEventListener('click', () => openScrGame(k));
     scrGBtns.appendChild(btn);
   });
+
+  // Rozsypanka literowa — wersja DO DRUKU (karta pracy z podglądem + wyborem słówek)
+  const scrPrintBtns = document.getElementById('scrPrintRowBtns');
+  if (scrPrintBtns) {
+    scrPrintBtns.innerHTML = '';
+    ['all', ...Object.keys(book.units)].forEach(k => {
+      const u = units[k];
+      const btn = document.createElement('button');
+      btn.className = 'btn-cw';
+      btn.style.cssText = 'border-color:rgba(124,58,237,.4);color:var(--purple);';
+      btn.textContent = u.icon + ' ' + u.name;
+      btn.addEventListener('click', () => openWorksheetModal(book.id, k, 'scramble'));
+      scrPrintBtns.appendChild(btn);
+    });
+  }
 
   // Sentence scramble game buttons row
   const sentScrGBtns = document.getElementById('sentScrGameRowBtns');
@@ -25077,6 +25097,58 @@ if ('serviceWorker' in navigator) {
     return { html: wsPage('Wyszukiwanka spiralna — ' + wsHead(book, unitLabel), 'Karta pracy · ' + clueWords.length + ' słów · ' + wsDate(), body, css) };
   }
 
+  // 🔀 Rozsypanka literowa — karta pracy: dla każdego słowa litery wymieszane
+  // w „kafelkach", obok polska podpowiedź i linia na wpisanie odpowiedzi.
+  function wsScramble(book, unitLabel, words){
+    const pairs = wsPairs(words);
+    if (!pairs.length) return { error:'⚠️ Brak słów do rozsypanki.' };
+    // Wymieszaj litery jednego słowa (tak, by wynik różnił się od oryginału).
+    function scrambleWord(w){
+      if (w.length < 2) return w.toUpperCase();
+      let out;
+      let tries = 0;
+      do {
+        const a = w.toUpperCase().split('');
+        for (let i = a.length - 1; i > 0; i--){ const j = Math.floor(Math.random() * (i + 1)); const t = a[i]; a[i] = a[j]; a[j] = t; }
+        out = a.join('');
+        tries++;
+      } while (out === w.toUpperCase() && tries < 25);
+      return out;
+    }
+    // Frazy: mieszamy litery w obrębie każdego słowa, słowa rozdzielone przerwą.
+    function tilesFor(en){
+      return en.split(/\s+/).filter(Boolean).map(word => {
+        const tiles = scrambleWord(word).split('').map(c => `<span class="scr-tile">${escHtmlWs(c)}</span>`).join('');
+        return `<span class="scr-word">${tiles}</span>`;
+      }).join('<span class="scr-wsep"></span>');
+    }
+    const rows = pairs.map((p, i) => `
+      <div class="scr-row">
+        <div class="scr-top"><span class="scr-num">${i + 1}.</span> <span class="scr-clue">${p.emoji ? p.emoji + ' ' : ''}${escHtmlWs(p.pl)}</span></div>
+        <div class="scr-tiles">${tilesFor(p.en)}</div>
+        <div class="scr-line"></div>
+      </div>`).join('');
+    const keyList = pairs.map((p, i) => `<li>${escHtmlWs(p.pl)} — <b>${escHtmlWs(p.en)}</b></li>`).join('');
+
+    const body = `<div class="tip">🔀 <b>Jak rozwiązać:</b> Ułóż litery z każdej rozsypanki w prawidłowej kolejności i wpisz <b>angielskie</b> słowo na linii. Obok numeru jest podpowiedź po polsku.</div>
+      <div class="wsfields"><div class="f"><label>Imię i nazwisko</label>&nbsp;</div><div class="f"><label>Klasa</label>&nbsp;</div><div class="f"><label>Data</label>&nbsp;</div></div>
+      ${rows}
+      <div class="pagebreak"></div>
+      <div class="tip">🔑 <b>Klucz (dla nauczyciela):</b></div>
+      <ol class="scr-key">${keyList}</ol>`;
+    const css = `.scr-row{padding:11px 2px;border-bottom:1px solid #e3e3e3;break-inside:avoid}
+      .scr-top{font-size:.94rem;margin-bottom:7px}
+      .scr-num{font-weight:800;color:#999}
+      .scr-clue{font-weight:700}
+      .scr-tiles{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-bottom:8px}
+      .scr-word{display:inline-flex;gap:5px;flex-wrap:wrap}
+      .scr-wsep{width:18px;display:inline-block}
+      .scr-tile{display:inline-flex;align-items:center;justify-content:center;min-width:27px;height:31px;border:1.6px solid #888;border-radius:6px;font-weight:800;font-size:.96rem;background:#fafafa;padding:0 5px;color:#c0392b}
+      .scr-line{border-bottom:1.6px dotted #999;height:20px}
+      ol.scr-key{columns:2;font-size:.86rem;line-height:1.8;margin-top:4px}`;
+    return { html: wsPage('Rozsypanka literowa — ' + wsHead(book, unitLabel), 'Karta pracy · ' + pairs.length + ' słów · ' + wsDate(), body, css) };
+  }
+
   function wsMiniBook(book, unitLabel, words){
     let pairs=wsPairs(words);
     if(!pairs.length) return {error:'⚠️ Brak słów.'};
@@ -25637,7 +25709,7 @@ if ('serviceWorker' in navigator) {
     }
 
     // Nowe typy kart pracy (Bingo/Domino/Koło/Labirynt/Książeczka/Karta domowa/...)
-    const WS_CUSTOM = { bingo: wsBingo, domino: wsDomino, wheel: wsWheel, maze: wsMaze, spiral: wsSpiral, minibook: wsMiniBook, weekly: wsWeekly, monthly: wsMonthly, schoolyear: wsSchoolYear, holidays: wsHolidays, bookmark: wsBookmark, ihave: wsIHave, quiz: wsQuiz, test: wsTest, wordbank: wsWordBank, agree: wsAgree };
+    const WS_CUSTOM = { bingo: wsBingo, domino: wsDomino, wheel: wsWheel, maze: wsMaze, spiral: wsSpiral, scramble: wsScramble, minibook: wsMiniBook, weekly: wsWeekly, monthly: wsMonthly, schoolyear: wsSchoolYear, holidays: wsHolidays, bookmark: wsBookmark, ihave: wsIHave, quiz: wsQuiz, test: wsTest, wordbank: wsWordBank, agree: wsAgree };
     if (WS_CUSTOM[variant]) return WS_CUSTOM[variant](book, unitLabel, words);
 
     // Wariant "Zdania z lukami"
