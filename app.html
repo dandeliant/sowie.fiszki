@@ -24987,31 +24987,26 @@ if ('serviceWorker' in navigator) {
       return { d, len, start, maxR, cx, cy };
     }
 
-    // Dobierz liczbe zwojow tak, by wszystkie slowa (+ wypelniacze) sie zmiescily
-    const totalLetters = () => chosen.reduce((s, p) => s + p.key.length, 0);
-    let turns = 4, sp = buildSpiral(turns);
-    while (turns < 12 && (sp.len / SPACING) < totalLetters() / 0.5){ turns++; sp = buildSpiral(turns); }
-    let N = Math.floor(sp.len / SPACING);
-    // Gdyby przy ogromnym wyborze nadal bylo za ciasno — przytnij liste slow
-    while (chosen.length > 3 && totalLetters() > N * 0.62) chosen.pop();
-
-    // Rozmiesc slowa wzdluz spirali w LOSOWEJ kolejnosci, bez nakladania
-    const slots = new Array(N).fill(null);
-    const placed = [];
-    wsShuffle(chosen).forEach(p => {
-      const L = p.key.length; let ok = false;
-      for (let tr = 0; tr < 300 && !ok; tr++){
-        const start = Math.floor(Math.random() * Math.max(1, N - L));
-        let free = true;
-        for (let k = 0; k < L; k++){ if (slots[start + k] != null){ free = false; break; } }
-        if (free){ for (let k = 0; k < L; k++) slots[start + k] = p.key[k]; placed.push(p); ok = true; }
-      }
-    });
-    if (placed.length < 3) return { error:'⚠️ Za mało miejsca — wybierz mniej słów.' };
-
-    // Wypelniacze (losowe litery) w pustych polach
+    // Buduj WĘŻA jako jedną ciągłą sekwencję liter: słowo, 2–5 losowych liter
+    // przerwy, kolejne słowo, ... — zamiast rozrzucać słowa po całej spirali.
+    // Dzięki temu przerwy są małe i równe, a wąż gęstszy: mieści więcej słów,
+    // a przy mniejszej liczbie słów spirala jest krótsza → litery są większe.
     const ALPHA = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-    const letters = slots.map(c => c != null ? c : ALPHA[Math.floor(Math.random() * 26)]).join('');
+    const randLetters = (n) => { let s = ''; for (let i = 0; i < n; i++) s += ALPHA[Math.floor(Math.random() * 26)]; return s; };
+    const gap = () => 2 + Math.floor(Math.random() * 4); // 2..5 liter przerwy między słowami
+
+    const placed = wsShuffle(chosen); // kolejność słów w wężu jest losowa
+    if (placed.length < 3) return { error:'⚠️ Za mało słów do wyszukiwanki spiralnej.' };
+    let letters = randLetters(1 + Math.floor(Math.random() * 2)); // krótki rozbieg za głową (1–2)
+    placed.forEach(p => { letters += p.key + randLetters(gap()); });
+
+    // Dobierz liczbę zwojów (ułamkowo) tak, by długość ścieżki ≈ liczba liter × SPACING.
+    // Mniej słów → krótsza sekwencja → mniej zwojów → mniejszy viewBox → przy
+    // stałej szerokości wyświetlania litery są WIĘKSZE.
+    const desiredLen = letters.length * SPACING;
+    let turns = 3, sp = buildSpiral(turns);
+    while (turns < 12 && sp.len < desiredLen) { turns += 0.5; sp = buildSpiral(turns); }
+    while (turns > 2 && buildSpiral(turns - 0.5).len >= desiredLen) { turns -= 0.5; sp = buildSpiral(turns); }
 
     // Glowa weza w punkcie startowym (zewnatrz spirali)
     const hx = sp.start[0], hy = sp.start[1];
@@ -25025,10 +25020,16 @@ if ('serviceWorker' in navigator) {
     // Szerokosc wyswietlania rosnie z rozmiarem, ale jest ograniczona, by zmiescic
     // sie na stronie A4 — przy bardzo wielu slowach spirala drukuje sie po prostu gesciej.
     const VB = Math.round(2 * (sp.maxR + MARGIN));
-    const dispW = Math.min(680, Math.round(VB * 0.98));
+    // Docelowa szerokość ~stała: małą spiralę (mało słów) i tak pokazujemy szeroko
+    // → LITERY WIĘKSZE; dużą ograniczamy, żeby zmieściła się na A4.
+    const dispW = Math.min(680, Math.max(520, Math.round(VB * 0.8)));
+    // Rozmiar liter dopasowany do odstępu na ścieżce — litery prawie się stykają,
+    // więc przy mniejszej liczbie słów (rzadszy rozkład) są po prostu WIĘKSZE.
+    const spacing = sp.len / letters.length;
+    const fontSize = Math.min(30, Math.max(13, Math.round(spacing * 0.92)));
     const svg = `<svg viewBox="0 0 ${VB} ${VB}" width="100%" style="max-width:${dispW}px;display:block;margin:0 auto" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
       <defs><path id="sfSpiralPath" d="${sp.d}" fill="none"/></defs>
-      <text font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" fill="#111" textLength="${sp.len.toFixed(0)}" lengthAdjust="spacing"><textPath xlink:href="#sfSpiralPath" startOffset="0">${escHtmlWs(letters)}</textPath></text>
+      <text font-family="Arial, Helvetica, sans-serif" font-size="${fontSize}" font-weight="700" fill="#111" textLength="${sp.len.toFixed(0)}" lengthAdjust="spacing"><textPath xlink:href="#sfSpiralPath" startOffset="0">${escHtmlWs(letters)}</textPath></text>
       ${head}
     </svg>`;
 
