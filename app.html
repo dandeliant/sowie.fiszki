@@ -1751,6 +1751,10 @@ body.guest-mode .progress-wrap{opacity:.4;}
     <span class="cw-row-label" style="color:var(--blue)">🖼️ Karta obrazkowa:</span>
     <div class="cw-row-btns" id="imgCardRowBtns"></div>
   </div>
+  <div class="cw-row" id="imgCardPrintRow" style="border-color:rgba(124,58,237,.25);">
+    <span class="cw-row-label" style="color:var(--purple)">🖼️ Karta obrazkowa (do druku):</span>
+    <div class="cw-row-btns" id="imgCardPrintRowBtns"></div>
+  </div>
   <div class="cw-row" id="tracingRow" style="border-color:rgba(124,58,237,.25);">
     <span class="cw-row-label" style="color:var(--purple)">✍️ Pisanie po śladzie:</span>
     <div class="cw-row-btns" id="tracingRowBtns"></div>
@@ -1758,6 +1762,10 @@ body.guest-mode .progress-wrap{opacity:.4;}
   <div class="cw-row" id="spellCardRow" style="border-color:rgba(85,239,196,.25);">
     <span class="cw-row-label" style="color:var(--success)">✍️ Pisanie graficzne:</span>
     <div class="cw-row-btns" id="spellCardRowBtns"></div>
+  </div>
+  <div class="cw-row" id="spellPrintRow" style="border-color:rgba(124,58,237,.25);">
+    <span class="cw-row-label" style="color:var(--purple)">✍️ Pisanie graficzne (do druku):</span>
+    <div class="cw-row-btns" id="spellPrintRowBtns"></div>
   </div>
   <div class="cw-row" id="dobbleRow" style="border-color:rgba(162,155,254,.25);">
     <span class="cw-row-label" style="color:var(--purple)">🎯 Karty do gry:</span>
@@ -4234,6 +4242,8 @@ szkoła	school"></textarea>
       <option value="spiral">🐍 Wyszukiwanka spiralna (wąż wyrazowy)</option>
       <option value="scramble">🔀 Rozsypanka literowa</option>
       <option value="sentscramble">📜 Rozsypanka zdaniowa</option>
+      <option value="spellcard">✍️ Pisanie graficzne (obrazek + kratki)</option>
+      <option value="imagecard">🖼️ Karta obrazkowa (obrazek + linia)</option>
       <option value="minibook">📕 Mini-książeczka</option>
       <option value="weekly">📅 Karta domowa na tydzień</option>
       <option value="monthly">📅 Karta domowa na miesiąc</option>
@@ -5518,6 +5528,21 @@ function refreshGrid() {
     spellBtns.appendChild(btn);
   });
 
+  // Pisanie graficzne — wersja DO DRUKU (karta pracy z podglądem + wyborem słówek)
+  const spellPrintBtns = document.getElementById('spellPrintRowBtns');
+  if (spellPrintBtns) {
+    spellPrintBtns.innerHTML = '';
+    ['all', ...Object.keys(book.units)].forEach(k => {
+      const u = units[k];
+      const btn = document.createElement('button');
+      btn.className = 'btn-cw';
+      btn.style.cssText = 'border-color:rgba(124,58,237,.4);color:var(--purple);';
+      btn.textContent = u.icon + ' ' + u.name;
+      btn.addEventListener('click', () => openWorksheetModal(book.id, k, 'spellcard'));
+      spellPrintBtns.appendChild(btn);
+    });
+  }
+
   // Sentence Builder buttons row
   const sentBuildBtns = document.getElementById('sentBuildRowBtns');
   sentBuildBtns.innerHTML = '';
@@ -5665,6 +5690,21 @@ function refreshGrid() {
     btn.addEventListener('click', () => openImageCard(k));
     imgBtns.appendChild(btn);
   });
+
+  // Karta obrazkowa — wersja DO DRUKU (karta pracy z podglądem + wyborem słówek)
+  const imgPrintBtns = document.getElementById('imgCardPrintRowBtns');
+  if (imgPrintBtns) {
+    imgPrintBtns.innerHTML = '';
+    ['all', ...Object.keys(book.units)].forEach(k => {
+      const u = units[k];
+      const btn = document.createElement('button');
+      btn.className = 'btn-cw';
+      btn.style.cssText = 'border-color:rgba(124,58,237,.4);color:var(--purple);';
+      btn.textContent = u.icon + ' ' + u.name;
+      btn.addEventListener('click', () => openWorksheetModal(book.id, k, 'imagecard'));
+      imgPrintBtns.appendChild(btn);
+    });
+  }
 
   // Hangman row removed from sUnits — dostepny tylko z mode-switcher w sStudy
   // (button id="mHangman", funkcja openHangman(currentUnitKey)).
@@ -25243,6 +25283,99 @@ if ('serviceWorker' in navigator) {
     return { html: wsPage('Rozsypanka zdaniowa — ' + wsHead(book, unitLabel), 'Karta pracy · ' + items.length + ' zdań · ' + wsDate(), body, css) };
   }
 
+  // Pomocnik: emoji (inline z data.js lub z bazy emoji) + URL obrazka dla słowa.
+  function wsPicFor(book, w){
+    const pl = (w[0] || '').trim();
+    let emoji = '';
+    if (w[2] && typeof w[2] === 'string' && w[2].length <= 4 && !/\s/.test(w[2]) && !/[a-zA-Z0-9]/.test(w[2])) emoji = w[2];
+    if (!emoji && typeof getWordEmojiRaw === 'function') emoji = getWordEmojiRaw(pl) || '';
+    let imgUrl = '';
+    if (typeof DB !== 'undefined' && DB.getSentence){ const s = DB.getSentence(book.id, pl); imgUrl = (s && s.image_url) || ''; }
+    return { emoji, imgUrl };
+  }
+
+  // ✍️ Pisanie graficzne — karta pracy: obrazek/emoji + kratki na litery (po jednej
+  // na literę), bank angielskich słów na górze jako podpowiedź.
+  function wsSpellCard(book, unitLabel, words){
+    const items = (words || []).map(w => {
+      const pl = (w[0] || '').trim(), en = (w[1] || '').trim();
+      if (!en) return null;
+      const pic = wsPicFor(book, w);
+      return { pl, en, emoji: pic.emoji, imgUrl: pic.imgUrl };
+    }).filter(Boolean);
+    if (!items.length) return { error:'⚠️ Brak słów.' };
+
+    const bank = wsShuffle(items).map(it => `<span class="sc-bw">${escHtmlWs(it.en)}</span>`).join('');
+    const cards = items.map(it => {
+      const word = it.en.toUpperCase();
+      let pic;
+      if (it.imgUrl) pic = `<img class="sc-img" src="${escHtmlWs(it.imgUrl)}" onerror="this.style.display='none'">`;
+      else if (it.emoji) pic = `<div class="sc-emoji">${it.emoji}</div>`;
+      else pic = `<div class="sc-plhint">${escHtmlWs(it.pl)}</div>`;
+      let boxes = '';
+      for (let i = 0; i < word.length; i++){
+        const ch = word[i];
+        if (ch === ' '){ boxes += '<span class="sc-spacer"></span>'; }
+        else { const narrow = 'ILJ1'.includes(ch), wide = 'MWQ'.includes(ch); const bw = narrow ? 18 : wide ? 28 : 22; boxes += `<span class="sc-box" style="width:${bw}px"></span>`; }
+      }
+      return `<div class="sc-card">${pic}<div class="sc-boxes">${boxes}</div></div>`;
+    }).join('');
+
+    const body = `<div class="tip">✍️ <b>Jak rozwiązać:</b> Popatrz na obrazek i wpisz <b>angielskie</b> słowo — po jednej literze w każdej kratce. Pomocą jest bank słów na górze.</div>
+      <div class="wsfields"><div class="f"><label>Imię i nazwisko</label>&nbsp;</div><div class="f"><label>Klasa</label>&nbsp;</div><div class="f"><label>Data</label>&nbsp;</div></div>
+      <div class="sc-bank">${bank}</div>
+      <div class="sc-grid">${cards}</div>`;
+    const css = `.sc-bank{display:flex;flex-wrap:wrap;gap:6px;padding:9px 12px;border:2px solid #333;border-radius:8px;margin:6px 0 14px;justify-content:center}
+      .sc-bw{padding:4px 11px;border:1.5px solid #999;border-radius:6px;font-size:.82rem;font-weight:700}
+      .sc-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+      .sc-card{text-align:center;padding:10px;border:1px solid #ddd;border-radius:10px;break-inside:avoid}
+      .sc-img{width:66px;height:66px;object-fit:contain;border-radius:6px}
+      .sc-emoji{font-size:3rem;line-height:1}
+      .sc-plhint{font-size:.78rem;color:#888;font-weight:700;margin-bottom:2px}
+      .sc-boxes{display:flex;gap:3px;justify-content:center;flex-wrap:wrap;margin-top:8px}
+      .sc-box{height:30px;border:2px solid #333;border-radius:4px;background:#fff}
+      .sc-spacer{width:9px}`;
+    return { html: wsPage('Pisanie graficzne — ' + wsHead(book, unitLabel), 'Karta pracy · ' + items.length + ' słów · ' + wsDate(), body, css) };
+  }
+
+  // 🖼️ Karta obrazkowa — karta pracy: obrazek/emoji + linia do wpisania słowa,
+  // bank słów na górze + klucz dla nauczyciela. Tylko słowa z obrazkiem/emoji.
+  function wsImageCard(book, unitLabel, words){
+    const items = (words || []).map(w => {
+      const pl = (w[0] || '').trim(), en = (w[1] || '').trim();
+      if (!en) return null;
+      const pic = wsPicFor(book, w);
+      if (!pic.imgUrl && !pic.emoji) return null;
+      return { pl, en, emoji: pic.emoji, imgUrl: pic.imgUrl };
+    }).filter(Boolean);
+    if (!items.length) return { error:'⚠️ Wybrane słówka nie mają obrazków ani emoji — nie można zrobić karty obrazkowej.' };
+
+    const bank = wsShuffle(items).map(it => `<span class="ic-bw">${escHtmlWs(it.en)}</span>`).join('');
+    const cards = items.map((it, i) => {
+      const pic = it.imgUrl ? `<img class="ic-img" src="${escHtmlWs(it.imgUrl)}" onerror="this.style.display='none'">` : `<div class="ic-emoji">${it.emoji}</div>`;
+      return `<div class="ic-card"><div class="ic-num">${i + 1}</div>${pic}<div class="ic-line"></div></div>`;
+    }).join('');
+    const keyList = items.map((it, i) => `<li>${i + 1}. <b>${escHtmlWs(it.en)}</b> <span style="color:#888">(${escHtmlWs(it.pl)})</span></li>`).join('');
+
+    const body = `<div class="tip">🖼️ <b>Jak rozwiązać:</b> Popatrz na każdy obrazek i napisz pod nim <b>angielskie</b> słowo. Pomocą jest bank słów na górze.</div>
+      <div class="wsfields"><div class="f"><label>Imię i nazwisko</label>&nbsp;</div><div class="f"><label>Klasa</label>&nbsp;</div><div class="f"><label>Data</label>&nbsp;</div></div>
+      <div class="ic-bank">${bank}</div>
+      <div class="ic-grid">${cards}</div>
+      <div class="pagebreak"></div>
+      <div class="tip">🔑 <b>Klucz (dla nauczyciela):</b></div>
+      <ol class="ic-key">${keyList}</ol>`;
+    const css = `.ic-bank{display:flex;flex-wrap:wrap;gap:6px;padding:9px 12px;border:2px solid #333;border-radius:8px;margin:6px 0 14px;justify-content:center}
+      .ic-bw{padding:4px 11px;border:1.5px solid #999;border-radius:6px;font-size:.82rem;font-weight:700}
+      .ic-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+      .ic-card{position:relative;text-align:center;padding:12px 8px 8px;border:1px solid #ddd;border-radius:10px;break-inside:avoid}
+      .ic-num{position:absolute;top:5px;left:8px;font-size:.7rem;font-weight:800;color:#999}
+      .ic-img{width:74px;height:74px;object-fit:contain;border-radius:6px}
+      .ic-emoji{font-size:3.4rem;line-height:1}
+      .ic-line{border-bottom:1.6px dotted #999;height:22px;margin-top:10px}
+      ol.ic-key{columns:2;font-size:.84rem;line-height:1.8;margin-top:4px}`;
+    return { html: wsPage('Karta obrazkowa — ' + wsHead(book, unitLabel), 'Karta pracy · ' + items.length + ' obrazków · ' + wsDate(), body, css) };
+  }
+
   function wsMiniBook(book, unitLabel, words){
     let pairs=wsPairs(words);
     if(!pairs.length) return {error:'⚠️ Brak słów.'};
@@ -25803,7 +25936,7 @@ if ('serviceWorker' in navigator) {
     }
 
     // Nowe typy kart pracy (Bingo/Domino/Koło/Labirynt/Książeczka/Karta domowa/...)
-    const WS_CUSTOM = { bingo: wsBingo, domino: wsDomino, wheel: wsWheel, maze: wsMaze, spiral: wsSpiral, scramble: wsScramble, sentscramble: wsSentScramble, minibook: wsMiniBook, weekly: wsWeekly, monthly: wsMonthly, schoolyear: wsSchoolYear, holidays: wsHolidays, bookmark: wsBookmark, ihave: wsIHave, quiz: wsQuiz, test: wsTest, wordbank: wsWordBank, agree: wsAgree };
+    const WS_CUSTOM = { bingo: wsBingo, domino: wsDomino, wheel: wsWheel, maze: wsMaze, spiral: wsSpiral, scramble: wsScramble, sentscramble: wsSentScramble, spellcard: wsSpellCard, imagecard: wsImageCard, minibook: wsMiniBook, weekly: wsWeekly, monthly: wsMonthly, schoolyear: wsSchoolYear, holidays: wsHolidays, bookmark: wsBookmark, ihave: wsIHave, quiz: wsQuiz, test: wsTest, wordbank: wsWordBank, agree: wsAgree };
     if (WS_CUSTOM[variant]) return WS_CUSTOM[variant](book, unitLabel, words);
 
     // Wariant "Zdania z lukami"
