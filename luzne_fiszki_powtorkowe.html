@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🎴 Luźne fiszki powtórkowe</title>
+<script src="data.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    min-height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+    padding: 60px 20px 40px;
+    overflow-x: hidden;
+    background: linear-gradient(-45deg, #6a11cb, #2575fc, #ff5acd, #11998e);
+    background-size: 400% 400%;
+    animation: gradientShift 18s ease infinite;
+    color: #fff;
+  }
+  @keyframes gradientShift { 0%{background-position:0% 50%;}50%{background-position:100% 50%;}100%{background-position:0% 50%;} }
+
+  /* Floating decorative bubbles */
+  .bubble { position: fixed; bottom: -120px; border-radius: 50%; background: rgba(255,255,255,0.10); pointer-events: none; animation: rise linear infinite; z-index: 0; }
+  @keyframes rise { to { transform: translateY(-115vh) rotate(360deg); opacity: 0; } }
+
+  /* Back / Help links */
+  .back-link {
+    position: fixed; top: 14px; left: 14px; z-index: 1000;
+    display: inline-flex; align-items: center; gap: 6px; padding: 9px 16px;
+    background: rgba(255,255,255,0.92); border: 1.5px solid rgba(0,0,0,.1);
+    border-radius: 100px; color: #2b2b3a; font-weight: 700; font-size: .85rem;
+    text-decoration: none; backdrop-filter: blur(10px); transition: all .2s;
+  }
+  .back-link:hover { background: #fff; transform: translateX(-2px); }
+  .htp-btn {
+    position: fixed; top: 14px; right: 14px; z-index: 1000;
+    padding: 9px 16px; background: rgba(255,255,255,0.92);
+    border: 1.5px solid rgba(0,0,0,.1); border-radius: 100px;
+    color: #5b21b6; font-weight: 800; font-size: .85rem; cursor: pointer;
+    font-family: inherit; backdrop-filter: blur(10px);
+  }
+  .htp-btn:hover { background: #fff; }
+  .htp-modal { position: fixed; inset: 0; background: rgba(31,41,55,.7); backdrop-filter: blur(8px); z-index: 2000; display: none; align-items: center; justify-content: center; padding: 20px; }
+  .htp-modal.show { display: flex; }
+  .htp-box { background: #fff; color: #2b2b3a; border-radius: 24px; padding: 28px 32px; max-width: 520px; max-height: 85vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
+  .htp-box h2 { color: #5b21b6; font-size: 1.4rem; margin-bottom: 14px; }
+  .htp-box ol { padding-left: 22px; } .htp-box li { margin-bottom: 9px; font-size: .95rem; line-height: 1.5; }
+  .htp-box li strong { color: #5b21b6; }
+  .htp-box button { margin-top: 16px; width: 100%; padding: 11px; background: #5b21b6; border: none; border-radius: 100px; font-weight: 800; color: #fff; cursor: pointer; font-size: .95rem; font-family: inherit; }
+
+  .app {
+    position: relative; z-index: 2; width: 100%; max-width: 620px;
+    background: rgba(255,255,255,0.12); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(255,255,255,0.25); border-radius: 28px;
+    padding: 30px 28px 34px; box-shadow: 0 20px 60px rgba(0,0,0,0.35); text-align: center;
+  }
+  h1 { font-size: 1.9rem; margin-bottom: 4px; text-shadow: 0 3px 10px rgba(0,0,0,0.3); }
+  .subtitle { font-size: 0.92rem; opacity: 0.85; margin-bottom: 18px; }
+
+  /* Setup: book + unit selectors */
+  .setup { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+  .setup select {
+    flex: 1 1 180px; padding: 11px 12px; font-size: 0.9rem; font-family: inherit; font-weight: 700;
+    background: rgba(255,255,255,0.95); color: #2b2b3a; border: 1px solid rgba(255,255,255,0.4);
+    border-radius: 14px; outline: none; cursor: pointer;
+  }
+
+  .dir-toggle {
+    display: inline-flex; align-items: center; gap: 8px; margin-bottom: 12px;
+    padding: 8px 16px; border-radius: 22px; font-size: 0.9rem; font-weight: 700; cursor: pointer;
+    color: #fff; background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.3);
+    transition: transform 0.15s ease, background 0.2s ease; user-select: none;
+  }
+  .dir-toggle:hover { transform: translateY(-2px); background: rgba(255,255,255,0.28); }
+  .dir-toggle:active { transform: scale(0.96); }
+  .dir-swap { font-size: 1rem; transition: transform 0.4s ease; }
+  .dir-toggle.swapping .dir-swap { transform: rotate(360deg); }
+
+  .counter { display: block; font-size: 0.8rem; background: rgba(0,0,0,0.25); padding: 5px 14px; border-radius: 20px; margin: 0 auto 18px; max-width: max-content; letter-spacing: 0.5px; }
+
+  .flashcard { perspective: 1400px; min-height: 230px; }
+  .flashcard.pop { animation: pop 0.5s cubic-bezier(.18,.89,.32,1.28); }
+  @keyframes pop { 0%{transform:scale(0.6) rotate(-6deg);opacity:0;}60%{transform:scale(1.06) rotate(2deg);}100%{transform:scale(1) rotate(0);opacity:1;} }
+  .flashcard-inner { position: relative; width: 100%; min-height: 230px; transition: transform 0.7s cubic-bezier(.4,.2,.2,1); transform-style: preserve-3d; }
+  .flashcard-inner.flipped { transform: rotateY(180deg); }
+  .flashcard-face {
+    position: absolute; inset: 0; width: 100%; min-height: 100%;
+    backface-visibility: hidden; -webkit-backface-visibility: hidden;
+    border-radius: 22px; padding: 26px 24px; display: flex; flex-direction: column;
+    justify-content: center; align-items: center; box-shadow: 0 14px 36px rgba(0,0,0,0.28); overflow-y: auto;
+  }
+  .flashcard-front { background: rgba(255,255,255,0.97); color: #2b2b3a; }
+  .flashcard-back { background: linear-gradient(160deg, #ecfeff, #e0f2fe); color: #2b2b3a; transform: rotateY(180deg); }
+  .flip-hint { margin-top: 16px; font-size: 0.72rem; color: #9a9ab0; letter-spacing: 0.5px; }
+  .card-emoji { font-size: 2.6rem; line-height: 1; margin-bottom: 10px; }
+  .label-pl, .label-en { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 2px; color: #8a8aa0; margin-bottom: 10px; }
+  .polish { font-size: 1.9rem; font-weight: 700; line-height: 1.25; color: #5b21b6; }
+  .english { font-size: 1.6rem; font-weight: 700; color: #0e7490; cursor: pointer; transition: transform 0.15s ease, color 0.15s ease; }
+  .english:hover { transform: scale(1.04); color: #0891b2; }
+  .english:active { transform: scale(0.97); }
+  .placeholder { font-size: 1.3rem; color: #9a9ab0; font-weight: 600; }
+
+  .buttons { display: flex; gap: 14px; margin-top: 24px; flex-wrap: wrap; justify-content: center; }
+  button {
+    flex: 1 1 180px; border: none; padding: 16px 22px; border-radius: 16px; font-size: 1.05rem; font-weight: 700;
+    cursor: pointer; color: #fff; transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease; box-shadow: 0 8px 20px rgba(0,0,0,0.25);
+  }
+  button:active { transform: scale(0.95); }
+  button:hover { transform: translateY(-3px); filter: brightness(1.08); }
+  button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; filter: none; }
+  .btn-draw { background: linear-gradient(135deg, #ff6a00, #ee0979); }
+  .btn-show { background: linear-gradient(135deg, #11998e, #38ef7d); }
+  .speak-btn { margin-top: 14px; background: rgba(91,33,182,0.14); border: 1px solid rgba(91,33,182,0.3); color: #5b21b6; font-size: 0.85rem; padding: 9px 16px; border-radius: 14px; flex: 0 0 auto; box-shadow: none; }
+  .speak-btn:hover { background: rgba(91,33,182,0.22); transform: translateY(-2px); filter: none; }
+  .progress { margin-top: 20px; font-size: 0.8rem; opacity: 0.8; }
+
+  .confetti { position: fixed; width: 10px; height: 16px; top: -20px; z-index: 5; pointer-events: none; animation: fall linear forwards; }
+  @keyframes fall { to { transform: translateY(110vh) rotate(720deg); opacity: 0.9; } }
+
+  .bottom-back { text-align: center; margin: 24px 0 6px; position: relative; z-index: 2; }
+  .bottom-back a { color: #fff; text-decoration: none; font-weight: 700; font-size: .85rem; background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.3); padding: 9px 16px; border-radius: 100px; }
+  .footer { text-align: center; font-size: .7rem; color: rgba(255,255,255,.75); font-weight: 600; padding: 8px; position: relative; z-index: 2; }
+
+  @media print { .back-link, .htp-btn, .htp-modal, .bottom-back, .bubble, .confetti { display: none !important; } }
+</style>
+</head>
+<body>
+
+<a href="app.html" class="back-link">← Powrót do Sowie Fiszki</a>
+<button class="htp-btn" onclick="document.getElementById('htpModal').classList.add('show')">ℹ️ Jak grać?</button>
+
+<div class="htp-modal" id="htpModal" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="htp-box">
+    <h2>🎴 Jak używać luźnych fiszek?</h2>
+    <ol>
+      <li>Wybierz <strong>podręcznik</strong> i <strong>rozdział</strong> (lub „🌍 Wszystkie rozdziały").</li>
+      <li>Ustaw <strong>kierunek</strong>: 🇵🇱 → 🌍 albo 🌍 → 🇵🇱.</li>
+      <li>Kliknij <strong>🎲 Losuj</strong> — pojawi się losowa fiszka z pytaniem.</li>
+      <li>Spróbuj odpowiedzieć w głowie, potem kliknij <strong>👁️ Pokaż odpowiedź</strong>, aby obrócić fiszkę.</li>
+      <li>Kliknij <strong>🔊</strong> lub samo słowo w języku obcym, aby je usłyszeć.</li>
+      <li>Pula nie powtarza słówek, dopóki nie wylosujesz wszystkich — wtedy odświeża się sama.</li>
+      <li>Klawiatura: <strong>spacja</strong> = losuj, <strong>Enter</strong> = pokaż odpowiedź.</li>
+    </ol>
+    <button onclick="document.getElementById('htpModal').classList.remove('show')">Zaczynam!</button>
+  </div>
+</div>
+
+<div class="app">
+  <h1>🎴 Luźne fiszki powtórkowe</h1>
+  <div class="subtitle">Losowe fiszki z dowolnego podręcznika i rozdziału</div>
+
+  <div class="setup">
+    <select id="bookSel"><option value="">— Wybierz podręcznik —</option></select>
+    <select id="unitSel" disabled><option value="">— Najpierw podręcznik —</option></select>
+  </div>
+
+  <div class="dir-toggle" id="dirToggle" title="Zmień kierunek tłumaczenia">
+    <span id="dirLabel">🇵🇱 Polski → 🌍 Obcy</span>
+    <span class="dir-swap">🔄</span>
+  </div>
+
+  <div class="counter" id="counter">Wybierz podręcznik i rozdział</div>
+
+  <div class="flashcard" id="flashcard">
+    <div class="flashcard-inner" id="flashcardInner">
+      <div class="flashcard-face flashcard-front">
+        <div class="placeholder" id="placeholder">Wybierz podręcznik i kliknij <b>Losuj</b> 🚀</div>
+        <div id="frontWord" style="display:none; width:100%;">
+          <div class="card-emoji" id="frontEmoji" style="display:none"></div>
+          <div class="label-pl" id="frontLabel">Polski</div>
+          <div class="polish" id="frontText"></div>
+          <div class="flip-hint">Naciśnij „Pokaż odpowiedź", aby obrócić fiszkę 🔄</div>
+        </div>
+      </div>
+      <div class="flashcard-face flashcard-back">
+        <div class="label-en" id="backLabel">Obcy</div>
+        <div class="english" id="backText"></div>
+        <button class="speak-btn" id="speakBtn">🔊 Kliknij słowo lub tutaj, aby usłyszeć</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="buttons">
+    <button class="btn-draw" id="drawBtn" disabled>🎲 Losuj</button>
+    <button class="btn-show" id="showBtn" disabled>👁️ Pokaż odpowiedź</button>
+  </div>
+
+  <div class="progress" id="progress">Wylosowano: 0 / 0</div>
+</div>
+
+<div class="bottom-back"><a href="app.html">← Wróć do Sowie Fiszki</a></div>
+<div class="footer">© 2026 Sowie Fiszki</div>
+
+<script>
+'use strict';
+
+// ── Elementy ──
+const bookSel = document.getElementById('bookSel');
+const unitSel = document.getElementById('unitSel');
+const card = document.getElementById('flashcard');
+const cardInner = document.getElementById('flashcardInner');
+const placeholder = document.getElementById('placeholder');
+const wordWrap = document.getElementById('frontWord');
+const frontEmoji = document.getElementById('frontEmoji');
+const frontLabel = document.getElementById('frontLabel');
+const frontText = document.getElementById('frontText');
+const backLabel = document.getElementById('backLabel');
+const backText = document.getElementById('backText');
+const dirToggle = document.getElementById('dirToggle');
+const dirLabel = document.getElementById('dirLabel');
+const drawBtn = document.getElementById('drawBtn');
+const showBtn = document.getElementById('showBtn');
+const speakBtn = document.getElementById('speakBtn');
+const counterEl = document.getElementById('counter');
+const progressEl = document.getElementById('progress');
+
+// ── Stan ──
+let WORDS = [];          // [{pl, en, emoji}]
+let bag = [];            // indeksy do losowania bez powtórek
+let drawnCount = 0;
+let current = null;
+let drawToken = 0;
+let direction = 'pl-en'; // 'pl-en' lub 'en-pl'
+let foreignSide = 'back';
+let bookLang = 'en';
+
+const LANG_NAME = { en: 'English', fr: 'Français', de: 'Deutsch', ru: 'Русский', es: 'Español', it: 'Italiano' };
+function bcp(l){ return ({ fr: 'fr-FR', de: 'de-DE', ru: 'ru-RU', es: 'es-ES', it: 'it-IT' })[l] || 'en-GB'; }
+function foreignLabel(){ return (LANG_NAME[bookLang] || 'Obcy'); }
+function flagFor(l){ return ({ en:'🇬🇧', fr:'🇫🇷', de:'🇩🇪', ru:'🇷🇺', es:'🇪🇸', it:'🇮🇹' })[l] || '🌍'; }
+
+// Czy element słowa to emoji (a nie zdanie / tekst)?
+function isEmojiTok(s){
+  return typeof s === 'string' && s.length > 0 && s.length <= 5 &&
+         !/\s/.test(s) && !/[a-zA-Z0-9]/.test(s) && !/[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]/.test(s);
+}
+
+// ── Inicjalizacja list ──
+(function initBooks(){
+  if (typeof BOOKS === 'undefined') { counterEl.textContent = 'Błąd: nie wczytano bazy słówek.'; return; }
+  const books = Object.values(BOOKS)
+    .filter(b => b && b.units)
+    .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'pl'));
+  books.forEach(b => {
+    const o = document.createElement('option');
+    o.value = b.id;
+    o.textContent = (b.icon || '📖') + ' ' + (b.name || b.id);
+    bookSel.appendChild(o);
+  });
+
+  // Auto-wybór z parametrów URL (?book=...&unit=...)
+  try {
+    const p = new URLSearchParams(location.search);
+    const bp = p.get('book'), up = p.get('unit');
+    if (bp && BOOKS[bp]) {
+      bookSel.value = bp; onBookChange();
+      const target = (up === 'all' || up === '__all__' || !up) ? '__all__' : up;
+      if ([...unitSel.options].some(o => o.value === target)) { unitSel.value = target; rebuildWords(); }
+    }
+  } catch(e) {}
+})();
+
+bookSel.addEventListener('change', onBookChange);
+unitSel.addEventListener('change', rebuildWords);
+
+function onBookChange(){
+  const b = BOOKS[bookSel.value];
+  unitSel.innerHTML = '';
+  if (!b || !b.units) { unitSel.disabled = true; unitSel.innerHTML = '<option value="">— Najpierw podręcznik —</option>'; resetDeck(); return; }
+  bookLang = b.language || 'en';
+  const all = document.createElement('option');
+  all.value = '__all__'; all.textContent = '🌍 Wszystkie rozdziały';
+  unitSel.appendChild(all);
+  Object.entries(b.units).forEach(([key, u]) => {
+    const o = document.createElement('option');
+    o.value = key;
+    o.textContent = (u.icon ? u.icon + ' ' : '') + (u.name || key) + ' (' + (u.words ? u.words.length : 0) + ')';
+    unitSel.appendChild(o);
+  });
+  unitSel.disabled = false; unitSel.value = '__all__';
+  updateDirLabel();
+  rebuildWords();
+}
+
+function rebuildWords(){
+  const b = BOOKS[bookSel.value];
+  if (!b || !b.units) { resetDeck(); return; }
+  bookLang = b.language || 'en';
+  const uKey = unitSel.value;
+  let raw = [];
+  if (uKey === '__all__' || !uKey) Object.values(b.units).forEach(u => { if (Array.isArray(u.words)) raw = raw.concat(u.words); });
+  else if (b.units[uKey]) raw = (b.units[uKey].words || []).slice();
+
+  WORDS = raw.map(w => ({
+    pl: (w[0] || '').trim(),
+    en: (w[1] || '').trim(),
+    emoji: isEmojiTok(w[2]) ? w[2] : ''
+  })).filter(w => w.pl && w.en);
+
+  drawnCount = 0; current = null;
+  cardInner.classList.remove('flipped');
+  wordWrap.style.display = 'none';
+  placeholder.style.display = 'block';
+  showBtn.disabled = true;
+  refillBag();
+  updateDirLabel();
+  counterEl.textContent = WORDS.length ? ('Słówek w puli: ' + WORDS.length) : 'Ten rozdział nie ma słówek';
+  drawBtn.disabled = WORDS.length === 0;
+  updateProgress();
+}
+
+function resetDeck(){
+  WORDS = []; bag = []; drawnCount = 0; current = null;
+  drawBtn.disabled = true; showBtn.disabled = true;
+  wordWrap.style.display = 'none'; placeholder.style.display = 'block';
+  cardInner.classList.remove('flipped');
+  counterEl.textContent = 'Wybierz podręcznik i rozdział';
+  updateProgress();
+}
+
+function refillBag(){
+  bag = WORDS.map((_, i) => i);
+  for (let i = bag.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [bag[i], bag[j]] = [bag[j], bag[i]]; }
+}
+
+function updateProgress(){
+  progressEl.innerHTML = WORDS.length
+    ? ('Wylosowano: ' + drawnCount + ' / ' + WORDS.length + ' &nbsp;•&nbsp; pozostało w puli: ' + bag.length)
+    : '—';
+}
+
+function updateDirLabel(){
+  dirLabel.textContent = direction === 'pl-en'
+    ? ('🇵🇱 Polski → ' + flagFor(bookLang) + ' ' + foreignLabel())
+    : (flagFor(bookLang) + ' ' + foreignLabel() + ' → 🇵🇱 Polski');
+}
+
+// Front = pytanie (widoczne od razu), Back = odpowiedź (po obrocie)
+function applyCard(){
+  if (!current) return;
+  const question = direction === 'pl-en' ? current.pl : current.en;
+  const answer   = direction === 'pl-en' ? current.en : current.pl;
+
+  frontLabel.textContent = direction === 'pl-en' ? 'Polski' : foreignLabel();
+  backLabel.textContent  = direction === 'pl-en' ? foreignLabel() : 'Polski';
+
+  frontText.textContent = question;
+  frontText.className = direction === 'pl-en' ? 'polish' : 'english';
+  backText.className   = direction === 'pl-en' ? 'english' : 'polish';
+  foreignSide = direction === 'pl-en' ? 'back' : 'front';
+
+  if (current.emoji) { frontEmoji.textContent = current.emoji; frontEmoji.style.display = 'block'; }
+  else frontEmoji.style.display = 'none';
+
+  const wasFlipped = cardInner.classList.contains('flipped');
+  cardInner.classList.remove('flipped');
+
+  drawToken++;
+  const myToken = drawToken;
+  if (wasFlipped) { backText.textContent = ''; setTimeout(() => { if (myToken === drawToken) backText.textContent = answer; }, 720); }
+  else backText.textContent = answer;
+
+  showBtn.disabled = false;
+  showBtn.textContent = '👁️ Pokaż odpowiedź';
+}
+
+function draw(){
+  if (!WORDS.length) return;
+  if (bag.length === 0) refillBag();
+  const idx = bag.pop();
+  current = WORDS[idx];
+  drawnCount++;
+  placeholder.style.display = 'none';
+  wordWrap.style.display = 'block';
+  applyCard();
+  card.classList.remove('pop'); void card.offsetWidth; card.classList.add('pop');
+  updateProgress();
+}
+
+function showAnswer(){
+  if (!current) return;
+  cardInner.classList.add('flipped');
+  showBtn.disabled = true;
+  burstConfetti();
+  // Auto-przeczytaj słowo w języku obcym po obróceniu
+  speakForeign();
+}
+
+// ── TTS ──
+let _voices = [];
+function loadVoices(){ try { _voices = speechSynthesis.getVoices() || []; } catch(e){ _voices = []; } }
+if ('speechSynthesis' in window) { loadVoices(); speechSynthesis.onvoiceschanged = loadVoices; }
+function pickVoice(lang){
+  if (!_voices.length) loadVoices();
+  if (!_voices.length) return null;
+  return _voices.find(v => /Online.*Natural/i.test(v.name) && v.lang && v.lang.toLowerCase().startsWith(lang.slice(0,2))) ||
+         _voices.find(v => v.lang === lang) ||
+         _voices.find(v => v.lang && v.lang.toLowerCase().startsWith(lang.slice(0,2))) || null;
+}
+function speak(text, lang){
+  if (!text || !('speechSynthesis' in window)) return;
+  try {
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = lang; u.rate = 0.92; u.pitch = 1;
+    const v = pickVoice(lang); if (v) u.voice = v;
+    speechSynthesis.speak(u);
+  } catch(e) {}
+}
+function speakForeign(){ if (current) speak(current.en, bcp(bookLang)); }
+
+// ── Zdarzenia ──
+drawBtn.addEventListener('click', draw);
+showBtn.addEventListener('click', showAnswer);
+speakBtn.addEventListener('click', speakForeign);
+frontText.addEventListener('click', () => { if (current && foreignSide === 'front') speakForeign(); });
+backText.addEventListener('click', () => { if (current && foreignSide === 'back') speakForeign(); });
+
+dirToggle.addEventListener('click', () => {
+  direction = direction === 'pl-en' ? 'en-pl' : 'pl-en';
+  updateDirLabel();
+  dirToggle.classList.remove('swapping'); void dirToggle.offsetWidth; dirToggle.classList.add('swapping');
+  if (current) applyCard();
+});
+
+document.addEventListener('keydown', e => {
+  if (e.target && /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
+  if (e.code === 'Space') { e.preventDefault(); draw(); }
+  else if (e.code === 'Enter') { e.preventDefault(); if (!showBtn.disabled) showAnswer(); }
+});
+
+// ── Konfetti + bąbelki ──
+function burstConfetti(){
+  const colors = ['#ffd54f','#ff6a00','#ee0979','#38ef7d','#2575fc','#ff5acd','#11998e'];
+  for (let i = 0; i < 30; i++) {
+    const c = document.createElement('div');
+    c.className = 'confetti';
+    c.style.left = Math.random() * 100 + 'vw';
+    c.style.background = colors[Math.floor(Math.random() * colors.length)];
+    c.style.animationDuration = (1.4 + Math.random() * 1.4) + 's';
+    c.style.animationDelay = (Math.random() * 0.3) + 's';
+    c.style.transform = 'rotate(' + (Math.random() * 360) + 'deg)';
+    document.body.appendChild(c);
+    setTimeout(() => c.remove(), 3200);
+  }
+}
+(function makeBubbles(){
+  for (let i = 0; i < 12; i++) {
+    const b = document.createElement('div');
+    b.className = 'bubble';
+    const size = 30 + Math.random() * 90;
+    b.style.width = size + 'px'; b.style.height = size + 'px';
+    b.style.left = Math.random() * 100 + 'vw';
+    b.style.animationDuration = (14 + Math.random() * 16) + 's';
+    b.style.animationDelay = (Math.random() * 12) + 's';
+    document.body.appendChild(b);
+  }
+})();
+</script>
+</body>
+</html>
