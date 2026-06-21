@@ -1743,6 +1743,10 @@ body.guest-mode .progress-wrap{opacity:.4;}
     <span class="cw-row-label" style="color:var(--blue)">📜 Rozsypanka zdaniowa:</span>
     <div class="cw-row-btns" id="sentScrGameRowBtns"></div>
   </div>
+  <div class="cw-row" id="sentScrPrintRow" style="border-color:rgba(124,58,237,.25);">
+    <span class="cw-row-label" style="color:var(--purple)">📜 Rozsypanka zdaniowa (do druku):</span>
+    <div class="cw-row-btns" id="sentScrPrintRowBtns"></div>
+  </div>
   <div class="cw-row" id="imgCardRow" style="border-color:rgba(116,185,255,.25);">
     <span class="cw-row-label" style="color:var(--blue)">🖼️ Karta obrazkowa:</span>
     <div class="cw-row-btns" id="imgCardRowBtns"></div>
@@ -4229,6 +4233,7 @@ szkoła	school"></textarea>
       <option value="maze">🧩 Labirynt słowny</option>
       <option value="spiral">🐍 Wyszukiwanka spiralna (wąż wyrazowy)</option>
       <option value="scramble">🔀 Rozsypanka literowa</option>
+      <option value="sentscramble">📜 Rozsypanka zdaniowa</option>
       <option value="minibook">📕 Mini-książeczka</option>
       <option value="weekly">📅 Karta domowa na tydzień</option>
       <option value="monthly">📅 Karta domowa na miesiąc</option>
@@ -5723,6 +5728,21 @@ function refreshGrid() {
     btn.addEventListener('click', () => openSentScrGame(k));
     sentScrGBtns.appendChild(btn);
   });
+
+  // Rozsypanka zdaniowa — wersja DO DRUKU (karta pracy z podglądem + wyborem słówek)
+  const sentScrPrintBtns = document.getElementById('sentScrPrintRowBtns');
+  if (sentScrPrintBtns) {
+    sentScrPrintBtns.innerHTML = '';
+    ['all', ...Object.keys(book.units)].forEach(k => {
+      const u = units[k];
+      const btn = document.createElement('button');
+      btn.className = 'btn-cw';
+      btn.style.cssText = 'border-color:rgba(124,58,237,.4);color:var(--purple);';
+      btn.textContent = u.icon + ' ' + u.name;
+      btn.addEventListener('click', () => openWorksheetModal(book.id, k, 'sentscramble'));
+      sentScrPrintBtns.appendChild(btn);
+    });
+  }
 
   // Speaking Dice buttons row (otwiera speaking_dice.html?book=X&unit=Y)
   const diceBtns = document.getElementById('diceRowBtns');
@@ -25149,6 +25169,61 @@ if ('serviceWorker' in navigator) {
     return { html: wsPage('Rozsypanka literowa — ' + wsHead(book, unitLabel), 'Karta pracy · ' + pairs.length + ' słów · ' + wsDate(), body, css) };
   }
 
+  // 📜 Rozsypanka zdaniowa — karta pracy: słowa każdego zdania przykładowego
+  // wymieszane w „kafelkach", polska podpowiedź nad rozsypanką i linia na zdanie.
+  function wsSentScramble(book, unitLabel, words){
+    // Zbierz zdania przykładowe wybranych słówek (inline z data.js lub z bazy).
+    const items = [];
+    (words || []).forEach(w => {
+      const pl = (w[0] || '').trim(), en = (w[1] || '').trim();
+      if (!en) return;
+      let sentPl = '', sentEn = '';
+      if (typeof getInlineSentences === 'function'){ const inl = getInlineSentences(w); sentPl = inl.sentPl || ''; sentEn = inl.sentEn || ''; }
+      if (!sentEn && typeof DB !== 'undefined' && DB.getSentence){
+        const s = DB.getSentence(book.id, pl);
+        if (s){ sentPl = sentPl || (s.sentence_pl || ''); sentEn = s.sentence_target || ''; }
+      }
+      if (!sentEn) return;
+      items.push({ pl, sentPl, sentEn });
+    });
+    if (!items.length) return { error:'⚠️ Wybrane słówka nie mają zdań przykładowych — nie można zrobić rozsypanki zdaniowej.' };
+
+    function shuf(a){ a = a.slice(); for (let i = a.length - 1; i > 0; i--){ const j = Math.floor(Math.random() * (i + 1)); const t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
+    function scrambleSentence(sent){
+      const ws = sent.trim().split(/\s+/).filter(Boolean);
+      if (ws.length < 2) return ws;
+      let out, tries = 0;
+      do { out = shuf(ws); tries++; } while (out.join(' ') === ws.join(' ') && tries < 25);
+      return out;
+    }
+
+    const rows = items.map((it, i) => {
+      const boxes = scrambleSentence(it.sentEn).map(wd => `<span class="ssc-box">${escHtmlWs(wd)}</span>`).join('');
+      return `<div class="ssc-row">
+        <div class="ssc-top"><span class="ssc-num">${i + 1}.</span> <span class="ssc-hint">🇵🇱 ${escHtmlWs(it.sentPl || it.pl)}</span></div>
+        <div class="ssc-boxes">${boxes}</div>
+        <div class="ssc-line"></div>
+      </div>`;
+    }).join('');
+    const keyList = items.map(it => `<li>${escHtmlWs(it.sentEn)}</li>`).join('');
+
+    const body = `<div class="tip">📜 <b>Jak rozwiązać:</b> Ułóż słowa z każdej rozsypanki w prawidłowej kolejności i napisz całe <b>angielskie</b> zdanie na linii. Podpowiedź po polsku jest nad rozsypanką.</div>
+      <div class="wsfields"><div class="f"><label>Imię i nazwisko</label>&nbsp;</div><div class="f"><label>Klasa</label>&nbsp;</div><div class="f"><label>Data</label>&nbsp;</div></div>
+      ${rows}
+      <div class="pagebreak"></div>
+      <div class="tip">🔑 <b>Klucz (dla nauczyciela):</b></div>
+      <ol class="ssc-key">${keyList}</ol>`;
+    const css = `.ssc-row{padding:11px 2px;border-bottom:1px solid #e3e3e3;break-inside:avoid}
+      .ssc-top{font-size:.9rem;margin-bottom:7px}
+      .ssc-num{font-weight:800;color:#999}
+      .ssc-hint{color:#666;font-style:italic}
+      .ssc-boxes{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+      .ssc-box{padding:5px 11px;border:1.6px solid #888;border-radius:7px;font-weight:700;font-size:.9rem;background:#fafafa;color:#1f6feb}
+      .ssc-line{border-bottom:1.6px dotted #999;height:22px}
+      ol.ssc-key{font-size:.86rem;line-height:1.85;margin-top:4px}`;
+    return { html: wsPage('Rozsypanka zdaniowa — ' + wsHead(book, unitLabel), 'Karta pracy · ' + items.length + ' zdań · ' + wsDate(), body, css) };
+  }
+
   function wsMiniBook(book, unitLabel, words){
     let pairs=wsPairs(words);
     if(!pairs.length) return {error:'⚠️ Brak słów.'};
@@ -25709,7 +25784,7 @@ if ('serviceWorker' in navigator) {
     }
 
     // Nowe typy kart pracy (Bingo/Domino/Koło/Labirynt/Książeczka/Karta domowa/...)
-    const WS_CUSTOM = { bingo: wsBingo, domino: wsDomino, wheel: wsWheel, maze: wsMaze, spiral: wsSpiral, scramble: wsScramble, minibook: wsMiniBook, weekly: wsWeekly, monthly: wsMonthly, schoolyear: wsSchoolYear, holidays: wsHolidays, bookmark: wsBookmark, ihave: wsIHave, quiz: wsQuiz, test: wsTest, wordbank: wsWordBank, agree: wsAgree };
+    const WS_CUSTOM = { bingo: wsBingo, domino: wsDomino, wheel: wsWheel, maze: wsMaze, spiral: wsSpiral, scramble: wsScramble, sentscramble: wsSentScramble, minibook: wsMiniBook, weekly: wsWeekly, monthly: wsMonthly, schoolyear: wsSchoolYear, holidays: wsHolidays, bookmark: wsBookmark, ihave: wsIHave, quiz: wsQuiz, test: wsTest, wordbank: wsWordBank, agree: wsAgree };
     if (WS_CUSTOM[variant]) return WS_CUSTOM[variant](book, unitLabel, words);
 
     // Wariant "Zdania z lukami"
