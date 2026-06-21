@@ -24961,13 +24961,19 @@ if ('serviceWorker' in navigator) {
     pairs = pairs.filter(p => { if (seen[p.key]) return false; seen[p.key] = 1; return true; });
     if (pairs.length < 3) return { error:'⚠️ Potrzeba min. 3 słów (z literami) do wyszukiwanki spiralnej.' };
 
-    // Ogranicz liczbe slow, zeby spirala byla czytelna
-    let chosen = wsShuffle(pairs).slice(0, Math.min(14, pairs.length));
+    // Ile slow trafi do spirali — pozwalamy na duzo (panel wyboru slowek
+    // powyzej i tak decyduje, ile zostanie zaznaczonych).
+    let chosen = wsShuffle(pairs).slice(0, Math.min(40, pairs.length));
 
-    // Geometria spirali (Archimedesa) — od zewnatrz (glowa) do srodka
-    const cx = 300, cy = 312, maxR = 268, minR = 50, SPACING = 14;
+    // Geometria spirali (Archimedesa) — ADAPTACYJNA: promien rosnie razem z
+    // liczba zwojow (maxR = minR + turns*RING_GAP), wiec odstep miedzy zwojami
+    // zostaje staly i czytelny niezaleznie od liczby slow. Cala spirala (a z nia
+    // viewBox) po prostu sie powieksza, zamiast sciskac litery.
+    const minR = 46, RING_GAP = 40, SPACING = 14, MARGIN = 60;
     function buildSpiral(turns){
-      const steps = Math.max(700, turns * 280);
+      const maxR = minR + turns * RING_GAP;
+      const cx = maxR + MARGIN, cy = maxR + MARGIN;
+      const steps = Math.max(800, turns * 300);
       let d = '', len = 0, px = 0, py = 0, start = null;
       for (let i = 0; i <= steps; i++){
         const t = i / steps;
@@ -24978,15 +24984,15 @@ if ('serviceWorker' in navigator) {
         else { d += ' L' + x.toFixed(1) + ' ' + y.toFixed(1); len += Math.hypot(x - px, y - py); }
         px = x; py = y;
       }
-      return { d, len, start };
+      return { d, len, start, maxR, cx, cy };
     }
 
     // Dobierz liczbe zwojow tak, by wszystkie slowa (+ wypelniacze) sie zmiescily
     const totalLetters = () => chosen.reduce((s, p) => s + p.key.length, 0);
     let turns = 4, sp = buildSpiral(turns);
-    while (turns < 6 && (sp.len / SPACING) < totalLetters() / 0.5){ turns++; sp = buildSpiral(turns); }
+    while (turns < 12 && (sp.len / SPACING) < totalLetters() / 0.5){ turns++; sp = buildSpiral(turns); }
     let N = Math.floor(sp.len / SPACING);
-    // Gdyby nadal za ciasno — przytnij liste slow
+    // Gdyby przy ogromnym wyborze nadal bylo za ciasno — przytnij liste slow
     while (chosen.length > 3 && totalLetters() > N * 0.62) chosen.pop();
 
     // Rozmiesc slowa wzdluz spirali w LOSOWEJ kolejnosci, bez nakladania
@@ -25015,7 +25021,12 @@ if ('serviceWorker' in navigator) {
       <path d="M ${(hx + 23).toFixed(0)} ${hy.toFixed(0)} l 15 -6 m -15 6 l 15 6" stroke="#c0392b" stroke-width="2" fill="none" stroke-linecap="round"/>
     </g>`;
 
-    const svg = `<svg viewBox="0 0 600 640" width="100%" style="max-width:540px;display:block;margin:0 auto" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    // viewBox kwadratowy dopasowany do (rosnacego) promienia spirali.
+    // Szerokosc wyswietlania rosnie z rozmiarem, ale jest ograniczona, by zmiescic
+    // sie na stronie A4 — przy bardzo wielu slowach spirala drukuje sie po prostu gesciej.
+    const VB = Math.round(2 * (sp.maxR + MARGIN));
+    const dispW = Math.min(680, Math.round(VB * 0.98));
+    const svg = `<svg viewBox="0 0 ${VB} ${VB}" width="100%" style="max-width:${dispW}px;display:block;margin:0 auto" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
       <defs><path id="sfSpiralPath" d="${sp.d}" fill="none"/></defs>
       <text font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" fill="#111" textLength="${sp.len.toFixed(0)}" lengthAdjust="spacing"><textPath xlink:href="#sfSpiralPath" startOffset="0">${escHtmlWs(letters)}</textPath></text>
       ${head}
@@ -25040,7 +25051,7 @@ if ('serviceWorker' in navigator) {
       .sp-pl{font-size:.9rem;font-weight:600;white-space:nowrap}
       .sp-line{flex:1;border-bottom:1.5px dotted #555;height:18px}
       ol.sp-key{columns:2;font-size:.88rem;line-height:1.85;margin-top:4px}
-      @media print{.sp-wrap svg{max-width:470px}}`;
+      /* szerokosc spirali w druku = wartosc inline (dispW), adaptacyjna do liczby slow */`;
     return { html: wsPage('Wyszukiwanka spiralna — ' + wsHead(book, unitLabel), 'Karta pracy · ' + clueWords.length + ' słów · ' + wsDate(), body, css) };
   }
 
