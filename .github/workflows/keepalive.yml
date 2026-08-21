@@ -1,0 +1,36 @@
+name: Supabase keep-alive
+
+# Utrzymuje projekt Supabase (Free tier) aktywnym, zeby nie usypial sie
+# po ~7 dniach bez ruchu na bazie. Raz dziennie robi jedno lekkie zapytanie
+# do REST API (SELECT z limitem 1). Klucz anon jest publiczny (jest juz w
+# supabase-config.js), wiec nie wymaga sekretow.
+#
+# UWAGA: to tylko UTRZYMUJE aktywnosc. Gdy projekt jest juz uspiony, trzeba
+# go najpierw recznie przywrocic w dashboardzie Supabase ("Resume project").
+
+on:
+  schedule:
+    - cron: "17 6 * * *"    # codziennie ~06:17 UTC
+  workflow_dispatch:          # pozwala uruchomic recznie z zakladki Actions
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase REST API
+        env:
+          SUPABASE_URL: "https://kofenaaeleyhwhbkytcz.supabase.co"
+          SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtvZmVuYWFlbGV5aHdoYmt5dGN6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU5MzM0NzMsImV4cCI6MjA5MTUwOTQ3M30.z0pzToDoK8NAEiyuKxeXhXnMvzEr5pfJjU7n6ActTU0"
+        run: |
+          echo "Pinging Supabase to keep the project awake..."
+          code=$(curl -sS -o /dev/null -w "%{http_code}" \
+            "${SUPABASE_URL}/rest/v1/profiles?select=id&limit=1" \
+            -H "apikey: ${SUPABASE_ANON_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_ANON_KEY}")
+          echo "HTTP status: ${code}"
+          # 200/206 = OK; 401/403 = baza dziala, tylko RLS odmawia (tez OK jako "aktywnosc").
+          # Kazda z tych odpowiedzi oznacza, ze projekt NIE jest uspiony.
+          case "${code}" in
+            200|206|401|403) echo "Projekt aktywny."; exit 0 ;;
+            *) echo "Nieoczekiwany status (${code}) - projekt moze byc uspiony lub niedostepny."; exit 1 ;;
+          esac
