@@ -1209,11 +1209,11 @@ const DB = (() => {
 
   function isParent() { return _profile?.isParent === true; }
 
-  // PROMOCJA: do 31 sierpnia 2026 (wlacznie) wszyscy zalogowani uzytkownicy
+  // PROMOCJA: do 30 wrzesnia 2026 (wlacznie) wszyscy zalogowani uzytkownicy
   // maja Premium za darmo. Po tym terminie wraca normalna logika trialu (30 dni
   // dla nowych kont). Helper isPromoActive uzywany jest takze w UI do banera
   // promocyjnego oraz wylaczenia trial/expiry-bannerow w okresie promocji.
-  const _PROMO_END = new Date('2026-09-01T00:00:00');
+  const _PROMO_END = new Date('2026-10-01T00:00:00');
   function isPromoActive() {
     return Date.now() < _PROMO_END.getTime();
   }
@@ -1225,7 +1225,7 @@ const DB = (() => {
     if (!_profile) return false;
     // Admin ma pelny dostep z racji roli — traktujemy jak permanentne premium
     if (_profile.isAdmin) return true;
-    // Promocja: do 31.08.2026 wszyscy zalogowani sa Premium
+    // Promocja: do 30.09.2026 wszyscy zalogowani sa Premium
     if (isPromoActive()) return true;
     if (_profile.plan !== 'premium') return false;
     // Bez daty wygasniecia = permanent premium (np. nadany recznie przez admina)
