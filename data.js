@@ -10055,6 +10055,64 @@ const BOOKS = {
           ['Wspaniale!', 'Excellent!'],
         ]
       },
+      unit5: {
+        name: 'Unit 5 · Zakupy', icon: '🛒', color: '#e17055',
+        words: [
+          // Buying and selling
+          ['mieć na coś pieniądze', 'afford', 'Nie stać mnie na ten drogi telefon.', "I can't afford that expensive phone."],
+          ['banknot', 'banknote', 'Zapłaciła banknotem dwudziestofuntowym.', 'She paid with a twenty-pound banknote.'],
+          ['drobne', 'change', 'Oto twoje drobne — dwa funty pięćdziesiąt.', 'Here is your change — two pounds fifty.'],
+          ['moneta', 'coin', 'Znalazłem starą monetę pod kanapą.', 'I found an old coin under the sofa.'],
+          ['porównywać ceny', 'compare prices', 'Zawsze porównuj ceny, zanim coś kupisz.', 'Always compare prices before you buy something.'],
+          ['karta podarunkowa', 'gift card', 'Na urodziny dostałem kartę podarunkową do księgarni.', 'For my birthday I got a gift card for a bookshop.'],
+          ['zamawiać przez internet', 'order online', 'Łatwiej jest zamawiać ubrania przez internet niż chodzić na zakupy.', "It's easier to order clothes online than to go shopping."],
+          // Promotions
+          ['kupić po okazyjnej cenie', 'get a bargain', 'Kupiłem prawdziwą okazję — ta kurtka była za pół ceny!', 'I got a real bargain — this jacket was half price!'],
+          ['otrzymać zniżkę', 'get a discount', 'Uczniowie mogą otrzymać zniżkę w kinie.', 'Students can get a discount at the cinema.'],
+          ['otrzymać 50% rabatu', 'get 50% off', 'Jeśli kupisz dwie, na drugą otrzymasz 50% rabatu.', 'If you buy two, you get 50% off the second one.'],
+          ['dostać jeden (egzemplarz) gratis', 'get one free', 'Kup dwie koszulki i dostań jedną gratis!', 'Buy two T-shirts and get one free!'],
+          ['w ofercie specjalnej', 'on special offer', 'Te buty sportowe są w ofercie specjalnej w tym tygodniu.', 'These trainers are on special offer this week.'],
+          ['oszczędzać pieniądze', 'save money', 'Chcę oszczędzać pieniądze, żeby kupić nowy rower.', 'I want to save money to buy a new bike.'],
+          ['wyprzedaż/e', 'the sales', 'W styczniu we wszystkich sklepach są duże wyprzedaże.', 'In January there are big sales in all the shops.'],
+          // Returning and replacing goods
+          ['poprosić o paragon', 'ask for a receipt', 'Zawsze proś o paragon, kiedy coś kupujesz.', 'Always ask for a receipt when you buy something.'],
+          ['poprosić o zwrot pieniędzy', 'ask for a refund', 'Koszula była wadliwa, więc poprosiłem o zwrot pieniędzy.', 'The shirt was faulty, so I asked for a refund.'],
+          ['zmienić zdanie', 'change my mind', 'Chciałem niebieską, ale potem zmieniłem zdanie.', 'I wanted the blue one, but then I changed my mind.'],
+          ['wymienić coś', 'exchange something', 'Czy mogę coś wymienić, jeśli to zły rozmiar?', "Can I exchange something if it's the wrong size?"],
+          ['odzyskać pieniądze', 'get my money back', 'Gra nie działała, więc odzyskałem pieniądze.', "The game didn't work, so I got my money back."],
+          // Describing goods
+          ['zupełnie nowy', 'brand new', 'Pokazała mi swój zupełnie nowy laptop.', 'She showed me her brand new laptop.'],
+          ['uszkodzony', 'damaged', 'Pudełko zostało uszkodzone podczas dostawy.', 'The box was damaged during delivery.'],
+          ['modny', 'fashionable', 'Te okulary są w tym roku bardzo modne.', 'These glasses are very fashionable this year.'],
+          ['wadliwy', 'faulty', 'Telefon był wadliwy, więc oddałem go do sklepu.', 'The phone was faulty, so I took it back to the shop.'],
+          ['robiony ręcznie', 'handmade', 'Ona sprzedaje biżuterię robioną ręcznie na targu.', 'She sells handmade jewellery at the market.'],
+          ['używany', 'used', 'Kupiłem używany rower, bo był tańszy.', 'I bought a used bike because it was cheaper.'],
+          // Reading and culture
+          ['antyki', 'antiques', 'Moi dziadkowie kolekcjonują antyki ze starych targów.', 'My grandparents collect antiques from old markets.'],
+          ['dywan', 'carpet', 'W salonie leży miękki czerwony dywan.', 'There is a soft red carpet in the living room.'],
+          ['ceramika', 'ceramics', 'Sklep sprzedaje piękną ceramikę robioną ręcznie.', 'The shop sells beautiful handmade ceramics.'],
+          ['zadaszony targ', 'covered market', 'Kiedy pada, robimy zakupy na zadaszonym targu.', 'When it rains, we shop at the covered market.'],
+          ['tłumy', 'crowds', 'W sobotę w centrum handlowym były wielkie tłumy.', 'There were huge crowds at the shopping centre on Saturday.'],
+          ['pchli targ', 'flea market', 'Na pchlim targu można znaleźć tanie stare rzeczy.', 'You can find cheap old things at the flea market.'],
+          ['tętniący życiem', 'lively', 'Stare miasto to tętniące życiem miejsce pełne sklepów i kawiarni.', 'The old town is a lively place full of shops and cafés.'],
+          ['złodziej/złodziejka', 'thief', 'Złodziej ukradł kobiecie torebkę w tłumie.', "A thief stole a woman's bag in the crowd."],
+          ['zabytkowy', 'vintage', 'Ona uwielbia nosić zabytkowe sukienki z lat 70.', 'She loves wearing vintage dresses from the 1970s.'],
+          // Real English (zwroty)
+          ['Prawdopodobnie!', 'Probably!'],
+          ['Nie mogę się doczekać!', "I can't wait!"],
+          ['Jestem pewny/pewna, że mu się spodoba!', "I'm sure he'll love it!"],
+          // Returning and exchanging goods in a shop; asking for a refund
+          ['Zmieniłem/Zmieniłam zdanie.', "I've changed my mind."],
+          ['Czy możemy odzyskać nasze pieniądze?', 'Can we get our money back?'],
+          ['Chciałbym/Chciałabym zwrócić te buty sportowe.', "I'd like to return some trainers."],
+          ['Obawiam się, że mi się nie podobają.', "I'm afraid I don't like them."],
+          ['Czy możemy prosić o zwrot pieniędzy?', 'Can we have a refund, please?'],
+          ['Czy możemy wymienić je na te zielone?', 'Can we exchange them for these green ones?'],
+          ['Chciałbym/Chciałabym prosić o zwrot pieniędzy.', "I'd like a refund, please."],
+          ['Czy można to zwrócić?', 'Is it possible to return this?'],
+          ['Czy mogę to wymienić na żółte?', 'Can I swap this for a yellow one?'],
+        ]
+      },
     },
   }
 
