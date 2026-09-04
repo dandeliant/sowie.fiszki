@@ -9872,6 +9872,65 @@ const BOOKS = {
           ['Doskonale!', 'That sounds perfect!'],
         ]
       },
+      unit2: {
+        name: 'Unit 2 · Czas wolny i tradycje', icon: '🎉', color: '#e17055',
+        words: [
+          // Interests and free time activities
+          ['zbierać kamienie', 'collect rocks', 'Mój młodszy brat lubi zbierać kamienie na plaży.', 'My little brother likes to collect rocks on the beach.'],
+          ['być wolontariuszem/wolontariuszką', 'do volunteering', 'W soboty jestem wolontariuszem w schronisku dla zwierząt.', 'On Saturdays I do volunteering at the animal shelter.'],
+          ['tańczyć zumbę', 'do Zumba', 'Moja mama tańczy zumbę dwa razy w tygodniu, żeby być w formie.', 'My mum does Zumba twice a week to stay fit.'],
+          ['edytować zdjęcia', 'edit photos', 'Ona edytuje zdjęcia na laptopie, zanim opublikuje je w internecie.', 'She edits photos on her laptop before posting them online.'],
+          ['jeździć na rowerze górskim', 'go mountain biking', 'Co lato jeździmy na rowerach górskich po lesie.', 'We go mountain biking in the forest every summer.'],
+          ['spędzać czas z przyjaciółmi', 'hang out with my friends', 'Po szkole lubię spędzać czas z przyjaciółmi w parku.', 'After school I like to hang out with my friends in the park.'],
+          ['nocować u kogoś, organizować nocowankę', 'have a sleepover', 'Czy mogę nocować u Kate w piątek?', "Can I have a sleepover at Kate's house on Friday?"],
+          ['robić świeczki', 'make candles', 'W wolnym czasie robi świeczki i sprzedaje je w internecie.', 'In her free time she makes candles and sells them online.'],
+          ['surfować po internecie', 'surf the Internet', 'Surfuję po internecie, żeby znaleźć pomysły na projekt plastyczny.', 'I surf the Internet to find ideas for my art project.'],
+          ['przerabiać stare ubrania', 'upcycle old clothes', 'Ona przerabia stare ubrania na fajne nowe torby.', 'She upcycles old clothes into cool new bags.'],
+          // Habits
+          ['nic nie robić', 'do nothing', 'W niedziele uwielbiam nic nie robić i po prostu odpoczywać.', 'On Sundays I love to do nothing and just relax.'],
+          ['mieć wideorozmowę z babcią', 'have a video call with my grandma', 'Każdego wieczoru mam wideorozmowę z babcią.', 'Every evening I have a video call with my grandma.'],
+          ['pospać dłużej, wylegiwać się w łóżku', 'sleep in', 'W weekend lubię pospać dłużej, aż do dziesiątej.', "At the weekend I like to sleep in until ten o'clock."],
+          ['siedzieć do późna, późno chodzić spać', 'stay up late', 'Czasami siedzę do późna, żeby skończyć dobrą książkę.', 'I sometimes stay up late to finish a good book.'],
+          ['aktualizować aplikację do nauki', 'update my study app', 'Codziennie aktualizuję aplikację do nauki, żeby poznawać nowe słowa.', 'I update my study app every day to learn new words.'],
+          ['pisać pamiętnik', 'write my diary', 'Przed snem piszę pamiętnik o swoim dniu.', 'Before bed I write my diary about my day.'],
+          // Customs and traditions: expressions with adjectives
+          ['niesamowite miejsce', 'amazing venue', 'Koncert odbył się w niesamowitym miejscu nad rzeką.', 'The concert was in an amazing venue by the river.'],
+          ['starożytna/dawna tradycja', 'ancient tradition', 'Pieczenie chleba na święta to dawna tradycja w mojej rodzinie.', 'Baking bread at Christmas is an ancient tradition in my family.'],
+          ['kolorowe ubrania', 'colourful clothes', 'Ludzie nosili kolorowe ubrania podczas festiwalu.', 'People wore colourful clothes during the festival.'],
+          ['fantastyczna atmosfera', 'fantastic atmosphere', 'Na meczu piłki nożnej panowała fantastyczna atmosfera.', 'There was a fantastic atmosphere at the football match.'],
+          ['muzyka ludowa', 'folk music', 'Moi dziadkowie uwielbiają słuchać tradycyjnej muzyki ludowej.', 'My grandparents love listening to traditional folk music.'],
+          ['lokalne potrawy', 'local food', 'Na wakacjach zawsze próbujemy lokalnych potraw.', 'On holiday we always try the local food.'],
+          ['wydarzenie jednodniowe', 'one-day event', 'Targi sztuki to wydarzenie jednodniowe, więc nie przegap ich!', "The art fair is a one-day event, so don't miss it!"],
+          ['nietypowy zwyczaj', 'unusual custom', 'Rzucanie pomidorami to nietypowy zwyczaj w tym mieście.', 'Throwing tomatoes is an unusual custom in that town.'],
+          // Customs and traditions: verbs / phrases
+          ['kupować pamiątkę', 'buy a souvenir', 'Chcę kupić pamiątkę, żeby pamiętać tę wycieczkę.', 'I want to buy a souvenir to remember this trip.'],
+          ['zostać na noc', 'stay overnight', 'Postanowiliśmy zostać na noc w małym hotelu.', 'We decided to stay overnight in a small hotel.'],
+          ['brać udział w konkursie', 'take part in a competition', 'Ona chce wziąć udział w konkursie fotograficznym.', 'She wants to take part in a photography competition.'],
+          ['mieć miejsce, odbywać się', 'take place', 'Parada odbywa się w centrum miasta co roku w czerwcu.', 'The parade takes place in the city centre every June.'],
+          ['oglądać paradę', 'watch a parade', 'Tysiące ludzi przyszło oglądać paradę na ulicach.', 'Thousands of people came to watch a parade in the streets.'],
+          // Reading and culture
+          ['bank żywności', 'food bank', 'Nasza szkoła zbierała żywność dla lokalnego banku żywności.', 'Our school collected food for the local food bank.'],
+          ['w potrzebie', 'in need', 'Wolontariusze pomagają rodzinom w potrzebie.', 'The volunteers help families in need.'],
+          ['robić coś wartościowego', 'make a difference', 'Wolontariat naprawdę może wiele zmienić w twojej okolicy.', 'Volunteering can really make a difference in your community.'],
+          ['możliwość', 'opportunity', 'To świetna możliwość, żeby pomóc innym ludziom.', 'This is a great opportunity to help other people.'],
+          ['pakować', 'pack', 'Musimy spakować pudełka z jedzeniem przed sobotą.', 'We need to pack the boxes with food before Saturday.'],
+          // Real English (zwroty)
+          ['Co jeszcze robiłeś/robiłaś?', 'What else did you do?'],
+          ['Co za dziwny telefon!', "That's a weird phone!"],
+          ['W tamtych czasach...', 'In those days ...'],
+          ['Czy to nie jest urocze?', "Isn't it cute?"],
+          ['Nie jestem pewien/pewna, czy się zgadzam.', "I'm not sure I agree."],
+          // Asking for, giving and justifying opinions
+          ['Jakie jest Twoje zdanie?', "What's your opinion?"],
+          ['Osobiście uważam, że gry wideo to dobra zabawa!', 'Personally, I think video games are fun!'],
+          ['Jakie jest Twoje zdanie na ten temat?', "What's your view on this?"],
+          ['Moim zdaniem czytanie jest ciekawsze.', 'In my opinion, reading is more interesting.'],
+          ['Chyba jest odprężające.', "I guess it's relaxing."],
+          ['Co sądzisz o grach wideo?', 'How do you feel about video games?'],
+          ['To po prostu nie moja bajka.', "They're just not my thing."],
+          ['Szczerze mówiąc, uważam, że są trochę nudne.', "To be honest, I think they're a bit boring!"],
+        ]
+      },
     },
   }
 
