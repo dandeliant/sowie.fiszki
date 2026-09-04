@@ -9995,6 +9995,66 @@ const BOOKS = {
           ['Do zobaczenia wkrótce!', 'Catch up soon!'],
         ]
       },
+      unit4: {
+        name: 'Unit 4 · Wynalazki i sztuka', icon: '💡', color: '#e17055',
+        words: [
+          // Inventions and discoveries: nouns
+          ['klimatyzacja', 'air conditioning', 'Było tak gorąco, że włączyliśmy klimatyzację.', 'It was so hot that we turned on the air conditioning.'],
+          ['elektryczność', 'electricity', 'Burza odcięła elektryczność w całym mieście.', 'The storm cut off the electricity in the whole town.'],
+          ['żarówka', 'light bulb', 'Thomas Edison udoskonalił żarówkę elektryczną.', 'Thomas Edison improved the electric light bulb.'],
+          ['mikrofalówka', 'microwave', 'Podgrzej zupę w mikrofalówce przez dwie minuty.', 'Heat the soup in the microwave for two minutes.'],
+          ['energia jądrowa', 'nuclear energy', 'Niektóre kraje wytwarzają elektryczność z energii jądrowej.', 'Some countries produce electricity from nuclear energy.'],
+          ['penicylina', 'penicillin', 'Alexander Fleming odkrył penicylinę przez przypadek.', 'Alexander Fleming discovered penicillin by accident.'],
+          ['szczepionka', 'vaccine', 'Naukowcy opracowali nową szczepionkę przeciwko chorobie.', 'Scientists developed a new vaccine against the disease.'],
+          ['Wi-Fi', 'wi-fi', 'Czy w tej kawiarni jest darmowe Wi-Fi?', 'Is there free wi-fi in this café?'],
+          // Inventions and discoveries: verbs
+          ['tworzyć', 'create', 'Artyści tworzą piękne rzeczy z prostych materiałów.', 'Artists create beautiful things from simple materials.'],
+          ['projektować', 'design', 'Ona chce projektować mosty, kiedy dorośnie.', 'She wants to design bridges when she grows up.'],
+          ['rozwijać', 'develop', 'Firma rozwija szybszy samochód elektryczny.', 'The company is developing a faster electric car.'],
+          ['badać, odkrywać', 'explore', 'Naukowcy badają ocean, żeby odkrywać nowe zwierzęta.', 'Scientists explore the ocean to find new animals.'],
+          ['wynaleźć', 'invent', 'Kto wynalazł telefon?', 'Who invented the telephone?'],
+          ['produkować, wytwarzać', 'produce', 'Ta fabryka produkuje tysiące samochodów każdego roku.', 'This factory produces thousands of cars every year.'],
+          // Artists
+          ['architekt/architektka', 'architect', 'Architekt zaprojektował nowoczesny szklany budynek.', 'The architect designed a modern glass building.'],
+          ['artysta cyfrowy / artystka cyfrowa', 'digital artist', 'Jako artystka cyfrowa tworzy obrazy na komputerze.', 'As a digital artist, she creates pictures on her computer.'],
+          ['grafik/graficzka, projektant graficzny', 'graphic designer', 'Grafik zaprojektował logo dla naszej szkoły.', 'A graphic designer made the logo for our school.'],
+          ['fotograf/fotografka', 'photographer', 'Fotograf zrobił niesamowite zdjęcia gór.', 'The photographer took amazing pictures of the mountains.'],
+          ['rzeźbiarz/rzeźbiarka', 'sculptor', 'Rzeźbiarz wykonał posąg z marmuru.', 'The sculptor made a statue out of marble.'],
+          // Materials
+          ['karton', 'cardboard', 'Zrobiliśmy makietę domu z kartonu.', 'We made a model house out of cardboard.'],
+          ['bawełna', 'cotton', 'Ta koszulka jest zrobiona z miękkiej bawełny.', 'This T-shirt is made of soft cotton.'],
+          ['skóra', 'leather', 'Kupił czarną skórzaną kurtkę.', 'He bought a black leather jacket.'],
+          ['metal', 'metal', 'Most jest zrobiony z mocnego metalu.', 'The bridge is made of strong metal.'],
+          ['plastik', 'plastic', 'Powinniśmy używać mniej plastiku, żeby chronić środowisko.', 'We should use less plastic to protect the environment.'],
+          ['guma', 'rubber', 'Opony samochodowe są zrobione z gumy.', 'Car tyres are made of rubber.'],
+          ['kamień', 'stone', 'Stary zamek został zbudowany z szarego kamienia.', 'The old castle was built of grey stone.'],
+          ['drewno', 'wood', 'Stół jest zrobiony z ciemnego drewna.', 'The table is made of dark wood.'],
+          ['wełna', 'wool', 'Zimą noszę ciepły wełniany sweter.', 'In winter I wear a warm wool jumper.'],
+          // Reading and culture
+          ['obserwować', 'observe', 'Naukowcy obserwują gwiazdy przez teleskop.', 'Scientists observe the stars through a telescope.'],
+          ['stały', 'permanent', 'Muzeum ma stałą wystawę starych maszyn.', 'The museum has a permanent exhibition of old machines.'],
+          ['ogród na dachu', 'rooftop garden', 'Na dachu budynku jest piękny ogród.', 'There is a beautiful rooftop garden on top of the building.'],
+          ['pas startowy', 'runway', 'Samolot czekał na pasie startowym przed startem.', 'The plane waited on the runway before taking off.'],
+          ['symulator', 'simulator', 'Piloci najpierw ćwiczą latanie na symulatorze.', 'Pilots practise flying in a simulator first.'],
+          ['tajfun', 'typhoon', 'Potężny tajfun uderzył w wybrzeże zeszłej nocy.', 'A powerful typhoon hit the coast last night.'],
+          // Real English (zwroty)
+          ['Hollow Flashlight to latarka inna niż wszystkie.', 'The Hollow Flashlight is a torch with a difference.'],
+          ['To nie jest drukarka do codziennego użytku.', "It isn't an everyday printer."],
+          ["Słyszałeś/Słyszałaś kiedyś o 'Kindly'?", 'Have you heard of Kindly?'],
+          // Expressing feelings and emotions; sympathising
+          ['Jak się czujesz?', 'How are you feeling?'],
+          ['Jaka szkoda, że nie mogłeś/mogłaś przyjść!', "What a shame you couldn't come."],
+          ['Muzeum Nauki było niesamowite!', 'The science museum was amazing!'],
+          ['Byłem bardzo zawiedziony. / Byłam bardzo zawiedziona.', 'I was so disappointed.'],
+          ['Czułem/Czułam się naprawdę przygnębiony/przygnębiona cały dzień.', 'I felt really down all day.'],
+          ['Jakie to interesujące!', 'How interesting!'],
+          ['Naprawdę? To niesamowite!', "Really? It's amazing!"],
+          ['Ten pomysł na wycieczkę brzmi wspaniale!', 'The trip sounds brilliant!'],
+          ['Jaka szkoda, że nie mogłeś/mogłaś przyjść (druga forma)!', "What a pity you couldn't come."],
+          ['Jak cudownie!', 'How lovely!'],
+          ['Wspaniale!', 'Excellent!'],
+        ]
+      },
     },
   }
 
