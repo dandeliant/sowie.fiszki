@@ -10113,6 +10113,69 @@ const BOOKS = {
           ['Czy mogę to wymienić na żółte?', 'Can I swap this for a yellow one?'],
         ]
       },
+      unit6: {
+        name: 'Unit 6 · Praca i zawody', icon: '💼', color: '#e17055',
+        words: [
+          // Popular jobs
+          ['księgowy/księgowa', 'accountant', 'Moja ciocia jest księgową i cały dzień pracuje z liczbami.', 'My aunt is an accountant and she works with numbers all day.'],
+          ['programista komputerowy / programistka komputerowa', 'computer programmer', 'Programista komputerowy pisze kod do aplikacji i stron internetowych.', 'A computer programmer writes code for apps and websites.'],
+          ['projektant/projektantka mody', 'fashion designer', 'Projektantka mody stworzyła sukienki dla znanej piosenkarki.', 'The fashion designer created dresses for a famous singer.'],
+          ['steward/stewardesa', 'flight attendant', 'Stewardesa pokazała nam, gdzie są wyjścia.', 'The flight attendant showed us where the exits were.'],
+          ['fryzjer/fryzjerka', 'hairdresser', 'Chodzę do fryzjera raz w miesiącu, żeby ściąć włosy.', 'I go to the hairdresser once a month to cut my hair.'],
+          ['prawnik/prawniczka', 'lawyer', 'Prawnik pomógł im z ważną umową.', 'The lawyer helped them with an important contract.'],
+          ['ratownik medyczny / ratowniczka medyczna', 'paramedic', 'Ratownik medyczny szybko przyjechał i pomógł rannemu mężczyźnie.', 'The paramedic arrived quickly and helped the injured man.'],
+          ['policjant/policjantka', 'police officer', 'Policjant zatrzymał samochód i sprawdził kierowcę.', 'A police officer stopped the car and checked the driver.'],
+          ['inżynier robotyki', 'robotics engineer', 'Ona chce zostać inżynierem robotyki i budować roboty.', 'She wants to be a robotics engineer and build robots.'],
+          ['pracownik socjalny / pracowniczka socjalna', 'social worker', 'Pracownik socjalny pomaga rodzinom, które mają problemy.', 'A social worker helps families who have problems.'],
+          // Places of work
+          ['sąd', 'court', 'Prawnik musiał iść do sądu w poniedziałek rano.', 'The lawyer had to go to court on Monday morning.'],
+          ['fabryka', 'factory', 'Mój wujek pracuje w fabryce samochodów niedaleko miasta.', 'My uncle works in a car factory near the city.'],
+          ['studio projektowania mody', 'fashion design studio', 'Dostała pracę w ruchliwym studiu projektowania mody.', 'She got a job in a busy fashion design studio.'],
+          ['praca zdalna', 'home office', 'Mój tata pracuje zdalnie z domu trzy dni w tygodniu.', 'My dad works from a home office three days a week.'],
+          ['biuro', 'office', 'Ona pracuje w dużym biurze w centrum miasta.', 'She works in a big office in the city centre.'],
+          ['posterunek policji', 'police station', 'Przestępstwo można zgłosić na posterunku policji.', 'You can report a crime at the police station.'],
+          ['salon (np. fryzjerski)', 'salon', 'Fryzjerka otworzyła własny salon w zeszłym roku.', 'The hairdresser opened her own salon last year.'],
+          ['społeczność', 'the community', 'Pracownicy socjalni robią wiele dla lokalnej społeczności.', 'Social workers do a lot for the local community.'],
+          // Describing personal qualities and skills
+          ['dobry słuchacz', 'a great listener', 'Mój najlepszy przyjaciel jest dobrym słuchaczem, kiedy mam problemy.', 'My best friend is a great listener when I have problems.'],
+          ['urodzony przywódca', 'a natural leader', 'Ona jest urodzonym przywódcą, więc wszyscy słuchają jej pomysłów.', 'She is a natural leader, so everyone follows her ideas.'],
+          ['ambitny', 'ambitious', 'On jest bardzo ambitny i chce założyć własną firmę.', 'He is very ambitious and wants to start his own company.'],
+          ['kreatywny', 'creative', 'Trzeba być kreatywnym, żeby pracować jako projektant.', 'You need to be creative to work as a designer.'],
+          ['dobry w rozwiązywaniu problemów', 'good at solving problems', 'Inżynierowie muszą być dobrzy w rozwiązywaniu problemów.', 'Engineers must be good at solving problems.'],
+          ['cierpliwy', 'patient', 'Nauczyciele muszą być cierpliwi wobec małych dzieci.', 'Teachers need to be patient with young children.'],
+          // Describing jobs
+          ['wymagająca, pełna wyzwań', 'challenging', 'Bycie lekarzem to wymagająca, ale ważna praca.', 'Being a doctor is a challenging but important job.'],
+          ['satysfakcjonująca', 'satisfying', 'Pomaganie ludziom może być bardzo satysfakcjonującą pracą.', 'Helping people can be a very satisfying job.'],
+          ['stresująca', 'stressful', 'Praca ratownika medycznego bywa bardzo stresująca.', 'Working as a paramedic is sometimes very stressful.'],
+          ['dobrze płatna', 'well-paid', 'Ona ma dobrze płatną pracę jako prawniczka.', 'She has a well-paid job as a lawyer.'],
+          // Choosing a profession
+          ['zarabiać pieniądze', 'earn money', 'Chcę zarabiać pieniądze, żeby kupić nowy laptop.', 'I want to earn money to buy a new laptop.'],
+          ['dostać pracę na część etatu', 'get a part-time job', 'Latem chciałbym dostać pracę na część etatu w kawiarni.', "In the summer I'd like to get a part-time job in a café."],
+          ['zdobywać doświadczenie zawodowe', 'get work experience', 'Wolontariat to dobry sposób, żeby zdobyć doświadczenie zawodowe.', 'Volunteering is a good way to get work experience.'],
+          ['pracować na pełen etat', 'have a full-time job', 'Po studiach ona chce pracować na pełen etat.', 'After university she wants to have a full-time job.'],
+          // Reading and culture
+          ['czeladnik/czeladniczka', 'apprentice', 'Zaczął jako czeladnik, żeby uczyć się od eksperta.', 'He started as an apprentice to learn from an expert.'],
+          ['rzemieślnik/rzemieślniczka', 'artisan', 'Rzemieślnik wykonuje piękne meble ręcznie.', 'The artisan makes beautiful furniture by hand.'],
+          ['marka', 'brand', 'To znana marka butów sportowych.', 'This is a famous brand of sports shoes.'],
+          ['gitara klasyczna', 'classical guitar', 'Ona gra na gitarze klasycznej, odkąd skończyła sześć lat.', 'She has played the classical guitar since she was six.'],
+          ['tkanina', 'fabric', 'Sukienka jest zrobiona z miękkiej, lekkiej tkaniny.', 'The dress is made of soft, light fabric.'],
+          ['srebrny', 'silver', 'Miała na sobie piękny srebrny naszyjnik.', 'She wore a beautiful silver necklace.'],
+          // Real English (zwroty)
+          ['Nie chciałbym/chciałabym spędzać całego dnia w biurze.', "I'd hate to spend all day in an office."],
+          ['Pracuję zdalnie.', 'I work remotely.'],
+          ['Nie przypadły mi do gustu.', "They don't give me a good vibe."],
+          ['Takie życie!', "That's life!"],
+          ['A reszta to już historia.', 'The rest is history!'],
+          // Talking about experience, personal qualities and skills
+          ['Byłem opiekunem/Byłam opiekunką do dzieci i w zeszłym roku trochę pracowałem/pracowałam u mojego wujka.', 'I have been a babysitter and I did a bit of work for my uncle last year.'],
+          ['Pomagałem/Pomagałam w warzywniaku mojego wujka.', "I was a helper in my uncle's greengrocer's."],
+          ['Jestem pomocny/pomocna i bardzo dobrze zorganizowany/zorganizowana.', "I'm helpful and I'm very organised."],
+          ['Zorganizowałem/Zorganizowałam turniej siatkówki na moje urodziny w zeszłym roku.', 'I organised a volleyball competition for my birthday party last year.'],
+          ['Świetnie radzę sobie z rozwiązywaniem problemów.', "I'm really good at solving problems."],
+          ['Doskonale wykonuję polecenia.', "I'm brilliant at following instructions."],
+          ['Dobrze dogaduję się także z młodszymi dziećmi.', "I'm good with younger children, too."],
+        ]
+      },
     },
   }
 
