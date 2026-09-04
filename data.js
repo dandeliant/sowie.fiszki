@@ -10176,6 +10176,69 @@ const BOOKS = {
           ['Dobrze dogaduję się także z młodszymi dziećmi.', "I'm good with younger children, too."],
         ]
       },
+      unit7: {
+        name: 'Unit 7 · Świat przyrody', icon: '🦊', color: '#e17055',
+        words: [
+          // Mammals
+          ['lis polarny', 'Arctic fox', 'Lis polarny ma gęste białe futro, żeby się ogrzać.', 'The Arctic fox has thick white fur to keep warm.'],
+          ['nietoperz', 'bat', 'Nietoperze śpią w dzień, a latają nocą.', 'Bats sleep during the day and fly at night.'],
+          ['nosorożec czarny', 'black rhino', 'Nosorożec czarny to duże zwierzę z dwoma rogami.', 'The black rhino is a large animal with two horns.'],
+          ['płetwal błękitny', 'blue whale', 'Płetwal błękitny to największe zwierzę na Ziemi.', 'The blue whale is the biggest animal on Earth.'],
+          ['niedźwiedź brunatny', 'brown bear', 'Niedźwiedź brunatny potrafi łapać ryby w rzece.', 'A brown bear can catch fish in the river.'],
+          ['kangur olbrzymi/szary', 'eastern grey kangaroo', 'Kangur olbrzymi żyje w Australii.', 'The eastern grey kangaroo lives in Australia.'],
+          ['jeż', 'hedgehog', 'Jeż zwija się w kulkę, kiedy się boi.', 'A hedgehog rolls into a ball when it is scared.'],
+          ['wiewiórka pospolita', 'red squirrel', 'Wiewiórka pospolita chowa orzechy pod drzewem.', 'A red squirrel hides nuts under the tree.'],
+          // Birds
+          ['łabędź czarny', 'black swan', 'Widzieliśmy pięknego czarnego łabędzia na jeziorze.', 'We saw a beautiful black swan on the lake.'],
+          ['orzeł przedni', 'golden eagle', 'Orzeł przedni ma bardzo bystry wzrok i widzi daleko.', 'The golden eagle has very sharp eyes and can see far.'],
+          ['gołąb', 'pigeon', 'Szary gołąb wylądował na dachu domu.', 'A grey pigeon landed on the roof of the house.'],
+          ['mewa', 'seagull', 'Mewa zabrała mi frytkę z ręki na plaży.', 'A seagull took a chip from my hand at the beach.'],
+          // Insects
+          ['pszczoła', 'bee', 'Pszczoła latała z kwiatka na kwiatek w ogrodzie.', 'A bee flew from flower to flower in the garden.'],
+          ['motyl', 'butterfly', 'Kolorowy motyl usiadł na słoneczniku.', 'A colourful butterfly landed on the sunflower.'],
+          ['mucha', 'fly', 'W kuchni jest irytująca mucha.', 'There is an annoying fly in the kitchen.'],
+          ['biedronka', 'ladybird', 'Mała biedronka ma czarne kropki na czerwonym grzbiecie.', 'A little ladybird has black spots on its red back.'],
+          // Plants
+          ['bambus', 'bamboo', 'Pandy jedzą bambus prawie przez cały dzień.', 'Pandas eat bamboo almost all day long.'],
+          ['kasztanowiec', 'chestnut tree', 'Jesienią zbieramy kasztany pod kasztanowcem.', 'In autumn we collect nuts under the chestnut tree.'],
+          ['żonkil', 'daffodil', 'Żółte żonkile to jedne z pierwszych wiosennych kwiatów.', 'Yellow daffodils are one of the first spring flowers.'],
+          ['stokrotka', 'daisy', 'Zerwała małą białą stokrotkę z trawy.', 'She picked a small white daisy from the grass.'],
+          ['czosnek', 'garlic plant', 'Moja babcia uprawia czosnek w swoim ogrodzie.', 'My grandma grows a garlic plant in her garden.'],
+          ['dąb', 'oak tree', 'Stary dąb w parku jest bardzo wysoki.', 'The old oak tree in the park is very tall.'],
+          ['sosna', 'pine tree', 'Sosna pozostaje zielona przez całą zimę.', 'A pine tree stays green all through the winter.'],
+          ['słonecznik', 'sunflower', 'Słonecznik zawsze obraca głowę w stronę słońca.', 'A sunflower always turns its head towards the sun.'],
+          // Plants: useful words
+          ['grunt, gleba', 'ground', 'Zasadź nasiona w miękkiej, wilgotnej glebie.', 'Plant the seeds in soft, wet ground.'],
+          ['hodować, rosnąć', 'grow', 'Uprawiamy pomidory i marchew w naszym ogrodzie.', 'We grow tomatoes and carrots in our garden.'],
+          ['liść/liście', 'leaf/leaves', 'Jesienią liście zmieniają kolor na czerwony i żółty.', 'In autumn the leaves turn red and yellow.'],
+          ['korzeń', 'root', 'Korzenie drzewa rosną głęboko pod ziemią.', 'The roots of the tree grow deep under the ground.'],
+          ['nasiono, ziarno', 'seed', 'Maleńkie nasiono może wyrosnąć w ogromne drzewo.', 'A tiny seed can grow into a huge tree.'],
+          // Reading and culture
+          ['bizon', 'bison', 'Bizon to duże dzikie zwierzę, które żyje w lasach.', 'The bison is a large wild animal that lives in forests.'],
+          ['pyton diamentowy', 'diamond python', 'Pyton diamentowy to wąż o pięknym wzorze.', 'The diamond python is a snake with a beautiful pattern.'],
+          ['eukaliptus', 'eucalyptus', 'Koale jedzą liście eukaliptusa.', 'Koalas eat the leaves of the eucalyptus tree.'],
+          ['gejzer', 'geyser', 'Gejzer wyrzuca gorącą wodę wysoko w powietrze.', 'A geyser shoots hot water high into the air.'],
+          ['widowiskowy', 'spectacular', 'Widok z góry był absolutnie widowiskowy.', 'The view from the mountain was absolutely spectacular.'],
+          ['turkusowy', 'turquoise', 'Morze przy wyspie miało jasny turkusowy kolor.', 'The sea near the island was a bright turquoise colour.'],
+          ['walabia (gatunek małych kangurów)', 'wallaby', 'Walabia wygląda jak mały kangur.', 'A wallaby looks like a small kangaroo.'],
+          ['wilk', 'wolf', 'Szary wilk zawył w ciemnym lesie.', 'A grey wolf howled in the dark forest.'],
+          // Real English (zwroty)
+          ['Były ogromne!', 'They were huge!'],
+          ['Każdy wie, że nie potrafią się szybko poruszać.', "Everyone knows they aren't able to move fast."],
+          ['Niestety, wiele z nich jest zagrożonych wyginięciem.', 'Sadly, many are endangered.'],
+          // Making and replying to requests; asking for and giving permission
+          ['Obawiam się, że nie możemy mieć zwierzątka.', "I'm afraid we can't have a pet."],
+          ['Czy możemy uprawiać rośliny i warzywa w ogrodzie?', 'Can we grow plants and vegetables in the garden?'],
+          ['Nie jestem pewien/pewna.', "I'm not sure about it."],
+          ['Czy na początku możesz mi pomóc?', 'Could you help me at the beginning?'],
+          ['Mogę trochę pomóc, ale nie mam zbyt dużo czasu.', "I may be able to help a little, but I don't have much time."],
+          ['A może posadzimy marchew i brokuły?', 'How about growing carrots and broccoli?'],
+          ['Czy nie masz nic przeciwko temu, żebym zaprosił/zaprosiła Magdę dziś wieczorem?', 'Do you mind if I invite Magda tonight?'],
+          ['W porządku. / Nie mam nic przeciwko temu.', "That's absolutely fine."],
+          ['Czy mogę skorzystać z Twojego komputera?', 'May I use your computer?'],
+          ['Jasne.', 'Sure.'],
+        ]
+      },
     },
   }
 
