@@ -9777,6 +9777,34 @@ const BOOKS = {
     },
   }
 
+  // ─── EGZAMIN OSMOKLASISTY - ARKUSZE (kategoria „Inne") ─────
+  ,egzamin8_arkusze: {
+    id: 'egzamin8_arkusze',
+    language: 'en', schoolType: 'other',
+    name: 'Egzamin Ósmoklasisty - Arkusze',
+    shortName: 'Egz. 8 - Arkusze',
+    icon: '📝',
+    color: '#3b82f6',
+    description: 'Słownictwo z arkuszy egzaminu ósmoklasisty (z przykładami zdań)',
+    units: {
+      unit1: {
+        name: 'Czerwiec 2026 - egzamin dodatkowy', icon: '📄', color: '#60a5fa',
+        words: [
+          ['który, która, które (w odniesieniu do rzeczy)', 'which', 'Które zwierzęta lubisz?', 'Which animals do you like?'],
+          ['zwierzę', 'animal', 'Ile masz zwierząt?', 'How many animals do you have?'],
+          ['hulajnoga, skuter', 'scooter', 'Czy mogę pożyczyć twoją hulajnogę?', 'Can I borrow your scooter?'],
+          ['samochód', 'car', 'Myślę, że powinniśmy kupić drugi samochód.', 'I think we should buy a second car.'],
+          ['autobus', 'bus', 'Czekam teraz na autobus.', 'I am waiting for the bus now.'],
+          ['mówca, rozmówca; głośnik', 'speaker', 'Ten głośnik nie działa.', "This speaker doesn't work."],
+          ['decydować, postanowić', 'decide', 'Ona zdecydowała się zostać w domu.', 'She decided to stay home.'],
+          ['zobaczyć', 'see', 'Chodźmy najpierw zobaczyć słonie.', "Let's go and see the elephants first."],
+          ['gdzie', 'where', 'Gdzie rozmawiają te osoby / ci ludzie?', 'Where are the people talking?'],
+          ['ludzie', 'people', 'Gdzie rozmawiają te osoby / ci ludzie?', 'Where are the people talking?'],
+        ]
+      },
+    },
+  }
+
 };
 // ─── HELPERS ────────────────────────────────────────────────
 
