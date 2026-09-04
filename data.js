@@ -9808,6 +9808,73 @@ const BOOKS = {
     },
   }
 
+  // ─── TOGETHER 7 (klasa 7, Szkola Podstawowa) ─────
+  ,together7: {
+    id: 'together7',
+    language: 'en', schoolType: 'primary', grade: 7,
+    name: 'Together 7',
+    shortName: 'Together 7',
+    icon: '🤝',
+    color: '#e17055',
+    description: 'Klasa 7 · Szkoła Podstawowa',
+    units: {
+      unit1: {
+        name: 'Unit 1 · Sztuka i media', icon: '🎨', color: '#e17055',
+        words: [
+          // Types of art
+          ['sztuka cyfrowa', 'digital art', 'Ona tworzy niesamowitą sztukę cyfrową na swoim tablecie.', 'She creates amazing digital art on her tablet.'],
+          ['projektowanie mody', 'fashion design', 'On chce studiować projektowanie mody i szyć własne ubrania.', 'He wants to study fashion design and make his own clothes.'],
+          ['literatura', 'literature', 'Na lekcjach czytamy klasyczną literaturę angielską.', 'We read classic English literature in our lessons.'],
+          ['fotografia', 'photography', 'Fotografia to moje hobby — zawsze noszę ze sobą aparat.', 'Photography is my hobby — I always carry my camera.'],
+          ['rzeźbiarstwo', 'sculpture', 'Interesuje się rzeźbiarstwem i pracuje z gliną.', 'She is interested in sculpture and works with clay.'],
+          ['sztuka uliczna', 'street art', 'W pobliżu mojej szkoły są kolorowe dzieła sztuki ulicznej.', 'There is colourful street art near my school.'],
+          ['teatr', 'theatre', 'Idziemy dziś wieczorem do teatru na sztukę.', 'We are going to the theatre to see a play tonight.'],
+          // The media and social media
+          ['sprawdzić stronę internetową', 'check out a website', 'Sprawdź tę stronę internetową — ma świetne poradniki o sztuce.', 'Check out this website — it has great art tutorials.'],
+          ['tworzyć treści', 'create content', 'Wielu nastolatków codziennie tworzy treści do mediów społecznościowych.', 'Many teenagers create content for social media every day.'],
+          ['obserwować influencera/influencerkę', 'follow an influencer', 'Obserwuję influencera, który publikuje o fotografii.', 'I follow an influencer who posts about photography.'],
+          ['przeglądać artykuł', 'look through an article', 'Przejrzała artykuł o sztuce współczesnej.', 'She looked through an article about modern art.'],
+          ['czytać nagłówki', 'read the headlines', 'Rano czytam nagłówki na telefonie.', 'In the morning I read the headlines on my phone.'],
+          ['udostępniać (zdjęcia) w internecie', 'share (photos) online', 'Czy udostępniasz swoje zdjęcia w internecie znajomym?', 'Do you share your photos online with your friends?'],
+          ['subskrybować (stronę internetową)', 'subscribe to (an online platform)', 'Możesz subskrybować tę platformę internetową za darmo.', 'You can subscribe to this online platform for free.'],
+          // Works of art
+          ['malowidło jaskiniowe', 'cave painting', 'Najstarsze malowidło jaskiniowe ma tysiące lat.', 'The oldest cave painting is thousands of years old.'],
+          ['instalacja', 'installation', 'Artysta zbudował ogromną instalację w centrum miasta.', 'The artist built a huge installation in the city centre.'],
+          ['pejzaż', 'landscape', 'Namalował piękny pejzaż z górami i jeziorem.', 'He painted a beautiful landscape with mountains and a lake.'],
+          ['obraz w stylu sztuki współczesnej', 'modern art painting', 'Nie zawsze rozumiem obraz w stylu sztuki współczesnej, ale lubię kolory.', "I don't always understand a modern art painting, but I like the colours."],
+          ['mural', 'mural', 'Uczniowie namalowali kolorowy mural na ścianie szkoły.', 'The students painted a colourful mural on the school wall.'],
+          ['portret', 'portrait', 'W galerii jest słynny portret młodej kobiety.', 'The gallery has a famous portrait of a young woman.'],
+          // Ways to see art
+          ['festiwal sztuki cyfrowej', 'digital arts festival', 'W ten weekend idziemy na festiwal sztuki cyfrowej.', 'We are going to a digital arts festival this weekend.'],
+          ['wystawa immersyjna', 'immersive exhibition', 'Na wystawie immersyjnej czujesz się, jakbyś był wewnątrz obrazu.', 'At the immersive exhibition, you feel like you are inside the painting.'],
+          ['wystawa online', 'online exhibition', 'Wystawę online możesz zwiedzić z domu na komputerze.', 'You can visit the online exhibition from home on your computer.'],
+          ['wirtualne zwiedzanie', 'virtual tour', 'Muzeum oferuje wirtualne zwiedzanie wszystkich sal.', 'The museum offers a virtual tour of all its rooms.'],
+          // Reading and culture
+          ['współczesny', 'contemporary', 'Ona woli sztukę współczesną od klasycznych obrazów.', 'She prefers contemporary art to classical paintings.'],
+          ['eksponat', 'exhibit', 'Mój ulubiony eksponat w muzeum to stara egipska maska.', 'My favourite exhibit in the museum is an old Egyptian mask.'],
+          ['materiał do przemyśleń', 'food for thought', 'Film o sztuce dał mi dużo materiału do przemyśleń.', 'The film about art gave me a lot of food for thought.'],
+          ['przyklejać', 'stick', 'Przyklej zdjęcie w zeszycie za pomocą kleju.', 'Stick the photo in your notebook with some glue.'],
+          ['przyklejony taśmą', 'taped', 'Banan przyklejony taśmą do ściany był dziełem sztuki.', 'A banana taped to the wall was a work of art.'],
+          // Real English (zwroty)
+          ['Nie martw się, jest na to sposób.', "Don't worry, there's a solution."],
+          ['Spójrz tylko na to! / Popatrz!', 'Just look at that!'],
+          ['Pytanie brzmi, czy w pobliżu jest jakieś miasto?', 'The question is, is there a town nearby?'],
+          // Making, accepting and refusing suggestions; expressing preferences
+          ['Idziemy?', 'Shall we go?'],
+          ['Dzięki, ale teatr to raczej nie moja bajka.', "Thanks, but theatre isn't really my thing."],
+          ['Wolałbym/Wolałabym pójść na festiwal muzyki elektronicznej.', "I'd rather go to the techno music festival."],
+          ['Może kupimy bilety?', 'How about getting tickets?'],
+          ['Daruję sobie.', "I'll give that a miss."],
+          ['Chciałbym/Chciałabym pójść do miasta i zrobić zdjęcia.', "I'd love to go to town and take photos."],
+          ['A co powiesz na niedzielę po południu?', 'What about Sunday afternoon?'],
+          ['Świetnie!', 'Brilliant!'],
+          ['Wolałbym/Wolałabym iść rano.', "I'd prefer to go in the morning."],
+          ['Doskonale!', 'That sounds perfect!'],
+        ]
+      },
+    },
+  }
+
 };
 // ─── HELPERS ────────────────────────────────────────────────
 
