@@ -19140,6 +19140,8 @@ if ('serviceWorker' in navigator) {
   <button class="btn-sm" id="bulkBtnPlan" onclick="openBulkPlanModal()" title="Zmień typ konta zaznaczonym" style="font-size:.74rem">🎫 Typ konta</button>
   <button class="btn-sm" id="bulkBtnBanners" onclick="openBulkBannersModal()" title="Włącz/wyłącz bannery Premium" style="font-size:.74rem">🔕 Bannery</button>
   <button class="btn-sm" onclick="openBulkBooksModal()" title="Przydziel podręczniki" style="font-size:.74rem">📚 Podręczniki</button>
+  <button class="btn-sm" id="bulkBtnRemoveClass" onclick="bulkRemoveFromClass()" title="Usuń zaznaczone osoby z tej klasy (konta zostają)" style="font-size:.74rem;display:none">🚪 Usuń z klasy</button>
+  <button class="btn-sm" id="bulkBtnDelete" onclick="bulkDeleteUsers()" title="Usuń zaznaczone konta z bazy danych na stałe" style="font-size:.74rem;color:var(--danger);border-color:rgba(255,118,117,.45)">🗑️ Usuń z bazy</button>
   <button class="btn-sm" onclick="bulkClearSelection()" title="Wyczyść zaznaczenie" style="font-size:.74rem;color:var(--muted)">✕</button>
 </div>
 
@@ -21553,6 +21555,9 @@ if ('serviceWorker' in navigator) {
       if (planBtn) planBtn.style.display = isAdmin ? '' : 'none';
       const bannersBtn = document.getElementById('bulkBtnBanners');
       if (bannersBtn) bannersBtn.style.display = isAdmin ? '' : 'none';
+      // „Usuń z klasy" tylko w kontekście klasy (w „Dostęp" nie ma klasy)
+      const rmClassBtn = document.getElementById('bulkBtnRemoveClass');
+      if (rmClassBtn) rmClassBtn.style.display = (_bulkContext === 'class') ? '' : 'none';
     } else {
       tb.style.display = 'none';
     }
@@ -21720,6 +21725,47 @@ if ('serviceWorker' in navigator) {
       renderAccessUserList();
     }
   }
+
+  // ── Usuń zaznaczone osoby Z KLASY (konta zostają) ──
+  window.bulkRemoveFromClass = async function() {
+    if (!_bulkSelected.size || _bulkContext !== 'class' || !_curClassId) return;
+    const ids = Array.from(_bulkSelected);
+    if (!confirm('Usunąć ' + ids.length + ' os. z klasy „' + _curClassName + '"?\n\nKonta NIE zostaną skasowane — zostaną tylko odłączone od tej klasy.')) return;
+    let ok = 0, fail = 0;
+    for (const uid of ids) {
+      try { await DB.removeClassMember(_curClassId, uid); ok++; }
+      catch(e) { fail++; console.error('[bulkRemoveClass]', uid, e); }
+    }
+    _curClassMembers = _curClassMembers.filter(id => !_bulkSelected.has(id));
+    if (typeof toast === 'function') toast('🚪 Usunięto z klasy: ' + ok + (fail ? ', ' + fail + ' błąd' : ''), 2600);
+    _bulkSelected.clear();
+    bulkRefreshToolbar();
+    renderClassStudents(_curClassMembers, _allProfiles);
+  };
+
+  // ── Usuń zaznaczone konta Z BAZY na stałe (RODO / porządki) ──
+  window.bulkDeleteUsers = async function() {
+    if (!_bulkSelected.size) return;
+    const ids = Array.from(_bulkSelected);
+    const names = ids.map(id => { const p = (_allProfiles || []).find(x => x.id === id); return p ? p.username : id; });
+    const preview = names.slice(0, 15).join(', ') + (names.length > 15 ? ' … (+' + (names.length - 15) + ')' : '');
+    if (!confirm('⚠️ TRWALE usunąć ' + ids.length + ' kont z bazy danych?\n\n' + preview + '\n\nTo usunie konta, postępy, przypisania do klas i podręczników.\nTEJ OPERACJI NIE MOŻNA COFNĄĆ!')) return;
+    if (!confirm('🔴 OSTATNIE OSTRZEŻENIE\n\nUsuwasz ' + ids.length + ' kont na stałe.\nKliknij OK, aby potwierdzić.')) return;
+    let ok = 0, fail = 0;
+    for (const uid of ids) {
+      try {
+        await DB.adminDeleteUser(uid);
+        ok++;
+        _allProfiles = _allProfiles.filter(p => p.id !== uid);
+        if (typeof _curClassMembers !== 'undefined') _curClassMembers = _curClassMembers.filter(id => id !== uid);
+      } catch(e) { fail++; console.error('[bulkDelete]', uid, e); }
+    }
+    if (typeof toast === 'function') toast('🗑️ Usunięto ' + ok + ' kont' + (fail ? ', ' + fail + ' błąd' : ''), 3200);
+    _bulkSelected.clear();
+    bulkRefreshToolbar();
+    if (_bulkContext === 'class') renderClassStudents(_curClassMembers, _allProfiles);
+    else renderAccessUserList();
+  };
 
   // ─── ⚙️ Ustawienia konta ucznia (plan + ukryj bannery) ─────────
   // Wspolny modal dla widoku Klasy (sClassDetail) i Dostepu (sAdminAccess).
