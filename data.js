@@ -9800,6 +9800,9 @@ const BOOKS = {
           ['zobaczyć', 'see', 'Chodźmy najpierw zobaczyć słonie.', "Let's go and see the elephants first."],
           ['gdzie', 'where', 'Gdzie rozmawiają te osoby / ci ludzie?', 'Where are the people talking?'],
           ['ludzie', 'people', 'Gdzie rozmawiają te osoby / ci ludzie?', 'Where are the people talking?'],
+          ['małpa', 'monkey', 'Małpa to włochate zwierzę z długim ogonem, które żyje w ciepłych krajach i wspina się na drzewa.', 'A monkey is a hairy animal with a long tail that lives in hot countries and climbs trees.'],
+          ['słoń', 'elephant', 'Słoń to bardzo duże, szare zwierzę z dużymi uszami i bardzo długim nosem.', 'An elephant is a very large, grey animal with big ears and a very long nose.'],
+          ['lew', 'lion', 'Lew to duże, dzikie zwierzę z rodziny kotowatych, o jasnobrązowej sierści.', 'A lion is a large wild animal of the cat family, with light brown fur.'],
         ]
       },
     },
