@@ -9931,6 +9931,70 @@ const BOOKS = {
           ['Szczerze mówiąc, uważam, że są trochę nudne.', "To be honest, I think they're a bit boring!"],
         ]
       },
+      unit3: {
+        name: 'Unit 3 · Transport i podróż', icon: '🚌', color: '#e17055',
+        words: [
+          // Public transport: adjectives
+          ['opóźniony', 'delayed', 'Nasz pociąg był opóźniony o dwadzieścia minut.', 'Our train was delayed by twenty minutes.'],
+          ['punktualny, na czas', 'punctual', 'Autobusy w tym mieście są zwykle bardzo punktualne.', 'The buses in this city are usually very punctual.'],
+          ['bezpieczny', 'safe', 'Pociągi to bezpieczny sposób na podróżowanie na dużych dystansach.', 'Trains are a safe way to travel long distances.'],
+          ['niewygodny', 'uncomfortable', 'Siedzenia w starym autobusie były twarde i niewygodne.', 'The seats on the old bus were hard and uncomfortable.'],
+          // Public transport: verbs
+          ['wsiadać (do samochodu)', 'get in', 'Wsiadaj do samochodu — wyjeżdżamy!', "Get in the car — we're leaving now!"],
+          ['wysiadać', 'get off', 'Wysiadamy z autobusu na następnym przystanku.', 'We get off the bus at the next stop.'],
+          ['wsiadać (do autobusu, pociągu, samolotu)', 'get on', 'Pospiesz się i wsiadaj do pociągu, zanim odjedzie!', 'Hurry up and get on the train before it leaves!'],
+          ['wysiadać (z samochodu)', 'get out of', 'Wysiadła z taksówki i zapłaciła kierowcy.', 'She got out of the taxi and paid the driver.'],
+          ['odjeżdżać', 'leave', 'Ostatni pociąg odjeżdża o jedenastej.', "The last train leaves at eleven o'clock."],
+          ['spóźnić się (na pociąg, autobus)', 'miss', 'Jeśli się nie pospieszymy, spóźnimy się na autobus.', "If we don't hurry, we'll miss the bus."],
+          ['pokazywać bilet', 'show your ticket', 'Musisz pokazać bilet kontrolerowi.', 'You have to show your ticket to the inspector.'],
+          // Public transport: nouns
+          ['kierowca autobusu', 'bus driver', 'Kierowca autobusu pomógł starszej pani z torbami.', 'The bus driver helped the old lady with her bags.'],
+          ['bilet elektroniczny', 'e-ticket', 'Kupiłem bilet elektroniczny w telefonie zamiast papierowego.', 'I bought an e-ticket on my phone instead of a paper one.'],
+          ['bagaż', 'luggage', 'Włóż bagaż pod siedzenie, proszę.', 'Put your luggage under the seat, please.'],
+          ['pasażer/pasażerka', 'passenger', 'Każdy pasażer musi mieć zapięty pas w autokarze.', 'Every passenger must wear a seatbelt on the coach.'],
+          ['peron', 'platform', 'Pociąg do Londynu odjeżdża z peronu trzeciego.', 'The train to London leaves from platform three.'],
+          ['kontroler/kontrolerka biletów', 'ticket inspector', 'Kontroler biletów sprawdził bilety wszystkich.', "The ticket inspector checked everyone's tickets."],
+          ['rozkład jazdy', 'timetable', 'Sprawdź rozkład jazdy, żeby zobaczyć, kiedy przyjeżdża następny autobus.', 'Check the timetable to see when the next bus comes.'],
+          ['korek uliczny', 'traffic jam', 'Spóźniliśmy się z powodu ogromnego korka ulicznego.', 'We were late because of a huge traffic jam.'],
+          // Getting around: nouns
+          ['róg', 'corner', 'Sklep jest tuż za rogiem.', 'The shop is just around the corner.'],
+          ['skrzyżowanie', 'crossroad', 'Skręć w lewo na skrzyżowaniu przy kościele.', 'Turn left at the crossroad by the church.'],
+          ['rondo', 'roundabout', 'Na rondzie jedź prosto.', 'Go straight on at the roundabout.'],
+          ['znak (drogowy)', 'sign', 'Znak informuje, że ograniczenie prędkości to pięćdziesiąt.', 'The sign says the speed limit is fifty.'],
+          ['przejście dla pieszych', 'zebra crossing', 'Zawsze przechodź na przejściu dla pieszych, a nie na środku ulicy.', 'Always cross at the zebra crossing, not in the middle of the road.'],
+          // Getting around: verbs
+          ['przejść/przejechać przez most', 'cross the bridge', 'Przejdź przez most, a stacja będzie po prawej stronie.', 'Cross the bridge and the station is on your right.'],
+          ['przejść przez ulicę', 'cross the road', 'Rozejrzyj się w obie strony, zanim przejdziesz przez ulicę.', 'Look both ways before you cross the road.'],
+          ['podążać drogą', 'follow the road', 'Podążaj drogą przez dwa kilometry, aż zobaczysz jezioro.', 'Follow the road for two kilometres until you see the lake.'],
+          ['podążać za znakami', 'follow the signs', 'Podążaj za znakami do centrum miasta.', 'Follow the signs to the city centre.'],
+          ['dotrzeć do przystanku autobusowego', 'get to the bus stop', 'Musimy dotrzeć do przystanku autobusowego przed ósmą.', 'We need to get to the bus stop before eight.'],
+          ['skręcić w pierwszą ulicę w lewo', 'take the first left', 'Skręć w pierwszą ulicę w lewo za światłami.', 'Take the first left after the traffic lights.'],
+          ['skręcić w drugą ulicę w prawo', 'take the second right', 'Skręć w drugą ulicę w prawo, a znajdziesz muzeum.', "Take the second right and you'll find the museum."],
+          // Reading and culture
+          ['twórczy', 'creative', 'Ona jest bardzo twórczą osobą, która uwielbia malować.', 'She is a very creative person who loves painting.'],
+          ['autonomiczny, bez kierowcy', 'driverless', 'W przyszłości autonomiczne samochody mogą być bardzo popularne.', 'In the future, driverless cars may be very common.'],
+          ['rozbójnik napadający na podróżnych', 'highwayman', 'Dawno temu rozbójnik zatrzymywał dyliżanse i kradł pieniądze.', 'Long ago, a highwayman would stop coaches and steal money.'],
+          ['lądować', 'land', 'Samolot wyląduje za godzinę.', 'The plane will land in an hour.'],
+          ['wielki', 'large', 'Podróżowali wielkim, wygodnym autokarem.', 'They travelled in a large, comfortable coach.'],
+          ['dyliżans', 'stagecoach', 'Sto lat temu ludzie podróżowali dyliżansem.', 'A hundred years ago people travelled by stagecoach.'],
+          ['para, na parę', 'steam', 'Pierwsze pociągi były napędzane parą.', 'The first trains were powered by steam.'],
+          ['maksymalna prędkość', 'top speed', 'Ten pociąg ma maksymalną prędkość 300 kilometrów na godzinę.', 'This train has a top speed of 300 kilometres per hour.'],
+          ['widok', 'view', 'Ze szczytu wzgórza jest piękny widok na miasto.', 'From the top of the hill there is a beautiful view of the city.'],
+          // Real English (zwroty)
+          ['Nagle usłyszała hałas.', 'All of a sudden she heard a noise.'],
+          ['Ale to nie był koniec.', "But that wasn't all."],
+          ['Przyjrzyj się dobrze temu obrazkowi.', 'Have a good look at this picture.'],
+          // Starting/ending a conversation; asking for clarification; checking understanding
+          ['Jak leci?', "How's it going?"],
+          ['Co nowego? / Co słychać?', "What's new?"],
+          ['Nie rozumiem tego.', "I don't get it."],
+          ['Chcesz powiedzieć, że nie możesz jej znaleźć?', "Do you mean you can't find it?"],
+          ['Serio? / Mówisz poważnie?', 'Seriously?'],
+          ['Chcesz powiedzieć, że znalazłaś moją kartę?', 'Are you saying you found my travel card?'],
+          ['Muszę iść.', "I've got to go."],
+          ['Do zobaczenia wkrótce!', 'Catch up soon!'],
+        ]
+      },
     },
   }
 
