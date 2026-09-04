@@ -10239,6 +10239,74 @@ const BOOKS = {
           ['Jasne.', 'Sure.'],
         ]
       },
+      unit8: {
+        name: 'Unit 8 · Pogoda i klęski żywiołowe', icon: '🌪️', color: '#e17055',
+        words: [
+          // Weather and climate: adjectives
+          ['upalny', 'boiling', 'Na plaży było upalnie, więc wskoczyliśmy do morza.', 'It was boiling on the beach, so we jumped into the sea.'],
+          ['chłodny', 'cool', 'Wieczorem robi się chłodno, więc weź kurtkę.', 'In the evening it gets cool, so take a jacket.'],
+          ['mroźny', 'frosty', 'W mroźny poranek trawa jest biała od lodu.', 'On a frosty morning the grass is white with ice.'],
+          ['wilgotny', 'humid', 'Powietrze w dżungli jest gorące i wilgotne.', 'The air in the jungle is hot and humid.'],
+          ['lodowaty', 'icy', 'Uważaj — dzisiaj drogi są lodowate.', 'Be careful — the roads are icy today.'],
+          // Weather and climate: nouns
+          ['mgła', 'fog', 'Była gęsta mgła, więc nie widzieliśmy drogi.', "There was thick fog, so we couldn't see the road."],
+          ['mróz', 'frost', 'Dziś rano na szybach samochodu był mróz.', 'There was frost on the car windows this morning.'],
+          ['upał', 'heat', 'Zostaliśmy w domu z powodu okropnego upału.', 'We stayed indoors because of the terrible heat.'],
+          ['błyskawica', 'lightning', 'Podczas burzy widzieliśmy jasne błyskawice na niebie.', 'During the storm we saw bright lightning in the sky.'],
+          ['tęcza', 'rainbow', 'Po deszczu pojawiła się piękna tęcza.', 'After the rain a beautiful rainbow appeared.'],
+          ['przelotny deszcz', 'shower', 'Po południu może być przelotny deszcz.', 'There might be a light shower this afternoon.'],
+          ['burza', 'storm', 'Silna burza powaliła kilka drzew.', 'A big storm knocked down several trees.'],
+          ['słońce', 'sunshine', 'Po wielu dniach deszczu w końcu świeci słońce.', 'After days of rain, we finally have some sunshine.'],
+          ['grzmot', 'thunder', 'Pies bał się głośnego grzmotu.', 'The dog was scared of the loud thunder.'],
+          // Geographical directions and locations
+          ['północ', 'north', 'Na północy kraju jest zwykle zimniej.', 'It is usually colder in the north of the country.'],
+          ['południe', 'south', 'Wiele ptaków leci na południe na zimę.', 'Many birds fly to the south for the winter.'],
+          ['wschód', 'east', 'Słońce codziennie rano wschodzi na wschodzie.', 'The sun rises in the east every morning.'],
+          ['zachód', 'west', 'Wieczorem słońce zachodzi na zachodzie.', 'The sun sets in the west in the evening.'],
+          ['północny wschód', 'north-east', 'Silny wiatr wiał z północnego wschodu.', 'The strong wind was blowing from the north-east.'],
+          ['północny zachód', 'north-west', 'Szkocja leży na północnym zachodzie Wielkiej Brytanii.', 'Scotland is in the north-west of Britain.'],
+          ['południowy wschód', 'south-east', 'Londyn leży na południowym wschodzie Anglii.', 'London is in the south-east of England.'],
+          ['południowy zachód', 'south-west', 'Pojechaliśmy na południowy zachód, żeby zobaczyć ocean.', 'We drove to the south-west to see the ocean.'],
+          // Extreme weather
+          ['zamieć śnieżna', 'blizzard', 'Zamieć śnieżna przykryła całe miasto głębokim śniegiem.', 'The blizzard covered the whole town in deep snow.'],
+          ['susza', 'drought', 'Podczas suszy rzeka prawie wyschła.', 'During the drought the river almost dried up.'],
+          ['gradobicie', 'hailstorm', 'Gradobicie rozbiło kilka szyb w samochodach.', 'The hailstorm broke some of the car windows.'],
+          ['fala upałów', 'heatwave', 'Podczas fali upałów temperatura sięgnęła czterdziestu stopni.', 'During the heatwave the temperature reached forty degrees.'],
+          ['huragan', 'hurricane', 'Huragan zniszczył wiele domów przy wybrzeżu.', 'The hurricane destroyed many houses near the coast.'],
+          ['burza z piorunami', 'thunderstorm', 'Zostaliśmy w środku podczas burzy z piorunami.', 'We stayed inside during the thunderstorm.'],
+          ['tornado', 'tornado', 'Potężne tornado uniosło samochody w powietrze.', 'A powerful tornado lifted cars into the air.'],
+          // Natural disasters
+          ['lawina', 'avalanche', 'Lawina śniegu zeszła z góry.', 'An avalanche of snow came down the mountain.'],
+          ['trzęsienie ziemi', 'earthquake', 'Trzęsienie ziemi trzęsło budynkami przez kilka sekund.', 'The earthquake shook the buildings for a few seconds.'],
+          ['powódź', 'flood', 'Po ulewnym deszczu w wiosce była powódź.', 'After the heavy rain, there was a flood in the village.'],
+          ['pożar lasu', 'forest fire', 'Gorąca, sucha pogoda spowodowała ogromny pożar lasu.', 'The hot, dry weather caused a huge forest fire.'],
+          ['tsunami (wielka fala spowodowana trzęsieniem ziemi)', 'tsunami', 'Trzęsienie ziemi wywołało gigantyczną falę tsunami.', 'The earthquake caused a giant tsunami wave.'],
+          ['wybuch wulkanu', 'volcanic eruption', 'Wybuch wulkanu wyrzucił dym wysoko w niebo.', 'The volcanic eruption sent smoke high into the sky.'],
+          // Reading and culture
+          ['zapasy awaryjne', 'emergency supplies', 'Trzymaj w domu zapasy awaryjne, np. wodę i latarkę.', 'Keep some emergency supplies like water and a torch at home.'],
+          ['schronienie', 'shelter', 'Ludzie znaleźli schronienie przed burzą w jaskini.', 'The people found shelter from the storm in a cave.'],
+          ['syrena alarmowa', 'siren', 'Kiedy usłyszysz syrenę alarmową, idź w bezpieczne miejsce.', 'When you hear the siren, go to a safe place.'],
+          ['dziwny', 'weird', 'Pogoda była w tym roku naprawdę dziwna.', 'The weather has been really weird this year.'],
+          // Real English (zwroty)
+          ['Byliśmy bardzo rozczarowani.', 'We were so disappointed.'],
+          ['Jak na razie wszystko w porządku!', 'So far so good!'],
+          ['Nic dziwnego, że ludzie tyle rozmawiają o pogodzie!', 'No wonder people talk about the weather a lot!'],
+          ['W jednej chwili jest burza, a w następnej – świeci słońce.', "One minute there's a storm and the next minute there's sunshine."],
+          // Giving warnings and instructions
+          ['Bądź ostrożny/ostrożna!', 'Be careful!'],
+          ['Uważaj!', 'Watch out!'],
+          ['Muszę Cię ostrzec.', 'I must warn you.'],
+          ['Zabierz (krem do opalania)!', 'Get some (sun cream)!'],
+          ['Pamiętaj, żeby wziąć butelkę wody.', 'Make sure you bring a water bottle.'],
+          ['Ostrożności nigdy za wiele.', "You can't be too careful."],
+          ['Hej, uważaj!', 'Hey, look out!'],
+          ['Uważaj na tamten (samochód)!', 'Mind that (car)!'],
+          ['Pamiętaj o zabraniu...', 'Remember to bring a ...'],
+          ['Nie zapomnij powiedzieć...', "Don't forget to tell ..."],
+          ['Nie dotykaj tego!', "Don't touch it!"],
+          ['Powinieneś/Powinnaś porozmawiać z... / Nie powinieneś / Nie powinnaś porozmawiać z...', "You should/shouldn't speak to ..."],
+        ]
+      },
     },
   }
 
