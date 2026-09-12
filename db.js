@@ -3423,6 +3423,111 @@ const DB = (() => {
     } catch(e) { return 0; }
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  //  SKLEP — produkty cyfrowe + analityka (migracja #49: shop-schema.sql)
+  // ═══════════════════════════════════════════════════════════════
+
+  // Lista produktów. all=false → tylko opublikowane (dla gości/uczniów);
+  // all=true → wszystkie (admin, do zarządzania). RLS i tak pilnuje dostępu.
+  async function shopLoadProducts(all) {
+    let q = supabase.from('shop_products').select('*')
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: false });
+    if (!all) q = q.eq('is_published', true);
+    const { data, error } = await q;
+    if (error) throw new Error(error.message);
+    return data || [];
+  }
+
+  // Loguje zdarzenie analityczne (fire-and-forget; działa też dla anon).
+  // eventType: 'view_shop' | 'view_product' | 'click_download' | 'click_link' | 'click_buy'
+  async function shopLogEvent(productId, eventType) {
+    const allowed = ['view_shop','view_product','click_download','click_link','click_buy'];
+    if (!allowed.includes(eventType)) return;
+    try {
+      await supabase.from('shop_events').insert({
+        product_id: productId || null,
+        event_type: eventType,
+        path:     (typeof location !== 'undefined') ? location.pathname : null,
+        referrer: (typeof document !== 'undefined' && document.referrer) ? document.referrer.substring(0, 500) : null,
+        user_id:  _userId || null
+      });
+    } catch (e) { /* analityka nie może psuć UX */ }
+  }
+
+  // Zapis produktu (admin). Z polem id → UPDATE, bez → INSERT.
+  async function shopAdminSaveProduct(fields) {
+    if (!_profile?.isAdmin) throw new Error('Tylko administrator.');
+    const f = fields || {};
+    const slug = (f.slug || '').trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
+    if (!slug) throw new Error('Podaj identyfikator (slug) produktu.');
+    if (!(f.title || '').trim()) throw new Error('Podaj tytuł produktu.');
+    const priceZl = Number(f.price_zl);
+    const priceGrosze = (!f.is_free && priceZl > 0) ? Math.round(priceZl * 100) : 0;
+    const row = {
+      slug,
+      title:        (f.title || '').trim(),
+      short_desc:   (f.short_desc || '').trim() || null,
+      long_desc:    (f.long_desc || '').trim() || null,
+      category:     (f.category || '').trim() || null,
+      audience:     ['teacher','student','both'].includes(f.audience) ? f.audience : 'both',
+      cover_emoji:  (f.cover_emoji || '📄').trim(),
+      cover_url:    (f.cover_url || '').trim() || null,
+      price_grosze: priceGrosze,
+      is_free:      !!f.is_free || priceGrosze === 0,
+      file_url:     (f.file_url || '').trim() || null,
+      external_url: (f.external_url || '').trim() || null,
+      badge:        (f.badge || '').trim() || null,
+      is_published: !!f.is_published,
+      sort_order:   Number.isFinite(+f.sort_order) ? +f.sort_order : 0,
+      updated_at:   new Date().toISOString()
+    };
+    let res;
+    if (f.id) {
+      res = await supabase.from('shop_products').update(row).eq('id', f.id).select().single();
+    } else {
+      res = await supabase.from('shop_products').insert(row).select().single();
+    }
+    if (res.error) throw new Error(res.error.message);
+    return res.data;
+  }
+
+  async function shopAdminDeleteProduct(id) {
+    if (!_profile?.isAdmin) throw new Error('Tylko administrator.');
+    if (!id) throw new Error('Brak ID produktu.');
+    const { error } = await supabase.from('shop_products').delete().eq('id', id);
+    if (error) throw new Error(error.message);
+  }
+
+  // Wgranie pliku do bucketu 'shop-files' → zwraca publiczny URL (admin).
+  async function shopUploadFile(file, slug) {
+    if (!_profile?.isAdmin) throw new Error('Tylko administrator.');
+    if (!file) throw new Error('Brak pliku.');
+    const safe = (slug || 'plik').toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '') || 'plik';
+    const ext = (file.name.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const ts = new Date().toISOString().slice(0,16).replace(/[-:T]/g, '');
+    const path = `${safe}/${ts}.${ext}`;
+    const { error } = await supabase.storage.from('shop-files').upload(path, file, {
+      cacheControl: '3600', upsert: false, contentType: file.type || undefined
+    });
+    if (error) throw new Error(error.message);
+    const { data } = supabase.storage.from('shop-files').getPublicUrl(path);
+    return data.publicUrl;
+  }
+
+  // Zagregowane statystyki produktów (admin only) — RPC shop_stats.
+  async function shopLoadStats() {
+    if (!_profile?.isAdmin) throw new Error('Tylko administrator.');
+    const { data, error } = await supabase.rpc('shop_stats');
+    if (error) throw new Error(error.message);
+    let visits = 0;
+    try {
+      const r = await supabase.rpc('shop_total_visits');
+      if (!r.error) visits = Number(r.data) || 0;
+    } catch (e) {}
+    return { products: data || [], shopVisits: visits };
+  }
+
   // Usuwa nagranie z bazy + Storage. Bez (lang, kind) — kasuje WSZYSTKO
   // (oba jezyki, oba rodzaje) + rekord. Z konkretnym (lang, kind) — kasuje
   // tylko jeden wariant (rekord zostaje gdy inne nagrania nadal istnieja).
@@ -3868,6 +3973,12 @@ const DB = (() => {
     adminUpdateContactMessage,
     adminDeleteContactMessage,
     countUnreadContactMessages,
+    shopLoadProducts,
+    shopLogEvent,
+    shopAdminSaveProduct,
+    shopAdminDeleteProduct,
+    shopUploadFile,
+    shopLoadStats,
     adminCreateUser,
     adminDeleteUser,
     // admin — klasy
