@@ -362,7 +362,7 @@ async function doLogin() {
     // localStorage persist — most do nowych kart (open in new tab)
     try { localStorage.setItem('fiszki_user_persist', user); } catch(e) {}
     showSuc('Witaj, ' + user + '! Przekierowuję… 🦉');
-    setTimeout(() => { window.location.replace('app.html?t=' + Date.now()); }, 900);
+    setTimeout(() => { window.location.replace(_redirectDest()); }, 900);
   } catch (e) {
     showErr(e.message || 'Błąd logowania.');
     setLoading(btn, false);
@@ -436,12 +436,23 @@ async function doRegister() {
   }
 }
 
+// ─── DOCELOWE PRZEKIEROWANIE PO LOGOWANIU ────────────────────
+// Honoruje ?redirect=xxx.html (np. wejście z /sklep.html → powrót do sklepu).
+// Whitelist: tylko lokalny plik .html (bez // i : — brak open-redirect).
+function _redirectDest() {
+  try {
+    const p = new URLSearchParams(location.search).get('redirect');
+    if (p && /^[a-z0-9_-]+\.html$/i.test(p) && p.toLowerCase() !== 'index.html') return p;
+  } catch (e) {}
+  return 'app.html?t=' + Date.now();
+}
+
 // ─── GUEST MODE ──────────────────────────────────────────────
 function enterGuest() {
   sessionStorage.setItem('fiszki_user', '__guest__');
   // Gosc nie powinien wracac automatycznie w nowej karcie — wyczysc persist
   try { localStorage.removeItem('fiszki_user_persist'); } catch(e) {}
-  window.location.replace('app.html?t=' + Date.now());
+  window.location.replace(_redirectDest());
 }
 
 // ─── DEMO FILL ───────────────────────────────────────────────
@@ -510,7 +521,7 @@ document.addEventListener('keydown', e => {
     if (data && data.username) {
       sessionStorage.setItem('fiszki_user', data.username);
       try { localStorage.setItem('fiszki_user_persist', data.username); } catch(e) {}
-      window.location.replace('app.html?t=' + Date.now());
+      window.location.replace(_redirectDest());
     }
   }
 })();
