@@ -22,7 +22,7 @@ create table if not exists public.shop_products (
   long_desc     text,
   category      text,                       -- np. 'karty-pracy','gry','testy','plany'
   audience      text not null default 'both'
-                  check (audience in ('teacher','student','both')),
+                  check (audience in ('teacher','student','both','parent')),
   cover_emoji   text default '📄',
   cover_url     text,                        -- opcjonalna miniatura (URL)
   price_grosze  integer not null default 0 check (price_grosze >= 0),
@@ -40,6 +40,11 @@ create table if not exists public.shop_products (
 
 create index if not exists shop_products_pub_idx  on public.shop_products (is_published, sort_order);
 create index if not exists shop_products_cat_idx  on public.shop_products (category);
+
+-- Aktualizacja CHECK audience (dla baz, w ktorych tabela juz istniala bez 'parent')
+alter table public.shop_products drop constraint if exists shop_products_audience_check;
+alter table public.shop_products
+  add constraint shop_products_audience_check check (audience in ('teacher','student','both','parent'));
 
 -- ─── Analityka (zdarzenia) ─────────────────────────────────────
 create table if not exists public.shop_events (

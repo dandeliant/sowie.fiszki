@@ -88,7 +88,7 @@
   .prod .cover img{width:100%;height:100%;object-fit:cover}
   .prod .body{padding:14px 16px 16px;display:flex;flex-direction:column;gap:7px;flex:1}
   .prod .aud{font-size:.7rem;font-weight:900;text-transform:uppercase;letter-spacing:.04em;color:var(--brand)}
-  .prod .aud.student{color:var(--brand2)} .prod .aud.both{color:var(--accent)}
+  .prod .aud.student{color:var(--brand2)} .prod .aud.both{color:var(--accent)} .prod .aud.parent{color:var(--gold)}
   .prod h3{font-size:1.08rem;line-height:1.25}
   .prod .sd{color:var(--muted);font-size:.86rem;font-weight:600;flex:1}
   .prod .foot{display:flex;align-items:center;justify-content:space-between;margin-top:6px}
@@ -196,6 +196,7 @@
     <button class="pill on" data-aud="all" onclick="setAud(this)">Wszyscy</button>
     <button class="pill" data-aud="teacher" onclick="setAud(this)">👩‍🏫 Nauczyciel</button>
     <button class="pill" data-aud="student" onclick="setAud(this)">🧒 Uczeń</button>
+    <button class="pill" data-aud="parent" onclick="setAud(this)">👪 Rodzic / opiekun</button>
   </div>
 </div>
 
@@ -281,12 +282,14 @@
             <option value="both">Wszyscy</option>
             <option value="teacher">Nauczyciel</option>
             <option value="student">Uczeń</option>
+            <option value="parent">Rodzic / opiekun</option>
           </select>
         </div>
       </div>
-      <div class="chk"><input type="checkbox" id="edFree" checked onchange="toggleFree()"> <label style="margin:0">Materiał darmowy</label></div>
-      <div id="edPriceWrap" style="display:none">
-        <label>Cena (zł)</label><input id="edPrice" type="number" min="0" step="0.01" placeholder="np. 9.99">
+      <div class="chk"><input type="checkbox" id="edFree" checked onchange="toggleFree()"> <label style="margin:0">Materiał darmowy (0 zł)</label></div>
+      <div id="edPriceWrap">
+        <label>Cena (zł) <span id="edPriceNote" class="hlp" style="display:inline">— odznacz „Materiał darmowy", aby ustawić cenę</span></label>
+        <input id="edPrice" type="number" min="0" step="0.01" placeholder="np. 9.99">
       </div>
       <label>Plik do pobrania (URL)</label>
       <input id="edFile" placeholder="Wklej link do pliku lub wgraj poniżej">
@@ -329,7 +332,7 @@ let IS_ADMIN=false, PRODUCTS=[], activeCat='all', activeAud='all', CUR=null;
 const $ = id => document.getElementById(id);
 const esc = s => (s==null?'':String(s)).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const zl = grosze => (grosze/100).toFixed(2).replace('.',',') + ' zł';
-const AUD_LABEL = { teacher:'👩‍🏫 Dla nauczyciela', student:'🧒 Dla ucznia', both:'👥 Dla wszystkich' };
+const AUD_LABEL = { teacher:'👩‍🏫 Dla nauczyciela', student:'🧒 Dla ucznia', parent:'👪 Dla rodzica / opiekuna', both:'👥 Dla wszystkich' };
 
 function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
 function closeModal(id){ $(id).classList.remove('show'); }
@@ -377,7 +380,7 @@ function renderGrid(){
   empty.hidden = true;
   grid.innerHTML = list.map(p=>{
     const cover = p.cover_url ? '<img src="'+esc(p.cover_url)+'" alt="">' : esc(p.cover_emoji||'📄');
-    const price = p.is_free ? '<span class="price">Za darmo</span>' : '<span class="price paid">'+zl(p.price_grosze)+'</span>';
+    const price = p.is_free ? '<span class="price">0 zł</span>' : '<span class="price paid">'+zl(p.price_grosze)+'</span>';
     const badge = p.badge ? '<div class="badge">'+esc(p.badge)+'</div>' : '';
     const draft = (IS_ADMIN && !p.is_published) ? '<div class="draft">szkic</div>' : '';
     const ops = IS_ADMIN ? '<div class="admin-ops"><button class="minibtn" onclick="event.stopPropagation();editProduct(\''+p.id+'\')">✏️ Edytuj</button></div>' : '';
@@ -399,7 +402,7 @@ function openProduct(id){
   $('pmCover').innerHTML = p.cover_url ? '<img src="'+esc(p.cover_url)+'" alt="">' : esc(p.cover_emoji||'📄');
   $('pmAud').textContent = AUD_LABEL[p.audience]||'';
   $('pmTitle').textContent = p.title;
-  $('pmPrice').innerHTML = p.is_free ? 'Za darmo' : zl(p.price_grosze);
+  $('pmPrice').innerHTML = p.is_free ? '0 zł' : zl(p.price_grosze);
   $('pmPrice').className = 'price' + (p.is_free?'':' paid');
   $('pmDesc').textContent = p.long_desc || p.short_desc || '';
   let act='';
@@ -417,7 +420,13 @@ function logAct(id, type){ DB.shopLogEvent(id, type); }
 function buy(id){ DB.shopLogEvent(id, 'click_buy'); closeModal('prodModal'); $('buyModal').classList.add('show'); }
 
 /* ── ADMIN: editor ── */
-function toggleFree(){ $('edPriceWrap').style.display = $('edFree').checked ? 'none':'block'; }
+function toggleFree(){
+  const free = $('edFree').checked;
+  $('edPrice').disabled = free;
+  if (free) $('edPrice').value = '';
+  $('edPrice').style.opacity = free ? '.45' : '1';
+  $('edPriceNote').style.display = free ? 'inline' : 'none';
+}
 function openEditor(){
   $('edTitle').textContent='Nowy produkt'; $('edDelBtn').style.display='none';
   ['edId','edTitleF','edSlug','edShort','edLong','edCat','edFile','edExt','edBadge','edUpStatus'].forEach(i=>$(i).value='');
