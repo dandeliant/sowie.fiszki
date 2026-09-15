@@ -13027,8 +13027,8 @@ const BOOKS = {
   ,repetytoriumExpress: {
     id: 'repetytoriumExpress',
     language: 'en', schoolType: 'secondary',
-    name: 'Repetytorium Express Publishing (poziom podst. i rozsz.)',
-    shortName: 'Repetytorium Express',
+    name: 'Repetytorium',
+    shortName: 'Repetytorium',
     icon: '📗',
     color: '#00b894',
     description: 'Repetytorium · poziom podstawowy i rozszerzony · Liceum / technikum',
