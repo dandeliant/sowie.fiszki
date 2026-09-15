@@ -11634,7 +11634,7 @@ const BOOKS = {
     shortName: 'New Password B1+',
     icon: '🔑',
     color: '#0984e3',
-    description: 'Poziom B1+ · Liceum / technikum',
+    description: 'Poziom B1+',
     units: {
       unit1: {
         name: 'Unit 1 · Wygląd, moda i wizerunek', icon: '👤', color: '#0984e3',
