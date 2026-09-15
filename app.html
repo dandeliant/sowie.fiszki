@@ -9611,10 +9611,12 @@ function _currentWeekGrade(weekly) {
   const wk = _weekStart(new Date().toISOString().slice(0, 10));
   return weekly[wk] ? weekly[wk].grade : 1;
 }
-// Mapa "YYYY-MM" -> {grades:[...], avg, grade}
-function _monthlyGrades(weekly) {
+// Mapa "YYYY-MM" -> {grades:[...], avg, grade}. Pomija tygodnie wyłączone
+// przez nauczyciela (disabled = Set week_start lub tablica).
+function _monthlyGrades(weekly, disabled) {
+  const dis = disabled instanceof Set ? disabled : new Set(disabled || []);
   const byM = {};
-  Object.keys(weekly).forEach(wk => { const m = wk.slice(0, 7); (byM[m] = byM[m] || []).push(weekly[wk].grade); });
+  Object.keys(weekly).forEach(wk => { if (dis.has(wk)) return; const m = wk.slice(0, 7); (byM[m] = byM[m] || []).push(weekly[wk].grade); });
   const out = {};
   Object.keys(byM).forEach(m => {
     const arr = byM[m];
@@ -9627,9 +9629,25 @@ function _currentMonthGrade(monthly) {
   const m = new Date().toISOString().slice(0, 7);
   return monthly[m] ? monthly[m].grade : 1;
 }
+// OCENA WYSTAWIONA (issued) — za ostatni ZAKOŃCZONY okres (wg zasady:
+// tygodniowa wystawiana ~1:00 w pon., miesięczna 1. dnia miesiąca).
+// Bieżący (niezakończony) tydzień/miesiąc jest „w toku" i nie jest oceną
+// wystawioną. Zwraca null gdy brak zakończonego okresu.
+function _issuedWeekGrade(weekly, disabled) {
+  const dis = disabled instanceof Set ? disabled : new Set(disabled || []);
+  const curWk = _weekStart(new Date().toISOString().slice(0, 10));
+  const past = Object.keys(weekly).filter(w => w < curWk && !dis.has(w)).sort();
+  return past.length ? weekly[past[past.length - 1]].grade : null;
+}
+function _issuedMonthGrade(monthly) {
+  const curM = new Date().toISOString().slice(0, 7);
+  const past = Object.keys(monthly).filter(m => m < curM).sort();
+  return past.length ? monthly[past[past.length - 1]].grade : null;
+}
 const _MONTH_PL = ['stycznia','lutego','marca','kwietnia','maja','czerwca','lipca','sierpnia','września','października','listopada','grudnia'];
 function _fmtDay(dayStr){ const d = new Date(dayStr+'T00:00:00'); return d.getDate()+'.'+String(d.getMonth()+1).padStart(2,'0'); }
-function _acqGradeColor(g){ return g>=5?'var(--success)':g>=4?'var(--accent2)':g>=3?'var(--accent)':g>=2?'#ffa94d':'var(--danger)'; }
+function _acqGradeColor(g){ if(g==null) return 'var(--muted)'; return g>=5?'var(--success)':g>=4?'var(--accent2)':g>=3?'var(--accent)':g>=2?'#ffa94d':'var(--danger)'; }
+function _acqGradeTxt(g){ return g==null ? '–' : String(g); }
 function _acqSummaryHtml(acq, weekG, monthG, detailId) {
   return '<div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:12px 14px;margin:6px 0 12px">'
     + '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">'
@@ -9637,10 +9655,10 @@ function _acqSummaryHtml(acq, weekG, monthG, detailId) {
       + '<button class="btn-sm" style="font-size:.68rem" onclick="_acqShowDetails(\''+detailId+'\')">🔎 Szczegóły</button>'
     + '</div>'
     + '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px">'
-      + '<div onclick="_acqShowWeekly(\''+detailId+'\')" title="Kliknij: szczegóły tygodni" style="flex:1;min-width:120px;text-align:center;background:var(--surface2);border-radius:10px;padding:7px 6px;cursor:pointer"><div style="font-size:1.4rem;font-weight:900;color:'+_acqGradeColor(weekG)+'">'+weekG+'</div><div style="font-size:.62rem;color:var(--muted);font-weight:700">Ocena tygodniowa 🔎</div></div>'
-      + '<div onclick="_acqShowMonthly(\''+detailId+'\')" title="Kliknij: szczegóły miesięcy" style="flex:1;min-width:120px;text-align:center;background:var(--surface2);border-radius:10px;padding:7px 6px;cursor:pointer"><div style="font-size:1.4rem;font-weight:900;color:'+_acqGradeColor(monthG)+'">'+monthG+'</div><div style="font-size:.62rem;color:var(--muted);font-weight:700">Ocena miesięczna 🔎</div></div>'
+      + '<div onclick="_acqShowWeekly(\''+detailId+'\')" title="Kliknij: szczegóły tygodni" style="flex:1;min-width:120px;text-align:center;background:var(--surface2);border-radius:10px;padding:7px 6px;cursor:pointer"><div style="font-size:1.4rem;font-weight:900;color:'+_acqGradeColor(weekG)+'">'+_acqGradeTxt(weekG)+'</div><div style="font-size:.62rem;color:var(--muted);font-weight:700">Ocena tygodniowa 🔎</div></div>'
+      + '<div onclick="_acqShowMonthly(\''+detailId+'\')" title="Kliknij: szczegóły miesięcy" style="flex:1;min-width:120px;text-align:center;background:var(--surface2);border-radius:10px;padding:7px 6px;cursor:pointer"><div style="font-size:1.4rem;font-weight:900;color:'+_acqGradeColor(monthG)+'">'+_acqGradeTxt(monthG)+'</div><div style="font-size:.62rem;color:var(--muted);font-weight:700">Ocena miesięczna 🔎</div></div>'
     + '</div>'
-    + '<div style="font-size:.6rem;color:var(--muted);font-weight:600;margin-top:6px;text-align:center">Ocena sugerowana (1-6) — na podstawie dni pracy w trybie „Wpisz". Nauczyciel może stosować własne kryteria.</div></div>';
+    + '<div style="font-size:.6rem;color:var(--muted);font-weight:600;margin-top:6px;text-align:center">Ocena sugerowana (1-6) — wystawiana za ostatni zakończony okres (tydzień: pon. ~1:00, miesiąc: 1. dnia). „–" = brak zakończonego okresu. Nauczyciel może stosować własne kryteria.</div></div>';
 }
 window._acqStore = {};
 window._acqShowDetails = function(id){
@@ -9657,22 +9675,48 @@ window._acqShowDetails = function(id){
     + '<div style="margin-top:14px;display:flex;justify-content:center"><button class="btn-modal-cancel" onclick="closeGenericModal()">Zamknij</button></div></div>';
   openGenericModal('📊 Przyswojone słówka — szczegóły', html);
 };
+// Nauczyciel: włącz/wyłącz ocenę tygodnia (święta, zielona szkoła).
+window._acqToggleWeek = async function(id, weekStart){
+  const st = window._acqStore[id]; if(!st || !st.userId) return;
+  const dis = st.disabled instanceof Set ? st.disabled : new Set(st.disabled || []);
+  const nowDisabled = !dis.has(weekStart);
+  try { await DB.setDisabledWeek(st.userId, weekStart, nowDisabled); }
+  catch(e){ toast('Błąd: ' + (e.message||e)); return; }
+  if (nowDisabled) dis.add(weekStart); else dis.delete(weekStart);
+  st.disabled = dis;
+  st.monthly = _monthlyGrades(st.weekly, dis); // przelicz oceny miesięczne
+  toast(nowDisabled ? 'Tydzień wyłączony z oceny' : 'Tydzień włączony do oceny', 1800);
+  _acqShowWeekly(id); // odśwież modal
+};
 // Szczegóły oceny tygodniowej — tabela tygodni (najnowsze u góry).
 window._acqShowWeekly = function(id){
-  const weekly = (window._acqStore[id] || {}).weekly || {};
-  const keys = Object.keys(weekly).sort().reverse().slice(0, 12);
+  const st = window._acqStore[id] || {};
+  const weekly = st.weekly || {};
+  const dis = st.disabled instanceof Set ? st.disabled : new Set(st.disabled || []);
+  const canEdit = !!st.canEdit;
+  const curWk = _weekStart(new Date().toISOString().slice(0, 10));
+  const keys = Object.keys(weekly).sort().reverse().slice(0, 14);
   let rows = keys.map(wk => {
     const w = weekly[wk];
     const endStr = (() => { const d=new Date(wk+'T00:00:00'); d.setDate(d.getDate()+6); return d.toISOString().slice(0,10); })();
+    const isCur = wk === curWk;
+    const isDis = dis.has(wk);
     const g = w.grade;
-    return '<tr style="border-bottom:1px dashed var(--border)"><td style="padding:7px 6px;font-weight:700">'+_fmtDay(wk)+'–'+_fmtDay(endStr)+'</td>'
+    const gradeCell = isDis
+      ? '<span style="color:var(--muted);text-decoration:line-through">'+g+'</span> <span style="font-size:.6rem;color:var(--danger);font-weight:800">wyłączony</span>'
+      : '<span style="color:'+_acqGradeColor(g)+'">'+g+'</span>' + (isCur ? ' <span style="font-size:.6rem;color:var(--muted);font-weight:700">w toku</span>' : '');
+    const toggle = canEdit
+      ? '<td style="padding:7px 4px;text-align:right"><button class="btn-sm" style="font-size:.6rem;padding:2px 7px" onclick="_acqToggleWeek(\''+id+'\',\''+wk+'\')">'+(isDis?'Włącz':'Wyłącz')+'</button></td>'
+      : '';
+    return '<tr style="border-bottom:1px dashed var(--border);'+(isDis?'opacity:.6':'')+'"><td style="padding:7px 6px;font-weight:700">'+_fmtDay(wk)+'–'+_fmtDay(endStr)+'</td>'
       + '<td style="padding:7px 6px;text-align:center;color:var(--muted);font-weight:600">'+w.typedDays+' '+(w.typedDays===1?'dzień':'dni')+'</td>'
-      + '<td style="padding:7px 6px;text-align:right;font-weight:900;font-size:1.05rem;color:'+_acqGradeColor(g)+'">'+g+'</td></tr>';
+      + '<td style="padding:7px 6px;text-align:right;font-weight:900;font-size:1.05rem">'+gradeCell+'</td>'+toggle+'</tr>';
   }).join('');
-  if(!rows) rows = '<tr><td colspan="3" style="padding:16px;text-align:center;color:var(--muted);font-weight:600">Brak danych.</td></tr>';
-  const html = '<div style="font-family:Nunito,sans-serif;color:var(--text);max-width:520px;margin:0 auto">'
-    + '<div style="font-size:.74rem;color:var(--muted);font-weight:600;margin-bottom:8px">Ocena za każdy tydzień wg liczby dni pracy w trybie „Wpisz" (1 dzień/brak → 1, 2 dni → 2, …, 5+ → 5).</div>'
-    + '<table style="width:100%;border-collapse:collapse;font-size:.9rem"><tr><th style="text-align:left;padding:6px;font-size:.7rem;color:var(--muted)">Tydzień</th><th style="text-align:center;padding:6px;font-size:.7rem;color:var(--muted)">Dni „Wpisz"</th><th style="text-align:right;padding:6px;font-size:.7rem;color:var(--muted)">Ocena</th></tr>'
+  if(!rows) rows = '<tr><td colspan="4" style="padding:16px;text-align:center;color:var(--muted);font-weight:600">Brak danych.</td></tr>';
+  const html = '<div style="font-family:Nunito,sans-serif;color:var(--text);max-width:560px;margin:0 auto">'
+    + '<div style="font-size:.74rem;color:var(--muted);font-weight:600;margin-bottom:8px">Ocena za każdy tydzień wg liczby dni pracy w trybie „Wpisz" (1 dzień/brak → 1, 2 → 2, …, 5+ → 5).'
+      + (canEdit ? ' Możesz <b>wyłączyć</b> tydzień (święta, zielona szkoła) — nie będzie liczony do oceny miesięcznej.' : '') + '</div>'
+    + '<table style="width:100%;border-collapse:collapse;font-size:.9rem"><tr><th style="text-align:left;padding:6px;font-size:.7rem;color:var(--muted)">Tydzień</th><th style="text-align:center;padding:6px;font-size:.7rem;color:var(--muted)">Dni „Wpisz"</th><th style="text-align:right;padding:6px;font-size:.7rem;color:var(--muted)">Ocena</th>'+(canEdit?'<th></th>':'')+'</tr>'
     + rows + '</table>'
     + '<div style="margin-top:14px;display:flex;justify-content:center"><button class="btn-modal-cancel" onclick="closeGenericModal()">Zamknij</button></div></div>';
   openGenericModal('📅 Ocena tygodniowa — szczegóły', html);
@@ -9680,14 +9724,16 @@ window._acqShowWeekly = function(id){
 // Szczegóły oceny miesięcznej — tabela miesięcy (średnia ocen tygodniowych).
 window._acqShowMonthly = function(id){
   const monthly = (window._acqStore[id] || {}).monthly || {};
+  const curM = new Date().toISOString().slice(0, 7);
   const keys = Object.keys(monthly).sort().reverse().slice(0, 12);
   let rows = keys.map(m => {
     const mm = monthly[m];
     const [yy, mo] = m.split('-');
     const name = _MONTH_PL[parseInt(mo,10)-1] + ' ' + yy;
+    const cur = m === curM ? ' <span style="font-size:.6rem;color:var(--muted);font-weight:700">w toku</span>' : '';
     return '<tr style="border-bottom:1px dashed var(--border)"><td style="padding:7px 6px;font-weight:700;text-transform:capitalize">'+name+'</td>'
       + '<td style="padding:7px 6px;text-align:center;color:var(--muted);font-weight:600;font-size:.82rem">'+mm.grades.join(', ')+'</td>'
-      + '<td style="padding:7px 6px;text-align:right;font-weight:900;font-size:1.05rem;color:'+_acqGradeColor(mm.grade)+'">'+mm.grade+'</td></tr>';
+      + '<td style="padding:7px 6px;text-align:right;font-weight:900;font-size:1.05rem;color:'+_acqGradeColor(mm.grade)+'">'+mm.grade+cur+'</td></tr>';
   }).join('');
   if(!rows) rows = '<tr><td colspan="3" style="padding:16px;text-align:center;color:var(--muted);font-weight:600">Brak danych.</td></tr>';
   const html = '<div style="font-family:Nunito,sans-serif;color:var(--text);max-width:520px;margin:0 auto">'
@@ -9818,10 +9864,13 @@ function renderStats() {
       (async () => {
         let hist = [];
         try { hist = await DB.getDailyXpHistory(null, 190); } catch(e) {}
-        const weekly = _weeklyGrades(hist), monthly = _monthlyGrades(weekly);
-        window._acqStore['self'] = { acq, weekly, monthly };
+        let disabled = [];
+        try { disabled = await DB.loadDisabledWeeks(null); } catch(e) {}
+        const disSet = new Set(disabled);
+        const weekly = _weeklyGrades(hist), monthly = _monthlyGrades(weekly, disSet);
+        window._acqStore['self'] = { acq, weekly, monthly, disabled: disSet, userId: null, canEdit: false };
         const el2 = document.getElementById('acqSummarySelf');
-        if (el2) el2.innerHTML = _acqSummaryHtml(acq, _currentWeekGrade(weekly), _currentMonthGrade(monthly), 'self');
+        if (el2) el2.innerHTML = _acqSummaryHtml(acq, _issuedWeekGrade(weekly, disSet), _issuedMonthGrade(monthly), 'self');
         const sy = document.getElementById('systSelf');
         if (sy) sy.innerHTML = _systHtml(hist, p.streak, p.longestStreak);
       })();
@@ -17727,10 +17776,14 @@ async function openStudentProgress(userId, username, returnTo) {
       window._acqStore['stud'] = { acq, weekly: {}, monthly: {} };
       let gradeHist = [];
       try { gradeHist = await DB.getDailyXpHistory(userId, 190); } catch(e) {}
-      const weekly = _weeklyGrades(gradeHist), monthly = _monthlyGrades(weekly);
-      window._acqStore['stud'] = { acq, weekly, monthly };
+      let disabled = [];
+      try { disabled = await DB.loadDisabledWeeks(userId); } catch(e) {}
+      const disSet = new Set(disabled);
+      const weekly = _weeklyGrades(gradeHist), monthly = _monthlyGrades(weekly, disSet);
+      const canEditWeeks = (typeof DB.isTeacher === 'function' && DB.isTeacher()) && _studProgReturnTo !== 'parent';
+      window._acqStore['stud'] = { acq, weekly, monthly, disabled: disSet, userId: userId, canEdit: canEditWeeks };
       const acqBox = document.createElement('div');
-      acqBox.innerHTML = _acqSummaryHtml(acq, _currentWeekGrade(weekly), _currentMonthGrade(monthly), 'stud');
+      acqBox.innerHTML = _acqSummaryHtml(acq, _issuedWeekGrade(weekly, disSet), _issuedMonthGrade(monthly), 'stud');
       unitsEl.appendChild(acqBox);
       const systBox = document.createElement('div');
       systBox.innerHTML = _systHtml(gradeHist, profile.streak, profile.longest_streak);

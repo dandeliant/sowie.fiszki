@@ -533,6 +533,32 @@ const DB = (() => {
     return data || [];
   }
 
+  // ── Wyłączone tygodnie (grade_disabled_weeks, migracja #52) ──
+  async function loadDisabledWeeks(userId) {
+    const uid = userId || _userId;
+    if (!uid) return [];
+    try {
+      const { data, error } = await supabase
+        .from('grade_disabled_weeks').select('week_start').eq('user_id', uid);
+      if (error) return [];
+      return (data || []).map(r => r.week_start);
+    } catch(e) { return []; }
+  }
+  // Nauczyciel/admin: włącz/wyłącz ocenę dla tygodnia (weekStart = YYYY-MM-DD).
+  async function setDisabledWeek(userId, weekStart, disabled) {
+    if (!_profile?.isAdmin && !_profile?.isTeacher) throw new Error('Tylko nauczyciel/admin.');
+    if (!userId || !weekStart) throw new Error('Brak danych.');
+    if (disabled) {
+      const { error } = await supabase.from('grade_disabled_weeks')
+        .upsert({ user_id: userId, week_start: weekStart }, { onConflict: 'user_id,week_start' });
+      if (error) throw new Error(error.message);
+    } else {
+      const { error } = await supabase.from('grade_disabled_weeks')
+        .delete().eq('user_id', userId).eq('week_start', weekStart);
+      if (error) throw new Error(error.message);
+    }
+  }
+
   // Loguje N minut nauki w dzisiejszym dniu (heartbeat co 60 s).
   // Fire-and-forget — nie blokuje UI jesli brak polaczenia.
   async function logStudyMinutes(minutes) {
@@ -4096,6 +4122,8 @@ const DB = (() => {
     logTypedDay,
     logTypedAnswer,
     loadTypedAnswers,
+    loadDisabledWeeks,
+    setDisabledWeek,
     getMyUserLabels,
     getUserLabel,
     getUserPrivateNote,
