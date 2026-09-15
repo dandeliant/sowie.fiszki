@@ -461,12 +461,12 @@ const DB = (() => {
     const fromStr = from.toISOString().slice(0, 10);
     let res = await supabase
       .from('daily_xp_log')
-      .select('day, xp, minutes, words, first_active_at')
+      .select('day, xp, minutes, words, typed, first_active_at')
       .eq('user_id', uid)
       .gte('day', fromStr)
       .order('day', { ascending: true });
     if (res.error) {
-      // Fallback: schemat bez words (migracja #45) — pobierz bez tej kolumny
+      // Fallback: schemat bez words/typed — pobierz bez tych kolumn
       res = await supabase
         .from('daily_xp_log')
         .select('day, xp, minutes, first_active_at')
@@ -485,6 +485,16 @@ const DB = (() => {
       if (res.error) throw new Error(res.error.message);
     }
     return res.data || [];
+  }
+
+  // Oznacza dzisiejszy dzien jako „praca w trybie Wpisz" (do oceny tygodniowej).
+  // Fire-and-forget. Wymaga migracji add-typed-days.sql (#50).
+  async function logTypedDay() {
+    if (!_userId) return;
+    try {
+      const { error } = await supabase.rpc('log_typed_day');
+      if (error) console.warn('[logTypedDay]', error.message);
+    } catch(e) { /* brak migracji / offline — ignorujemy */ }
   }
 
   // Loguje N minut nauki w dzisiejszym dniu (heartbeat co 60 s).
@@ -4047,6 +4057,7 @@ const DB = (() => {
     getFreeLimits,
     getDailyXpHistory,
     logStudyMinutes,
+    logTypedDay,
     getMyUserLabels,
     getUserLabel,
     getUserPrivateNote,

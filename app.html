@@ -8829,10 +8829,20 @@ function onQuiz(btn, ok, correct) {
 // ══════════════════════════════════════════════
 //  TYPE
 // ══════════════════════════════════════════════
+// Oznacza dzień jako „praca w trybie Wpisz" (raz dziennie) — do oceny tygodniowej.
+let _typedDayMark = '';
+function _markTypedDay() {
+  const today = new Date().toISOString().slice(0, 10);
+  if (_typedDayMark === today) return;
+  _typedDayMark = today;
+  try { if (DB.logTypedDay) DB.logTypedDay(); } catch(e) {}
+}
+
 function checkType() {
   if (revealed) return;
   const inp = document.getElementById('tInp'), u = inp.value.trim();
   if (!u) return;
+  _markTypedDay();
   const cor = getA(curIdx), ok = fuzzy(u, cor);
   const r = document.getElementById('tRes');
   if (ok) {
@@ -9542,20 +9552,61 @@ function _acqCompute(bookIds, stateGetter) {
   });
   return { total, veryWell, well, introduced, notIntroduced };
 }
-// Ocena szkolna 1-6 wg liczby słówek opanowanych (known) w okresie.
-// Progi łatwo edytowalne — [wartość_progu, ocena], od najwyższej.
-const ACQ_GRADE_WEEK  = [ [40,6],[25,5],[15,4],[8,3],[3,2] ]; // <3 => 1
-const ACQ_GRADE_MONTH = [ [120,6],[75,5],[45,4],[20,3],[8,2] ]; // <8 => 1
-function _acqGrade(count, table) {
-  for (const [thr, g] of table) if (count >= thr) return g;
+// ── System oceny sugerowanej (ocena szkolna 1-6) ──────────────────
+// OCENA TYGODNIOWA — wg liczby DNI w tygodniu z pracą w trybie „Wpisz":
+//   1 dzień lub brak → 1, 2 dni → 2, 3 → 3, 4 → 4, 5+ dni → 5.
+// (Bonus +1 za opanowanie całego rozdziału w tygodniu — planowany, wymaga
+//  dat opanowania per-słowo; obecnie nienaliczany.) Maksimum to 6.
+// OCENA MIESIĘCZNA — średnia ocen tygodniowych w miesiącu, zaokrąglona.
+function _weekStart(dayStr) {
+  const dt = new Date(dayStr + 'T00:00:00');
+  const dow = (dt.getDay() + 6) % 7; // 0 = poniedziałek
+  dt.setDate(dt.getDate() - dow);
+  return dt.toISOString().slice(0, 10);
+}
+function _weekGradeFromDays(typedDays) {
+  if (typedDays >= 5) return 5;
+  if (typedDays >= 2) return typedDays;
   return 1;
 }
-function _acqSumWords(history, days) {
-  if (!Array.isArray(history)) return 0;
-  const from = new Date(); from.setDate(from.getDate() - (days - 1));
-  const fromStr = from.toISOString().slice(0, 10);
-  return history.reduce((s, r) => s + ((r.day >= fromStr) ? (r.words || 0) : 0), 0);
+// Mapa weekStart(YYYY-MM-DD) -> {typedDays, grade}
+function _weeklyGrades(history) {
+  const byWeek = {};
+  (history || []).forEach(r => {
+    if (!r || !r.day) return;
+    const wk = _weekStart(r.day);
+    (byWeek[wk] = byWeek[wk] || new Set());
+    if (r.typed) byWeek[wk].add(r.day);
+  });
+  const out = {};
+  Object.keys(byWeek).forEach(wk => {
+    const td = byWeek[wk].size;
+    out[wk] = { typedDays: td, grade: _weekGradeFromDays(td) };
+  });
+  return out;
 }
+function _currentWeekGrade(weekly) {
+  const wk = _weekStart(new Date().toISOString().slice(0, 10));
+  return weekly[wk] ? weekly[wk].grade : 1;
+}
+// Mapa "YYYY-MM" -> {grades:[...], avg, grade}
+function _monthlyGrades(weekly) {
+  const byM = {};
+  Object.keys(weekly).forEach(wk => { const m = wk.slice(0, 7); (byM[m] = byM[m] || []).push(weekly[wk].grade); });
+  const out = {};
+  Object.keys(byM).forEach(m => {
+    const arr = byM[m];
+    const avg = arr.reduce((a, b) => a + b, 0) / arr.length;
+    out[m] = { grades: arr, avg, grade: Math.round(avg) };
+  });
+  return out;
+}
+function _currentMonthGrade(monthly) {
+  const m = new Date().toISOString().slice(0, 7);
+  return monthly[m] ? monthly[m].grade : 1;
+}
+const _MONTH_PL = ['stycznia','lutego','marca','kwietnia','maja','czerwca','lipca','sierpnia','września','października','listopada','grudnia'];
+function _fmtDay(dayStr){ const d = new Date(dayStr+'T00:00:00'); return d.getDate()+'.'+String(d.getMonth()+1).padStart(2,'0'); }
 function _acqGradeColor(g){ return g>=5?'var(--success)':g>=4?'var(--accent2)':g>=3?'var(--accent)':g>=2?'#ffa94d':'var(--danger)'; }
 function _acqSummaryHtml(acq, weekG, monthG, detailId) {
   return '<div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:12px 14px;margin:6px 0 12px">'
@@ -9564,13 +9615,14 @@ function _acqSummaryHtml(acq, weekG, monthG, detailId) {
       + '<button class="btn-sm" style="font-size:.68rem" onclick="_acqShowDetails(\''+detailId+'\')">🔎 Szczegóły</button>'
     + '</div>'
     + '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px">'
-      + '<div style="flex:1;min-width:120px;text-align:center;background:var(--surface2);border-radius:10px;padding:7px 6px"><div style="font-size:1.4rem;font-weight:900;color:'+_acqGradeColor(weekG)+'">'+weekG+'</div><div style="font-size:.62rem;color:var(--muted);font-weight:700">Ocena tygodniowa</div></div>'
-      + '<div style="flex:1;min-width:120px;text-align:center;background:var(--surface2);border-radius:10px;padding:7px 6px"><div style="font-size:1.4rem;font-weight:900;color:'+_acqGradeColor(monthG)+'">'+monthG+'</div><div style="font-size:.62rem;color:var(--muted);font-weight:700">Ocena miesięczna</div></div>'
-    + '</div></div>';
+      + '<div onclick="_acqShowWeekly(\''+detailId+'\')" title="Kliknij: szczegóły tygodni" style="flex:1;min-width:120px;text-align:center;background:var(--surface2);border-radius:10px;padding:7px 6px;cursor:pointer"><div style="font-size:1.4rem;font-weight:900;color:'+_acqGradeColor(weekG)+'">'+weekG+'</div><div style="font-size:.62rem;color:var(--muted);font-weight:700">Ocena tygodniowa 🔎</div></div>'
+      + '<div onclick="_acqShowMonthly(\''+detailId+'\')" title="Kliknij: szczegóły miesięcy" style="flex:1;min-width:120px;text-align:center;background:var(--surface2);border-radius:10px;padding:7px 6px;cursor:pointer"><div style="font-size:1.4rem;font-weight:900;color:'+_acqGradeColor(monthG)+'">'+monthG+'</div><div style="font-size:.62rem;color:var(--muted);font-weight:700">Ocena miesięczna 🔎</div></div>'
+    + '</div>'
+    + '<div style="font-size:.6rem;color:var(--muted);font-weight:600;margin-top:6px;text-align:center">Ocena sugerowana (1-6) — na podstawie dni pracy w trybie „Wpisz". Nauczyciel może stosować własne kryteria.</div></div>';
 }
 window._acqStore = {};
 window._acqShowDetails = function(id){
-  const a = window._acqStore[id]; if(!a) return;
+  const a = (window._acqStore[id] || {}).acq; if(!a) return;
   const row = (ic,label,val,desc,col) => '<tr style="border-bottom:1px dashed var(--border)"><td style="padding:8px 6px;font-weight:700;vertical-align:top">'+ic+' '+label+'<div style="font-size:.66rem;color:var(--muted);font-weight:600;margin-top:2px">'+desc+'</div></td><td style="padding:8px 6px;text-align:right;font-weight:900;color:'+col+';white-space:nowrap;vertical-align:top">'+val+'</td></tr>';
   const html = '<div style="font-family:Nunito,sans-serif;color:var(--text);max-width:520px;margin:0 auto">'
     + '<table style="width:100%;border-collapse:collapse;font-size:.9rem">'
@@ -9582,6 +9634,46 @@ window._acqShowDetails = function(id){
     + '</table>'
     + '<div style="margin-top:14px;display:flex;justify-content:center"><button class="btn-modal-cancel" onclick="closeGenericModal()">Zamknij</button></div></div>';
   openGenericModal('📊 Przyswojone słówka — szczegóły', html);
+};
+// Szczegóły oceny tygodniowej — tabela tygodni (najnowsze u góry).
+window._acqShowWeekly = function(id){
+  const weekly = (window._acqStore[id] || {}).weekly || {};
+  const keys = Object.keys(weekly).sort().reverse().slice(0, 12);
+  let rows = keys.map(wk => {
+    const w = weekly[wk];
+    const endStr = (() => { const d=new Date(wk+'T00:00:00'); d.setDate(d.getDate()+6); return d.toISOString().slice(0,10); })();
+    const g = w.grade;
+    return '<tr style="border-bottom:1px dashed var(--border)"><td style="padding:7px 6px;font-weight:700">'+_fmtDay(wk)+'–'+_fmtDay(endStr)+'</td>'
+      + '<td style="padding:7px 6px;text-align:center;color:var(--muted);font-weight:600">'+w.typedDays+' '+(w.typedDays===1?'dzień':'dni')+'</td>'
+      + '<td style="padding:7px 6px;text-align:right;font-weight:900;font-size:1.05rem;color:'+_acqGradeColor(g)+'">'+g+'</td></tr>';
+  }).join('');
+  if(!rows) rows = '<tr><td colspan="3" style="padding:16px;text-align:center;color:var(--muted);font-weight:600">Brak danych.</td></tr>';
+  const html = '<div style="font-family:Nunito,sans-serif;color:var(--text);max-width:520px;margin:0 auto">'
+    + '<div style="font-size:.74rem;color:var(--muted);font-weight:600;margin-bottom:8px">Ocena za każdy tydzień wg liczby dni pracy w trybie „Wpisz" (1 dzień/brak → 1, 2 dni → 2, …, 5+ → 5).</div>'
+    + '<table style="width:100%;border-collapse:collapse;font-size:.9rem"><tr><th style="text-align:left;padding:6px;font-size:.7rem;color:var(--muted)">Tydzień</th><th style="text-align:center;padding:6px;font-size:.7rem;color:var(--muted)">Dni „Wpisz"</th><th style="text-align:right;padding:6px;font-size:.7rem;color:var(--muted)">Ocena</th></tr>'
+    + rows + '</table>'
+    + '<div style="margin-top:14px;display:flex;justify-content:center"><button class="btn-modal-cancel" onclick="closeGenericModal()">Zamknij</button></div></div>';
+  openGenericModal('📅 Ocena tygodniowa — szczegóły', html);
+};
+// Szczegóły oceny miesięcznej — tabela miesięcy (średnia ocen tygodniowych).
+window._acqShowMonthly = function(id){
+  const monthly = (window._acqStore[id] || {}).monthly || {};
+  const keys = Object.keys(monthly).sort().reverse().slice(0, 12);
+  let rows = keys.map(m => {
+    const mm = monthly[m];
+    const [yy, mo] = m.split('-');
+    const name = _MONTH_PL[parseInt(mo,10)-1] + ' ' + yy;
+    return '<tr style="border-bottom:1px dashed var(--border)"><td style="padding:7px 6px;font-weight:700;text-transform:capitalize">'+name+'</td>'
+      + '<td style="padding:7px 6px;text-align:center;color:var(--muted);font-weight:600;font-size:.82rem">'+mm.grades.join(', ')+'</td>'
+      + '<td style="padding:7px 6px;text-align:right;font-weight:900;font-size:1.05rem;color:'+_acqGradeColor(mm.grade)+'">'+mm.grade+'</td></tr>';
+  }).join('');
+  if(!rows) rows = '<tr><td colspan="3" style="padding:16px;text-align:center;color:var(--muted);font-weight:600">Brak danych.</td></tr>';
+  const html = '<div style="font-family:Nunito,sans-serif;color:var(--text);max-width:520px;margin:0 auto">'
+    + '<div style="font-size:.74rem;color:var(--muted);font-weight:600;margin-bottom:8px">Ocena miesięczna = średnia ocen tygodniowych z danego miesiąca (zaokrąglona).</div>'
+    + '<table style="width:100%;border-collapse:collapse;font-size:.9rem"><tr><th style="text-align:left;padding:6px;font-size:.7rem;color:var(--muted)">Miesiąc</th><th style="text-align:center;padding:6px;font-size:.7rem;color:var(--muted)">Oceny tyg.</th><th style="text-align:right;padding:6px;font-size:.7rem;color:var(--muted)">Ocena</th></tr>'
+    + rows + '</table>'
+    + '<div style="margin-top:14px;display:flex;justify-content:center"><button class="btn-modal-cancel" onclick="closeGenericModal()">Zamknij</button></div></div>';
+  openGenericModal('🗓️ Ocena miesięczna — szczegóły', html);
 };
 
 function renderStats() {
@@ -9606,16 +9698,17 @@ function renderStats() {
       const pr = DB.getUnitProgress(currentUser, bid, uk);
       return (pr && pr.wordStates) ? pr.wordStates : {};
     });
-    window._acqStore['self'] = acq;
+    window._acqStore['self'] = { acq, weekly: {}, monthly: {} };
     const el = document.getElementById('acqSummarySelf');
     if (el) {
       el.innerHTML = _acqSummaryHtml(acq, 1, 1, 'self'); // wstępnie, oceny doliczą się async
       (async () => {
         let hist = [];
-        try { hist = await DB.getDailyXpHistory(null, 31); } catch(e) {}
-        const wk = _acqSumWords(hist, 7), mo = _acqSumWords(hist, 30);
+        try { hist = await DB.getDailyXpHistory(null, 190); } catch(e) {}
+        const weekly = _weeklyGrades(hist), monthly = _monthlyGrades(weekly);
+        window._acqStore['self'] = { acq, weekly, monthly };
         const el2 = document.getElementById('acqSummarySelf');
-        if (el2) el2.innerHTML = _acqSummaryHtml(acq, _acqGrade(wk, ACQ_GRADE_WEEK), _acqGrade(mo, ACQ_GRADE_MONTH), 'self');
+        if (el2) el2.innerHTML = _acqSummaryHtml(acq, _currentWeekGrade(weekly), _currentMonthGrade(monthly), 'self');
       })();
     }
   } catch(e) { console.warn('[acq self]', e); }
@@ -11692,6 +11785,7 @@ function checkTypeSent() {
   const inp = document.getElementById('tsInp');
   const u = inp.value.trim();
   if (!u) return;
+  _markTypedDay();
   revealed = true; inp.disabled = true; document.getElementById('btnTsChk').disabled = true;
   const ok = fuzzy(u, tsSentAnswer) || levenshteinSimilar(u, tsSentAnswer);
   const r = document.getElementById('tsRes');
@@ -17493,10 +17587,13 @@ async function openStudentProgress(userId, username, returnTo) {
       const stateMap = {};
       unitRows.forEach(r => { stateMap[(r.book_key||'') + '__' + (r.unit_key||'')] = r.word_states || {}; });
       const acq = _acqCompute(bookIds, (bid, uk) => stateMap[bid + '__' + uk] || {});
-      window._acqStore['stud'] = acq;
-      const wk = _acqSumWords(activityRows, 7), mo = _acqSumWords(activityRows, 30);
+      window._acqStore['stud'] = { acq, weekly: {}, monthly: {} };
+      let gradeHist = [];
+      try { gradeHist = await DB.getDailyXpHistory(userId, 190); } catch(e) {}
+      const weekly = _weeklyGrades(gradeHist), monthly = _monthlyGrades(weekly);
+      window._acqStore['stud'] = { acq, weekly, monthly };
       const acqBox = document.createElement('div');
-      acqBox.innerHTML = _acqSummaryHtml(acq, _acqGrade(wk, ACQ_GRADE_WEEK), _acqGrade(mo, ACQ_GRADE_MONTH), 'stud');
+      acqBox.innerHTML = _acqSummaryHtml(acq, _currentWeekGrade(weekly), _currentMonthGrade(monthly), 'stud');
       unitsEl.appendChild(acqBox);
     } catch(e) { console.warn('[acq stud]', e); }
 
