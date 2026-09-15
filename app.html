@@ -2737,6 +2737,7 @@ szkoła	school"></textarea>
   <div class="dir-toggle" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
     <button class="dir-btn active" id="dirPL" onclick="setDir('pl_en')">🇵🇱 PL → EN 🇬🇧</button>
     <button class="dir-btn" id="dirEN" onclick="setDir('en_pl')">🇬🇧 EN → PL 🇵🇱</button>
+    <button class="dir-btn" id="btnOrderToggle" onclick="toggleStudyOrder()" title="Kolejność nauki: po kolei (wg listy) lub losowo">🔢 Po kolei</button>
     <button class="dir-btn" id="btnVoiceToggle" onclick="toggleAutoVoice()" style="margin-left:auto" title="Automatyczne wymawianie">🔊 Głos</button>
   </div>
   <div class="owl-wrap">
@@ -4547,6 +4548,9 @@ let currentUnitKey = 'unit1';
 let activeWords = [], pool = [], ws = {};
 let activeAllWords = [];
 let curIdx = null, mode = 'card', revealed = false, flipped = false, active = false;
+// Kolejność nauki: false = po kolei (wg listy słówek, domyślnie), true = losowo.
+// Zapamiętywane w localStorage. Przełączane przyciskiem „🔢 Po kolei / 🔀 Losowo".
+let studyRandomOrder = (() => { try { return localStorage.getItem('fiszki_study_random') === '1'; } catch(e){ return false; } })();
 let totalXP = 0, sessXP = 0, curLvl = 1, lives = 3, tokens = [], streak = 0;
 let voices = [], mgActPl = null, mgActEn = null, mgMatched = 0, owlT = null;
 let studyDir = 'pl_en';        // 'pl_en' | 'en_pl'
@@ -6483,6 +6487,7 @@ function startStudy(key, forcedPool = null) {
   showScreen('sStudy');
   hideAreas(); document.getElementById('cardScene').style.display = '';
   updateDirUI();
+  updateOrderUI();
   setTimeout(() => { setOwl(''); owlSay('Ćwiczymy ' + u.name + '! Naciśnij Generuj! 🎲'); }, 250);
 }
 
@@ -7505,6 +7510,7 @@ function startHardWordsSession(hardWords) {
   showScreen('sStudy');
   hideAreas(); document.getElementById('cardScene').style.display = '';
   updateDirUI();
+  updateOrderUI();
   setTimeout(() => { setOwl('think'); owlSay('Powtórzmy trudne słówka! 💪'); }, 250);
 }
 
@@ -7619,11 +7625,12 @@ function pickNext() {
   // Wewnątrz kandydatów: priorytet lastError
   const withErr = c.filter(i => ws[i].lastError);
   if (withErr.length) c = withErr;
-  // Tryb Fiszki (card) — słówka pojawiają się w KOLEJNOŚCI z listy (pula jest
-  // posortowana wg indeksu/harmonogramu), więc bierzemy pierwszego kandydata.
+  // Kolejność nauki: domyślnie PO KOLEI (wg listy słówek) — pula jest
+  // posortowana wg indeksu/harmonogramu, więc bierzemy pierwszego kandydata.
   // Nauka nowego rozdziału zaczyna się od pierwszego słowa, a nie losowego.
-  // Pozostałe tryby (Quiz, Wpisywanie, Dyktando…) — nadal losowo.
-  if (mode === 'card') return c[0];
+  // Przełącznik „🔀 Losowo" (studyRandomOrder) przywraca losowanie — działa
+  // we WSZYSTKICH trybach nauki.
+  if (!studyRandomOrder) return c[0];
   return c[Math.floor(Math.random() * c.length)];
 }
 
@@ -9114,6 +9121,20 @@ function setDir(d) {
 function updateDirUI() {
   document.getElementById('dirPL').classList.toggle('active', studyDir === 'pl_en');
   document.getElementById('dirEN').classList.toggle('active', studyDir === 'en_pl');
+}
+
+// Kolejność nauki (po kolei / losowo) — działa we wszystkich trybach nauki.
+function updateOrderUI() {
+  const b = document.getElementById('btnOrderToggle');
+  if (!b) return;
+  b.textContent = studyRandomOrder ? '🔀 Losowo' : '🔢 Po kolei';
+  b.classList.toggle('active', studyRandomOrder);
+}
+function toggleStudyOrder() {
+  studyRandomOrder = !studyRandomOrder;
+  try { localStorage.setItem('fiszki_study_random', studyRandomOrder ? '1' : '0'); } catch(e){}
+  updateOrderUI();
+  owlSay(studyRandomOrder ? 'Nauka losowa 🔀' : 'Nauka po kolei — wg listy słówek 🔢');
 }
 
 // ══════════════════════════════════════════════
