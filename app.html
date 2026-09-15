@@ -3260,6 +3260,7 @@ szkoła	school"></textarea>
   <div class="stat-grid" id="statGrid"></div>
   <div id="acqSummarySelf"></div>
   <div id="systSelf"></div>
+  <div style="margin:2px 0 10px"><button class="btn-sm" onclick="_showTypedReport(null,'Moje odpowiedzi')">🔎 Szczegóły „Wpisz"</button></div>
   <div class="acc-row">
     <span class="acc-label">🎯 Dokładność odpowiedzi</span>
     <span class="acc-val" id="accVal">—</span>
@@ -8845,6 +8846,17 @@ function _markTypedDay() {
   _typedDayMark = today;
   try { if (DB.logTypedDay) DB.logTypedDay(); } catch(e) {}
 }
+// Zapis pojedynczej odpowiedzi z trybu „Wpisz" (do raportu „Szczegóły Wpisz").
+function _logTypedAns(u, correct) {
+  try {
+    if (curIdx === null || !DB.logTypedAnswer || !activeWords[curIdx]) return;
+    DB.logTypedAnswer({
+      bookId: currentBookId, unitKey: currentUnitKey,
+      wordPl: activeWords[curIdx][0], wordEn: activeWords[curIdx][1],
+      prompt: getQ(curIdx), expected: getA(curIdx), answer: u, correct: !!correct
+    });
+  } catch(e) {}
+}
 
 function checkType() {
   if (revealed) return;
@@ -8861,6 +8873,7 @@ function checkType() {
     r.innerHTML = '✓ Poprawnie! <span class="ar">' + esc(cor) + '</span>';
     playOk(); bounce('typeArea'); particles(true); owlR(good ? 'easy' : 'hard');
     _recordAnswerLogged(good);
+    _logTypedAns(u, true);
     document.getElementById('tSpeak').style.display = 'block';
     spkForeign(cor);
     setTimeout(() => rate(good ? 'easy' : 'hard'), 1500);
@@ -8873,6 +8886,7 @@ function checkType() {
     // 2. blad — ujawnij poprawna odpowiedz, zakoncz karte (Trudne)
     revealed = true; inp.disabled = true; document.getElementById('btnChk').disabled = true;
     owlR('hard'); _recordAnswerLogged(false); trackMissed(); sessErrorCount++;
+    _logTypedAns(u, false);
     r.className = 'type-result err';
     r.innerHTML = '✗ Poprawna odpowiedź: <span class="ar">' + esc(cor) + '</span><br>Twoja: ' + letterDiffHtml(u, cor);
     document.getElementById('tSpeak').style.display = 'block';
@@ -9740,6 +9754,40 @@ function _systHtml(history, streak, longest){
       + '<span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:var(--success);border:1px solid var(--border)"></span> nauka</div>'
     + '</div>';
 }
+
+// Raport „Szczegóły Wpisz" — log odpowiedzi ucznia z trybu Wpisz (z godziną).
+window._showTypedReport = async function(userId, title){
+  openGenericModal('🔎 Szczegóły „Wpisz"', '<div style="text-align:center;padding:20px;color:var(--muted)">⏳ Ładuję…</div>');
+  let rows = [];
+  try { rows = await DB.loadTypedAnswers(userId, 300); } catch(e) { console.warn('[typedReport]', e); }
+  const fmt = ts => { const d = new Date(ts); return d.toLocaleDateString('pl-PL') + ' ' + d.toLocaleTimeString('pl-PL', {hour:'2-digit', minute:'2-digit', second:'2-digit'}); };
+  let body;
+  if (!rows.length) {
+    body = '<div style="text-align:center;padding:18px;color:var(--muted);font-weight:600">Brak zapisanych odpowiedzi z trybu „Wpisz".<br><span style="font-size:.72rem">(Uruchom migrację typed-answers-schema.sql i poćwicz w trybie Wpisz.)</span></div>';
+  } else {
+    const okN = rows.filter(r => r.correct).length;
+    body = '<div style="font-size:.72rem;color:var(--muted);font-weight:700;margin-bottom:6px">Odpowiedzi: '+rows.length+' · poprawne: '+okN+' ('+Math.round(okN/rows.length*100)+'%)</div>'
+      + '<table style="width:100%;border-collapse:collapse;font-size:.82rem"><tr>'
+      + '<th style="text-align:left;padding:6px;font-size:.64rem;color:var(--muted)">Data i godzina</th>'
+      + '<th style="text-align:left;padding:6px;font-size:.64rem;color:var(--muted)">Słowo</th>'
+      + '<th style="text-align:left;padding:6px;font-size:.64rem;color:var(--muted)">Odpowiedź ucznia</th>'
+      + '<th style="text-align:center;padding:6px;font-size:.64rem;color:var(--muted)"></th></tr>';
+    rows.forEach(r => {
+      const word = escHtml(r.word_pl || r.prompt || '') + ' → ' + escHtml(r.expected || r.word_en || '');
+      body += '<tr style="border-bottom:1px dashed var(--border)">'
+        + '<td style="padding:6px;color:var(--muted);white-space:nowrap;font-size:.74rem">' + fmt(r.created_at) + '</td>'
+        + '<td style="padding:6px;font-weight:600">' + word + '</td>'
+        + '<td style="padding:6px;' + (r.correct ? '' : 'color:var(--danger);font-weight:700') + '">' + escHtml(r.answer || '') + '</td>'
+        + '<td style="padding:6px;text-align:center">' + (r.correct ? '✅' : '❌') + '</td></tr>';
+    });
+    body += '</table>';
+  }
+  const html = '<div style="font-family:Nunito,sans-serif;color:var(--text);max-width:660px;margin:0 auto">'
+    + '<div style="font-size:.72rem;color:var(--muted);font-weight:600;margin-bottom:8px">' + escHtml(title || '') + ' · szczegóły sesji z trybu „Wpisz" (log usuwany automatycznie po 2 miesiącach).</div>'
+    + '<div style="max-height:62vh;overflow:auto">' + body + '</div>'
+    + '<div style="margin-top:14px;display:flex;justify-content:center"><button class="btn-modal-cancel" onclick="closeGenericModal()">Zamknij</button></div></div>';
+  openGenericModal('🔎 Szczegóły „Wpisz"', html);
+};
 
 function renderStats() {
   const p = DB.getUser(currentUser);
@@ -17687,6 +17735,10 @@ async function openStudentProgress(userId, username, returnTo) {
       const systBox = document.createElement('div');
       systBox.innerHTML = _systHtml(gradeHist, profile.streak, profile.longest_streak);
       unitsEl.appendChild(systBox);
+      const trBox = document.createElement('div');
+      trBox.style.cssText = 'margin:0 0 14px';
+      trBox.innerHTML = '<button class="btn-sm" onclick="_showTypedReport(\'' + userId + '\',\'' + esc(username) + '\')">🔎 Szczegóły „Wpisz"</button>';
+      unitsEl.appendChild(trBox);
     } catch(e) { console.warn('[acq stud]', e); }
 
     // ═══ SEKCJA: WYZWANIA KLASY ucznia (Wave 2, #8) ═══

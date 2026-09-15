@@ -497,6 +497,42 @@ const DB = (() => {
     } catch(e) { /* brak migracji / offline — ignorujemy */ }
   }
 
+  // ── Szczegóły „Wpisz" (typed_answers, migracja #51) ──
+  // Zapisuje pojedynczą odpowiedź ucznia w trybie Wpisz. Fire-and-forget.
+  async function logTypedAnswer(p) {
+    if (!_userId || !p) return;
+    try {
+      await supabase.from('typed_answers').insert({
+        user_id: _userId,
+        book_id: p.bookId || null, unit_key: p.unitKey || null,
+        word_pl: (p.wordPl || '').slice(0, 300), word_en: (p.wordEn || '').slice(0, 300),
+        prompt: (p.prompt || '').slice(0, 500), expected: (p.expected || '').slice(0, 500),
+        answer: (p.answer || '').slice(0, 500), correct: !!p.correct
+      });
+    } catch(e) { /* brak migracji / offline */ }
+    // Retencja: raz dziennie posprzątaj własne stare rekordy (>60 dni).
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      if (localStorage.getItem('fiszki_typed_cleanup') !== today) {
+        localStorage.setItem('fiszki_typed_cleanup', today);
+        supabase.rpc('cleanup_typed_answers').catch(() => {});
+      }
+    } catch(e) {}
+  }
+  // Wczytuje log odpowiedzi Wpisz (własny lub — dla nauczyciela/admina — ucznia).
+  async function loadTypedAnswers(userId, limit) {
+    const uid = userId || _userId;
+    if (!uid) return [];
+    const { data, error } = await supabase
+      .from('typed_answers')
+      .select('word_pl, word_en, prompt, expected, answer, correct, created_at, book_id, unit_key')
+      .eq('user_id', uid)
+      .order('created_at', { ascending: false })
+      .limit(Math.min(500, limit || 300));
+    if (error) throw new Error(error.message);
+    return data || [];
+  }
+
   // Loguje N minut nauki w dzisiejszym dniu (heartbeat co 60 s).
   // Fire-and-forget — nie blokuje UI jesli brak polaczenia.
   async function logStudyMinutes(minutes) {
@@ -4058,6 +4094,8 @@ const DB = (() => {
     getDailyXpHistory,
     logStudyMinutes,
     logTypedDay,
+    logTypedAnswer,
+    loadTypedAnswers,
     getMyUserLabels,
     getUserLabel,
     getUserPrivateNote,
