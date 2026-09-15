@@ -3258,6 +3258,7 @@ szkoła	school"></textarea>
     </div>
   </div>
   <div class="stat-grid" id="statGrid"></div>
+  <div id="acqSummarySelf"></div>
   <div class="acc-row">
     <span class="acc-label">🎯 Dokładność odpowiedzi</span>
     <span class="acc-val" id="accVal">—</span>
@@ -9504,6 +9505,85 @@ function mgClick(d) {
 // ══════════════════════════════════════════════
 //  STATS SCREEN
 // ══════════════════════════════════════════════
+// ══════════════════════════════════════════════
+//  PRZYSWOJONE SŁÓWKA — statystyki opanowania słownictwa
+//  Kategorie wg interwału powtórki SM-2 (w dniach):
+//   🟢 Bardzo dobrze przyswojone: interval > 7
+//   🟡 Dobrze przyswojone:        interval >= 2 (i <= 7)
+//   🔵 Wprowadzone:               wystąpiło w sesji, ale interval < 2
+//   ⬜ Niewprowadzone:            przydzielone, nie wystąpiło w żadnej sesji
+// ══════════════════════════════════════════════
+// Zestaw „przydzielonych" podręczników: jawne przypisania (user_books)
+// lub — gdy brak — podręczniki z defaultAccess (dostępne dla każdego).
+function _acqAssignedBookIds(explicitIds) {
+  if (Array.isArray(explicitIds) && explicitIds.length) {
+    return explicitIds.filter(id => BOOKS[id] && BOOKS[id].units);
+  }
+  return Object.keys(BOOKS).filter(id => BOOKS[id] && BOOKS[id].defaultAccess && BOOKS[id].units);
+}
+function _acqCompute(bookIds, stateGetter) {
+  let total=0, veryWell=0, well=0, introduced=0, notIntroduced=0;
+  bookIds.forEach(bid => {
+    const book = BOOKS[bid]; if (!book || !book.units) return;
+    Object.keys(book.units).forEach(uk => {
+      const words = book.units[uk].words || [];
+      const states = stateGetter(bid, uk) || {};
+      for (let i = 0; i < words.length; i++) {
+        total++;
+        const s = states[i];
+        const appeared = !!(s && ((s.nextReview||0) > 0 || (s.reps||0) > 0 || (s.errCount||0) > 0 || s.lastError));
+        if (!appeared) { notIntroduced++; continue; }
+        const iv = s.interval || 0;
+        if (iv > 7) veryWell++;
+        else if (iv >= 2) well++;
+        else introduced++;
+      }
+    });
+  });
+  return { total, veryWell, well, introduced, notIntroduced };
+}
+// Ocena szkolna 1-6 wg liczby słówek opanowanych (known) w okresie.
+// Progi łatwo edytowalne — [wartość_progu, ocena], od najwyższej.
+const ACQ_GRADE_WEEK  = [ [40,6],[25,5],[15,4],[8,3],[3,2] ]; // <3 => 1
+const ACQ_GRADE_MONTH = [ [120,6],[75,5],[45,4],[20,3],[8,2] ]; // <8 => 1
+function _acqGrade(count, table) {
+  for (const [thr, g] of table) if (count >= thr) return g;
+  return 1;
+}
+function _acqSumWords(history, days) {
+  if (!Array.isArray(history)) return 0;
+  const from = new Date(); from.setDate(from.getDate() - (days - 1));
+  const fromStr = from.toISOString().slice(0, 10);
+  return history.reduce((s, r) => s + ((r.day >= fromStr) ? (r.words || 0) : 0), 0);
+}
+function _acqGradeColor(g){ return g>=5?'var(--success)':g>=4?'var(--accent2)':g>=3?'var(--accent)':g>=2?'#ffa94d':'var(--danger)'; }
+function _acqSummaryHtml(acq, weekG, monthG, detailId) {
+  return '<div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:12px 14px;margin:6px 0 12px">'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">'
+      + '<div style="font-weight:800;font-size:.95rem">✅ Przyswojone słówka: <span style="color:var(--success)">'+acq.veryWell+'</span> / '+acq.total+'</div>'
+      + '<button class="btn-sm" style="font-size:.68rem" onclick="_acqShowDetails(\''+detailId+'\')">🔎 Szczegóły</button>'
+    + '</div>'
+    + '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px">'
+      + '<div style="flex:1;min-width:120px;text-align:center;background:var(--surface2);border-radius:10px;padding:7px 6px"><div style="font-size:1.4rem;font-weight:900;color:'+_acqGradeColor(weekG)+'">'+weekG+'</div><div style="font-size:.62rem;color:var(--muted);font-weight:700">Ocena tygodniowa</div></div>'
+      + '<div style="flex:1;min-width:120px;text-align:center;background:var(--surface2);border-radius:10px;padding:7px 6px"><div style="font-size:1.4rem;font-weight:900;color:'+_acqGradeColor(monthG)+'">'+monthG+'</div><div style="font-size:.62rem;color:var(--muted);font-weight:700">Ocena miesięczna</div></div>'
+    + '</div></div>';
+}
+window._acqStore = {};
+window._acqShowDetails = function(id){
+  const a = window._acqStore[id]; if(!a) return;
+  const row = (ic,label,val,desc,col) => '<tr style="border-bottom:1px dashed var(--border)"><td style="padding:8px 6px;font-weight:700;vertical-align:top">'+ic+' '+label+'<div style="font-size:.66rem;color:var(--muted);font-weight:600;margin-top:2px">'+desc+'</div></td><td style="padding:8px 6px;text-align:right;font-weight:900;color:'+col+';white-space:nowrap;vertical-align:top">'+val+'</td></tr>';
+  const html = '<div style="font-family:Nunito,sans-serif;color:var(--text);max-width:520px;margin:0 auto">'
+    + '<table style="width:100%;border-collapse:collapse;font-size:.9rem">'
+    + row('🟢','Bardzo dobrze przyswojone', a.veryWell, 'Czas powtórki ponad tydzień.', 'var(--success)')
+    + row('🟡','Dobrze przyswojone', a.well, 'Czas powtórki co najmniej 2 dni.', 'var(--accent2)')
+    + row('🔵','Wprowadzone', a.introduced, 'Wystąpiły w sesji, wymagają jeszcze utrwalenia.', 'var(--blue)')
+    + row('⬜','Niewprowadzone', a.notIntroduced, 'Przydzielone, nie wystąpiły jeszcze w żadnej sesji.', 'var(--muted)')
+    + '<tr style="border-top:2px solid var(--border)"><td style="padding:9px 6px;font-weight:800">Razem</td><td style="padding:9px 6px;text-align:right;font-weight:900">'+a.total+'</td></tr>'
+    + '</table>'
+    + '<div style="margin-top:14px;display:flex;justify-content:center"><button class="btn-modal-cancel" onclick="closeGenericModal()">Zamknij</button></div></div>';
+  openGenericModal('📊 Przyswojone słówka — szczegóły', html);
+};
+
 function renderStats() {
   const p = DB.getUser(currentUser);
   const acc = p.totalAnswers > 0 ? Math.round((p.correctAnswers / p.totalAnswers) * 100) : 0;
@@ -9517,6 +9597,28 @@ function renderStats() {
 
   document.getElementById('accVal').textContent = acc + '% (' + (p.correctAnswers||0) + '/' + (p.totalAnswers||0) + ')';
   document.getElementById('speedBestVal').textContent = DB.getSpeedBest(currentUser) + ' pkt';
+
+  // Przyswojone słówka (przydzielone podręczniki) + ocena tyg./mies.
+  try {
+    const explicit = (DB.getUserBooks ? DB.getUserBooks() : null);
+    const bookIds = _acqAssignedBookIds(explicit);
+    const acq = _acqCompute(bookIds, (bid, uk) => {
+      const pr = DB.getUnitProgress(currentUser, bid, uk);
+      return (pr && pr.wordStates) ? pr.wordStates : {};
+    });
+    window._acqStore['self'] = acq;
+    const el = document.getElementById('acqSummarySelf');
+    if (el) {
+      el.innerHTML = _acqSummaryHtml(acq, 1, 1, 'self'); // wstępnie, oceny doliczą się async
+      (async () => {
+        let hist = [];
+        try { hist = await DB.getDailyXpHistory(null, 31); } catch(e) {}
+        const wk = _acqSumWords(hist, 7), mo = _acqSumWords(hist, 30);
+        const el2 = document.getElementById('acqSummarySelf');
+        if (el2) el2.innerHTML = _acqSummaryHtml(acq, _acqGrade(wk, ACQ_GRADE_WEEK), _acqGrade(mo, ACQ_GRADE_MONTH), 'self');
+      })();
+    }
+  } catch(e) { console.warn('[acq self]', e); }
 
   // Postęp podręczników
   const bpl = document.getElementById('booksProgressList');
@@ -17379,6 +17481,24 @@ async function openStudentProgress(userId, username, returnTo) {
     // Unit breakdown + sekcja Aktywnosc
     const unitsEl = document.getElementById('studProgUnits');
     unitsEl.innerHTML = '';
+
+    // ═══ SEKCJA: PRZYSWOJONE SŁÓWKA (kategorie + ocena tyg./mies.) ═══
+    try {
+      let explicit = [];
+      try { explicit = await DB.adminLoadUserBooks(userId); } catch(e) {}
+      if ((!explicit || !explicit.length) && DB.getChildUserBooks) {
+        try { const cb = await DB.getChildUserBooks(userId); explicit = (cb || []).map(x => (typeof x === 'string' ? x : x.book_id)).filter(Boolean); } catch(e) {}
+      }
+      const bookIds = _acqAssignedBookIds(explicit);
+      const stateMap = {};
+      unitRows.forEach(r => { stateMap[(r.book_key||'') + '__' + (r.unit_key||'')] = r.word_states || {}; });
+      const acq = _acqCompute(bookIds, (bid, uk) => stateMap[bid + '__' + uk] || {});
+      window._acqStore['stud'] = acq;
+      const wk = _acqSumWords(activityRows, 7), mo = _acqSumWords(activityRows, 30);
+      const acqBox = document.createElement('div');
+      acqBox.innerHTML = _acqSummaryHtml(acq, _acqGrade(wk, ACQ_GRADE_WEEK), _acqGrade(mo, ACQ_GRADE_MONTH), 'stud');
+      unitsEl.appendChild(acqBox);
+    } catch(e) { console.warn('[acq stud]', e); }
 
     // ═══ SEKCJA: WYZWANIA KLASY ucznia (Wave 2, #8) ═══
     try {

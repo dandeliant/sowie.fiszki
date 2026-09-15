@@ -461,10 +461,19 @@ const DB = (() => {
     const fromStr = from.toISOString().slice(0, 10);
     let res = await supabase
       .from('daily_xp_log')
-      .select('day, xp, minutes, first_active_at')
+      .select('day, xp, minutes, words, first_active_at')
       .eq('user_id', uid)
       .gte('day', fromStr)
       .order('day', { ascending: true });
+    if (res.error) {
+      // Fallback: schemat bez words (migracja #45) — pobierz bez tej kolumny
+      res = await supabase
+        .from('daily_xp_log')
+        .select('day, xp, minutes, first_active_at')
+        .eq('user_id', uid)
+        .gte('day', fromStr)
+        .order('day', { ascending: true });
+    }
     if (res.error) {
       // Fallback: stary schemat bez minutes/first_active_at
       res = await supabase
@@ -2856,7 +2865,7 @@ const DB = (() => {
     if (!_profile?.isAdmin && !_profile?.isTeacher) return [];
     const { data, error } = await supabase
       .from('unit_progress')
-      .select('book_key, unit_key, known_count, total, last_studied')
+      .select('book_key, unit_key, known_count, total, last_studied, word_states')
       .eq('user_id', userId);
     if (error) throw new Error(error.message);
     return data || [];
