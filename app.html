@@ -7801,6 +7801,13 @@ function renderCard() {
     // Zablokuj przyciski TF po odpowiedzi
     document.querySelectorAll('.btn-tf').forEach(b => b.disabled = false);
   }
+
+  // AUTO-LEKTOR: po pokazaniu karty odczytaj PROMPT (słowo do przetłumaczenia
+  // / na które trzeba kliknąć). Tylko tryby słowne; zdania i Speed mają własne
+  // wywołania. Odczyt zależny od kierunku, z obsługą custom nagrań.
+  if (autoVoice && ({card:1, quiz:1, type:1, missing:1, scramble:1, speak:1})[mode]) {
+    setTimeout(() => { try { speakQCurrDirect(); } catch(e){} }, 220);
+  }
 }
 
 // Buduje słowo z brakującymi literami (hide ~45%)
@@ -8843,7 +8850,7 @@ function checkType() {
   const inp = document.getElementById('tInp'), u = inp.value.trim();
   if (!u) return;
   _markTypedDay();
-  const cor = getA(curIdx), ok = fuzzy(u, cor);
+  const cor = getA(curIdx), ok = wordMatchStrict(u, cor);
   const r = document.getElementById('tRes');
   if (ok) {
     revealed = true; inp.disabled = true; document.getElementById('btnChk').disabled = true;
@@ -9876,6 +9883,8 @@ function nextSpeedQuestion() {
   const ans = studyDir === 'pl_en' ? en : pl;
   document.getElementById('spQLabel').textContent = getTranslLabel();
   document.getElementById('spWord').textContent = q;
+  // Auto-lektor: odczytaj słowo do przetłumaczenia (prompt).
+  if (autoVoice) { try { spk(q, studyDir === 'pl_en' ? 'pl' : 'en'); } catch(e){} }
 
   // Opcje
   const others = words.map(w => studyDir === 'pl_en' ? w[1] : w[0]).filter(a => a !== ans);
@@ -10113,8 +10122,25 @@ window._printFooterHtml = function() {
   return '<div style="margin-top:24px;padding-top:10px;border-top:1px dashed #ccc;font-size:.7rem;color:#999;text-align:center;font-family:Arial,sans-serif">© 2026 Sowie Fiszki (sowiefiszki.com)</div>';
 };
 function lev(a,b){const m=a.length,n=b.length,dp=Array.from({length:m+1},(_,i)=>Array.from({length:n+1},(_,j)=>i===0?j:j===0?i:0));for(let i=1;i<=m;i++)for(let j=1;j<=n;j++)dp[i][j]=a[i-1]===b[j-1]?dp[i-1][j-1]:1+Math.min(dp[i-1][j],dp[i][j-1],dp[i-1][j-1]);return dp[m][n];}
-function norm(s){return s.toLowerCase().trim().replace(/[.,!?…'"''']/g,'').replace(/\s+/g,' ');}
+// Normalizacja do porównań: małe litery, łączniki/ukośniki → spacja,
+// usunięcie interpunkcji (. , ! ? … ' " „ ” ; : ( ) [ ] { } * _ itp.),
+// zwinięcie spacji. Zachowuje litery (w tym polskie i akcentowane).
+function norm(s){return String(s||'').toLowerCase().replace(/[\/\-–—]+/g,' ').replace(/[.,!?…'"''"„”;:()\[\]{}*_\\]/g,'').replace(/\s+/g,' ').trim();}
 function fuzzy(u,c){const un=norm(u),cn=norm(c);if(un===cn)return true;return lev(un,cn)<=Math.max(1,Math.floor(cn.length*.13));}
+// ŚCISŁE dopasowanie słowa (tryb „Wpisz"): ignoruje tylko interpunkcję,
+// ale WYMAGA poprawności słowa (brak tolerancji literówek). Akceptuje
+// dowolny z wariantów tłumaczenia oddzielonych „,", „;", „/", „lub", „albo".
+function wordMatchStrict(u, c){
+  const un = norm(u);
+  if (!un) return false;
+  const raw = String(c||'');
+  // Warianty: pełny tekst + wersja bez treści w nawiasach (opcjonalny kontekst,
+  // np. „interesować się (czymś)" → także „interesować się").
+  const bases = [raw, raw.replace(/\([^)]*\)/g, ' ')];
+  const alts = [];
+  bases.forEach(b => b.split(/[,;/]|\blub\b|\balbo\b/i).forEach(x => { const n = norm(x); if (n && !alts.includes(n)) alts.push(n); }));
+  return alts.includes(un);
+}
 // Porownuje wpisany tekst z poprawnym znak po znaku i zwraca HTML, w ktorym
 // litery zgodne sa zielone, a bledne/nadmiarowe — czerwone. Uzywane w trybach
 // z wpisywaniem przy 1. blednej probie ("podkresl konkretne literki").
@@ -11778,6 +11804,7 @@ function buildTypeSentMode() {
   }
   buildAlphaKeys('tsInp', tsSentAnswer);
   setTimeout(() => inp.focus(), 120);
+  if (autoVoice) { const say = (s && s.sentence_pl) ? s.sentence_pl : wordPl; setTimeout(() => { try { spkPl(say); } catch(e){} }, 240); }
 }
 
 function checkTypeSent() {
@@ -11900,6 +11927,7 @@ function buildSpeakSentMode() {
     document.getElementById('ssHintText').textContent = wordEn;
     ssSentAnswer = wordEn;
   }
+  if (autoVoice) { const say = (s && s.sentence_pl) ? s.sentence_pl : wordPl; setTimeout(() => { try { spkPl(say); } catch(e){} }, 240); }
 }
 
 function ssShowHint() {
@@ -16002,6 +16030,7 @@ function buildSentScramble() {
   document.getElementById('sentScrLabel').textContent = '📜 Ułóż słowa w prawidłowej kolejności';
   document.getElementById('sentScrClue').textContent = '🇵🇱 ' + ((s && s.sentence_pl) || wordPl);
   if (s && s.sentence_target) document.getElementById('sentScrHint').textContent = sentScrAnswer.length + ' słów · ' + wordPl + ' → ' + wordEn;
+  if (autoVoice) { const say = (s && s.sentence_pl) || wordPl; setTimeout(() => { try { spkPl(say); } catch(e){} }, 240); }
 
   // Posortuj słowa alfabetycznie
   const sorted = [...sentScrAnswer].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
