@@ -172,6 +172,7 @@ body.live-mode .back-link{display:none;}
       <option value="">— Najpierw wybierz podręcznik —</option>
     </select>
 
+    <button type="button" id="orderBtn" onclick="toggleOrder()" title="Kolejność słówek: po kolei (wg listy) lub losowo" style="width:100%;margin-top:8px;background:rgba(255,255,255,.12);border:1.5px solid rgba(255,255,255,.35);border-radius:100px;color:#fff;font-weight:700;font-size:.82rem;padding:9px;cursor:pointer">🔢 Po kolei</button>
     <button class="btn-start" id="startBtn" onclick="startGameFromSelector()" disabled>🏝️ START</button>
 
     <div class="info">
@@ -389,6 +390,11 @@ let autoVoice = true;
 let jpRunning = false, jpScore = 0, jpLives = 3, jpLocked = false;
 let jpTimer = null, jpTimeLeft = 5;
 let jpWords = [], jpIdx = 0;
+// Kolejność słówek: false = po kolei (domyślnie), true = losowo. Wspólny
+// klucz z aplikacją (localStorage['fiszki_study_random']).
+let orderRandom = (()=>{ try { return localStorage.getItem('fiszki_study_random')==='1'; } catch(e){ return false; } })();
+function updateOrderBtn(){ const b=document.getElementById('orderBtn'); if(b) b.textContent = orderRandom ? '🔀 Losowo' : '🔢 Po kolei'; }
+function toggleOrder(){ orderRandom=!orderRandom; try{ localStorage.setItem('fiszki_study_random', orderRandom?'1':'0'); }catch(e){} updateOrderBtn(); }
 let jpFloatFrame = null;
 
 // Tryb trudności: true = Trudny (na czas), false = Łatwy (bez czasu). Domyślnie Trudny.
@@ -457,6 +463,7 @@ function setHard(val){
       setTimeout(() => { try { startGameFromSelector(); } catch(e) {} }, 350);
     }
   } catch(e) {}
+  updateOrderBtn();
 })();
 
 function onBookChange(){
@@ -549,7 +556,7 @@ function _liveStartGlobalTimer(){
 function jumpStart() {
   if (!activeWords || activeWords.length < 3) { toast('Brak słówek!'); return; }
   jpRunning = true; jpScore = 0; jpLives = 3; jpIdx = 0; jpLocked = false;
-  jpWords = shuffle([...activeWords]);
+  jpWords = orderRandom ? shuffle([...activeWords]) : [...activeWords];
   document.getElementById('jumpScore').textContent = '0';
   document.getElementById('jumpLives').textContent = '❤️❤️❤️';
   document.getElementById('jumpOverlay').style.display = 'none';

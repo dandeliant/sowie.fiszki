@@ -135,6 +135,7 @@ body.live-mode .back-link{display:none;}
       <option value="">— Najpierw wybierz podręcznik —</option>
     </select>
 
+    <button type="button" id="orderBtn" onclick="toggleOrder()" title="Kolejność słówek: po kolei (wg listy) lub losowo" style="width:100%;margin-top:8px;background:rgba(255,255,255,.12);border:1.5px solid rgba(255,255,255,.35);border-radius:100px;color:#fff;font-weight:700;font-size:.82rem;padding:9px;cursor:pointer">🔢 Po kolei</button>
     <button class="btn-start" id="startBtn" onclick="startGameFromSelector()" disabled>🦋 START</button>
 
     <div class="info">
@@ -324,6 +325,12 @@ let bfRunning = false, bfScore = 0, bfTime = 45;
 let bfCurrent = null;
 let bfFalling = [];
 let bfSpawnInt = null, bfTimerInt = null, bfAnimFrame = null;
+let bfSeqIdx = 0;
+// Kolejność słówek: false = po kolei (domyślnie), true = losowo. Wspólny
+// klucz z aplikacją (localStorage['fiszki_study_random']).
+let orderRandom = (()=>{ try { return localStorage.getItem('fiszki_study_random')==='1'; } catch(e){ return false; } })();
+function updateOrderBtn(){ const b=document.getElementById('orderBtn'); if(b) b.textContent = orderRandom ? '🔀 Losowo' : '🔢 Po kolei'; }
+function toggleOrder(){ orderRandom=!orderRandom; try{ localStorage.setItem('fiszki_study_random', orderRandom?'1':'0'); }catch(e){} updateOrderBtn(); }
 
 // ═══════════════════════════════════════════════════════════════
 //  SETUP
@@ -362,6 +369,7 @@ let bfSpawnInt = null, bfTimerInt = null, bfAnimFrame = null;
       setTimeout(() => { try { startGameFromSelector(); } catch(e) {} }, 350);
     }
   } catch(e) {}
+  updateOrderBtn();
 })();
 
 function onBookChange(){
@@ -471,7 +479,7 @@ function bfReset() {
 
 function bfNewWord() {
   if (!activeWords || !activeWords.length) return;
-  const idx = Math.floor(Math.random() * activeWords.length);
+  const idx = orderRandom ? Math.floor(Math.random() * activeWords.length) : (bfSeqIdx++ % activeWords.length);
   const [pl, en] = activeWords[idx];
   const others = activeAllWords.filter(w => w[1] !== en);
   const wrong = shuffle(others).slice(0, 3).map(w => w[1]);
@@ -597,6 +605,7 @@ function bfStartGame() {
     return;
   }
   bfReset();
+  bfSeqIdx = 0;
   bfRunning = true;
   document.getElementById('bfStart').style.display = 'none';
   document.getElementById('restartBtn').style.display = 'none';
