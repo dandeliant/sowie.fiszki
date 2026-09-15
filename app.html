@@ -3259,6 +3259,7 @@ szkoła	school"></textarea>
   </div>
   <div class="stat-grid" id="statGrid"></div>
   <div id="acqSummarySelf"></div>
+  <div id="systSelf"></div>
   <div class="acc-row">
     <span class="acc-label">🎯 Dokładność odpowiedzi</span>
     <span class="acc-val" id="accVal">—</span>
@@ -9683,6 +9684,63 @@ window._acqShowMonthly = function(id){
   openGenericModal('🗓️ Ocena miesięczna — szczegóły', html);
 };
 
+// ══════════════════════════════════════════════
+//  SYSTEMATYCZNOŚĆ — raport regularności pracy (read-only)
+//  Pokazuje dni aktywnej nauki. „Kto pracuje, a kto nie."
+// ══════════════════════════════════════════════
+function _systActiveDays(history){
+  const set = new Set();
+  (history || []).forEach(r => {
+    if (r && r.day && ((r.xp||0) > 0 || (r.minutes||0) > 0 || r.typed || (r.words||0) > 0)) set.add(r.day);
+  });
+  return set;
+}
+function _systCountRange(active, days){
+  const from = new Date(); from.setDate(from.getDate() - (days - 1));
+  const fromStr = from.toISOString().slice(0,10);
+  let n = 0; active.forEach(d => { if (d >= fromStr) n++; });
+  return n;
+}
+function _systHtml(history, streak, longest){
+  const active = _systActiveDays(history);
+  const WEEKS = 13;
+  const today = new Date(); today.setHours(0,0,0,0);
+  const start = new Date(today);
+  const dow = (start.getDay() + 6) % 7;
+  start.setDate(start.getDate() - dow - (WEEKS - 1) * 7);
+  let cols = '';
+  const DOW_PL = ['Pn','Wt','Śr','Cz','Pt','So','Nd'];
+  for (let w = 0; w < WEEKS; w++){
+    let cells = '';
+    for (let d = 0; d < 7; d++){
+      const dt = new Date(start); dt.setDate(start.getDate() + w*7 + d);
+      const ds = dt.toISOString().slice(0,10);
+      const future = dt > today;
+      const act = active.has(ds);
+      const bg = future ? 'transparent' : (act ? 'var(--success)' : 'var(--surface2)');
+      cells += '<div title="'+ds+(future?'':(act?' · nauka ✓':' · brak nauki'))+'" style="width:13px;height:13px;border-radius:3px;background:'+bg+';border:1px solid var(--border)"></div>';
+    }
+    cols += '<div style="display:flex;flex-direction:column;gap:3px">'+cells+'</div>';
+  }
+  const labelsCol = '<div style="display:flex;flex-direction:column;gap:3px;margin-right:4px">'
+    + DOW_PL.map(l => '<div style="width:16px;height:13px;font-size:.55rem;color:var(--muted);font-weight:700;display:flex;align-items:center">'+l+'</div>').join('') + '</div>';
+  const a7 = _systCountRange(active, 7), a30 = _systCountRange(active, 30);
+  return '<div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:12px 14px;margin:6px 0 12px">'
+    + '<div style="font-weight:800;font-size:.92rem;margin-bottom:4px">📈 Systematyczność</div>'
+    + '<div style="font-size:.66rem;color:var(--muted);font-weight:600;margin-bottom:8px">Kto pracuje, a kto nie — raport odzwierciedla rzeczywistość (bez możliwości edycji).</div>'
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">'
+      + '<div style="flex:1;min-width:90px;text-align:center;background:var(--surface2);border-radius:10px;padding:6px"><div style="font-size:1.15rem;font-weight:900;color:var(--accent2)">'+a7+'/7</div><div style="font-size:.6rem;color:var(--muted);font-weight:700">Dni w tygodniu</div></div>'
+      + '<div style="flex:1;min-width:90px;text-align:center;background:var(--surface2);border-radius:10px;padding:6px"><div style="font-size:1.15rem;font-weight:900;color:var(--accent2)">'+a30+'/30</div><div style="font-size:.6rem;color:var(--muted);font-weight:700">Dni w miesiącu</div></div>'
+      + '<div style="flex:1;min-width:90px;text-align:center;background:var(--surface2);border-radius:10px;padding:6px"><div style="font-size:1.15rem;font-weight:900;color:var(--accent)">🔥 '+(streak||0)+'</div><div style="font-size:.6rem;color:var(--muted);font-weight:700">Seria dni</div></div>'
+      + '<div style="flex:1;min-width:90px;text-align:center;background:var(--surface2);border-radius:10px;padding:6px"><div style="font-size:1.15rem;font-weight:900">'+(longest||0)+'</div><div style="font-size:.6rem;color:var(--muted);font-weight:700">Najdłuższa</div></div>'
+    + '</div>'
+    + '<div style="display:flex;align-items:flex-start;overflow-x:auto;padding-bottom:4px">'+labelsCol+'<div style="display:flex;gap:3px">'+cols+'</div></div>'
+    + '<div style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:.6rem;color:var(--muted);font-weight:600">Ostatnie 13 tygodni · '
+      + '<span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:var(--surface2);border:1px solid var(--border)"></span> brak '
+      + '<span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:var(--success);border:1px solid var(--border)"></span> nauka</div>'
+    + '</div>';
+}
+
 function renderStats() {
   const p = DB.getUser(currentUser);
   const acc = p.totalAnswers > 0 ? Math.round((p.correctAnswers / p.totalAnswers) * 100) : 0;
@@ -9716,6 +9774,8 @@ function renderStats() {
         window._acqStore['self'] = { acq, weekly, monthly };
         const el2 = document.getElementById('acqSummarySelf');
         if (el2) el2.innerHTML = _acqSummaryHtml(acq, _currentWeekGrade(weekly), _currentMonthGrade(monthly), 'self');
+        const sy = document.getElementById('systSelf');
+        if (sy) sy.innerHTML = _systHtml(hist, p.streak, p.longestStreak);
       })();
     }
   } catch(e) { console.warn('[acq self]', e); }
@@ -17624,6 +17684,9 @@ async function openStudentProgress(userId, username, returnTo) {
       const acqBox = document.createElement('div');
       acqBox.innerHTML = _acqSummaryHtml(acq, _currentWeekGrade(weekly), _currentMonthGrade(monthly), 'stud');
       unitsEl.appendChild(acqBox);
+      const systBox = document.createElement('div');
+      systBox.innerHTML = _systHtml(gradeHist, profile.streak, profile.longest_streak);
+      unitsEl.appendChild(systBox);
     } catch(e) { console.warn('[acq stud]', e); }
 
     // ═══ SEKCJA: WYZWANIA KLASY ucznia (Wave 2, #8) ═══
