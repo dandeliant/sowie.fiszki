@@ -2880,12 +2880,18 @@ szkoła	school"></textarea>
   <div class="type-area" id="typeArea">
     <div class="type-question">
       <div class="q-label" id="typeLabel">Wpisz po angielsku</div>
+      <div id="tEmoji" style="display:none;font-size:3rem;line-height:1;margin:2px 0 4px"></div>
       <div class="q-word" id="tPl">—</div>
+      <div id="tHint" style="display:none;margin-top:8px;font-size:.95rem;line-height:1.5"></div>
       <div style="margin-top:10px"><button class="btn-speak" onclick="speakQCurrDirect()">🔊 Posłuchaj</button></div>
     </div>
     <div class="type-row">
       <input type="text" class="type-input" id="tInp" placeholder="Wpisz tłumaczenie…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+      <button class="btn-check" id="btnTypeNext" onclick="typeNextNow()" style="display:none;background:var(--ok,#22a06b)">Dalej ▶</button>
       <button class="btn-check" id="btnChk" onclick="checkType()">Sprawdź</button>
+    </div>
+    <div style="text-align:center;margin-top:8px">
+      <button id="btnTypeReveal" onclick="typeRevealAnswer()" style="background:none;border:1.5px dashed var(--border);color:var(--muted,#8a8f98);padding:7px 14px;border-radius:9px;font-size:.9rem;font-weight:700;cursor:pointer">🙈 Nie wiem — pokaż odpowiedź</button>
     </div>
     <div class="type-result" id="tRes"></div>
     <div class="alpha-keys" data-for="tInp"></div>
@@ -4483,7 +4489,7 @@ async function logout() {
 //  CONSTANTS
 // ══════════════════════════════════════════════
 const XP_PER = 60;
-const XPV = { hard: 4, medium: 9, easy: 16 };
+const XPV = { again: 2, hard: 5, medium: 9, good: 11, easy: 16 };
 const DAILY_XP_GOAL = 100;
 const LVLS = [
   {l:1,i:'🌱',n:'Początkujący'},{l:2,i:'📚',n:'Uczeń'},{l:3,i:'⭐',n:'Pilny'},
@@ -7552,34 +7558,129 @@ function startReviewSession() {
 }
 
 // ══════════════════════════════════════════════
-//  SM-2 UPDATE
+//  FSRS-6  (Free Spaced Repetition Scheduler)
+//  Najnowszy algorytm powtorek (domyslny w Anki od 25.07, lipiec 2025).
+//  Model DSR: Difficulty (1-10), Stability (dni), Retrievability (0-1).
+//  21 wag wytrenowanych na milionach powtorek. Zastepuje SM-2.
+//  Referencja: open-spaced-repetition / fsrs4anki.
 // ══════════════════════════════════════════════
-function sm2Update(s, r) {
-  const q = {hard:1, medium:3, easy:5}[r];
-  let {ef=2.5, reps=0, interval=1, errCount=0} = s;
+// Wagi domyslne FSRS-6 (w0..w20).
+const FSRS_W = [0.212, 1.2931, 2.3065, 8.2956, 6.4133, 0.8334, 3.0194, 0.001,
+                1.8722, 0.1666, 0.796, 1.4835, 0.0614, 0.2629, 1.6483, 0.6014,
+                1.8729, 0.5425, 0.0912, 0.0658, 0.1542];
+// Docelowa retencja (jaki % pamietamy w momencie kolejnej powtorki). 0.9 = Anki default.
+const FSRS_RETENTION = 0.90;
+// Krzywa zapominania: R(t,S) = (1 + FACTOR·t/S)^(-w20), FACTOR = 0.9^(-1/w20) - 1.
+// Dobrana tak, ze przy t = S retencja wynosi dokladnie 0.9 (definicja stabilnosci).
+const FSRS_DECAY  = FSRS_W[20];
+const FSRS_FACTOR = Math.pow(0.9, -1 / FSRS_DECAY) - 1;
+const _fsrsClamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
+// Retrievability po t dniach przy stabilnosci S.
+function fsrsRetr(t, S) { return Math.pow(1 + FSRS_FACTOR * t / Math.max(0.01, S), -FSRS_DECAY); }
+// Interval do docelowej retencji r (dni). Przy r = 0.9 wychodzi dokladnie S.
+function fsrsInterval(S, r) {
+  r = r || FSRS_RETENTION;
+  return S / FSRS_FACTOR * (Math.pow(r, -1 / FSRS_DECAY) - 1);
+}
+// Poczatkowa stabilnosc po pierwszej ocenie G (1..4): S0 = w[G-1].
+function fsrsInitS(G) { return _fsrsClamp(FSRS_W[G - 1], 0.01, 36500); }
+// Poczatkowa trudnosc po pierwszej ocenie G: D0 = clamp(w4 - e^(w5·(G-1)) + 1, 1, 10).
+function fsrsInitD(G) { return _fsrsClamp(FSRS_W[4] - Math.exp(FSRS_W[5] * (G - 1)) + 1, 1, 10); }
+// Nastepna trudnosc (z tlumieniem liniowym w strone D0(4)).
+function fsrsNextD(D, G) {
+  const dd = -FSRS_W[6] * (G - 3);
+  const Dp = D + dd * (10 - D) / 9;
+  return _fsrsClamp(FSRS_W[7] * fsrsInitD(4) + (1 - FSRS_W[7]) * Dp, 1, 10);
+}
+// Nastepna stabilnosc po trafieniu (G >= 2): rosnie tym mniej, im wyzsza juz jest.
+function fsrsNextSRecall(S, D, R, G) {
+  const hard = (G === 2) ? FSRS_W[15] : 1;
+  const easy = (G === 4) ? FSRS_W[16] : 1;
+  return _fsrsClamp(S * (1 + Math.exp(FSRS_W[8]) * (11 - D) * Math.pow(S, -FSRS_W[9]) *
+         (Math.exp(FSRS_W[10] * (1 - R)) - 1) * hard * easy), 0.01, 36500);
+}
+// Nastepna stabilnosc po zapomnieniu (G = 1) — nie wieksza niz obecna.
+function fsrsNextSForget(S, D, R) {
+  const sf = FSRS_W[11] * Math.pow(D, -FSRS_W[12]) * (Math.pow(S + 1, FSRS_W[13]) - 1) *
+             Math.exp(FSRS_W[14] * (1 - R));
+  return _fsrsClamp(Math.min(sf, S), 0.01, 36500);
+}
+// Stabilnosc przy powtorce tego samego dnia (short-term, elapsed < 1 dzien).
+function fsrsShortTermS(S, G) {
+  return _fsrsClamp(S * Math.exp(FSRS_W[17] * (G - 3 + FSRS_W[18])) * Math.pow(S, -FSRS_W[19]), 0.01, 36500);
+}
+// Mapowanie ocen aplikacji -> ocena FSRS 1..4 (Again/Hard/Good/Easy).
+const FSRS_GRADE = { again: 1, hard: 2, medium: 3, good: 3, easy: 4 };
 
-  if (q >= 3) {
-    if (reps === 0) interval = 1;
-    else if (reps === 1) interval = 6;
-    else interval = Math.min(365, Math.round(interval * ef));
-    reps++;
-    ef = Math.max(1.3, ef + 0.1 - (5 - q) * (0.08 + (5 - q) * 0.02));
-    s.lastError = false;
-  } else {
-    reps = 0; interval = 1;
-    ef = Math.max(1.3, ef - 0.2);
-    errCount++;
-    s.lastError = true;
+// Znacznik czasu pokazania biezacej karty — trafna odpowiedz udzielona szybko
+// (ponizej progu) liczy sie jako "Latwe" (Easy), wolniejsza jako "Dobrze" (Good).
+let _cardShownAt = 0;
+const FSRS_FAST_MS = 6000;
+function _gradeGood() {
+  return (_cardShownAt && (Date.now() - _cardShownAt) < FSRS_FAST_MS) ? 'easy' : 'good';
+}
+
+// ══════════════════════════════════════════════
+//  UPDATE STANU SLOWA  (FSRS-6, kompatybilny wstecz z SM-2)
+//  Nazwa sm2Update zachowana — wywolywana z rate() i innych miejsc.
+//  Zwraca to samo co dawniej (reps/interval/nextReview/known/mastered/
+//  lastError/errCount/dueIn/ef) + nowe pola FSRS (s = stability, d =
+//  difficulty, lapses, lastReview) do dokladnego harmonogramu.
+// ══════════════════════════════════════════════
+function sm2Update(st, r) {
+  const G = FSRS_GRADE[r] || 3;
+  const now = Date.now();
+  let { reps = 0, errCount = 0, lapses = 0, s: S = 0, d: D = 0, interval = 0 } = st;
+  const seeded = !(S > 0); // brak stabilnosci FSRS
+
+  if (seeded) {
+    // Slowo bez stanu FSRS. Jesli mialo juz historie SM-2 (reps/interval/blad),
+    // zasiej S/D z dotychczasowego postepu — bez utraty nauki. Inaczej: nowe.
+    const hadHistory = reps > 0 || interval > 1 || errCount > 0 || (st.nextReview > 0);
+    if (hadHistory) {
+      S = _fsrsClamp(interval || (reps >= 1 ? 1 : 0.5), 0.1, 36500);
+      const ef = st.ef || 2.5;
+      D = _fsrsClamp(2 + (2.5 - ef) / 1.2 * 6, 1, 10); // ef 2.5->2 (latwe), 1.3->8 (trudne)
+    }
   }
 
-  return {...s, ef, reps, interval, errCount,
-    nextReview: Date.now() + interval * 86400000,
-    // Slowo "opanowane" (known = wlicza sie do % unitu) wymaga teraz
-    // 3 poprawnych odpowiedzi pod rzad. Mistrzostwo (mastered) — 4 poprawne
-    // odpowiedzi i dlugi interval (>=30 dni).
+  if (seeded && !(S > 0)) {
+    // Pierwsza ocena zupelnie nowego slowa.
+    S = fsrsInitS(G);
+    D = fsrsInitD(G);
+  } else {
+    // Powtorka istniejacego slowa.
+    const lastRev = st.lastReview || (st.nextReview ? st.nextReview - (interval || 1) * 86400000 : now);
+    const elapsed = Math.max(0, (now - lastRev) / 86400000);
+    const Dold = D;
+    D = fsrsNextD(Dold, G);
+    if (elapsed < 1) {
+      S = fsrsShortTermS(S, G);           // powtorka tego samego dnia / w sesji
+    } else {
+      const R = fsrsRetr(elapsed, S);
+      S = (G === 1) ? fsrsNextSForget(S, Dold, R) : fsrsNextSRecall(S, Dold, R, G);
+    }
+  }
+
+  // Liczniki zgodne z dawna semantyka (znane = 3 trafienia pod rzad).
+  if (G === 1) { reps = 0; errCount++; lapses++; }
+  else reps++;
+
+  // Interval kalendarzowy z FSRS (dni), zaokraglony, min 1, cap 365.
+  const ivDays = _fsrsClamp(Math.round(fsrsInterval(S, FSRS_RETENTION)), 1, 365);
+  // ef trzymane dla kompatybilnosci starego kodu/UI (przybliza latwosc z D).
+  const ef = _fsrsClamp(2.5 - (D - 1) / 9 * 1.2, 1.3, 2.5);
+
+  return { ...st, ef, s: S, d: D, lapses, reps, errCount, interval: ivDays,
+    lastReview: now,
+    nextReview: now + ivDays * 86400000,
+    lastError: G === 1,
+    // Slowo "opanowane" (known = wlicza sie do % unitu): 3 trafienia pod rzad.
+    // Mistrzostwo (mastered): 4+ trafienia i dlugi interval FSRS (>=30 dni).
     known: reps >= 3,
-    mastered: reps >= 4 && interval >= 30,
-    dueIn: {hard:1, medium:2, easy:3}[r]
+    mastered: reps >= 4 && ivDays >= 30,
+    // Harmonogram w sesji (ile losowan do ponownego pokazania).
+    dueIn: { again: 0, hard: 1, medium: 2, good: 2, easy: 3 }[r]
   };
 }
 
@@ -7656,6 +7757,7 @@ function renderCard() {
   if (curIdx === null) return;
   // Nowa karta — wyzeruj liczniki "drugiej szansy"
   answerMistake = false; typeAttempts = 0;
+  _cardShownAt = Date.now(); // do oceny FSRS: szybka trafna odpowiedz = Latwe
   const q = getQ(curIdx), a = getA(curIdx);
   hideAreas();
   // Pokaż/ukryj przycisk „✏️ Edytuj" na fiszce (tylko admin/nauczyciel)
@@ -7695,15 +7797,21 @@ function renderCard() {
     document.getElementById('qSpeak').style.display = 'none';
 
   } else if (mode === 'type') {
+    clearTimeout(_typeHoldTimer);
     const ta = document.getElementById('typeArea'); ta.style.display = 'block'; reAnim(ta);
     document.getElementById('typeLabel').textContent = getTypeLabel();
     document.getElementById('tPl').textContent = q;
     const inp = document.getElementById('tInp');
     inp.value = ''; inp.className = 'type-input'; inp.disabled = false;
+    inp.oninput = _typeAutoCheck; // auto-zalicz gdy uczen wpisze poprawnie
     document.getElementById('btnChk').disabled = false;
+    document.getElementById('btnChk').style.display = '';
+    document.getElementById('btnTypeNext').style.display = 'none';
+    document.getElementById('btnTypeReveal').style.display = '';
     document.getElementById('tRes').className = 'type-result';
     document.getElementById('tRes').innerHTML = '';
     document.getElementById('tSpeak').style.display = 'none';
+    _typeSetupHints(); // emoji + zdanie (podpowiedz w nawiasie + luka)
     buildAlphaKeys('tInp', a);
     setTimeout(() => inp.focus(), 120);
 
@@ -8832,7 +8940,7 @@ function onQuiz(btn, ok, correct) {
   _recordAnswerLogged(good);
   document.getElementById('qSpeak').style.display = 'block';
   spkForeign(correct);
-  setTimeout(() => rate(good ? 'easy' : 'hard'), 1500);
+  setTimeout(() => rate(good ? _gradeGood() : 'hard'), 1500);
 }
 
 // ══════════════════════════════════════════════
@@ -8867,6 +8975,7 @@ function checkType() {
   const r = document.getElementById('tRes');
   if (ok) {
     revealed = true; inp.disabled = true; document.getElementById('btnChk').disabled = true;
+    document.getElementById('btnTypeReveal').style.display = 'none';
     const good = (typeAttempts === 0);
     inp.classList.remove('wrong-inp'); inp.classList.add('correct-inp');
     r.className = 'type-result ok';
@@ -8876,7 +8985,7 @@ function checkType() {
     _logTypedAns(u, true);
     document.getElementById('tSpeak').style.display = 'block';
     spkForeign(cor);
-    setTimeout(() => rate(good ? 'easy' : 'hard'), 1500);
+    setTimeout(() => rate(good ? _gradeGood() : 'hard'), 1500);
     return;
   }
   // Zle wpisanie
@@ -8891,13 +9000,122 @@ function checkType() {
     r.innerHTML = '✗ Poprawna odpowiedź: <span class="ar">' + esc(cor) + '</span><br>Twoja: ' + letterDiffHtml(u, cor);
     document.getElementById('tSpeak').style.display = 'block';
     spkForeign(cor);
-    setTimeout(() => rate('hard'), 1600);
+    rate('again', true);      // ocen teraz (lapse), ale NIE przechodz od razu
+    _typeHoldAndAdvance();    // trzymaj poprawna odpowiedz 10 s + przycisk „Dalej"
   } else {
     // 1. blad — podkresl literki, pozwol wpisac jeszcze raz
     r.className = 'type-result err';
     r.innerHTML = '✗ Prawie! Popraw litery i spróbuj jeszcze raz:<br>' + letterDiffHtml(u, cor);
     setTimeout(() => { inp.focus(); inp.select(); }, 60);
   }
+}
+
+// ══════════════════════════════════════════════
+//  TRYB „WPISZ" — pomocnicze (emoji, zdanie z luką, auto-zalicz, hold 10 s)
+// ══════════════════════════════════════════════
+let _typeHoldTimer = null;
+
+// Auto-zaliczanie: gdy uczen wpisze poprawne slowo, system sam „klika Sprawdz".
+function _typeAutoCheck() {
+  if (mode !== 'type' || revealed || curIdx === null) return;
+  const inp = document.getElementById('tInp'); if (!inp) return;
+  const u = inp.value.trim(); if (!u) return;
+  if (wordMatchStrict(u, getA(curIdx))) checkType();
+}
+
+// Uczen nie zna slowa → pokaz odpowiedz, oznacz jako Trudne (lapse), powtorka wg algorytmu.
+function typeRevealAnswer() {
+  if (mode !== 'type' || revealed || curIdx === null) return;
+  const inp = document.getElementById('tInp');
+  const cor = getA(curIdx), u = (inp.value || '').trim();
+  _markTypedDay();
+  revealed = true; inp.disabled = true;
+  document.getElementById('btnChk').disabled = true;
+  document.getElementById('btnTypeReveal').style.display = 'none';
+  owlR('hard'); _recordAnswerLogged(false); trackMissed(); sessErrorCount++;
+  _logTypedAns(u || '(pokazano odpowiedź)', false);
+  const r = document.getElementById('tRes');
+  r.className = 'type-result err';
+  r.innerHTML = '💡 Poprawna odpowiedź: <span class="ar">' + esc(cor) + '</span>';
+  document.getElementById('tSpeak').style.display = 'block';
+  spkForeign(cor);
+  rate('again', true);      // Trudne / lapse — słówko wróci wg algorytmu
+  _typeHoldAndAdvance();
+}
+
+// Trzymaj poprawna odpowiedz przez 10 s; „Dalej" pozwala przejsc od razu.
+function _typeHoldAndAdvance() {
+  const nx = document.getElementById('btnTypeNext');
+  const ck = document.getElementById('btnChk');
+  const rv = document.getElementById('btnTypeReveal');
+  if (rv) rv.style.display = 'none';
+  if (ck) ck.style.display = 'none';
+  if (nx) nx.style.display = '';
+  clearTimeout(_typeHoldTimer);
+  _typeHoldTimer = setTimeout(_typeAdvance, 10000);
+}
+function _typeAdvance() {
+  clearTimeout(_typeHoldTimer); _typeHoldTimer = null;
+  const nx = document.getElementById('btnTypeNext'); if (nx) nx.style.display = 'none';
+  if (!pool.length) { showDone(); return; }
+  generate();
+}
+function typeNextNow() { _typeAdvance(); }
+
+// Zamien slowo/zwrot na luke w zdaniu docelowym. Zwraca null, gdy nie znaleziono.
+function _gapSentence(sent, answer) {
+  if (!sent) return null;
+  let core = String(answer || '').split(/[,;/]| lub | albo /i)[0].trim();
+  core = core.replace(/\s*\([^)]*\)\s*/g, ' ').trim();
+  if (!core) return null;
+  const safe = esc(sent);
+  const GAP = '<span style="display:inline-block;min-width:60px;border-bottom:2.5px solid var(--accent,#6c5ce7);color:transparent">____</span>';
+  // Kandydaci do dopasowania: pelny zwrot i wariant bez angielskiego „to " (bezokolicznik).
+  const cands = [core];
+  const noTo = core.replace(/^to\s+/i, '').trim();
+  if (noTo && noTo !== core) cands.push(noTo);
+  for (const cand of cands) {
+    const escCore = cand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const reWb = new RegExp('\\b' + escCore + '\\b', 'i'); // z granica slowa (np. „clean", nie „cleaner")
+    if (reWb.test(safe)) return safe.replace(reWb, GAP);
+    const reAny = new RegExp(escCore, 'i');               // fallback bez granicy
+    if (reAny.test(safe)) return safe.replace(reAny, GAP);
+  }
+  return null;
+}
+
+// Emoji pod naglowkiem + zdanie przykladowe (PL w nawiasie) i zdanie docelowe z luka.
+function _typeSetupHints() {
+  const emojiEl = document.getElementById('tEmoji');
+  const hintEl  = document.getElementById('tHint');
+  if (!emojiEl || !hintEl) return;
+  emojiEl.textContent = ''; emojiEl.style.display = 'none';
+  hintEl.innerHTML = '';    hintEl.style.display = 'none';
+  if (curIdx === null) return;
+  const word = activeWords[curIdx], wordPl = word[0];
+  // Emoji (klucz = polskie slowo) — nad slowem do wpisania.
+  const em = getWordEmojiRaw(wordPl);
+  if (em) { emojiEl.textContent = em; emojiEl.style.display = ''; }
+  // Zdania — pomijamy, gdy wyrazenie do wpisania ma wiecej niz 3 wyrazy.
+  const ans = getA(curIdx);
+  const ansWords = String(ans || '').trim().split(/\s+/).filter(Boolean).length;
+  if (ansWords > 3) return;
+  let sPl = '', sEn = '';
+  const inline = getInlineSentences(word);
+  if (inline.sentPl || inline.sentEn) { sPl = inline.sentPl; sEn = inline.sentEn; }
+  else { const s = DB.getSentence(currentBookId, wordPl); if (s) { sPl = s.sentence_pl || ''; sEn = s.sentence_target || ''; } }
+  if (!sPl && !sEn) return;
+  // Zdanie w jezyku PROMPTU (pelne, w nawiasie) + zdanie w jezyku ODPOWIEDZI (z luka).
+  const promptIsPl = (studyDir === 'pl_en');
+  const hintSent   = promptIsPl ? sPl : sEn;
+  const answerSent = promptIsPl ? sEn : sPl;
+  let html = '';
+  if (hintSent) html += '<div style="color:var(--muted,#8a8f98);font-style:italic">(' + esc(hintSent) + ')</div>';
+  if (answerSent) {
+    const gapped = _gapSentence(answerSent, ans);
+    if (gapped) html += '<div style="margin-top:4px;color:var(--text)">' + gapped + '</div>';
+  }
+  if (html) { hintEl.innerHTML = html; hintEl.style.display = ''; }
 }
 
 // ══════════════════════════════════════════════
@@ -8918,7 +9136,7 @@ function checkMissing() {
     playOk(); bounce('missingArea'); particles(true); owlR(good ? 'easy' : 'hard');
     _recordAnswerLogged(good);
     spkForeign(cor);
-    setTimeout(() => rate(good ? 'easy' : 'hard'), 1500);
+    setTimeout(() => rate(good ? _gradeGood() : 'hard'), 1500);
     return;
   }
   typeAttempts++;
@@ -8929,7 +9147,7 @@ function checkMissing() {
     r.className = 'type-result err';
     r.innerHTML = '✗ Poprawna odpowiedź: <span class="ar">' + esc(cor) + '</span><br>Twoja: ' + letterDiffHtml(u, cor);
     spkForeign(cor);
-    setTimeout(() => rate('hard'), 1600);
+    setTimeout(() => rate('again'), 1600);
   } else {
     r.className = 'type-result err';
     r.innerHTML = '✗ Prawie! Popraw litery i spróbuj jeszcze raz:<br>' + letterDiffHtml(u, cor);
@@ -8964,7 +9182,7 @@ function checkDictation() {
     playOk(); bounce('dictateArea'); particles(true); owlR(good ? 'easy' : 'hard');
     _recordAnswerLogged(good);
     document.getElementById('dictSpeak').style.display = 'block';
-    setTimeout(() => rate(good ? 'easy' : 'hard'), 1500);
+    setTimeout(() => rate(good ? _gradeGood() : 'hard'), 1500);
     return;
   }
   typeAttempts++;
@@ -8975,7 +9193,7 @@ function checkDictation() {
     r.className = 'type-result err';
     r.innerHTML = '✗ Poprawna odpowiedź: <span class="ar">' + esc(cor) + '</span><br>Twoja: ' + letterDiffHtml(u, cor);
     document.getElementById('dictSpeak').style.display = 'block';
-    setTimeout(() => rate('hard'), 1600);
+    setTimeout(() => rate('again'), 1600);
   } else {
     r.className = 'type-result err';
     r.innerHTML = '✗ Prawie! Posłuchaj jeszcze raz, popraw litery i spróbuj ponownie:<br>' + letterDiffHtml(u, cor);
@@ -9006,7 +9224,7 @@ function checkTF(userSaysTrue) {
     trackMissed(); sessErrorCount++;
   }
   spkForeign(getA(curIdx));
-  setTimeout(() => rate(ok ? 'easy' : 'hard'), 1500);
+  setTimeout(() => rate(ok ? _gradeGood() : 'again'), 1500);
 }
 
 // ══════════════════════════════════════════════
@@ -9023,7 +9241,7 @@ function trackMissed() {
 // ══════════════════════════════════════════════
 //  RATE DIFFICULTY
 // ══════════════════════════════════════════════
-function rate(r) {
+function rate(r, noAdvance) {
   if (curIdx === null) return;
   clearInterval(studySpeedTimer); // zatrzymaj timer speed jeśli aktywny
 
@@ -9044,18 +9262,23 @@ function rate(r) {
   updateDailyBar();
 
   const grad = ws[curIdx].known;
-  toast({
-    hard: '+' + xp + ' XP · 📌 za 1 dzień',
-    medium: '+' + xp + ' XP · za 2 dni',
-    easy: grad ? '+' + xp + ' XP · 🎓 Opanowane!' : '+' + xp + ' XP · ⭐ za 6 dni'
-  }[r]);
+  // Komunikat z realnym interwalem FSRS (dni do kolejnej powtorki).
+  const iv = ws[curIdx].interval;
+  const _dni = (n) => n === 1 ? '1 dzień' : (n + ' dni');
+  let tail;
+  if (r === 'again') tail = '🔁 powtórka wkrótce';
+  else if (grad) tail = '🎓 Opanowane! · 📌 za ' + _dni(iv);
+  else tail = '📌 za ' + _dni(iv);
+  toast('+' + xp + ' XP · ' + tail);
 
   if (mode === 'card') {
-    if (r === 'easy') { particles(true); bounce('cardScene'); }
-    else if (r === 'hard') shake('cardScene');
-    owlR(r);
+    if (r === 'easy' || r === 'good') { particles(true); bounce('cardScene'); }
+    else if (r === 'again' || r === 'hard') shake('cardScene');
+    owlR(r === 'good' ? 'medium' : (r === 'again' ? 'hard' : r));
   }
-  if (r !== 'hard') streak++; else streak = 0;
+  // Seria (combo) rosnie przy pewnej odpowiedzi; lamie sie przy blednej (again)
+  // oraz gdy uczen sam oznaczyl slowo jako trudne.
+  if (r === 'easy' || r === 'good' || r === 'medium') streak++; else streak = 0;
   if (streak > 0) { try { DB.recordBestCombo(streak); } catch(e) {} }
   if (streak > 0 && streak % 5 === 0) giveReward();
 
@@ -9066,6 +9289,9 @@ function rate(r) {
 
   checkAchievements();
   hideDiff(); updateStats();
+  // noAdvance: nie przechodz od razu do nastepnej karty — wywolujacy sam
+  // steruje przejsciem (np. tryb Wpisz trzyma poprawna odpowiedz 10 s).
+  if (noAdvance) return;
   if (!pool.length) { setTimeout(showDone, 800); return; }
   setTimeout(generate, 50);
 }
@@ -10165,7 +10391,7 @@ function renderSpeedCard() {
       trackMissed(); sessErrorCount++;
       _recordAnswerLogged(false);
       revealed = true;
-      setTimeout(() => { if (mode === 'speed') rate('hard'); }, 1400);
+      setTimeout(() => { if (mode === 'speed') rate('again'); }, 1400);
     }
   }, 1000);
 }
@@ -10210,7 +10436,7 @@ function onSpeedStudyAnswer(btn, ok, correct) {
   playOk(); owlR(good ? 'easy' : 'hard');
   spkForeign(correct);
   _recordAnswerLogged(good);
-  setTimeout(() => { if (mode === 'speed') rate(good ? 'easy' : 'hard'); }, good ? 900 : 1200);
+  setTimeout(() => { if (mode === 'speed') rate(good ? _gradeGood() : 'hard'); }, good ? 900 : 1200);
 }
 
 // ══════════════════════════════════════════════
@@ -10356,7 +10582,13 @@ document.addEventListener('keydown', e => {
   if (!studyActive) return;
   if (!active) return;
   if (e.code === 'Space') { e.preventDefault(); if (mode==='card'&&!revealed) flipCard(); }
-  if (revealed) {
+  // „Dalej" w trybie Wpisz podczas 10-sekundowego pokazania poprawnej odpowiedzi.
+  if (mode==='type' && e.key==='Enter') {
+    const nx = document.getElementById('btnTypeNext');
+    if (nx && nx.style.display !== 'none') { e.preventDefault(); typeNextNow(); return; }
+  }
+  // Strzalki oceniaja tylko w trybie Fiszki (nie w trybach z auto-ocena).
+  if (revealed && mode==='card') {
     if (e.key==='ArrowLeft') { e.preventDefault(); rate('hard'); }
     if (e.key==='ArrowDown') { e.preventDefault(); rate('medium'); }
     if (e.key==='ArrowRight') { e.preventDefault(); rate('easy'); }
@@ -11986,7 +12218,7 @@ function checkTypeSent() {
     trackMissed(); sessErrorCount++;
   }
   spkForeign(tsSentAnswer);
-  setTimeout(() => rate(ok ? 'easy' : 'hard'), 1800);
+  setTimeout(() => rate(ok ? _gradeGood() : 'again'), 1800);
 }
 
 // ══════════════════════════════════════════════
@@ -12042,7 +12274,7 @@ function checkDictSent() {
     trackMissed(); sessErrorCount++;
   }
   spkForeign(dsSentAnswer);
-  setTimeout(() => rate(ok ? 'easy' : 'hard'), 1800);
+  setTimeout(() => rate(ok ? _gradeGood() : 'again'), 1800);
 }
 
 // ══════════════════════════════════════════════
@@ -12138,7 +12370,7 @@ function ssListen() {
     document.getElementById('ssHintText').style.display = 'block';
     document.getElementById('ssHintBtn').style.display = 'none';
     spkForeign(ssSentAnswer);
-    setTimeout(() => rate(ok ? 'easy' : 'hard'), 2000);
+    setTimeout(() => rate(ok ? _gradeGood() : 'again'), 2000);
   };
 
   recognition.onerror = function(event) {
@@ -12324,7 +12556,7 @@ function speakShowResult(ok, heard) {
     trackMissed(); sessErrorCount++;
   }
   spkForeign(speakAnswer);
-  setTimeout(() => rate(ok ? 'easy' : 'hard'), 1800);
+  setTimeout(() => rate(ok ? _gradeGood() : 'again'), 1800);
 }
 
 // ══════════════════════════════════════════════
@@ -16010,7 +16242,7 @@ function checkGap() {
     trackMissed(); sessErrorCount++;
   }
   spkForeign(cor);
-  setTimeout(() => rate(ok ? 'easy' : 'hard'), 1500);
+  setTimeout(() => rate(ok ? _gradeGood() : 'again'), 1500);
 }
 
 // Obsługa Enter w polu gap
@@ -16152,7 +16384,7 @@ function checkScramble() {
     trackMissed(); sessErrorCount++;
   }
   spkForeign(scrAnswer);
-  setTimeout(() => rate(ok ? 'easy' : 'hard'), 1500);
+  setTimeout(() => rate(ok ? _gradeGood() : 'again'), 1500);
 }
 
 // ══════════════════════════════════════════════
@@ -16255,7 +16487,7 @@ function checkSentScr() {
     trackMissed(); sessErrorCount++;
   }
   spkForeign(correctSentence);
-  setTimeout(() => rate(ok ? 'easy' : 'hard'), 1800);
+  setTimeout(() => rate(ok ? _gradeGood() : 'again'), 1800);
 }
 
 // ─── Druk: Rozsypanka literowa ────────────────
@@ -18311,6 +18543,7 @@ function buildAlphaKeys(inputId, answer) {
       if (!inp || inp.disabled) return;
       inp.value += ch.toLowerCase();
       inp.focus();
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
     });
     container.appendChild(key);
   });
@@ -18324,6 +18557,7 @@ function buildAlphaKeys(inputId, answer) {
       if (!inp || inp.disabled) return;
       inp.value += ' ';
       inp.focus();
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
     });
     container.appendChild(space);
   }
@@ -18336,6 +18570,7 @@ function buildAlphaKeys(inputId, answer) {
     if (!inp || inp.disabled) return;
     inp.value = inp.value.slice(0, -1);
     inp.focus();
+    inp.dispatchEvent(new Event('input', { bubbles: true }));
   });
   container.appendChild(bk);
 }
