@@ -2690,7 +2690,7 @@ body.guest-mode .progress-wrap{opacity:.4;}
   <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;margin-bottom:12px">
     <button class="btn-sm accent" onclick="toggleSentences()" id="btnToggleSentences" style="font-size:.68rem">💬 Zobacz zdania</button>
     <button class="btn-sm" onclick="printWordList()" style="font-size:.68rem">🖨️ Drukuj listę</button>
-    <button class="btn-sm" onclick="printFlashcards()" style="font-size:.68rem">🃏 Fiszki do druku</button>
+    <button class="btn-sm" onclick="printFlashcardsChoose()" style="font-size:.68rem">🃏 Fiszki do druku</button>
     <button class="btn-sm" onclick="printScrambleSheet()" style="font-size:.68rem">🔀 Rozsypanka literowa</button>
     <button class="btn-sm" onclick="printSentScrSheet()" style="font-size:.68rem">📜 Rozsypanka zdaniowa</button>
     <button class="btn-sm" id="btnBulkAudio" onclick="openBulkAudioModal()" style="font-size:.68rem;display:none;background:linear-gradient(135deg,#ff6b6b,#ee5253);color:#fff">🎙️ Nagrania wymowy</button>
@@ -6357,7 +6357,12 @@ function printWordList() {
   win.print();
 }
 
-function printFlashcards() {
+// Wybór trybu druku fiszek: same słowa czy ze zdaniami przykładowymi.
+function printFlashcardsChoose() {
+  const withSent = confirm('Jak wydrukować fiszki?\n\n[OK] = ze zdaniami przykładowymi (słowo + zdanie)\n[Anuluj] = same słowa');
+  printFlashcards(withSent);
+}
+function printFlashcards(withSentences) {
   const units = getUnitsWithCustom(currentBookId);
   const u = units[currentUnitKey];
   const book = BOOKS[currentBookId];
@@ -6393,8 +6398,9 @@ h2{text-align:center;font-size:9pt;color:#888;margin-bottom:4px;font-weight:400}
     for (let i = 0; i < perPage; i++) {
       const w = slice[i];
       if (w) {
-        const s = sentencesVisible ? DB.getSentence(currentBookId, w[0]) : null;
-        const sentHtml = s?.sentence_pl ? '<div class="sub">' + esc(s.sentence_pl) + '</div>' : '';
+        let sPl = '';
+        if (withSentences) { const inl = getInlineSentences(w); if (inl.sentPl || inl.sentEn) sPl = inl.sentPl; else { const d = DB.getSentence(currentBookId, w[0]); sPl = (d && d.sentence_pl) || ''; } }
+        const sentHtml = sPl ? '<div class="sub">' + esc(sPl) + '</div>' : '';
         const em = getWordEmojiRaw(w[0]);
         const emHtml = em ? '<div style="font-size:18pt;line-height:1;margin-bottom:3pt">' + em + '</div>' : '';
         html += '<div class="card"><div class="num">' + (p*perPage+i+1) + '</div>' + emHtml + '<div class="word">' + esc(w[0]) + '</div>' + sentHtml + '</div>';
@@ -6418,8 +6424,9 @@ h2{text-align:center;font-size:9pt;color:#888;margin-bottom:4px;font-weight:400}
       const w = mirrored[i];
       if (w) {
         const origIdx = (function(){ const r=Math.floor(i/cols); const c=i%cols; return r*cols+(cols-1-c); })();
-        const s2 = sentencesVisible ? DB.getSentence(currentBookId, w[0]) : null;
-        const sentHtml2 = s2?.sentence_target ? '<div class="sub">' + esc(s2.sentence_target) + '</div>' : '';
+        let sEn = '';
+        if (withSentences) { const inl = getInlineSentences(w); if (inl.sentPl || inl.sentEn) sEn = inl.sentEn; else { const d = DB.getSentence(currentBookId, w[0]); sEn = (d && d.sentence_target) || ''; } }
+        const sentHtml2 = sEn ? '<div class="sub">' + esc(sEn) + '</div>' : '';
         const em2 = getWordEmojiRaw(w[0]);
         const emHtml2 = em2 ? '<div style="font-size:18pt;line-height:1;margin-bottom:3pt">' + em2 + '</div>' : '';
         html += '<div class="card"><div class="num">' + (p*perPage+origIdx+1) + '</div>' + emHtml2 + '<div class="word">' + esc(w[1]) + '</div>' + sentHtml2 + '</div>';
@@ -8957,25 +8964,53 @@ function _markTypedDay() {
 
 // ══════════════════════════════════════════════
 //  ZALICZENIE DZIENNEJ AKTYWNOŚCI (tryb Wpisz / Wpisz zd.)
-//  Dzień NIE liczy się od jednej odpowiedzi (można by oszukiwać). Uczeń musi
-//  opanować co najmniej 5 różnych słów, każde poprawnie za PIERWSZYM razem
-//  min. 3 razy (5 × 3 = 15 pewnych trafień na 5 różnych słowach). Dopiero
-//  wtedy dzień idzie do oceny tygodniowej i pojawia się komunikat.
+//  Dzień NIE liczy się od jednej odpowiedzi (można by oszukiwać). Zaliczenie,
+//  gdy spełniony JEDEN z warunków:
+//   A) opanowano ≥5 różnych słów (każde poprawnie za 1. razem min. 3×), LUB
+//   B) uczeń z trudnościami: ≥20 wpisów (prób sprawdzenia) i przy tym ≥2
+//      opanowane słowa — żeby nauka nie była nieskończenie długa/monotonna.
+//  Dopiero wtedy dzień idzie do oceny tygodniowej i pojawia się komunikat.
 // ══════════════════════════════════════════════
-const TYPED_DAY_WORDS_GOAL = 5; // ile różnych słów
-const TYPED_DAY_REPS_GOAL  = 3; // ile pewnych trafień na słowo
+const TYPED_DAY_WORDS_GOAL  = 5;  // A) ile różnych słów do zaliczenia
+const TYPED_DAY_REPS_GOAL   = 3;  // ile pewnych trafień, by słowo uznać za opanowane
+const TYPED_DAY_MIN_ENTRIES = 20; // B) minimalna liczba wpisów (prób sprawdzenia)
+const TYPED_DAY_MIN_WORDS   = 2;  // B) minimalna liczba opanowanych słów przy ≥20 wpisach
 function _typedDayStore() {
   const today = new Date().toISOString().slice(0, 10);
   let o = {};
   try { o = JSON.parse(localStorage.getItem('fiszki_typed_day') || '{}'); } catch(e) {}
-  if (o.day !== today) o = { day: today, words: {}, credited: false };
+  if (o.day !== today) o = { day: today, words: {}, entries: 0, credited: false };
   if (!o.words) o.words = {};
+  if (typeof o.entries !== 'number') o.entries = 0;
   return o;
 }
 function _typedDaySave(o) { try { localStorage.setItem('fiszki_typed_day', JSON.stringify(o)); } catch(e) {} }
 function _typedLearnedCount(o) { return Object.values(o.words).filter(n => n >= TYPED_DAY_REPS_GOAL).length; }
-// Wywoływane przy każdej odpowiedzi w trybie Wpisz/Wpisz zd. Liczymy TYLKO
-// pewne trafienia (za pierwszym razem, bez pokazania odpowiedzi).
+// Sprawdza warunki zaliczenia; jeśli spełnione — zalicza dzień i pokazuje komunikat.
+function _typedDayCheckCredit(o) {
+  if (o.credited) return true;
+  const learned = _typedLearnedCount(o);
+  const entries = o.entries || 0;
+  const met = (learned >= TYPED_DAY_WORDS_GOAL)
+           || (entries >= TYPED_DAY_MIN_ENTRIES && learned >= TYPED_DAY_MIN_WORDS);
+  if (met) {
+    o.credited = true; _typedDaySave(o);
+    _markTypedDay();                     // ZALICZ dzień do oceny tygodniowej
+    _showDailyDoneMsg(learned);
+    return true;
+  }
+  return false;
+}
+// Wywoływane przy KAŻDEJ próbie sprawdzenia (wpisie) — liczy warunek B (≥20 wpisów).
+function _typedDayEntry() {
+  if (curIdx === null) return;
+  const o = _typedDayStore();
+  if (o.credited) return;
+  o.entries = (o.entries || 0) + 1;
+  _typedDaySave(o);
+  _typedDayCheckCredit(o);
+}
+// Wywoływane przy PEWNYM trafieniu (za 1. razem, bez pokazania odpowiedzi) — liczy opanowane słowa.
 function _typedDayProgress(firstTryCorrect) {
   if (!firstTryCorrect || curIdx === null || !activeWords[curIdx]) return;
   const o = _typedDayStore();
@@ -8983,23 +9018,18 @@ function _typedDayProgress(firstTryCorrect) {
   const key = currentBookId + '|' + currentUnitKey + '|' + activeWords[curIdx][0];
   const before = _typedLearnedCount(o);
   o.words[key] = Math.min(TYPED_DAY_REPS_GOAL, (o.words[key] || 0) + 1);
+  _typedDaySave(o);
   const after = _typedLearnedCount(o);
-  if (after >= TYPED_DAY_WORDS_GOAL) {
-    o.credited = true; _typedDaySave(o);
-    _markTypedDay();                     // ZALICZ dzień do oceny tygodniowej
-    _showDailyDoneMsg();
-  } else {
-    _typedDaySave(o);
-    if (after > before) {                // kolejne słowo opanowane dziś
-      setTimeout(() => toast('💪 Opanowane dziś: ' + after + '/' + TYPED_DAY_WORDS_GOAL + ' słówek', 2600), 1700);
-    }
+  if (!_typedDayCheckCredit(o) && after > before) { // kolejne słowo opanowane dziś
+    setTimeout(() => toast('💪 Opanowane dziś: ' + after + ' słówek', 2600), 1700);
   }
 }
-function _showDailyDoneMsg() {
+function _showDailyDoneMsg(learned) {
+  const n = learned || TYPED_DAY_MIN_WORDS;
   setTimeout(() => {
     try { particles(true); } catch(e) {}
     try { setOwl('happy'); owlSay('Świetna robota! Dzienna aktywność zaliczona 🎉'); } catch(e) {}
-    toast('🎉 Nauczyłeś się dziś dobrze ' + TYPED_DAY_WORDS_GOAL + ' słówek — zaliczono dzienną aktywność! Możesz kontynuować lub przejść do gier.', 6500);
+    toast('🎉 Zaliczono dzienną aktywność! Nauczyłeś się dziś dobrze ' + n + ' ' + (n === 1 ? 'słówka' : 'słówek') + '. Możesz kontynuować lub przejść do gier.', 6500);
   }, 1700);
 }
 // Zapis pojedynczej odpowiedzi z trybu „Wpisz" (do raportu „Szczegóły Wpisz").
@@ -9018,6 +9048,7 @@ function checkType() {
   if (revealed) return;
   const inp = document.getElementById('tInp'), u = inp.value.trim();
   if (!u) return;
+  _typedDayEntry(); // każda próba sprawdzenia liczy się do warunku ≥20 wpisów
   const cor = getA(curIdx), ok = wordMatchStrict(u, cor);
   const r = document.getElementById('tRes');
   if (ok) {
@@ -12251,6 +12282,7 @@ function checkTypeSent() {
   const inp = document.getElementById('tsInp');
   const u = inp.value.trim();
   if (!u) return;
+  _typedDayEntry(); // każda próba sprawdzenia liczy się do warunku ≥20 wpisów
   revealed = true; inp.disabled = true; document.getElementById('btnTsChk').disabled = true;
   const ok = fuzzy(u, tsSentAnswer) || levenshteinSimilar(u, tsSentAnswer);
   const r = document.getElementById('tsRes');
