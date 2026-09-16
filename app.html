@@ -6492,6 +6492,7 @@ function startStudy(key, forcedPool = null) {
   document.getElementById('livesBar').classList.remove('visible');
   document.getElementById('gameoverBar').style.display = 'none';
   document.getElementById('btnGen').disabled = false;
+  document.getElementById('btnGen').style.display = ''; // gotowy do startu — pokaż „Generuj"
   document.getElementById('wPl').textContent = 'Kliknij „Generuj" 🎲';
   document.getElementById('wEn').textContent = '—';
   hideDiff();
@@ -7519,6 +7520,7 @@ function startHardWordsSession(hardWords) {
   document.getElementById('livesBar').classList.remove('visible');
   document.getElementById('gameoverBar').style.display = 'none';
   document.getElementById('btnGen').disabled = false;
+  document.getElementById('btnGen').style.display = ''; // gotowy do startu — pokaż „Generuj"
   hideDiff();
   mode = 'card';
   document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
@@ -7554,6 +7556,7 @@ function startReviewSession() {
   document.getElementById('livesBar').classList.remove('visible');
   document.getElementById('gameoverBar').style.display = 'none';
   document.getElementById('btnGen').disabled = false;
+  document.getElementById('btnGen').style.display = ''; // gotowy do startu — pokaż „Generuj"
   hideDiff();
   mode = 'card';
   document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
@@ -7748,9 +7751,18 @@ function pickNext() {
 // ══════════════════════════════════════════════
 //  GENERATE
 // ══════════════════════════════════════════════
+// Przycisk „🎲 Generuj" potrzebny jest TYLKO do wystartowania sesji (pierwsza
+// karta). Potem karty pojawiają się automatycznie (auto-advance po ocenie/
+// odpowiedzi), więc gdy sesja trwa (active) chowamy przycisk. Wraca w stanie
+// „gotowy do startu" (active=false: startStudy / powtórki / przełączenie trybu).
+function _syncGenBtn() {
+  const b = document.getElementById('btnGen');
+  if (b) b.style.display = active ? 'none' : '';
+}
 function generate() {
   if (!pool.length) { showDone(); return; }
   active = true; revealed = false; flipped = false; hideDiff();
+  _syncGenBtn(); // sesja trwa — schowaj „Generuj" (dalej karty lecą same)
   curIdx = pickNext();
   if (curIdx === null) { showDone(); return; }
   renderCard(); updateStats();
@@ -9026,11 +9038,29 @@ function _typedDayProgress(firstTryCorrect) {
 }
 function _showDailyDoneMsg(learned) {
   const n = learned || TYPED_DAY_MIN_WORDS;
+  try { particles(true); } catch(e) {}
+  try { setOwl('happy'); owlSay('Świetna robota! 🎉'); } catch(e) {}
+  // Wyraźny modal z przyciskiem zamknięcia — żeby uczeń nie przegapił, że
+  // zaliczył dzienne minimum i może robić coś innego.
   setTimeout(() => {
-    try { particles(true); } catch(e) {}
-    try { setOwl('happy'); owlSay('Świetna robota! Dzienna aktywność zaliczona 🎉'); } catch(e) {}
-    toast('🎉 Zaliczono dzienną aktywność! Nauczyłeś się dziś dobrze ' + n + ' ' + (n === 1 ? 'słówka' : 'słówek') + '. Możesz kontynuować lub przejść do gier.', 6500);
-  }, 1700);
+    if (document.getElementById('dailyDoneModal')) return; // już pokazany
+    const ov = document.createElement('div');
+    ov.id = 'dailyDoneModal';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9500;display:flex;align-items:center;justify-content:center;padding:20px;animation:fadeIn .2s ease';
+    ov.innerHTML =
+      '<div style="background:var(--surface);border:2px solid var(--accent2,#06d6a0);border-radius:18px;max-width:390px;width:100%;padding:26px 22px;text-align:center;box-shadow:0 14px 44px rgba(0,0,0,.45)">' +
+        '<div style="font-size:3.2rem;line-height:1;margin-bottom:6px">🎉</div>' +
+        '<div style="font-family:\'Playfair Display\',serif;font-size:1.45rem;color:var(--accent);margin-bottom:10px">Dzienna nauka zaliczona!</div>' +
+        '<div style="font-size:.92rem;color:var(--text);line-height:1.55;margin-bottom:6px">Nauczyłeś się dziś dobrze <strong>' + n + '</strong> ' + (n === 1 ? 'słówka' : 'słówek') + '. 👏</div>' +
+        '<div style="font-size:.82rem;color:var(--muted);line-height:1.55;margin-bottom:20px">Możesz spokojnie skończyć na dziś, uczyć się dalej albo przejść do gier i innych trybów.</div>' +
+        '<button id="dailyDoneClose" style="background:var(--accent2,#06d6a0);color:#fff;border:none;padding:12px 28px;border-radius:11px;font-size:.98rem;font-weight:800;cursor:pointer;font-family:inherit">✅ Super, rozumiem</button>' +
+      '</div>';
+    const close = () => { const m = document.getElementById('dailyDoneModal'); if (m) m.remove(); };
+    ov.addEventListener('click', (e) => { if (e.target === ov) close(); });
+    document.body.appendChild(ov);
+    const btn = document.getElementById('dailyDoneClose');
+    if (btn) btn.addEventListener('click', close);
+  }, 700);
 }
 // Zapis pojedynczej odpowiedzi z trybu „Wpisz" (do raportu „Szczegóły Wpisz").
 function _logTypedAns(u, correct) {
@@ -9414,6 +9444,7 @@ function setMode(m) {
   document.getElementById(modeMap[m]).classList.add('active');
   document.getElementById('livesBar').classList.toggle('visible', m === 'quiz');
   hideAreas(); revealed = false; hideDiff();
+  _syncGenBtn(); // sesja trwa → schowaj „Generuj"; czeka na start → pokaż
   if (active && curIdx !== null) renderCard();
   else {
     if (m === 'card') document.getElementById('cardScene').style.display = '';
