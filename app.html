@@ -8954,6 +8954,54 @@ function _markTypedDay() {
   _typedDayMark = today;
   try { if (DB.logTypedDay) DB.logTypedDay(); } catch(e) {}
 }
+
+// ══════════════════════════════════════════════
+//  ZALICZENIE DZIENNEJ AKTYWNOŚCI (tryb Wpisz / Wpisz zd.)
+//  Dzień NIE liczy się od jednej odpowiedzi (można by oszukiwać). Uczeń musi
+//  opanować co najmniej 5 różnych słów, każde poprawnie za PIERWSZYM razem
+//  min. 3 razy (5 × 3 = 15 pewnych trafień na 5 różnych słowach). Dopiero
+//  wtedy dzień idzie do oceny tygodniowej i pojawia się komunikat.
+// ══════════════════════════════════════════════
+const TYPED_DAY_WORDS_GOAL = 5; // ile różnych słów
+const TYPED_DAY_REPS_GOAL  = 3; // ile pewnych trafień na słowo
+function _typedDayStore() {
+  const today = new Date().toISOString().slice(0, 10);
+  let o = {};
+  try { o = JSON.parse(localStorage.getItem('fiszki_typed_day') || '{}'); } catch(e) {}
+  if (o.day !== today) o = { day: today, words: {}, credited: false };
+  if (!o.words) o.words = {};
+  return o;
+}
+function _typedDaySave(o) { try { localStorage.setItem('fiszki_typed_day', JSON.stringify(o)); } catch(e) {} }
+function _typedLearnedCount(o) { return Object.values(o.words).filter(n => n >= TYPED_DAY_REPS_GOAL).length; }
+// Wywoływane przy każdej odpowiedzi w trybie Wpisz/Wpisz zd. Liczymy TYLKO
+// pewne trafienia (za pierwszym razem, bez pokazania odpowiedzi).
+function _typedDayProgress(firstTryCorrect) {
+  if (!firstTryCorrect || curIdx === null || !activeWords[curIdx]) return;
+  const o = _typedDayStore();
+  if (o.credited) return;                // dzień już zaliczony
+  const key = currentBookId + '|' + currentUnitKey + '|' + activeWords[curIdx][0];
+  const before = _typedLearnedCount(o);
+  o.words[key] = Math.min(TYPED_DAY_REPS_GOAL, (o.words[key] || 0) + 1);
+  const after = _typedLearnedCount(o);
+  if (after >= TYPED_DAY_WORDS_GOAL) {
+    o.credited = true; _typedDaySave(o);
+    _markTypedDay();                     // ZALICZ dzień do oceny tygodniowej
+    _showDailyDoneMsg();
+  } else {
+    _typedDaySave(o);
+    if (after > before) {                // kolejne słowo opanowane dziś
+      setTimeout(() => toast('💪 Opanowane dziś: ' + after + '/' + TYPED_DAY_WORDS_GOAL + ' słówek', 2600), 1700);
+    }
+  }
+}
+function _showDailyDoneMsg() {
+  setTimeout(() => {
+    try { particles(true); } catch(e) {}
+    try { setOwl('happy'); owlSay('Świetna robota! Dzienna aktywność zaliczona 🎉'); } catch(e) {}
+    toast('🎉 Nauczyłeś się dziś dobrze ' + TYPED_DAY_WORDS_GOAL + ' słówek — zaliczono dzienną aktywność! Możesz kontynuować lub przejść do gier.', 6500);
+  }, 1700);
+}
 // Zapis pojedynczej odpowiedzi z trybu „Wpisz" (do raportu „Szczegóły Wpisz").
 function _logTypedAns(u, correct) {
   try {
@@ -8970,7 +9018,6 @@ function checkType() {
   if (revealed) return;
   const inp = document.getElementById('tInp'), u = inp.value.trim();
   if (!u) return;
-  _markTypedDay();
   const cor = getA(curIdx), ok = wordMatchStrict(u, cor);
   const r = document.getElementById('tRes');
   if (ok) {
@@ -8983,6 +9030,7 @@ function checkType() {
     playOk(); bounce('typeArea'); particles(true); owlR(good ? 'easy' : 'hard');
     _recordAnswerLogged(good);
     _logTypedAns(u, true);
+    _typedDayProgress(good); // liczy do zaliczenia dnia (tylko pewne trafienia)
     document.getElementById('tSpeak').style.display = 'block';
     spkForeign(cor);
     setTimeout(() => rate(good ? _gradeGood() : 'hard'), 1500);
@@ -9028,7 +9076,6 @@ function typeRevealAnswer() {
   if (mode !== 'type' || revealed || curIdx === null) return;
   const inp = document.getElementById('tInp');
   const cor = getA(curIdx), u = (inp.value || '').trim();
-  _markTypedDay();
   revealed = true; inp.disabled = true;
   document.getElementById('btnChk').disabled = true;
   document.getElementById('btnTypeReveal').style.display = 'none';
@@ -9801,7 +9848,10 @@ function _acqCompute(bookIds, stateGetter) {
   return { total, veryWell, well, introduced, notIntroduced };
 }
 // ── System oceny sugerowanej (ocena szkolna 1-6) ──────────────────
-// OCENA TYGODNIOWA — wg liczby DNI w tygodniu z pracą w trybie „Wpisz":
+// OCENA TYGODNIOWA — wg liczby DNI w tygodniu z ZALICZONĄ dzienną aktywnością
+// w trybie „Wpisz". Dzień zalicza się dopiero po opanowaniu ≥5 różnych słów
+// (każde poprawnie za 1. razem min. 3×) — patrz _typedDayProgress. Chroni
+// przed oszukiwaniem (jedna odpowiedź to za mało).
 //   1 dzień lub brak → 1, 2 dni → 2, 3 → 3, 4 → 4, 5+ dni → 5.
 // (Bonus +1 za opanowanie całego rozdziału w tygodniu — planowany, wymaga
 //  dat opanowania per-słowo; obecnie nienaliczany.) Maksimum to 6.
@@ -12201,7 +12251,6 @@ function checkTypeSent() {
   const inp = document.getElementById('tsInp');
   const u = inp.value.trim();
   if (!u) return;
-  _markTypedDay();
   revealed = true; inp.disabled = true; document.getElementById('btnTsChk').disabled = true;
   const ok = fuzzy(u, tsSentAnswer) || levenshteinSimilar(u, tsSentAnswer);
   const r = document.getElementById('tsRes');
@@ -12210,6 +12259,7 @@ function checkTypeSent() {
     r.innerHTML = '✓ Poprawnie! <span class="ar">' + esc(tsSentAnswer) + '</span>';
     playOk(); bounce('typeSentArea'); particles(true); owlR('easy');
     _recordAnswerLogged(true);
+    _typedDayProgress(true); // zdanie wpisane poprawnie liczy do zaliczenia dnia
   } else {
     inp.classList.add('wrong-inp'); r.className = 'type-result err';
     r.innerHTML = '✗ Poprawne zdanie: <span class="ar">' + esc(tsSentAnswer) + '</span>';
