@@ -17279,20 +17279,30 @@ async function openAdminAccess() {
 function buildAccessUserCard(u) {
   const card = document.createElement('div');
   card.style.cssText = 'background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 16px;margin-bottom:8px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;transition:border-color .2s;flex-wrap:wrap';
-  // Daty: utworzenie konta + ostatnia aktywnosc
+  // Daty: utworzenie konta + ostatnia aktywnosc + ostatnie logowanie (auth.users)
   const created = u.created_at ? new Date(u.created_at).toLocaleDateString('pl-PL') : '—';
   const lastSeen = u.last_study_date
     ? new Date(u.last_study_date).toLocaleDateString('pl-PL') : '—';
+  const loginMs = (typeof _userLastSignInMs === 'function') ? _userLastSignInMs(u) : null;
+  const loginTxt = loginMs === null
+    ? '<strong style="color:var(--danger)">nigdy</strong>'
+    : '<strong>' + esc(new Date(loginMs).toLocaleDateString('pl-PL')) + '</strong>';
+  // Plakietka roli
+  let roleBadge;
+  if (u.is_teacher)      roleBadge = '<span style="font-size:.58rem;background:rgba(255,209,102,.15);color:var(--accent);padding:1px 6px;border-radius:100px;margin-left:4px">👩‍🏫 Nauczyciel</span>';
+  else if (u.is_parent)  roleBadge = '<span style="font-size:.58rem;background:rgba(124,77,255,.13);color:var(--accent);padding:1px 6px;border-radius:100px;margin-left:4px">👨‍👩‍👧 Opiekun</span>';
+  else                   roleBadge = '<span style="font-size:.58rem;background:rgba(6,214,160,.1);color:var(--accent2);padding:1px 6px;border-radius:100px;margin-left:4px">🎓 Uczeń</span>';
   const isSelected = _bulkSelected.has(u.id);
   card.innerHTML = `
     <label style="display:flex;align-items:center;flex-shrink:0;cursor:pointer" onclick="event.stopPropagation()">
       <input type="checkbox" ${isSelected?'checked':''} onchange="bulkToggleUser('${u.id}', this.checked)" style="accent-color:var(--accent2);width:16px;height:16px;cursor:pointer">
     </label>
     <div style="min-width:0;flex:1">
-      <div style="font-size:.88rem;font-weight:700;color:var(--text)">${fmtNameWithLabel(u.id, u.username)} ${u.is_teacher ? '<span style="font-size:.58rem;background:rgba(255,209,102,.15);color:var(--accent);padding:1px 6px;border-radius:100px;margin-left:4px">👩‍🏫 Nauczyciel</span>' : '<span style="font-size:.58rem;background:rgba(6,214,160,.1);color:var(--accent2);padding:1px 6px;border-radius:100px;margin-left:4px">🎓 Uczeń</span>'}</div>
+      <div style="font-size:.88rem;font-weight:700;color:var(--text)">${fmtNameWithLabel(u.id, u.username)} ${roleBadge}</div>
       <div style="font-size:.65rem;color:var(--muted);display:flex;gap:10px;flex-wrap:wrap;margin-top:3px">
         <span>📅 Utworzone: <strong>${esc(created)}</strong></span>
-        <span>👁️ Ostatnio: <strong>${esc(lastSeen)}</strong></span>
+        <span>🔑 Logowanie: ${loginTxt}</span>
+        <span>👁️ Nauka: <strong>${esc(lastSeen)}</strong></span>
         <span>Poz. ${u.level || 1} · ${u.total_sessions || 0} sesji</span>
       </div>
     </div>
@@ -17315,29 +17325,102 @@ function buildAccessUserCard(u) {
   return card;
 }
 
-function renderAccessUserList() {
-  const el = document.getElementById('accessUserList');
+// ── Zakładki „Zarządzanie dostępem": grupowanie wg twórcy + filtry statystyk ──
+let _accessTab = 'all';
+let _loginStats = {};          // mapa id -> { lastSignIn, authCreated } (z DB.adminLoginStats)
+let _accessVisibleIds = [];    // id widoczne w aktywnej zakładce (do master-checkbox / „zaznacz wszystkich")
+
+function _accessAllUsers() {
   const myId = DB.getUserId();
-  const users = _allProfiles.filter(p => p.id !== myId && !p.is_admin);
+  return _allProfiles.filter(p => p.id !== myId && !p.is_admin);
+}
+function _inactive5moMs() { const d = new Date(); d.setMonth(d.getMonth() - 5); return d.getTime(); }
+function _userLastSignInMs(u) {
+  const s = _loginStats[u.id];
+  return (s && s.lastSignIn) ? new Date(s.lastSignIn).getTime() : null;
+}
+function _accessFilter(users, tab) {
+  if (tab === 'never')     return users.filter(u => _userLastSignInMs(u) === null);
+  if (tab === 'inactive5') { const th = _inactive5moMs(); return users.filter(u => { const t = _userLastSignInMs(u); return t !== null && t < th; }); }
+  if (tab && tab.indexOf('by:') === 0) { const cid = tab.slice(3); return users.filter(u => (u.created_by || '__self__') === cid); }
+  return users; // 'all'
+}
+function setAccessTab(key) { _accessTab = key; renderAccessUserList(); }
+window.setAccessTab = setAccessTab;
+
+async function renderAccessUserList() {
+  const el = document.getElementById('accessUserList');
+  const users = _accessAllUsers();
   if (!users.length) {
-    el.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:.8rem;padding:24px;font-weight:600">Brak uczniów do wyświetlenia.</div>';
+    el.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:.8rem;padding:24px;font-weight:600">Brak kont do wyświetlenia.</div>';
+    _accessVisibleIds = [];
     return;
   }
-  // Sortuj od najnowszych do najstarszych kont (created_at malejaco)
-  users.sort((a, b) => {
+  // Statystyki logowań (raz, z cache). Wymaga migracji #53 — bez niej mapa pusta.
+  if (!Object.keys(_loginStats).length) { try { _loginStats = await DB.adminLoginStats(); } catch(e) {} }
+
+  // Liczniki do zakładek statystyk
+  const th = _inactive5moMs();
+  const neverN    = users.filter(u => _userLastSignInMs(u) === null).length;
+  const inactiveN = users.filter(u => { const t = _userLastSignInMs(u); return t !== null && t < th; }).length;
+
+  // Zakładki wg twórcy (created_by): admin → „Przeze mnie", null → „Rejestracja własna", reszta → nazwa nauczyciela
+  const myId = DB.getUserId();
+  const nameById = {}; _allProfiles.forEach(p => { nameById[p.id] = p.username; });
+  const byCreator = {};
+  users.forEach(u => { const c = u.created_by || '__self__'; (byCreator[c] = byCreator[c] || 0); byCreator[c]++; });
+  const creatorTabs = Object.keys(byCreator)
+    .sort((a, b) => byCreator[b] - byCreator[a])
+    .map(cid => {
+      let label;
+      if (cid === myId)          label = '👑 Przeze mnie';
+      else if (cid === '__self__') label = '🆕 Rejestracja własna';
+      else                       label = '👩‍🏫 ' + (nameById[cid] || 'inny nauczyciel');
+      return { key: 'by:' + cid, label, count: byCreator[cid] };
+    });
+
+  const tabs = [{ key: 'all', label: '👥 Wszyscy', count: users.length }]
+    .concat(creatorTabs)
+    .concat([{ key: 'never', label: '❗ Nigdy nie zalogowani', count: neverN },
+             { key: 'inactive5', label: '🕔 Nieaktywni 5+ mies.', count: inactiveN }]);
+  if (!tabs.some(t => t.key === _accessTab)) _accessTab = 'all';
+
+  const hasLogin = Object.keys(_loginStats).length > 0;
+
+  let html = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">';
+  tabs.forEach(t => {
+    const active = t.key === _accessTab;
+    const isStat = (t.key === 'never' || t.key === 'inactive5');
+    html += `<button onclick="setAccessTab('${t.key}')" style="cursor:pointer;font-size:.72rem;font-weight:700;padding:6px 11px;border-radius:100px;border:1.5px solid ${active ? 'var(--accent)' : 'var(--border)'};background:${active ? 'rgba(255,209,102,.12)' : 'transparent'};color:${active ? 'var(--accent)' : (isStat ? 'var(--danger)' : 'var(--text)')}">${t.label} <span style="opacity:.7">(${t.count})</span></button>`;
+  });
+  html += '</div>';
+
+  if (!hasLogin) {
+    html += '<div style="font-size:.68rem;color:var(--danger);font-weight:600;margin-bottom:10px;padding:7px 11px;background:rgba(255,118,117,.08);border-radius:9px;border:1px solid rgba(255,118,117,.25)">⚠️ Dane logowań niedostępne — uruchom migrację <strong>admin-account-management.sql (#53)</strong> w Supabase, aby działały zakładki „Nigdy" i „5+ mies.".</div>';
+  }
+
+  // Lista przefiltrowana wg zakładki, najnowsze konta na górze
+  const filtered = _accessFilter(users, _accessTab).sort((a, b) => {
     const aT = a.created_at ? new Date(a.created_at).getTime() : 0;
     const bT = b.created_at ? new Date(b.created_at).getTime() : 0;
     return bT - aT;
   });
-  // Header z master checkbox dla bulk action
-  el.innerHTML = `<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;padding:6px 4px;border-bottom:1px solid var(--border)">
-    <label style="display:flex;align-items:center;gap:6px;cursor:pointer" title="Zaznacz/odznacz wszystkich widocznych">
+  _accessVisibleIds = filtered.map(u => u.id);
+
+  html += `<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;padding:6px 4px;border-bottom:1px solid var(--border)">
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer" title="Zaznacz/odznacz wszystkich w tej zakładce">
       <input type="checkbox" id="bulkMasterCheckbox" onchange="bulkToggleAll(this)" style="accent-color:var(--accent2);width:16px;height:16px;cursor:pointer">
-      <span style="font-size:.65rem;color:var(--muted);font-weight:700">Zaznacz wszystkich (${users.length})</span>
+      <span style="font-size:.65rem;color:var(--muted);font-weight:700">Zaznacz wszystkich w zakładce (${filtered.length})</span>
     </label>
-  </div>`;
-  users.forEach(u => el.appendChild(buildAccessUserCard(u)));
-  // Po renderze: zsynchronizuj master checkbox + toolbar
+  </div><div id="accessListInner"></div>`;
+  el.innerHTML = html;
+
+  const inner = document.getElementById('accessListInner');
+  if (!filtered.length) {
+    inner.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:.78rem;padding:20px;font-weight:600">Brak kont w tej zakładce. 🎉</div>';
+  } else {
+    filtered.forEach(u => inner.appendChild(buildAccessUserCard(u)));
+  }
   bulkSyncMasterCheckbox();
   bulkRefreshToolbar();
 }
@@ -17628,11 +17711,12 @@ async function createNewUser() {
 }
 
 async function confirmDeleteUser(userId, username) {
-  if (!confirm('⚠️ Czy na pewno chcesz TRWALE usunąć użytkownika „' + username + '"?\n\nTo usunie:\n• Konto i profil\n• Wszystkie postępy nauki\n• Przypisania do klas i podręczników\n\nTej operacji NIE MOŻNA cofnąć!')) return;
+  if (!confirm('⚠️ Czy na pewno chcesz TRWALE usunąć użytkownika „' + username + '"?\n\nTo usunie:\n• Konto i profil\n• Wszystkie postępy nauki\n• Przypisania do klas i podręczników\n• Powiązane konto rodzica/opiekuna (jeśli nie ma już innych dzieci)\n\nTej operacji NIE MOŻNA cofnąć!')) return;
   if (!confirm('🔴 OSTATNIE OSTRZEŻENIE\n\nUsuwasz użytkownika: ' + username + '\n\nKliknij OK aby potwierdzić usunięcie.')) return;
   try {
     await DB.adminDeleteUser(userId);
-    _allProfiles = _allProfiles.filter(p => p.id !== userId);
+    // Przeładuj profile z DB — zniknie też kaskadowo usunięty rodzic (bez dzieci).
+    try { _allProfiles = await DB.loadAllProfiles(); } catch(_) { _allProfiles = _allProfiles.filter(p => p.id !== userId); }
     toast('✅ Użytkownik „' + username + '" został usunięty.');
     renderAccessUserList();
   } catch(e) {
@@ -17812,6 +17896,8 @@ async function openClassDetail(classId, className) {
       DB.loadAllProfiles()
     ]);
     _allProfiles = allProfiles;
+    // Statystyki logowań (nauczyciel: tylko swoi uczniowie) — do monitoringu.
+    if (!Object.keys(_loginStats).length) { try { _loginStats = await DB.adminLoginStats(); } catch(e) {} }
     const cls = classes.find(c => c.id === classId);
     _curClassMembers = cls ? (cls.class_members || []).map(m => m.user_id) : [];
     renderClassStudents(_curClassMembers, allProfiles);
@@ -17839,8 +17925,25 @@ function renderClassStudents(memberIds, allProfiles) {
   // Sortuj wg XP (ranking)
   members.sort((a, b) => (b.xp || 0) - (a.xp || 0));
 
+  // Monitoring: nigdy nie zalogowani + nieaktywni 5+ mies. (wymaga migracji #53)
+  const hasLogin = Object.keys(_loginStats).length > 0;
+  const th5 = _inactive5moMs();
+  const neverN    = members.filter(u => _userLastSignInMs(u) === null).length;
+  const inactiveN = members.filter(u => { const t = _userLastSignInMs(u); return t !== null && t < th5; }).length;
+  let monitorBar = '';
+  if (hasLogin && (neverN || inactiveN)) {
+    monitorBar = `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;padding:8px 11px;background:rgba(255,118,117,.06);border:1px solid rgba(255,118,117,.22);border-radius:10px">
+      <span style="font-size:.68rem;font-weight:700;color:var(--muted)">🔎 Monitoring:</span>
+      ${neverN ? `<button class="btn-sm" style="font-size:.66rem;padding:4px 10px;color:var(--danger);border-color:rgba(255,118,117,.4)" onclick="classSelectInactive('never')">❗ Zaznacz nigdy niezalogowanych (${neverN})</button>` : ''}
+      ${inactiveN ? `<button class="btn-sm" style="font-size:.66rem;padding:4px 10px;color:var(--danger);border-color:rgba(255,118,117,.4)" onclick="classSelectInactive('inactive5')">🕔 Zaznacz nieaktywnych 5+ mies. (${inactiveN})</button>` : ''}
+      <span style="font-size:.6rem;color:var(--muted);font-style:italic">→ potem „🗑️ Usuń z bazy" w pasku na dole</span>
+    </div>`;
+  } else if (!hasLogin) {
+    monitorBar = `<div style="font-size:.64rem;color:var(--muted);font-weight:600;margin-bottom:10px;padding:6px 10px;background:var(--surface2);border-radius:9px;border:1px solid var(--border)">💡 Monitoring logowań (nigdy/5+ mies.) wymaga migracji <strong>admin-account-management.sql (#53)</strong> w Supabase.</div>`;
+  }
+
   // Nagłówek rankingu + master checkbox dla bulk action
-  el.innerHTML = `<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;padding:6px 0;border-bottom:1px solid var(--border)">
+  el.innerHTML = monitorBar + `<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;padding:6px 0;border-bottom:1px solid var(--border)">
     <label style="display:flex;align-items:center;gap:6px;cursor:pointer" title="Zaznacz/odznacz wszystkich">
       <input type="checkbox" id="bulkMasterCheckbox" onchange="bulkToggleAll(this)" style="accent-color:var(--accent2);width:16px;height:16px;cursor:pointer">
       <span style="font-size:.65rem;color:var(--muted);font-weight:700">Zaznacz</span>
@@ -17852,6 +17955,10 @@ function renderClassStudents(memberIds, allProfiles) {
     const lastSeen = profile.last_study_date
       ? new Date(profile.last_study_date).toLocaleDateString('pl-PL')
       : 'Brak aktywności';
+    const _loginMs = _userLastSignInMs(profile);
+    const loginStat = Object.keys(_loginStats).length
+      ? '<span class="student-stat">🔑 Log.: <strong style="' + (_loginMs === null ? 'color:var(--danger)' : '') + '">' + (_loginMs === null ? 'nigdy' : new Date(_loginMs).toLocaleDateString('pl-PL')) + '</strong></span>'
+      : '';
     const accuracy = profile.total_answers > 0
       ? Math.round(profile.correct_answers / profile.total_answers * 100)
       : 0;
@@ -17883,7 +17990,8 @@ function renderClassStudents(memberIds, allProfiles) {
           <span class="student-stat">🔥 Seria <strong>${profile.streak || 0}</strong> dni</span>
           <span class="student-stat">📝 Sesje <strong>${profile.total_sessions || 0}</strong></span>
           <span class="student-stat">🎯 Celność <strong>${accuracy}%</strong></span>
-          <span class="student-stat">📅 Ostatnio: <strong>${lastSeen}</strong></span>
+          <span class="student-stat">📅 Nauka: <strong>${lastSeen}</strong></span>
+          ${loginStat}
         </div>
       </div>`;
     card.addEventListener('click', () => openStudentProgress(profile.id, profile.username));
@@ -17893,6 +18001,22 @@ function renderClassStudents(memberIds, allProfiles) {
   bulkSyncMasterCheckbox();
   bulkRefreshToolbar();
 }
+
+// Zaznacz w klasie uczniów nigdy niezalogowanych / nieaktywnych 5+ mies.
+// (do zbiorczego trwałego usunięcia w pasku bulk). Wymaga _loginStats (#53).
+function classSelectInactive(kind) {
+  const th = _inactive5moMs();
+  const members = (_allProfiles || []).filter(p => _curClassMembers.includes(p.id));
+  const sel = members.filter(u => {
+    const t = _userLastSignInMs(u);
+    return kind === 'never' ? (t === null) : (t !== null && t < th);
+  });
+  if (!sel.length) { if (typeof toast === 'function') toast('Brak takich uczniów w tej klasie.'); return; }
+  sel.forEach(u => _bulkSelected.add(u.id));
+  bulkRefreshToolbar();
+  renderClassStudents(_curClassMembers, _allProfiles);
+}
+window.classSelectInactive = classSelectInactive;
 
 async function removeStudentConfirm(userId, username) {
   if (!confirm('Usunąć ' + username + ' z klasy „' + _curClassName + '"?')) return;
@@ -22286,6 +22410,8 @@ if ('serviceWorker' in navigator) {
       return _curClassMembers.slice();
     }
     if (_bulkContext === 'access') {
+      // Respektuj aktywną zakładkę (created_by / nigdy / 5+ mies.)
+      if (typeof _accessVisibleIds !== 'undefined' && _accessVisibleIds.length) return _accessVisibleIds.slice();
       const myId = DB.getUserId();
       return (_allProfiles || []).filter(p => p.id !== myId && !p.is_admin).map(p => p.id);
     }
@@ -22508,7 +22634,7 @@ if ('serviceWorker' in navigator) {
     const ids = Array.from(_bulkSelected);
     const names = ids.map(id => { const p = (_allProfiles || []).find(x => x.id === id); return p ? p.username : id; });
     const preview = names.slice(0, 15).join(', ') + (names.length > 15 ? ' … (+' + (names.length - 15) + ')' : '');
-    if (!confirm('⚠️ TRWALE usunąć ' + ids.length + ' kont z bazy danych?\n\n' + preview + '\n\nTo usunie konta, postępy, przypisania do klas i podręczników.\nTEJ OPERACJI NIE MOŻNA COFNĄĆ!')) return;
+    if (!confirm('⚠️ TRWALE usunąć ' + ids.length + ' kont z bazy danych?\n\n' + preview + '\n\nTo usunie konta, postępy, przypisania do klas i podręczników.\nPowiązane konta rodziców (bez innych dzieci) też zostaną usunięte.\nTEJ OPERACJI NIE MOŻNA COFNĄĆ!')) return;
     if (!confirm('🔴 OSTATNIE OSTRZEŻENIE\n\nUsuwasz ' + ids.length + ' kont na stałe.\nKliknij OK, aby potwierdzić.')) return;
     let ok = 0, fail = 0;
     for (const uid of ids) {
@@ -22521,6 +22647,9 @@ if ('serviceWorker' in navigator) {
     }
     if (typeof toast === 'function') toast('🗑️ Usunięto ' + ok + ' kont' + (fail ? ', ' + fail + ' błąd' : ''), 3200);
     _bulkSelected.clear();
+    // Przeładuj profile — znikną też kaskadowo usunięci rodzice (bez dzieci).
+    try { _allProfiles = await DB.loadAllProfiles(); } catch(_) {}
+    if (typeof _curClassMembers !== 'undefined') _curClassMembers = _curClassMembers.filter(id => _allProfiles.some(p => p.id === id));
     bulkRefreshToolbar();
     if (_bulkContext === 'class') renderClassStudents(_curClassMembers, _allProfiles);
     else renderAccessUserList();

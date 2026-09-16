@@ -3786,6 +3786,22 @@ const DB = (() => {
     if (error) throw new Error(error.message);
   }
 
+  // Statystyki logowań (admin) — mapa userId -> { lastSignIn, authCreated }.
+  // Czyta auth.users.last_sign_in_at przez RPC (migracja #53). Zwraca {} gdy
+  // brak migracji / brak uprawnień, żeby UI nie wywalało się bez tych danych.
+  async function adminLoginStats() {
+    if (!_profile?.isAdmin && !_profile?.isTeacher) return {};
+    try {
+      const { data, error } = await supabase.rpc('admin_login_stats');
+      if (error) { console.warn('[admin_login_stats]', error.message); return {}; }
+      const map = {};
+      (data || []).forEach(r => {
+        map[r.user_id] = { lastSignIn: r.last_sign_in_at || null, authCreated: r.auth_created_at || null };
+      });
+      return map;
+    } catch(e) { console.warn('[admin_login_stats]', e.message || e); return {}; }
+  }
+
   function getUserId() { return _userId; }
 
   // ═══════════════════════════════════════════════════════════════
@@ -4062,6 +4078,7 @@ const DB = (() => {
     shopLoadStats,
     adminCreateUser,
     adminDeleteUser,
+    adminLoginStats,
     // admin — klasy
     loadAllProfiles,
     findProfileByUsername,
