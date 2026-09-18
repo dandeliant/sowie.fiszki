@@ -27,6 +27,7 @@ const DB = (() => {
   let _myLabels       = {};     // Grupa: targetUserId -> label (tylko moje — admin/teacher/parent)
   let _myPrivateNotes = {};     // Prywatna etykieta: targetUserId -> private_note (migracja #35)
   let _hasBestCombo   = false;  // czy istnieje kolumna profiles.best_correct_streak (migracja add-ranking-stats.sql)
+  let _hasWellLearned = false;  // czy istnieje kolumna profiles.well_learned_words (migracja add-well-learned-ranking.sql #54)
 
   // ─── Domyślny profil ─────────────────────────────────────────
   function emptyProfile(username) {
@@ -67,6 +68,7 @@ const DB = (() => {
       totalAnswers:  row.total_answers   || 0,
       correctAnswers:row.correct_answers || 0,
       bestCorrectStreak: row.best_correct_streak || 0,
+      wellLearnedWords: row.well_learned_words || 0,
       achievements:  row.achievements    || [],
       dailyXP:       row.daily_xp        || 0,
       dailyXPDate:   row.daily_xp_date   || null,
@@ -103,6 +105,7 @@ const DB = (() => {
     // Tylko gdy kolumna istnieje (migracja add-ranking-stats.sql), inaczej upsert
     // by sie wywalil i przestalby zapisywac XP/streak.
     if (_hasBestCombo) payload.best_correct_streak = _profile.bestCorrectStreak || 0;
+    if (_hasWellLearned) payload.well_learned_words = _profile.wellLearnedWords || 0;
     return payload;
   }
 
@@ -138,6 +141,7 @@ const DB = (() => {
     if (profRes.error) throw profRes.error;
 
     _hasBestCombo = !!(profRes.data && Object.prototype.hasOwnProperty.call(profRes.data, 'best_correct_streak'));
+    _hasWellLearned = !!(profRes.data && Object.prototype.hasOwnProperty.call(profRes.data, 'well_learned_words'));
     _profile = _rowToProfile(profRes.data, unitRes.data || []);
 
     // Załaduj przypisane podręczniki (user_books) — z deduplikacja
@@ -1980,6 +1984,17 @@ const DB = (() => {
       _profile.bestCorrectStreak = combo;
       _save();
     }
+  }
+  // Zapisz aktualna liczbe slow opanowanych BARDZO DOBRZE (interval > 7 dni) —
+  // do rankingu klasowego wg przyswojonych slow (migracja #54). Klient liczy
+  // to z lokalnych word_states i wola tutaj. Zapis tylko gdy kolumna istnieje
+  // i wartosc sie zmienila (przez debounce _save).
+  function updateWellLearned(n) {
+    if (!_profile || !_hasWellLearned) return;
+    n = Math.max(0, Math.round(n || 0));
+    if (n === (_profile.wellLearnedWords || 0)) return;
+    _profile.wellLearnedWords = n;
+    _save();
   }
   // Loguj N opanowanych slow do dzisiejszego dnia (daily_xp_log.words).
   // Fire-and-forget; gdy RPC nie istnieje (brak migracji) — cicho ignoruj.
@@ -4159,6 +4174,7 @@ const DB = (() => {
     loadClassRankings,
     loadMyClassRankings,
     recordBestCombo,
+    updateWellLearned,
     logDailyWords,
     listClassChallenges,
     getChallengeProgress,
