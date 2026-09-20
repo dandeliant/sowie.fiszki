@@ -20279,23 +20279,30 @@ if ('serviceWorker' in navigator) {
     <label style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px">Użytkownik</label>
     <div id="userSettingsTargetName" style="font-size:.82rem;font-weight:700;color:var(--text);padding:8px 10px;background:var(--surface2);border-radius:8px;margin-bottom:14px;word-break:break-word">—</div>
 
-    <!-- Plan konta — widoczny tylko adminowi -->
-    <div id="userSettingsPlanSection" style="display:none;margin-bottom:14px">
-      <label style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:6px">Typ konta</label>
-      <div style="display:flex;gap:6px">
-        <label style="flex:1;display:flex;align-items:center;gap:6px;padding:8px;border:1.5px solid var(--border);border-radius:8px;cursor:pointer" data-userset-plan-wrap="free">
-          <input type="radio" name="userSettingsPlan" value="free" style="accent-color:var(--accent2)">
-          <span style="font-size:.72rem;font-weight:700">Free</span>
+    <!-- Rola + Premium (dwie NIEZALEŻNE osie) — widoczne tylko adminowi -->
+    <div id="userSettingsRoleSection" style="display:none;margin-bottom:14px">
+      <label style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:6px">Rola konta</label>
+      <div style="display:flex;gap:6px;margin-bottom:10px">
+        <label style="flex:1;display:flex;align-items:center;justify-content:center;gap:5px;padding:8px;border:1.5px solid var(--border);border-radius:8px;cursor:pointer" data-userset-role-wrap="student">
+          <input type="radio" name="userSettingsRole" value="student" style="accent-color:var(--accent2)">
+          <span style="font-size:.72rem;font-weight:700">🎓 Uczeń</span>
         </label>
-        <label style="flex:1;display:flex;align-items:center;gap:6px;padding:8px;border:1.5px solid var(--border);border-radius:8px;cursor:pointer" data-userset-plan-wrap="premium">
-          <input type="radio" name="userSettingsPlan" value="premium" style="accent-color:var(--accent)">
-          <span style="font-size:.72rem;font-weight:700">⭐ Premium</span>
+        <label style="flex:1;display:flex;align-items:center;justify-content:center;gap:5px;padding:8px;border:1.5px solid var(--border);border-radius:8px;cursor:pointer" data-userset-role-wrap="teacher">
+          <input type="radio" name="userSettingsRole" value="teacher" style="accent-color:var(--accent)">
+          <span style="font-size:.72rem;font-weight:700">👩‍🏫 Nauczyciel</span>
         </label>
-        <label style="flex:1;display:flex;align-items:center;gap:6px;padding:8px;border:1.5px solid var(--border);border-radius:8px;cursor:pointer" data-userset-plan-wrap="teacher">
-          <input type="radio" name="userSettingsPlan" value="teacher" style="accent-color:var(--purple)">
-          <span style="font-size:.72rem;font-weight:700">👩‍🏫 Teacher</span>
+        <label style="flex:1;display:flex;align-items:center;justify-content:center;gap:5px;padding:8px;border:1.5px solid var(--border);border-radius:8px;cursor:pointer" data-userset-role-wrap="parent">
+          <input type="radio" name="userSettingsRole" value="parent" style="accent-color:var(--purple)">
+          <span style="font-size:.72rem;font-weight:700">👨‍👩‍👧 Rodzic</span>
         </label>
       </div>
+      <label style="display:flex;align-items:flex-start;gap:10px;padding:9px 12px;background:var(--surface2);border:1.5px solid var(--border);border-radius:10px;cursor:pointer">
+        <input type="checkbox" id="userSettingsPremium" style="accent-color:var(--accent);width:18px;height:18px;flex-shrink:0;cursor:pointer;margin-top:1px">
+        <div style="flex:1">
+          <div style="font-size:.82rem;font-weight:700;color:var(--text)">⭐ Premium (permanentny)</div>
+          <div style="font-size:.64rem;color:var(--muted);font-weight:600;margin-top:2px;line-height:1.4">Pełny dostęp: gry INNE, przydzielanie podręczników dzieciom itd. <b>Nauczyciel ma pełny dostęp z racji roli</b>, niezależnie od tego pola. Trial czasowy nadaj przyciskiem 🎁 poniżej.</div>
+        </div>
+      </label>
     </div>
 
     <!-- Bannery Premium — TYLKO admin -->
@@ -22808,6 +22815,8 @@ if ('serviceWorker' in navigator) {
   let _userSettingsTargetUsername = '';
   let _userSettingsAfterSave = null;
   let _userSettingsInitialPlan = 'free';
+  let _userSettingsInitialRole = 'student';   // 'student' | 'teacher' | 'parent'
+  let _userSettingsInitialPremium = false;
   let _userSettingsInitialHide = false;
 
   window.openUserSettingsModal = function(userId, username, currentPlan, currentHide, afterSaveCb) {
@@ -22819,41 +22828,35 @@ if ('serviceWorker' in navigator) {
 
     document.getElementById('userSettingsTargetName').textContent = username || '—';
 
-    // Plan: tylko admin moze zmieniac
-    const planSection = document.getElementById('userSettingsPlanSection');
-    if (typeof isCurrentUserAdmin === 'function' && isCurrentUserAdmin()) {
-      planSection.style.display = '';
-      const radios = document.querySelectorAll('input[name="userSettingsPlan"]');
-      radios.forEach(r => { r.checked = (r.value === _userSettingsInitialPlan); });
-      // Podswietl wybrany wrap
-      document.querySelectorAll('[data-userset-plan-wrap]').forEach(w => {
-        const isActive = w.getAttribute('data-userset-plan-wrap') === _userSettingsInitialPlan;
-        w.style.borderColor = isActive ? 'var(--accent)' : 'var(--border)';
-        w.style.background  = isActive ? 'rgba(255,209,102,.08)' : 'transparent';
-      });
-      // Reaguj na zmianę
-      radios.forEach(r => {
-        r.onchange = () => {
-          document.querySelectorAll('[data-userset-plan-wrap]').forEach(w => {
-            const isActive = w.getAttribute('data-userset-plan-wrap') === r.value && r.checked;
-            if (r.checked && w.getAttribute('data-userset-plan-wrap') === r.value) {
-              w.style.borderColor = 'var(--accent)';
-              w.style.background  = 'rgba(255,209,102,.08)';
-            } else if (w.getAttribute('data-userset-plan-wrap') !== r.value) {
-              // ignoruj — petla po wszystkich wrapach
-            }
-          });
-          // Uproszczone: przejdz po wszystkich i ustaw aktywny
-          const v = document.querySelector('input[name="userSettingsPlan"]:checked')?.value;
-          document.querySelectorAll('[data-userset-plan-wrap]').forEach(w => {
-            const a = w.getAttribute('data-userset-plan-wrap') === v;
-            w.style.borderColor = a ? 'var(--accent)' : 'var(--border)';
-            w.style.background  = a ? 'rgba(255,209,102,.08)' : 'transparent';
-          });
-        };
-      });
-    } else {
-      planSection.style.display = 'none';
+    // Rola + Premium: tylko admin może zmieniać. Ustal stan początkowy z profilu.
+    const roleSection = document.getElementById('userSettingsRoleSection');
+    const _tProf = (typeof _allProfiles !== 'undefined' && Array.isArray(_allProfiles))
+      ? _allProfiles.find(p => p.id === userId) : null;
+    let _initRole = 'student';
+    if (_tProf) { if (_tProf.is_teacher) _initRole = 'teacher'; else if (_tProf.is_parent) _initRole = 'parent'; }
+    else if (_userSettingsInitialPlan === 'teacher') _initRole = 'teacher';
+    const _initPremium = _tProf ? (_tProf.plan === 'premium') : (_userSettingsInitialPlan === 'premium');
+    const _targetIsAdmin = !!(_tProf && _tProf.is_admin);
+    _userSettingsInitialRole = _initRole;
+    _userSettingsInitialPremium = _initPremium;
+    if (roleSection && (typeof isCurrentUserAdmin === 'function') && isCurrentUserAdmin() && !_targetIsAdmin) {
+      roleSection.style.display = '';
+      const rr = document.querySelectorAll('input[name="userSettingsRole"]');
+      rr.forEach(r => { r.checked = (r.value === _initRole); });
+      const prem = document.getElementById('userSettingsPremium');
+      if (prem) prem.checked = _initPremium;
+      const paintRole = () => {
+        const v = document.querySelector('input[name="userSettingsRole"]:checked')?.value;
+        document.querySelectorAll('[data-userset-role-wrap]').forEach(w => {
+          const a = w.getAttribute('data-userset-role-wrap') === v;
+          w.style.borderColor = a ? 'var(--accent)' : 'var(--border)';
+          w.style.background  = a ? 'rgba(255,209,102,.08)' : 'transparent';
+        });
+      };
+      rr.forEach(r => { r.onchange = paintRole; });
+      paintRole();
+    } else if (roleSection) {
+      roleSection.style.display = 'none';
     }
 
     document.getElementById('userSettingsHideBanners').checked = _userSettingsInitialHide;
@@ -22957,13 +22960,17 @@ if ('serviceWorker' in navigator) {
       const newHide = isAdmin
         ? document.getElementById('userSettingsHideBanners').checked
         : _userSettingsInitialHide;
-      const newPlan = isAdmin
-        ? (document.querySelector('input[name="userSettingsPlan"]:checked')?.value || _userSettingsInitialPlan)
-        : _userSettingsInitialPlan;
+      const newRole = isAdmin
+        ? (document.querySelector('input[name="userSettingsRole"]:checked')?.value || _userSettingsInitialRole)
+        : _userSettingsInitialRole;
+      const newPremium = isAdmin
+        ? !!document.getElementById('userSettingsPremium')?.checked
+        : _userSettingsInitialPremium;
 
-      // Plan: zmien tylko jeśli admin i wartosc sie zmienila
-      if (isAdmin && newPlan !== _userSettingsInitialPlan) {
-        await DB.setUserPlan(_userSettingsTargetId, newPlan);
+      // Rola + Premium: zapisz tylko jeśli admin i coś się zmieniło.
+      if (isAdmin && (newRole !== _userSettingsInitialRole || newPremium !== _userSettingsInitialPremium)) {
+        if (!DB.adminSetAccount) throw new Error('Zaktualizuj aplikację (brak DB.adminSetAccount).');
+        await DB.adminSetAccount(_userSettingsTargetId, { role: newRole, premium: newPremium });
       }
       // Bannery: zmien jesli admin i wartosc sie zmienila
       if (isAdmin && newHide !== _userSettingsInitialHide) {
@@ -22978,7 +22985,12 @@ if ('serviceWorker' in navigator) {
         const idx = _allProfiles.findIndex(p => p.id === _userSettingsTargetId);
         if (idx >= 0) {
           _allProfiles[idx].hide_premium_banners = newHide;
-          if (isAdmin) _allProfiles[idx].plan = newPlan;
+          if (isAdmin) {
+            _allProfiles[idx].is_teacher = (newRole === 'teacher');
+            _allProfiles[idx].is_parent  = (newRole === 'parent');
+            _allProfiles[idx].plan = newPremium ? 'premium' : 'free';
+            _allProfiles[idx].plan_expires_at = null;
+          }
         }
       }
       if (typeof toast === 'function') toast('✅ Zapisano ustawienia konta', 1800);

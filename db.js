@@ -697,6 +697,36 @@ const DB = (() => {
     return _profile?.hidePremiumBanners === true;
   }
 
+  // Ustawia ROLĘ i TIER niezależnie (rozdzielone dwie osie zamiast jednego
+  // pola 'plan' mieszającego rolę z premium). role: 'student'|'teacher'|'parent',
+  // premium: bool. is_admin NIE jest ruszany (adminów zmienia się osobno).
+  //   is_teacher = role==='teacher'; is_parent = role==='parent'
+  //   plan = premium ? 'premium' : 'free'   (premium bez daty = permanentny)
+  async function adminSetAccount(userId, opts) {
+    if (!_profile?.isAdmin) throw new Error('Brak uprawnień');
+    const role = (opts && opts.role) || 'student';
+    const premium = !!(opts && opts.premium);
+    const updates = {
+      is_teacher: role === 'teacher',
+      is_parent:  role === 'parent',
+      plan: premium ? 'premium' : 'free'
+    };
+    // Premium ustawione ręcznie = permanentne (bez daty). Free = też czyścimy
+    // datę, żeby nie ciągnął się stary trial. Czasowy trial nadaje się osobno
+    // przyciskiem „🎁 Aktywuj 30 dni" (admin_grant_trial, migracja #36).
+    updates.plan_expires_at = null;
+    const { data, error } = await supabase
+      .from('profiles')
+      .update(updates)
+      .eq('id', userId)
+      .select('id, plan, is_teacher, is_parent, plan_expires_at');
+    if (error) throw new Error(error.message);
+    if (!data || data.length === 0) {
+      throw new Error('Nie udało się zapisać — sprawdź uprawnienia (RLS) w bazie.');
+    }
+    return data[0];
+  }
+
   async function setUserPlan(userId, plan) {
     if (!_profile?.isAdmin) throw new Error('Brak uprawnień');
     // Plan 'teacher' automatycznie nadaje rolę nauczyciela (is_teacher=true);
@@ -4043,6 +4073,7 @@ const DB = (() => {
     getUserPlan,
     getHidePremiumBanners,
     setUserPlan,
+    adminSetAccount,
     addAdminRequest,
     getAdminRequests,
     approveAdminRequest,
