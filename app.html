@@ -10221,28 +10221,30 @@ window._showTypedReport = async function(userId, title){
   openGenericModal('🔎 Szczegóły „Wpisz"', html);
 };
 
-// Czy podręcznik należy do „biblioteki" bieżącego użytkownika — do panelu
-// „Postęp w podręcznikach". Reguła: admin → wszystko; wprost PRZYDZIELONY
-// (user_books) → tak; inaczej TYLKO genuinie publiczny (widoczny dla roli
-// ORAZ tier 'free'). Świadomie NIE pokazujemy tu premium-katalogu (Kursy/
-// Gramatyka), który w promocji jest odblokowany — inaczej uczeń widziałby
-// dziesiątki podręczników, których mu nie przydzielono.
-function _userCanAccessBook(book) {
-  if (!book) return false;
-  if (isCurrentUserAdmin()) return true;
+// Czy podręcznik ma się pojawić w panelu „Postęp w podręcznikach".
+// Reguła: pokazuj TYLKO podręczniki PRZYDZIELONE (user_books) LUB ZACZĘTE
+// przez ucznia (istnieje zapis postępu z jakąkolwiek aktywnością). Podręczniki
+// publiczne, których uczeń nie ruszył, świadomie pomijamy — panel ma pokazywać
+// „nad czym pracuję", a nie cały katalog.
+function _bookStartedOrAssigned(book) {
+  if (!book || !book.units) return false;
+  // 1) Przydzielony wprost (user_books)
   const myBooks = (DB.getUserBooks ? DB.getUserBooks() : null);
-  if (Array.isArray(myBooks) && myBooks.includes(book.id)) return true; // przydzielony — zawsze
-  const eff = (typeof getEffectiveBookAccess === 'function') ? getEffectiveBookAccess(book) : null;
-  const isParent  = (typeof isCurrentUserParent === 'function') ? isCurrentUserParent() : false;
-  const isTeacher = isCurrentUserTeacher();
-  const pubStudent = !!book.defaultAccess && !book.adminOnly; // fallback bez override
-  let roleAllowed;
-  if (isGuest)        roleAllowed = eff ? eff.visibleToGuest   : pubStudent;
-  else if (isParent)  roleAllowed = eff ? eff.visibleToParent  : pubStudent;
-  else if (isTeacher) roleAllowed = eff ? eff.visibleToTeacher : pubStudent;
-  else                roleAllowed = eff ? eff.visibleToStudent : pubStudent;
-  const tierFree = !eff || eff.tier === 'free'; // tylko darmowe/publiczne, nie premium-katalog
-  return !!(roleAllowed && tierFree);
+  if (Array.isArray(myBooks) && myBooks.includes(book.id)) return true;
+  // 2) Zaczęty — jakakolwiek aktywność w którymkolwiek unicie
+  for (const uk in book.units) {
+    const s = DB.getUnitProgress ? DB.getUnitProgress(currentUser, book.id, uk) : null;
+    if (!s) continue;
+    if ((s.knownCount || 0) > 0) return true;
+    const ws = s.wordStates;
+    if (ws) {
+      for (const i in ws) {
+        const st = ws[i];
+        if (st && ((st.reps || 0) > 0 || (st.errCount || 0) > 0 || (st.nextReview || 0) > 0 || st.lastError || st.known)) return true;
+      }
+    }
+  }
+  return false;
 }
 
 function renderStats() {
@@ -10294,12 +10296,10 @@ function renderStats() {
   // Postęp podręczników
   const bpl = document.getElementById('booksProgressList');
   bpl.innerHTML = '';
-  // Pokazuj TYLKO podręczniki, do których uczeń ma dostęp: przydzielone
-  // (user_books) lub publicznie widoczne dla jego roli (ta sama reguła co
-  // na ekranie wyboru podręczników — patrz _userCanAccessBook / refreshBooks).
-  const visibleBooks = Object.values(BOOKS).filter(_userCanAccessBook);
+  // Pokazuj TYLKO podręczniki przydzielone (user_books) lub zaczęte przez ucznia.
+  const visibleBooks = Object.values(BOOKS).filter(_bookStartedOrAssigned);
   if (!visibleBooks.length) {
-    bpl.innerHTML = '<div style="color:var(--muted);font-size:.82rem;font-weight:600;padding:10px 4px">Brak przydzielonych podręczników. Poproś nauczyciela o dostęp.</div>';
+    bpl.innerHTML = '<div style="color:var(--muted);font-size:.82rem;font-weight:600;padding:10px 4px">Brak przydzielonych lub rozpoczętych podręczników. Zacznij naukę albo poproś nauczyciela o dostęp.</div>';
   }
   visibleBooks.forEach(book => {
     const prog = DB.getBookProgress(currentUser, book);
