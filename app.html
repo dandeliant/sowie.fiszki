@@ -3263,6 +3263,9 @@ szkoła	school"></textarea>
       <button class="btn-sm" onclick="showScreen('sBooks')">← Wróć</button>
     </div>
   </div>
+  <div id="classRankBtnWrap" style="margin:6px 0 10px">
+    <button onclick="window.__sfOpenStudentRank && window.__sfOpenStudentRank()" style="width:100%;background:linear-gradient(135deg,#7c4dff,#ffd166);color:#1a1440;border:none;border-radius:12px;padding:12px 16px;font-weight:800;font-size:.95rem;cursor:pointer;font-family:inherit;box-shadow:0 4px 14px rgba(124,77,255,.35)">🏆 Ranking klasy — zobacz swoją pozycję</button>
+  </div>
   <div class="stat-grid" id="statGrid"></div>
   <div id="acqSummarySelf"></div>
   <div id="systSelf"></div>
@@ -10246,6 +10249,9 @@ function renderStats() {
   const p = DB.getUser(currentUser);
   const acc = p.totalAnswers > 0 ? Math.round((p.correctAnswers / p.totalAnswers) * 100) : 0;
   try { _syncWellLearned(true); } catch(e) {} // odśwież licznik do rankingu klasy
+  // Ranking klasy — dla zalogowanych (gość nie ma klasy)
+  const _crb = document.getElementById('classRankBtnWrap');
+  if (_crb) _crb.style.display = isGuest ? 'none' : '';
 
   // Stat cards
   document.getElementById('statGrid').innerHTML = `
@@ -28483,14 +28489,26 @@ ${bodyHtml}
         +'</div></div>';
     }catch(e){}
   }
-  window.__sfOpenStudentRank=function(){
-    if(!_srData) return;
+  // Otwiera pełny ranking klasy. Samodzielny — sam pobiera dane, więc działa
+  // też z przycisku w statystykach (nawet gdy karta na sLang się nie pokazała,
+  // np. mała klasa). Pokazuje przyjazny komunikat, gdy uczeń nie ma klasy.
+  window.__sfOpenStudentRank=async function(){
     const o=modal('sfRankModal'); const box=$('sfRankModal_box');
+    box.innerHTML='<button class="sf-x" data-close>✕</button><h2 class="sf-h">🏆 Ranking klasy</h2><p class="sf-sub">Ładowanie…</p>';
+    bindClose(box); o.classList.add('show');
+    let rows=[]; try{ rows=await DB.loadMyClassRankings(); }catch(e){}
+    const groups={}; (rows||[]).forEach(r=>{ (groups[r.class_id]=groups[r.class_id]||{id:r.class_id,name:r.class_name,members:[]}).members.push(r); });
+    const cls=Object.values(groups).sort((a,b)=>b.members.length-a.members.length)[0];
+    if(!cls || !cls.members || !cls.members.length){
+      box.innerHTML='<button class="sf-x" data-close>✕</button><h2 class="sf-h">🏆 Ranking klasy</h2><p class="sf-sub">Nie należysz jeszcze do żadnej klasy (albo klasa jest pusta). Poproś nauczyciela o dodanie Cię do klasy — wtedy zobaczysz tu ranking kolegów.</p>';
+      bindClose(box); return;
+    }
+    _srData=cls;
     let tabs='<div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-bottom:12px">';
     SR_CATS.forEach((c,i)=>{ tabs+='<button id="srTab'+i+'" class="sf-btn sf-btn-ghost" style="font-size:.72rem;padding:7px 10px" onclick="window.__sfRankCat('+i+')">'+c.ic+' '+c.t+'</button>'; });
     tabs+='</div>';
-    box.innerHTML='<button class="sf-x" data-close>✕</button><h2 class="sf-h">🏆 Ranking klasy '+escTxt(_srData.name||'')+'</h2><p class="sf-sub">Twoja klasa • osobny ranking w każdej kategorii</p>'+tabs+'<div id="srList"></div>';
-    bindClose(box); o.classList.add('show'); window.__sfRankCat(0);
+    box.innerHTML='<button class="sf-x" data-close>✕</button><h2 class="sf-h">🏆 Ranking klasy '+escTxt(_srData.name||'')+'</h2><p class="sf-sub">Domyślnie wg liczby przyswojonych słów • zakładki = inne kategorie</p>'+tabs+'<div id="srList"></div>';
+    bindClose(box); window.__sfRankCat(0);
   };
   window.__sfRankCat=function(idx){
     const c=SR_CATS[idx]; if(!c||!_srData) return;
