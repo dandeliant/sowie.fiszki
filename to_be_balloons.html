@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Balonowe TO BE — am / is / are</title>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;800;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --sky1:#8ec9ff; --sky2:#c9b6ff; --ink:#22254a; --muted:#5b6079;
+    --ok:#12b886; --bad:#ff5b6e; --accent:#ff8fab; --gold:#ffd43b;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{
+    font-family:'Nunito',system-ui,sans-serif;color:var(--ink);
+    background:linear-gradient(160deg,var(--sky1),var(--sky2));
+    min-height:100%;overflow:hidden;
+  }
+  .back-link{position:fixed;top:12px;left:12px;z-index:60;color:#fff;text-decoration:none;font-weight:800;font-size:.86rem;background:rgba(0,0,0,.22);padding:7px 14px;border-radius:999px;border:1.5px solid rgba(255,255,255,.4)}
+  .htp-btn{position:fixed;top:12px;right:12px;z-index:60;background:#fff;color:#5b4bd6;border-radius:999px;padding:8px 15px;font-weight:900;box-shadow:0 6px 16px rgba(0,0,0,.18);font-size:.86rem;border:none;cursor:pointer}
+  /* HUD */
+  .hud{position:fixed;top:52px;left:0;right:0;z-index:50;display:flex;justify-content:center;gap:8px;flex-wrap:wrap;padding:0 10px}
+  .chip{background:rgba(255,255,255,.85);backdrop-filter:blur(4px);border-radius:999px;padding:6px 13px;font-weight:900;font-size:.92rem;box-shadow:0 4px 12px rgba(40,30,90,.14)}
+  .chip .lbl{color:var(--muted);font-weight:800;font-size:.7rem;margin-right:4px;text-transform:uppercase;letter-spacing:.04em}
+  /* Sentence card */
+  .sentence-wrap{position:fixed;top:92px;left:50%;transform:translateX(-50%);z-index:50;width:min(680px,94vw);text-align:center}
+  .card{background:rgba(255,255,255,.94);border-radius:20px;padding:16px 18px;box-shadow:0 14px 34px rgba(40,30,90,.22)}
+  .pl-hint{color:var(--muted);font-weight:800;font-size:.9rem;margin-bottom:6px}
+  .sentence{font-size:clamp(1.2rem,4.6vw,1.8rem);font-weight:900;line-height:1.4}
+  .gap{display:inline-block;min-width:76px;border-bottom:4px solid var(--accent);margin:0 4px;color:var(--accent);transition:.2s;vertical-align:baseline}
+  .gap.filled{border-bottom-color:var(--ok);color:var(--ok)}
+  .gap.filled.wrong{border-bottom-color:var(--bad);color:var(--bad)}
+  .feedback{min-height:20px;margin-top:8px;font-weight:900;font-size:.98rem}
+  .feedback.ok{color:var(--ok)} .feedback.bad{color:var(--bad)}
+  .instr{color:rgba(255,255,255,.95);text-align:center;font-weight:800;font-size:.86rem;margin-top:8px;text-shadow:0 1px 4px rgba(0,0,0,.15)}
+  /* Play zone (balloons) */
+  #zone{position:fixed;inset:0;z-index:20;overflow:hidden}
+  .balloon{position:absolute;will-change:transform;cursor:pointer;transform:translate(-50%,0)}
+  .balloon .body{
+    width:84px;height:104px;border-radius:50% 50% 48% 48%/54% 54% 46% 46%;
+    display:flex;align-items:center;justify-content:center;position:relative;
+    box-shadow:inset -10px -12px 22px rgba(0,0,0,.16), inset 8px 8px 16px rgba(255,255,255,.5);
+    font-weight:900;font-size:1.05rem;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.28);user-select:none
+  }
+  .balloon .knot{width:0;height:0;margin:-2px auto 0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:9px solid rgba(0,0,0,.18)}
+  .balloon .string{width:2px;height:60px;margin:0 auto;background:linear-gradient(rgba(255,255,255,.7),rgba(255,255,255,.15));border-radius:2px}
+  .balloon .shine{position:absolute;top:14px;left:16px;width:20px;height:28px;border-radius:50%;background:rgba(255,255,255,.55);filter:blur(1px)}
+  .balloon.pop{animation:pop .28s ease forwards;pointer-events:none}
+  @keyframes pop{0%{transform:translate(-50%,0) scale(1)}40%{transform:translate(-50%,0) scale(1.25)}100%{transform:translate(-50%,0) scale(.2);opacity:0}}
+  .burst{position:absolute;z-index:30;pointer-events:none;font-size:1.4rem;animation:burst .5s ease forwards}
+  @keyframes burst{from{opacity:1;transform:translate(-50%,-50%) scale(.4)}to{opacity:0;transform:translate(-50%,-140%) scale(1.3)}}
+  /* Game over */
+  .over{position:fixed;inset:0;z-index:80;background:rgba(30,24,70,.55);display:none;align-items:center;justify-content:center;padding:18px}
+  .over.show{display:flex}
+  .over-box{background:#fff;border-radius:24px;padding:28px 24px;max-width:380px;width:100%;text-align:center;box-shadow:0 20px 50px rgba(0,0,0,.4)}
+  .over-box h2{font-size:1.6rem;color:#5b4bd6;margin-bottom:6px}
+  .over-box .big{font-size:2.6rem;font-weight:900;color:var(--accent);margin:6px 0}
+  .btn{font-family:inherit;font-weight:900;font-size:1.05rem;border:none;border-radius:16px;padding:13px 26px;cursor:pointer;background:var(--ok);color:#fff;box-shadow:0 6px 0 rgba(0,0,0,.14)}
+  .btn:active{transform:translateY(3px);box-shadow:0 3px 0 rgba(0,0,0,.14)}
+  /* How to play */
+  .htp-modal{position:fixed;inset:0;background:rgba(20,15,50,.6);display:none;align-items:center;justify-content:center;z-index:90;padding:18px}
+  .htp-modal.show{display:flex}
+  .htp-box{background:#fff;border-radius:22px;max-width:460px;width:100%;padding:26px 24px;box-shadow:0 20px 50px rgba(0,0,0,.4);max-height:88vh;overflow:auto}
+  .htp-box h2{font-size:1.3rem;margin-bottom:12px;color:#5b4bd6}
+  .htp-box ol{margin:0 0 10px 20px;line-height:1.7}
+  .htp-box li{margin-bottom:6px;font-weight:700}
+  .htp-box .close{margin-top:8px;background:#5b4bd6;color:#fff;width:100%;box-shadow:0 6px 0 rgba(0,0,0,.14)}
+  footer{position:fixed;bottom:6px;left:0;right:0;text-align:center;color:rgba(255,255,255,.9);font-size:.76rem;font-weight:800;z-index:40}
+  .foot-back{color:#fff;text-decoration:underline;font-weight:900}
+  @media print{.back-link,.htp-btn,.hud,#zone,.over,.htp-modal{display:none!important}}
+  @media (max-width:520px){
+    .balloon .body{width:70px;height:88px;font-size:.92rem}
+    .sentence-wrap{top:86px}
+  }
+</style>
+</head>
+<body>
+
+<a href="app.html" class="back-link">← Powrót</a>
+<button class="htp-btn" onclick="document.getElementById('htp').classList.add('show')">ℹ️ Jak grać?</button>
+
+<div class="hud">
+  <div class="chip"><span class="lbl">Punkty</span><span id="score">0</span></div>
+  <div class="chip"><span class="lbl">Seria</span><span id="streak">0</span> 🔥</div>
+  <div class="chip"><span class="lbl">Życia</span><span id="lives">❤️❤️❤️</span></div>
+</div>
+
+<div class="sentence-wrap">
+  <div class="card">
+    <div class="pl-hint" id="plHint">—</div>
+    <div class="sentence" id="sentence">—</div>
+    <div class="feedback" id="feedback"></div>
+  </div>
+  <div class="instr">🎈 Strzel w balon z właściwą formą <b>to be</b> — słowo wskoczy w lukę!</div>
+</div>
+
+<div id="zone"></div>
+
+<div class="over" id="over">
+  <div class="over-box">
+    <div style="font-size:2.6rem">🎈🏆</div>
+    <h2>Koniec gry!</h2>
+    <div style="color:var(--muted);font-weight:800">Twój wynik:</div>
+    <div class="big" id="finalScore">0</div>
+    <div style="color:var(--muted);font-weight:800;margin-bottom:16px" id="finalMsg"></div>
+    <button class="btn" onclick="restart()">🔄 Zagraj jeszcze raz</button>
+  </div>
+</div>
+
+<div class="htp-modal" id="htp">
+  <div class="htp-box">
+    <h2>ℹ️ Jak grać?</h2>
+    <p style="font-weight:800;margin-bottom:8px">Ćwiczysz czasownik <b>to be</b>: am / is / are (oraz przeczenia isn't / aren't / am not).</p>
+    <ol>
+      <li>U góry pojawia się zdanie z <b>luką</b> i polską podpowiedzią.</li>
+      <li>Z dołu lecą <b>balony</b> z formami „to be".</li>
+      <li>Kliknij / strzel w balon z <b>poprawną</b> formą — słowo wskoczy w lukę, a zdanie samo się sprawdzi. ✅</li>
+      <li>Dobra odpowiedź = punkty i rosnąca <b>seria</b> 🔥. Zły balon = tracisz ❤️.</li>
+      <li>Gra kończy się, gdy stracisz 3 życia. Bij swój rekord!</li>
+    </ol>
+    <p style="font-weight:700;color:var(--muted);font-size:.86rem">Podpowiedź: <b>I → am</b>, <b>he/she/it → is</b>, <b>we/you/they → are</b>.</p>
+    <button class="close" onclick="document.getElementById('htp').classList.remove('show')" style="font-family:inherit;font-weight:900;border:none;border-radius:14px;padding:12px;cursor:pointer">Zamknij</button>
+  </div>
+</div>
+
+<footer>© 2026 Sowie Fiszki · <a href="app.html" class="foot-back">← Wróć do Sowie Fiszki</a></footer>
+
+<script>
+// ── Bank zdań: zdanie z '___', polska podpowiedź, poprawna forma ──
+const BANK = [
+  { en:'I ___ ten years old.',        pl:'Mam dziesięć lat.',                ans:'am' },
+  { en:'I ___ from Poland.',          pl:'Jestem z Polski.',                 ans:'am' },
+  { en:'She ___ my best friend.',     pl:'Ona jest moją najlepszą przyjaciółką.', ans:'is' },
+  { en:'He ___ a teacher.',           pl:'On jest nauczycielem.',            ans:'is' },
+  { en:'It ___ a big dog.',           pl:'To jest duży pies.',               ans:'is' },
+  { en:'My mum ___ in the kitchen.',  pl:'Moja mama jest w kuchni.',         ans:'is' },
+  { en:'The weather ___ nice today.', pl:'Pogoda jest dziś ładna.',          ans:'is' },
+  { en:'This ___ my bag.',            pl:'To jest moja torba.',              ans:'is' },
+  { en:'We ___ in the same class.',   pl:'Jesteśmy w tej samej klasie.',     ans:'are' },
+  { en:'You ___ very funny.',         pl:'Jesteś bardzo zabawny.',           ans:'are' },
+  { en:'They ___ at the park.',       pl:'Oni są w parku.',                  ans:'are' },
+  { en:'My friends ___ nice.',        pl:'Moi przyjaciele są mili.',         ans:'are' },
+  { en:'These books ___ new.',        pl:'Te książki są nowe.',              ans:'are' },
+  { en:'The cats ___ hungry.',        pl:'Koty są głodne.',                  ans:'are' },
+  { en:'I ___ hungry.',               pl:'Nie jestem głodny.',               ans:'am not' },
+  { en:'I ___ a baby.',               pl:'Nie jestem dzieckiem.',            ans:'am not' },
+  { en:'She ___ at home.',            pl:'Ona nie jest w domu.',             ans:"isn't" },
+  { en:'He ___ my brother.',          pl:'On nie jest moim bratem.',         ans:"isn't" },
+  { en:'It ___ cold.',                pl:'Nie jest zimno.',                  ans:"isn't" },
+  { en:'My dad ___ angry.',           pl:'Mój tata nie jest zły.',           ans:"isn't" },
+  { en:'We ___ ready.',               pl:'Nie jesteśmy gotowi.',             ans:"aren't" },
+  { en:'They ___ here.',              pl:'Ich tu nie ma.',                   ans:"aren't" },
+  { en:'You ___ late.',               pl:'Nie jesteś spóźniony.',            ans:"aren't" },
+  { en:'The dogs ___ small.',         pl:'Psy nie są małe.',                 ans:"aren't" },
+];
+const FORMS = ['am','is','are',"isn't","aren't",'am not'];
+const COLORS = { 'am':'#ff8fab','is':'#4dabf7','are':'#12b886',"isn't":'#ffa94d',"aren't":'#a78bfa','am not':'#f06595' };
+
+const $ = id => document.getElementById(id);
+const zone = $('zone');
+let score=0, streak=0, lives=3, cur=null, balloons=[], order=[], orderIdx=0, running=true, lastT=0, spawnAcc=0;
+
+function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+function rand(a){ return a[Math.floor(Math.random()*a.length)]; }
+
+function newSentence(){
+  if(orderIdx>=order.length){ order=shuffle(BANK.map((_,i)=>i)); orderIdx=0; }
+  cur = BANK[order[orderIdx++]];
+  $('plHint').textContent = '🇵🇱 ' + cur.pl;
+  $('sentence').innerHTML = cur.en.replace('___','<span class="gap" id="gap">?</span>');
+  $('feedback').textContent=''; $('feedback').className='feedback';
+  // upewnij się, że poprawna forma jest wśród balonów
+  ensureAnswerBalloon();
+}
+function ensureAnswerBalloon(){
+  if(!cur) return;
+  if(!balloons.some(b=>!b.popped && b.form===cur.ans)){
+    // podmień formę losowego balonu na poprawną (albo dodaj nowy)
+    const alive = balloons.filter(b=>!b.popped);
+    if(alive.length){ setForm(rand(alive), cur.ans); }
+    else spawn(cur.ans);
+  }
+}
+
+function makeBalloonEl(form){
+  const el=document.createElement('div'); el.className='balloon';
+  el.innerHTML='<div class="body"><span class="shine"></span><span class="lab"></span></div><div class="knot"></div><div class="string"></div>';
+  el.querySelector('.body').addEventListener('pointerdown', e=>{ e.preventDefault(); popBalloon(el.__b); });
+  zone.appendChild(el);
+  return el;
+}
+function setForm(b, form){
+  b.form=form;
+  b.el.querySelector('.lab').textContent=form;
+  const body=b.el.querySelector('.body');
+  body.style.background='radial-gradient(circle at 34% 28%, #ffffff55, '+COLORS[form]+' 60%, '+shade(COLORS[form],-18)+')';
+  body.style.borderColor=COLORS[form];
+}
+function shade(hex,p){ const n=parseInt(hex.slice(1),16); let r=(n>>16)+p, g=((n>>8)&255)+p, b=(n&255)+p; r=Math.max(0,Math.min(255,r));g=Math.max(0,Math.min(255,g));b=Math.max(0,Math.min(255,b)); return '#'+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1); }
+
+function spawn(force, initial){
+  const W=window.innerWidth, H=window.innerHeight;
+  const form = force || rand(FORMS);
+  const el = makeBalloonEl(form);
+  // initial: rozłóż balony w widocznym obszarze; kolejne: startują tuż spod ekranu
+  const y0 = initial ? (80 + Math.random()*(H*0.72)) : (-30 - Math.random()*40);
+  const b={ el, form, x: 60+Math.random()*(W-120), y: y0, vy: 52+Math.random()*40, sway: Math.random()*Math.PI*2, swayAmp: 12+Math.random()*22, swaySpd: .6+Math.random()*.8, popped:false };
+  el.__b=b;
+  setForm(b, form);
+  balloons.push(b);
+  place(b);
+  return b;
+}
+function place(b){
+  const H=window.innerHeight;
+  b.el.style.left = (b.x + Math.sin(b.sway)*b.swayAmp) + 'px';
+  b.el.style.top  = (H - b.y) + 'px';
+}
+function popBalloon(b){
+  if(!b || b.popped || !running) return;
+  b.popped=true;
+  const H=window.innerHeight;
+  const px=b.x+Math.sin(b.sway)*b.swayAmp, py=H-b.y+30;
+  b.el.classList.add('pop');
+  setTimeout(()=>{ b.el.remove(); balloons=balloons.filter(x=>x!==b); ensureAnswerBalloon(); }, 300);
+
+  if(b.form===cur.ans){
+    burst(px,py,'💥'); confetti(px,py);
+    fillGap(b.form,true);
+    score += 10 + streak*2; streak++;
+    $('score').textContent=score; $('streak').textContent=streak;
+    beep(660,.08); setTimeout(()=>beep(880,.12),90);
+    speak(cur.en.replace('___',b.form));
+    $('feedback').textContent='✅ Świetnie!'; $('feedback').className='feedback ok';
+    running=false;
+    setTimeout(()=>{ running=true; newSentence(); }, 1050);
+  } else {
+    burst(px,py,'❌');
+    fillGap(b.form,false);
+    streak=0; $('streak').textContent=0;
+    beep(180,.18,'sawtooth');
+    loseLife();
+    $('feedback').textContent='❌ To nie ta forma. Spróbuj innego balonu!'; $('feedback').className='feedback bad';
+    // luka wraca do '?'
+    setTimeout(()=>{ const g=$('gap'); if(g && running){ g.textContent='?'; g.className='gap'; } }, 700);
+  }
+}
+function fillGap(form, ok){
+  const g=$('gap'); if(!g) return;
+  g.textContent=form; g.className='gap filled'+(ok?'':' wrong');
+}
+function burst(x,y,emoji){ const e=document.createElement('div'); e.className='burst'; e.textContent=emoji; e.style.left=x+'px'; e.style.top=y+'px'; zone.appendChild(e); setTimeout(()=>e.remove(),500); }
+function confetti(x,y){
+  const em=['🎉','⭐','✨','🎈','💫'];
+  for(let i=0;i<10;i++){ const c=document.createElement('div'); c.className='burst'; c.textContent=rand(em); c.style.left=(x+(Math.random()-.5)*80)+'px'; c.style.top=(y+(Math.random()-.5)*40)+'px'; c.style.fontSize=(.9+Math.random())+'rem'; zone.appendChild(c); setTimeout(()=>c.remove(),520); }
+}
+function loseLife(){
+  lives=Math.max(0,lives-1);
+  $('lives').textContent = '❤️'.repeat(lives) + '🖤'.repeat(3-lives);
+  document.querySelector('.card').animate([{transform:'translateX(0)'},{transform:'translateX(-8px)'},{transform:'translateX(8px)'},{transform:'translateX(0)'}],{duration:260});
+  if(lives<=0) gameOver();
+}
+function gameOver(){
+  running=false;
+  $('finalScore').textContent=score;
+  $('finalMsg').textContent = score>=120?'Mistrz to be! 🏆' : score>=60?'Świetna robota! 👏' : 'Ćwicz dalej — dasz radę! 💪';
+  $('over').classList.add('show');
+}
+function restart(){
+  $('over').classList.remove('show');
+  balloons.forEach(b=>b.el.remove()); balloons=[];
+  score=0; streak=0; lives=3; orderIdx=order.length; running=true; spawnAcc=0;
+  $('score').textContent=0; $('streak').textContent=0; $('lives').textContent='❤️❤️❤️';
+  for(let i=0;i<6;i++) spawn(null, true);
+  newSentence();
+}
+
+// ── pętla animacji ──
+function loop(t){
+  const dt=Math.min(.05,(t-lastT)/1000||0); lastT=t;
+  const H=window.innerHeight;
+  if(running){
+    spawnAcc+=dt;
+    const target = window.innerWidth<560 ? 5 : 7;
+    if(spawnAcc>.7 && balloons.filter(b=>!b.popped).length<target){ spawnAcc=0; spawn(); ensureAnswerBalloon(); }
+  }
+  for(const b of balloons){
+    if(b.popped) continue;
+    b.y += b.vy*dt; b.sway += b.swaySpd*dt;
+    if(b.y > H+140){ // uciekł na górę — recykling (bez kary)
+      b.y=-20; b.x=60+Math.random()*(window.innerWidth-120);
+      // czasem nadaj poprawną formę, żeby zawsze była dostępna
+      setForm(b, (Math.random()<.3 && cur)?cur.ans:rand(FORMS));
+    }
+    place(b);
+  }
+  requestAnimationFrame(loop);
+}
+
+// ── dźwięk (WebAudio) ──
+let AC=null;
+function beep(freq,dur,type){ try{ AC=AC||new (window.AudioContext||window.webkitAudioContext)(); const o=AC.createOscillator(),g=AC.createGain(); o.type=type||'sine'; o.frequency.value=freq; o.connect(g); g.connect(AC.destination); g.gain.setValueAtTime(.14,AC.currentTime); g.gain.exponentialRampToValueAtTime(.001,AC.currentTime+dur); o.start(); o.stop(AC.currentTime+dur);}catch(e){} }
+// ── TTS ──
+let voices=[]; function lv(){ voices=window.speechSynthesis?speechSynthesis.getVoices():[]; }
+if(window.speechSynthesis){ lv(); speechSynthesis.onvoiceschanged=lv; }
+function speak(text){ if(!window.speechSynthesis) return; try{ speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance(text); const v=voices.find(x=>/en-GB/i.test(x.lang))||voices.find(x=>/^en/i.test(x.lang)); if(v)u.voice=v; u.lang='en-GB'; u.rate=.95; speechSynthesis.speak(u);}catch(e){} }
+
+// start
+for(let i=0;i<6;i++) spawn(null, true);
+newSentence();
+requestAnimationFrame(loop);
+window.addEventListener('resize', ()=>{ balloons.forEach(place); });
+</script>
+</body>
+</html>
