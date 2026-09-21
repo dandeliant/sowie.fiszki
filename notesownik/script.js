@@ -113,7 +113,7 @@ function router() {
         const id = hash.slice('#/board/'.length);
         if (!state.boards[id]) { toast('Tablica nie istnieje', 'error'); location.hash = '#/'; return; }
         state.currentBoardId = id;
-        state.readOnly = false;
+        state.readOnly = !nsCanEdit();
         ensureBoardDefaults(state.boards[id]);
         showView('board');
         renderBoard();
@@ -134,7 +134,7 @@ async function openCloudBoard(slug) {
     const existing = Object.values(state.boards).find(b => b.cloudSlug === slug);
     if (existing && existing.ownerId && existing.ownerId === myId) {
         state.currentBoardId = existing.id;
-        state.readOnly = false;
+        state.readOnly = !nsCanEdit();
         ensureBoardDefaults(existing);
         showView('board');
         renderBoard();
@@ -153,7 +153,7 @@ async function openCloudBoard(slug) {
     b.ownerId = row.owner_id;
     state.boards[b.id] = b;
     state.currentBoardId = b.id;
-    state.readOnly = !(myId && row.owner_id === myId);
+    state.readOnly = !(myId && row.owner_id === myId && nsCanEdit());
     ensureBoardDefaults(b);
     showView('board');
     renderBoard();
@@ -174,8 +174,16 @@ function applyReadOnly() {
             ban = document.createElement('div');
             ban.id = 'nsReadonlyBanner';
             ban.className = 'ns-readonly-banner';
-            ban.textContent = '👁️ Podgląd tablicy — tylko właściciel może ją edytować.';
             document.body.appendChild(ban);
+        }
+        // Wlasciciel bez uprawnien vs gosc z linkiem — inny komunikat.
+        const b = currentBoard();
+        const myId = window.NSCloud ? NSCloud.userId() : null;
+        const owns = b && myId && b.ownerId === myId;
+        if (owns && window.NSCloud && !NSCloud.canEdit()) {
+            ban.textContent = '🔒 Podgląd — edycja tylko dla nauczyciela z Premium lub administratora.';
+        } else {
+            ban.textContent = '👁️ Podgląd tablicy — tylko właściciel może ją edytować.';
         }
         ban.style.display = '';
     } else if (ban) {
@@ -251,8 +259,27 @@ function buildBoardTile(board) {
     return tile;
 }
 
+// ============== UPRAWNIENIA (tworzenie/edycja) ==============
+// Tworzyc i edytowac tablice moga tylko: Admin oraz Nauczyciel z Premium.
+// Goscie z linkiem, uczniowie i rodzice maja tylko podglad.
+function nsCanEdit() {
+    return !!(window.NSCloud && NSCloud.canEdit());
+}
+function nsShowEditGate() {
+    if (!window.NSCloud || !NSCloud.userId()) {
+        toast('Zaloguj się w Sowie Fiszki, aby tworzyć własne tablice.', 'error');
+        return;
+    }
+    if (window.NSCloud && NSCloud.isTeacher() && !NSCloud.hasPremium()) {
+        toast('Tworzenie tablic wymaga konta Premium (nauczyciel). 24 zł/mies. — wkrótce.', 'error');
+        return;
+    }
+    toast('Tworzenie tablic jest dostępne dla nauczycieli z Premium i administratorów.', 'error');
+}
+
 // ============== BOARD CREATION ==============
 function openNewBoardModal() {
+    if (!nsCanEdit()) { nsShowEditGate(); return; }
     state.selectedTheme = 'sunset';
     document.getElementById('newBoardTitle').value = '';
     document.getElementById('newBoardDesc').value = '';
@@ -265,6 +292,7 @@ function openNewBoardModal() {
 function closeNewBoardModal() { document.getElementById('newBoardModal').classList.remove('active'); }
 
 function createBoard() {
+    if (!nsCanEdit()) { closeNewBoardModal(); nsShowEditGate(); return; }
     const title = document.getElementById('newBoardTitle').value.trim() || 'Moja tablica';
     const desc = document.getElementById('newBoardDesc').value.trim();
     const seedDemo = document.getElementById('seedDemo').checked;

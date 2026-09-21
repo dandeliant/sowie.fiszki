@@ -9,8 +9,25 @@
   'use strict';
 
   const TABLE = 'notesownik_boards';
-  let sb = null;      // klient Supabase (z supabase-config.js: window.supabase)
-  let user = null;    // zalogowany uzytkownik lub null
+  // Promocja Premium dla wszystkich do 31.10.2026 (spojne z db.js isPromoActive()).
+  const PROMO_END = Date.parse('2026-11-01T00:00:00');
+  let sb = null;        // klient Supabase (z supabase-config.js: window.supabase)
+  let user = null;      // zalogowany uzytkownik lub null
+  let profile = null;   // { is_admin, is_teacher, plan, plan_expires_at }
+
+  function isPromoActive() { return Date.now() < PROMO_END; }
+
+  async function loadProfile() {
+    profile = null;
+    if (!sb || !user) return;
+    try {
+      const { data } = await sb.from('profiles')
+        .select('is_admin,is_teacher,plan,plan_expires_at')
+        .eq('id', user.id)
+        .maybeSingle();
+      profile = data || null;
+    } catch (e) { profile = null; }
+  }
 
   const NSCloud = {
     async init() {
@@ -21,8 +38,12 @@
         const { data } = await sb.auth.getSession();
         user = data && data.session ? data.session.user : null;
       } catch (e) { user = null; }
+      await loadProfile();
       try {
-        sb.auth.onAuthStateChange((_ev, session) => { user = session ? session.user : null; });
+        sb.auth.onAuthStateChange((_ev, session) => {
+          user = session ? session.user : null;
+          loadProfile();
+        });
       } catch (e) {}
       return true;
     },
@@ -31,6 +52,27 @@
     user() { return user; },
     userId() { return user ? user.id : null; },
     loginUrl() { return (location.origin + '/login'); },
+
+    // Czy uzytkownik moze TWORZYC/EDYTOWAC tablice:
+    //  - admin: zawsze,
+    //  - nauczyciel: tylko Premium (w trakcie promocji = kazdy nauczyciel),
+    //  - reszta (uczen/rodzic/gosc): nie.
+    hasPremium() {
+      if (!profile) return false;
+      if (profile.is_admin) return true;
+      if (isPromoActive()) return true;
+      return profile.plan === 'premium'
+        && !!profile.plan_expires_at
+        && new Date(profile.plan_expires_at).getTime() > Date.now();
+    },
+    canEdit() {
+      if (!user || !profile) return false;
+      if (profile.is_admin) return true;
+      if (profile.is_teacher) return this.hasPremium();
+      return false;
+    },
+    isTeacher() { return !!(profile && profile.is_teacher); },
+    isAdmin() { return !!(profile && profile.is_admin); },
 
     // sekretny, trudny do zgadniecia slug (18 znakow base58-ish)
     genSlug() {
