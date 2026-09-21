@@ -4881,6 +4881,7 @@ const BOOK_ALIASES = {
   link7:        'LK7',
   link8:        'LK8',
   impuls3:      'I3',
+  impulse2:     'I2',
   newpasswordb1plus: 'NP B1+'
 };
 
@@ -4900,6 +4901,7 @@ const PUBLISHERS = {
   bugsteam2:  { name: 'Macmillan Polska', url: 'https://www.macmillan.pl' },
   bugsteam3:  { name: 'Macmillan Polska', url: 'https://www.macmillan.pl' },
   impuls3:    { name: 'Macmillan Polska', url: 'https://www.macmillan.pl' },
+  impulse2:   { name: 'Macmillan Polska', url: 'https://www.macmillan.pl' },
   joinbugsteam1: { name: 'Macmillan Polska', url: 'https://www.macmillan.pl' },
   stayBrainy4:{ name: 'Macmillan Polska', url: 'https://www.macmillan.pl' },
   brainy5:    { name: 'Macmillan Polska', url: 'https://www.macmillan.pl' },
@@ -10752,12 +10754,21 @@ function fuzzy(u,c){const un=norm(u),cn=norm(c);if(un===cn)return true;return le
 function wordMatchStrict(u, c){
   const un = norm(u);
   if (!un) return false;
-  const raw = String(c||'');
+  const raw = String(c||'').trim();
   // Warianty: pełny tekst + wersja bez treści w nawiasach (opcjonalny kontekst,
   // np. „interesować się (czymś)" → także „interesować się").
   const bases = [raw, raw.replace(/\([^)]*\)/g, ' ')];
   const alts = [];
-  bases.forEach(b => b.split(/[,;/]|\blub\b|\balbo\b/i).forEach(x => { const n = norm(x); if (n && !alts.includes(n)) alts.push(n); }));
+  // Przecinek/średnik/ukośnik traktujemy jako separator synonimów TYLKO wtedy,
+  // gdy odpowiedź jest listą tłumaczeń, a NIE zwrotem/zdaniem. Zwroty kończące
+  // się interpunkcją zdaniową (. ! ? …) wymagają wpisania CAŁOŚCI — inaczej
+  // „Actually, I'm busy." zaliczało się po wpisaniu samego „Actually".
+  const isPhrase = /[.!?…]\s*$/.test(raw) || /\.\.\.\s*$/.test(raw);
+  if (isPhrase) {
+    bases.forEach(b => { const n = norm(b); if (n && !alts.includes(n)) alts.push(n); });
+  } else {
+    bases.forEach(b => b.split(/[,;/]|\blub\b|\balbo\b/i).forEach(x => { const n = norm(x); if (n && !alts.includes(n)) alts.push(n); }));
+  }
   return alts.includes(un);
 }
 // Porownuje wpisany tekst z poprawnym znak po znaku i zwraca HTML, w ktorym

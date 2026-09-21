@@ -4299,8 +4299,8 @@ const BOOKS = {
   ,impuls3: {
     id: 'impuls3',
     language: 'en', schoolType: 'secondary', grade: 2,
-    name: 'Impuls 3',
-    shortName: 'Impuls 3',
+    name: 'Impulse 3',
+    shortName: 'Impulse 3',
     icon: '⚡',
     color: '#0984e3',
     description: 'Klasa 2 · Szkoła Średnia',
