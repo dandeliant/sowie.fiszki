@@ -1,0 +1,965 @@
+<!DOCTYPE html>
+<html lang="pl" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Adventure Board Game</title>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #4a90e2;
+      --primary-dark: #3a7dc2;
+      --secondary: #50e3c2;
+      --accent: #f5a623;
+      --red: #ff6b6b;
+      --blue: #4a90e2;
+      --green: #2ecc71;
+      --purple: #9b59b6;
+      --teleport: #00bcd4;
+      --bg: #eef1f6;
+      --surface: #ffffff;
+      --surface-2: #f6f8fb;
+      --text: #2c3e50;
+      --muted: #7a8aa0;
+      --border: #dce3ec;
+      --shadow: 0 8px 30px rgba(20, 40, 80, 0.10);
+    }
+
+    [data-theme="dark"] {
+      --bg: #0f1623;
+      --surface: #18212f;
+      --surface-2: #131b27;
+      --text: #e6ecf5;
+      --muted: #8fa0b8;
+      --border: #28344a;
+      --shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Roboto', sans-serif;
+      background:
+        radial-gradient(1200px 600px at 10% -10%, rgba(74,144,226,0.10), transparent 60%),
+        radial-gradient(1000px 500px at 110% 10%, rgba(80,227,194,0.10), transparent 55%),
+        var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+      transition: background-color .3s, color .3s;
+    }
+
+    .container {
+      max-width: 960px;
+      width: 100%;
+      background: var(--surface);
+      padding: 22px;
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+      margin-bottom: 18px;
+      border: 1px solid var(--border);
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    h1 {
+      font-family: 'Poppins', sans-serif;
+      background: linear-gradient(90deg, var(--primary), var(--secondary));
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      font-size: clamp(1.4rem, 3vw, 2rem);
+      letter-spacing: .5px;
+    }
+
+    .icon-btn {
+      background: var(--surface-2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      width: 42px; height: 42px;
+      border-radius: 12px;
+      font-size: 1.1rem;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform .15s, background .2s;
+    }
+    .icon-btn:hover { transform: translateY(-2px); }
+
+    #gameMessage {
+      font-size: 1.1rem;
+      color: var(--primary);
+      font-weight: 700;
+      text-align: center;
+      margin: 14px 0 4px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: var(--surface-2);
+      border: 1px dashed var(--border);
+      display: none;
+      animation: pop .35s ease;
+    }
+    @keyframes pop { from { transform: scale(.96); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+    .game-controls {
+      display: flex;
+      gap: 10px;
+      margin: 16px 0 4px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    input, select {
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface-2);
+      color: var(--text);
+      font-size: .95rem;
+      outline: none;
+      transition: border .2s, box-shadow .2s;
+    }
+    input:focus, select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(74,144,226,.18); }
+
+    button {
+      padding: 10px 16px;
+      border: none;
+      border-radius: 10px;
+      background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+      color: white;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: .95rem;
+      transition: transform .15s, box-shadow .2s, opacity .2s;
+      box-shadow: 0 4px 14px rgba(74,144,226,.30);
+    }
+    button:hover { transform: translateY(-2px); }
+    button:active { transform: translateY(0); }
+    button:disabled { opacity: .45; cursor: not-allowed; transform: none; box-shadow: none; }
+    button.ghost {
+      background: var(--surface-2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      box-shadow: none;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 18px;
+    }
+    @media (max-width: 820px) { .layout { grid-template-columns: 1fr; } }
+
+    .board-wrap { position: relative; }
+    .board {
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      gap: 8px;
+      position: relative;
+    }
+    @media (max-width: 520px) { .board { grid-template-columns: repeat(5, 1fr); } }
+
+    .square {
+      aspect-ratio: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--border);
+      position: relative;
+      border-radius: 10px;
+      background: var(--surface-2);
+      font-size: 1.3rem;
+      transition: transform .15s, box-shadow .2s;
+    }
+    .square:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+
+    .square.start  { background: linear-gradient(135deg, var(--accent), #ffd27a); color:#5a3b00; }
+    .square.finish { background: linear-gradient(135deg, var(--secondary), #9af5e0); color:#0b5345; }
+    .square.red    { background: linear-gradient(135deg, var(--red), #ffa1a1); }
+    .square.blue   { background: linear-gradient(135deg, var(--blue), #8fc0f5); }
+    .square.green  { background: linear-gradient(135deg, var(--green), #93e6b8); }
+    .square.purple { background: linear-gradient(135deg, var(--purple), #c79be0); }
+    .square.teleport { background: linear-gradient(135deg, var(--teleport), #82e9f5); }
+
+    .square .emoji { filter: drop-shadow(0 1px 1px rgba(0,0,0,.15)); }
+
+    .number {
+      position: absolute;
+      top: 3px; left: 5px;
+      font-size: 9px;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .player {
+      width: 26px; height: 26px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      color: white;
+      font-size: 12px;
+      position: absolute;
+      box-shadow: 0 2px 6px rgba(0,0,0,.35), inset 0 0 0 2px rgba(255,255,255,.4);
+      transition: left .3s ease, top .3s ease, transform .2s;
+      z-index: 5;
+      pointer-events: none;
+    }
+    .player.active { transform: scale(1.18); z-index: 7; box-shadow: 0 0 0 3px var(--accent), 0 2px 8px rgba(0,0,0,.4); }
+
+    .red-player { background:#e74c3c; }
+    .blue-player { background:#3498db; }
+    .green-player { background:#27ae60; }
+    .yellow-player { background:#f1c40f; color:#5a4500; }
+    .purple-player { background:#9b59b6; }
+
+    /* Side panel */
+    .panel h3 { font-family:'Poppins',sans-serif; font-size:1rem; margin-bottom:10px; color:var(--text); }
+
+    .player-card {
+      background: var(--surface-2);
+      border-radius: 12px;
+      padding: 12px;
+      margin-bottom: 10px;
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--primary);
+      transition: box-shadow .2s, transform .15s;
+    }
+    .player-card.highlight { box-shadow: 0 0 0 2px var(--accent); transform: translateY(-1px); }
+    .pc-head { display:flex; align-items:center; gap:8px; }
+    .pc-dot { width:18px; height:18px; border-radius:50%; flex:none; }
+    .pc-name { font-weight:700; }
+    .pc-bot { font-size:.7rem; background:var(--primary); color:#fff; padding:1px 6px; border-radius:8px; }
+    .pc-meta { font-size:.78rem; color:var(--muted); margin-top:4px; }
+    .progress { height:6px; background:var(--border); border-radius:6px; margin-top:8px; overflow:hidden; }
+    .progress > i { display:block; height:100%; background:linear-gradient(90deg,var(--primary),var(--secondary)); border-radius:6px; transition:width .4s ease; }
+    .pc-actions { display:flex; align-items:center; gap:8px; margin-top:10px; }
+
+    .dice {
+      width: 44px; height: 44px;
+      background: #fff;
+      color:#2c3e50;
+      border-radius: 10px;
+      display: inline-grid;
+      grid-template-columns: repeat(3,1fr);
+      grid-template-rows: repeat(3,1fr);
+      padding: 6px;
+      box-shadow: inset 0 0 0 1px var(--border), 0 3px 8px rgba(0,0,0,.2);
+    }
+    .dice .pip { width:8px; height:8px; border-radius:50%; background:#2c3e50; align-self:center; justify-self:center; }
+    .dice.rolling { animation: shake .5s ease; }
+    @keyframes shake {
+      0%,100% { transform: rotate(0) scale(1); }
+      25% { transform: rotate(-18deg) scale(1.1); }
+      50% { transform: rotate(14deg) scale(1.05); }
+      75% { transform: rotate(-8deg) scale(1.08); }
+    }
+    /* pip layouts */
+    .d1 .p5{visibility:visible}
+    .pip{visibility:hidden}
+    .show{visibility:visible}
+
+    .log {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 12px;
+      max-height: 180px;
+      overflow-y: auto;
+      font-size: .82rem;
+      color: var(--muted);
+    }
+    .log p { padding: 3px 0; border-bottom: 1px dashed var(--border); }
+    .log p:last-child { border-bottom: none; }
+    .log b { color: var(--text); }
+
+    .legend { display:grid; grid-template-columns:1fr 1fr; gap:6px; font-size:.8rem; margin-top:6px; }
+    .legend span { display:flex; align-items:center; gap:6px; }
+    .swatch { width:14px; height:14px; border-radius:4px; flex:none; }
+
+    /* Modal */
+    .modal {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(10,16,28,.55);
+      backdrop-filter: blur(3px);
+      z-index: 50;
+      align-items: center;
+      justify-content: center;
+      animation: fade .25s ease;
+    }
+    @keyframes fade { from {opacity:0} to {opacity:1} }
+    .modal-content {
+      background: var(--surface);
+      color: var(--text);
+      padding: 26px;
+      border-radius: 16px;
+      max-width: 480px;
+      width: 92%;
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      animation: pop .3s ease;
+    }
+    .modal-content h2 { font-family:'Poppins',sans-serif; margin-bottom:12px; }
+    .modal-content ul { margin-left: 18px; margin-top: 8px; line-height: 1.7; }
+    .close-btn { float: right; background: none; border: none; font-size: 1.6rem; cursor: pointer; color: var(--muted); box-shadow:none; }
+    .close-btn:hover { color: var(--text); transform:none; }
+
+    .winner-trophy { font-size: 3.5rem; text-align:center; }
+    .toggle { display:flex; align-items:center; gap:8px; font-size:.9rem; color:var(--text); user-select:none; cursor:pointer; }
+    .toggle input { width:auto; }
+
+    .confetti {
+      position: fixed;
+      width: 10px; height: 10px;
+      top: -10px;
+      z-index: 9999;
+      will-change: transform;
+      animation: fall linear forwards;
+    }
+    @keyframes fall {
+      to { transform: translateY(105vh) rotate(720deg); opacity: 0; }
+    }
+
+    /* ── Powrot do Sowie Fiszki + Jak grac ── */
+    .back-link {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: var(--surface); color: var(--primary);
+      border: 1px solid var(--border); border-radius: 999px;
+      padding: .5rem 1.1rem; text-decoration: none;
+      font-weight: 700; font-size: .95rem; box-shadow: var(--shadow);
+      transition: transform .15s ease;
+    }
+    .back-link:hover { transform: translateY(-1px); }
+    .back-top-wrap { margin-bottom: 4px; }
+    .back-bottom-wrap { margin: 2px 0 20px; }
+
+    .htp-btn {
+      position: fixed; bottom: 16px; right: 16px; z-index: 60;
+      border: none; border-radius: 999px; padding: .6rem 1rem;
+      background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+      color: #fff; font-weight: 700; font-size: .9rem; cursor: pointer;
+      box-shadow: 0 8px 20px rgba(74,144,226,.4);
+    }
+    .htp-modal {
+      position: fixed; inset: 0; background: rgba(10,16,28,.6);
+      display: none; align-items: center; justify-content: center;
+      z-index: 70; padding: 1rem;
+    }
+    .htp-modal.show { display: flex; }
+    .htp-box {
+      background: var(--surface); color: var(--text); border: 1px solid var(--border);
+      border-radius: 16px; padding: 1.6rem; max-width: 480px; width: 100%;
+      box-shadow: var(--shadow); text-align: left; max-height: 85vh; overflow-y: auto;
+    }
+    .htp-box h3 { font-family: 'Poppins', sans-serif; margin: 0 0 .8rem; color: var(--primary); }
+    .htp-box ol { margin: 0 0 1rem; padding-left: 1.3rem; }
+    .htp-box li { margin: .45rem 0; line-height: 1.4; }
+    .htp-box .htp-close {
+      width: 100%; margin-top: .4rem; border: none; border-radius: 10px;
+      padding: .7rem 1rem; color: #fff; font-weight: 700; cursor: pointer;
+      background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    }
+
+    @media print {
+      .back-link, .back-top-wrap, .back-bottom-wrap, .htp-btn, .htp-modal, .icon-btn, .game-controls { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="back-top-wrap"><a href="app.html" class="back-link">← Powrót do Sowie Fiszki</a></div>
+  <div class="container">
+    <div class="topbar">
+      <h1>🎲 Adventure Board Game</h1>
+      <div style="display:flex; gap:8px;">
+        <button class="icon-btn" id="soundBtn" title="Dźwięk wł./wył.">🔊</button>
+        <button class="icon-btn" id="themeBtn" title="Motyw jasny/ciemny">🌙</button>
+      </div>
+    </div>
+
+    <div id="gameMessage"></div>
+
+    <div class="game-controls">
+      <input type="text" id="playerName" placeholder="Imię gracza" maxlength="14">
+      <select id="playerColor">
+        <option value="red-player">🔴 Red</option>
+        <option value="blue-player">🔵 Blue</option>
+        <option value="green-player">🟢 Green</option>
+        <option value="yellow-player">🟡 Yellow</option>
+        <option value="purple-player">🟣 Purple</option>
+      </select>
+      <label class="toggle"><input type="checkbox" id="isBot"> 🤖 Bot</label>
+      <button id="addBtn">Dodaj gracza</button>
+      <button id="startBtn" disabled>Start</button>
+      <button class="ghost" id="rulesBtn">Zasady</button>
+      <button class="ghost" id="resetBtn">Reset</button>
+    </div>
+    <div class="game-controls" style="margin-top:4px;">
+      <label class="toggle"><input type="checkbox" id="exactRule"> Wymagaj dokładnego trafienia w metę</label>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="layout">
+      <div class="board-wrap">
+        <div class="board" id="gameBoard"></div>
+        <div class="legend">
+          <span><i class="swatch" style="background:var(--accent)"></i>Start</span>
+          <span><i class="swatch" style="background:var(--secondary)"></i>Meta 🏁</span>
+          <span><i class="swatch" style="background:var(--red)"></i>Cofnij 3 ⬅️</span>
+          <span><i class="swatch" style="background:var(--blue)"></i>Idź +2 ➡️</span>
+          <span><i class="swatch" style="background:var(--green)"></i>Rzuć ponownie 🔁</span>
+          <span><i class="swatch" style="background:var(--purple)"></i>Zamiana 🔄</span>
+          <span><i class="swatch" style="background:var(--teleport)"></i>Teleport 🌀</span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>Gracze</h3>
+        <div id="playersList"></div>
+        <h3 style="margin-top:14px;">Dziennik gry</h3>
+        <div class="log" id="log"><p>Dodaj graczy i naciśnij <b>Start</b>.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="rulesModal" class="modal">
+    <div class="modal-content">
+      <button class="close-btn" data-close="rulesModal">&times;</button>
+      <h2>📜 Zasady gry</h2>
+      <p>Gracze na zmianę rzucają kostką i poruszają się po planszy. Wygrywa pierwszy, kto dotrze na metę (pole 39)!</p>
+      <ul>
+        <li style="color:var(--red)">🔴 Czerwone — cofnij się o 3 pola</li>
+        <li style="color:var(--blue)">🔵 Niebieskie — idź 2 pola do przodu</li>
+        <li style="color:var(--green)">🟢 Zielone — rzuć jeszcze raz</li>
+        <li style="color:var(--purple)">🟣 Fioletowe — zamień się miejscem z ostatnim graczem</li>
+        <li style="color:var(--teleport)">🌀 Teleport — skok do połączonego pola</li>
+      </ul>
+      <p style="margin-top:10px;font-size:.9rem;color:var(--muted)">Wskazówka: naciśnij <b>Spację</b>, aby rzucić kostką, gdy to Twoja kolej.</p>
+    </div>
+  </div>
+
+  <div id="winnerModal" class="modal">
+    <div class="modal-content" style="text-align:center;">
+      <button class="close-btn" data-close="winnerModal">&times;</button>
+      <div class="winner-trophy">🏆</div>
+      <h2 style="text-align:center;">Zwycięzca!</h2>
+      <div id="winnerMessage" style="margin: 14px 0;"></div>
+      <button id="playAgainBtn">Zagraj ponownie</button>
+    </div>
+  </div>
+
+  <div class="back-bottom-wrap"><a href="app.html" class="back-link">← Wróć do Sowie Fiszki</a></div>
+
+  <button class="htp-btn" onclick="document.getElementById('htpModal').classList.add('show')">ℹ️ Jak grać?</button>
+  <div class="htp-modal" id="htpModal" onclick="if(event.target===this)this.classList.remove('show')">
+    <div class="htp-box">
+      <h3>ℹ️ Jak grać? — Gra planszowa</h3>
+      <ol>
+        <li>Wpisz <strong>imię gracza</strong>, wybierz kolor i (opcjonalnie) zaznacz <strong>🤖 Bot</strong>, a potem kliknij <strong>Dodaj gracza</strong>. Dodaj od 2 do 5 graczy.</li>
+        <li>Kliknij <strong>Start</strong>. Gracze na zmianę rzucają kostką — klikając <strong>🎲 Rzuć</strong> lub naciskając <strong>Spację</strong> (gdy Twoja kolej).</li>
+        <li>Pionek przesuwa się o wyrzuconą liczbę oczek. Kolorowe pola mają efekty (cofnij, idź do przodu, rzuć ponownie, zamiana, teleport) — szczegóły w przycisku <strong>Zasady</strong>.</li>
+        <li>Możesz włączyć zasadę <strong>dokładnego trafienia w metę</strong> (odbicie przy przekroczeniu pola 39).</li>
+        <li>Wygrywa pierwszy, kto dotrze na <strong>metę 🏁</strong>. <strong>Reset</strong> czyści grę, 🔊/🌙 to dźwięk i motyw.</li>
+      </ol>
+      <p style="margin:0 0 1rem;font-size:.85rem;color:var(--muted)">💡 Świetne do nagradzania na lekcji, losowania kolejności albo zabawy językowej: przydziel pytania/słówka do pól lub kolorów.</p>
+      <button class="htp-close" onclick="document.getElementById('htpModal').classList.remove('show')">Zamknij</button>
+    </div>
+  </div>
+
+  <script>
+  (() => {
+    'use strict';
+
+    // ---------- Config ----------
+    const BOARD_SIZE = 40;
+    const FINISH = BOARD_SIZE - 1; // 39
+    const specialSquares = {
+      0: 'start', 39: 'finish',
+      5: 'red', 12: 'red', 26: 'red', 33: 'red',
+      7: 'blue', 14: 'blue', 28: 'blue', 35: 'blue',
+      10: 'green', 25: 'green',
+      17: 'purple', 30: 'purple',
+      3: 'teleport', 22: 'teleport'
+    };
+    const teleportLinks = { 3: 19, 22: 8 }; // teleport destinations
+    const emoji = { start:'🏠', finish:'🏁', red:'⬅️', blue:'➡️', green:'🔁', purple:'🔄', teleport:'🌀' };
+
+    // ---------- State ----------
+    let players = {};            // now `let` — reset works
+    let order = [];              // turn order (array of names)
+    let gameStarted = false;
+    let currentIndex = 0;
+    let busy = false;            // blocks input mid-animation
+    let soundOn = true;
+
+    // ---------- DOM ----------
+    const $ = id => document.getElementById(id);
+    const board = $('gameBoard');
+    const playersList = $('playersList');
+    const logEl = $('log');
+
+    // ---------- Audio (Web Audio API — no external files) ----------
+    let audioCtx = null;
+    const ensureAudio = () => {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      return audioCtx;
+    };
+    function tone(freq, dur = 0.15, type = 'sine', vol = 0.2) {
+      if (!soundOn) return;
+      const ctx = ensureAudio();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(vol, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + dur);
+    }
+    const sfx = {
+      dice:  () => { tone(180,0.07,'square',0.18); setTimeout(()=>tone(140,0.07,'square',0.15),60); },
+      move:  () => tone(520,0.08,'triangle',0.12),
+      red:   () => { tone(300,0.18,'sawtooth',0.16); setTimeout(()=>tone(200,0.22,'sawtooth',0.16),140); },
+      blue:  () => tone(660,0.14,'sine',0.18),
+      green: () => { tone(540,0.1,'sine',0.16); setTimeout(()=>tone(780,0.14,'sine',0.16),100); },
+      purple:() => { tone(440,0.1,'triangle',0.16); setTimeout(()=>tone(620,0.12,'triangle',0.16),90); },
+      teleport: () => { for (let i=0;i<5;i++) setTimeout(()=>tone(400+i*120,0.06,'sine',0.14), i*45); },
+      start: () => [392,523,659].forEach((f,i)=>setTimeout(()=>tone(f,0.18,'triangle',0.2), i*120)),
+      win:   () => [523,659,784,1046].forEach((f,i)=>setTimeout(()=>tone(f,0.3,'triangle',0.22), i*160)),
+    };
+
+    // ---------- Board ----------
+    function initBoard() {
+      board.innerHTML = '';
+      for (let i = 0; i < BOARD_SIZE; i++) {
+        const sq = document.createElement('div');
+        sq.className = 'square';
+        sq.id = 'square' + i;
+        const type = specialSquares[i];
+        if (type) {
+          sq.classList.add(type);
+          const e = document.createElement('span');
+          e.className = 'emoji';
+          e.textContent = emoji[type] || '';
+          sq.appendChild(e);
+        }
+        const num = document.createElement('div');
+        num.className = 'number';
+        num.textContent = i;
+        sq.appendChild(num);
+        board.appendChild(sq);
+      }
+    }
+
+    function positionPlayer(div, square, slot = 0, total = 1) {
+      const sq = $('square' + square);
+      if (!sq) return;
+      const sr = sq.getBoundingClientRect();
+      const br = board.getBoundingClientRect();
+      // spread multiple players on one square in a small circle
+      const angle = (slot / total) * Math.PI * 2;
+      const radius = total > 1 ? Math.min(sr.width, sr.height) * 0.22 : 0;
+      const ox = Math.cos(angle) * radius;
+      const oy = Math.sin(angle) * radius;
+      const left = (sr.left - br.left) + sr.width / 2 - div.offsetWidth / 2 + ox;
+      const top  = (sr.top  - br.top)  + sr.height / 2 - div.offsetHeight / 2 + oy;
+      div.style.left = left + 'px';
+      div.style.top  = top + 'px';
+    }
+
+    function refreshPositions() {
+      // group players by square so overlapping pieces fan out
+      const bySquare = {};
+      order.forEach(n => {
+        const s = players[n].square;
+        (bySquare[s] = bySquare[s] || []).push(n);
+      });
+      Object.values(bySquare).forEach(names => {
+        names.forEach((n, i) => positionPlayer(players[n].div, players[n].square, i, names.length));
+      });
+    }
+
+    // ---------- Players ----------
+    function addPlayer() {
+      if (gameStarted) return;
+      const name = $('playerName').value.trim();
+      const color = $('playerColor').value;
+      const isBot = $('isBot').checked;
+      if (!name) return flash('Wpisz imię gracza');
+      if (players[name]) return flash('Gracz o tym imieniu już istnieje');
+      if (Object.keys(players).length >= 5) return flash('Maksymalnie 5 graczy');
+      if (order.some(n => players[n].color === color)) return flash('Ten kolor jest już zajęty');
+
+      const div = document.createElement('div');
+      div.className = 'player ' + color;
+      div.textContent = name.charAt(0).toUpperCase();
+      board.appendChild(div);
+
+      players[name] = { div, square: 0, color, rolls: 0, specials: 0, isBot };
+      order.push(name);
+      positionPlayer(div, 0);
+      renderPlayers();
+      $('playerName').value = '';
+      $('startBtn').disabled = order.length < 2;
+      log(`➕ Dołączył <b>${esc(name)}</b>${isBot ? ' 🤖' : ''}`);
+    }
+
+    function renderPlayers() {
+      playersList.innerHTML = '';
+      const current = order[currentIndex];
+      order.forEach(name => {
+        const p = players[name];
+        const card = document.createElement('div');
+        card.className = 'player-card';
+        if (gameStarted && name === current) card.classList.add('highlight');
+
+        const head = document.createElement('div');
+        head.className = 'pc-head';
+        head.innerHTML = `<span class="pc-dot ${p.color}"></span>
+          <span class="pc-name">${esc(name)}</span>
+          ${p.isBot ? '<span class="pc-bot">BOT</span>' : ''}`;
+        card.appendChild(head);
+
+        const meta = document.createElement('div');
+        meta.className = 'pc-meta';
+        meta.textContent = `Pole ${p.square} • rzutów: ${p.rolls} • pól specjalnych: ${p.specials}`;
+        card.appendChild(meta);
+
+        const prog = document.createElement('div');
+        prog.className = 'progress';
+        prog.innerHTML = `<i style="width:${(p.square / FINISH) * 100}%"></i>`;
+        card.appendChild(prog);
+
+        if (gameStarted) {
+          const actions = document.createElement('div');
+          actions.className = 'pc-actions';
+          actions.appendChild(makeDice(p.lastRoll));
+          if (!p.isBot) {
+            const btn = document.createElement('button');
+            btn.textContent = '🎲 Rzuć';
+            btn.disabled = name !== current || busy;
+            btn.addEventListener('click', () => rollDice(name));
+            actions.appendChild(btn);
+          } else if (name === current) {
+            const span = document.createElement('span');
+            span.style.cssText = 'font-size:.8rem;color:var(--muted)';
+            span.textContent = 'myśli…';
+            actions.appendChild(span);
+          }
+          card.appendChild(actions);
+        }
+        playersList.appendChild(card);
+      });
+    }
+
+    // Dice face with pips
+    const PIP_MAP = {
+      1:[4], 2:[0,8], 3:[0,4,8], 4:[0,2,6,8], 5:[0,2,4,6,8], 6:[0,2,3,5,6,8]
+    };
+    function makeDice(value) {
+      const d = document.createElement('div');
+      d.className = 'dice';
+      const pips = value && PIP_MAP[value] ? PIP_MAP[value] : [];
+      for (let i = 0; i < 9; i++) {
+        const pip = document.createElement('span');
+        pip.className = 'pip' + (pips.includes(i) ? ' show' : '');
+        if (!value) pip.style.visibility = 'hidden';
+        d.appendChild(pip);
+      }
+      return d;
+    }
+
+    // ---------- Game flow ----------
+    function startGame() {
+      if (order.length < 2) return flash('Potrzebujesz min. 2 graczy');
+      ensureAudio();
+      gameStarted = true;
+      $('startBtn').disabled = true;
+      $('addBtn').disabled = true;
+      currentIndex = Math.floor(Math.random() * order.length);
+      sfx.start();
+      log('🚦 Gra rozpoczęta!');
+      renderPlayers();
+      announceTurn();
+    }
+
+    function announceTurn() {
+      const name = order[currentIndex];
+      players[name].div.classList.add('active');
+      order.forEach(n => { if (n !== name) players[n].div.classList.remove('active'); });
+      flash(`Kolej gracza ${name}`);
+      renderPlayers();
+      maybeBotMove();
+    }
+
+    function maybeBotMove() {
+      const name = order[currentIndex];
+      if (gameStarted && players[name].isBot && !busy) {
+        setTimeout(() => rollDice(name), 900);
+      }
+    }
+
+    function rollDice(name) {
+      if (!gameStarted || busy || order[currentIndex] !== name) return;
+      busy = true;
+      const roll = Math.floor(Math.random() * 6) + 1;
+      players[name].rolls++;
+      players[name].lastRoll = roll;
+      sfx.dice();
+      renderPlayers();
+      const dice = playersList.querySelector('.player-card.highlight .dice');
+      if (dice) dice.classList.add('rolling');
+
+      setTimeout(() => {
+        let target = players[name].square + roll;
+        // exact-finish rule: overshooting bounces back
+        if ($('exactRule').checked && target > FINISH) {
+          const overshoot = target - FINISH;
+          target = FINISH - overshoot;
+          log(`↩️ ${esc(name)} przekroczył metę — odbicie o ${overshoot}`);
+        } else {
+          target = Math.min(target, FINISH);
+        }
+        log(`🎲 <b>${esc(name)}</b> wyrzucił <b>${roll}</b> → pole ${target}`);
+        animateMove(name, players[name].square, target, () => resolveSquare(name, target));
+      }, 500);
+    }
+
+    function animateMove(name, start, end, cb) {
+      if (start === end) return cb && cb();
+      const div = players[name].div;
+      const path = [];
+      if (start < end) for (let i = start + 1; i <= end; i++) path.push(i);
+      else for (let i = start - 1; i >= end; i--) path.push(i);
+
+      const step = idx => {
+        if (idx >= path.length) {
+          players[name].square = end;
+          renderPlayers();
+          return cb && cb();
+        }
+        players[name].square = path[idx];
+        sfx.move();
+        refreshPositions();
+        setTimeout(() => step(idx + 1), 240);
+      };
+      step(0);
+    }
+
+    function resolveSquare(name, square) {
+      const type = specialSquares[square];
+      if (type && type !== 'start' && type !== 'finish') players[name].specials++;
+
+      // win first (landing on finish)
+      if (square === FINISH) return handleWin(name);
+
+      switch (type) {
+        case 'red':
+          flash(`${name}: czerwone! Cofnij 3 pola.`); sfx.red();
+          delay(() => animateMove(name, square, Math.max(square - 3, 0), () => endOrContinue(name)));
+          break;
+        case 'blue':
+          flash(`${name}: niebieskie! Idź +2.`); sfx.blue();
+          delay(() => animateMove(name, square, Math.min(square + 2, FINISH), () => {
+            players[name].square === FINISH ? handleWin(name) : nextTurn();
+          }));
+          break;
+        case 'green':
+          flash(`${name}: zielone! Rzuć ponownie.`); sfx.green();
+          busy = false;
+          renderPlayers();
+          maybeBotMove();
+          break;
+        case 'purple':
+          doSwap(name, square);
+          break;
+        case 'teleport': {
+          const dest = teleportLinks[square];
+          flash(`${name}: teleport 🌀 → pole ${dest}!`); sfx.teleport();
+          delay(() => animateMove(name, square, dest, () => {
+            players[name].square === FINISH ? handleWin(name) : nextTurn();
+          }));
+          break;
+        }
+        default:
+          nextTurn();
+      }
+    }
+
+    function endOrContinue(name) {
+      players[name].square === FINISH ? handleWin(name) : nextTurn();
+    }
+
+    function doSwap(name, square) {
+      const others = order.filter(n => n !== name);
+      if (!others.length) return nextTurn();
+      // swap with the player furthest behind
+      const last = others.reduce((a, b) => players[b].square < players[a].square ? b : a, others[0]);
+      const lastSq = players[last].square;
+      flash(`${name} zamienia się miejscem z ${last}!`); sfx.purple();
+      delay(() => {
+        players[name].square = lastSq;
+        players[last].square = square;
+        refreshPositions();
+        renderPlayers();
+        log(`🔄 ${esc(name)} ⇄ ${esc(last)}`);
+        endOrContinue(name);
+      });
+    }
+
+    function nextTurn() {
+      if (!gameStarted) return;
+      currentIndex = (currentIndex + 1) % order.length;
+      busy = false;
+      announceTurn();
+    }
+
+    function handleWin(name) {
+      gameStarted = false;
+      busy = false;
+      sfx.win();
+      flash(`🏆 ${name} wygrywa!`);
+      log(`🏆 <b>${esc(name)}</b> wygrywa po ${players[name].rolls} rzutach!`);
+      confetti();
+      saveHighscore(name, players[name].rolls);
+      $('winnerMessage').innerHTML =
+        `<b>${esc(name)}</b> zwycięża w <b>${players[name].rolls}</b> rzutach!` +
+        `<br><span style="color:var(--muted);font-size:.9rem">Pól specjalnych: ${players[name].specials}</span>` +
+        highscoreHTML();
+      setTimeout(() => openModal('winnerModal'), 1200);
+      renderPlayers();
+    }
+
+    // ---------- Highscores ----------
+    function saveHighscore(name, rolls) {
+      try {
+        const hs = JSON.parse(localStorage.getItem('abg_highscores') || '[]');
+        hs.push({ name, rolls, date: Date.now() });
+        hs.sort((a, b) => a.rolls - b.rolls);
+        localStorage.setItem('abg_highscores', JSON.stringify(hs.slice(0, 5)));
+      } catch (e) {}
+    }
+    function highscoreHTML() {
+      try {
+        const hs = JSON.parse(localStorage.getItem('abg_highscores') || '[]');
+        if (!hs.length) return '';
+        return '<div style="margin-top:14px;text-align:left">🏅 <b>Najlepsze wyniki</b><ol style="margin:6px 0 0 18px;font-size:.85rem">' +
+          hs.map(h => `<li>${esc(h.name)} — ${h.rolls} rzutów</li>`).join('') + '</ol></div>';
+      } catch (e) { return ''; }
+    }
+
+    // ---------- Reset ----------
+    function resetGame() {
+      order.forEach(n => players[n].div.remove());
+      players = {};
+      order = [];
+      gameStarted = false;
+      busy = false;
+      currentIndex = 0;
+      $('startBtn').disabled = true;
+      $('addBtn').disabled = false;
+      playersList.innerHTML = '';
+      logEl.innerHTML = '<p>Dodaj graczy i naciśnij <b>Start</b>.</p>';
+      initBoard();
+      closeModal('winnerModal');
+      hideFlash();
+    }
+
+    // ---------- UI helpers ----------
+    let flashTimer = null;
+    function flash(msg) {
+      const el = $('gameMessage');
+      el.textContent = msg;
+      el.style.display = 'block';
+      clearTimeout(flashTimer);
+      if (!/wygrywa/.test(msg)) flashTimer = setTimeout(hideFlash, 2600);
+    }
+    const hideFlash = () => { $('gameMessage').style.display = 'none'; };
+    function log(html) {
+      const p = document.createElement('p');
+      p.innerHTML = html;
+      logEl.prepend(p);
+      while (logEl.children.length > 40) logEl.lastChild.remove();
+    }
+    const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const delay = (fn, ms = 900) => setTimeout(fn, ms);
+    const openModal = id => $(id).style.display = 'flex';
+    const closeModal = id => $(id).style.display = 'none';
+
+    function confetti() {
+      const colors = ['#f94144','#f3722c','#f8961e','#f9c74f','#90be6d','#43aa8b','#577590','#4a90e2','#50e3c2'];
+      for (let i = 0; i < 160; i++) {
+        const c = document.createElement('div');
+        c.className = 'confetti';
+        const dur = Math.random() * 2 + 2;
+        c.style.left = Math.random() * 100 + 'vw';
+        c.style.background = colors[Math.floor(Math.random() * colors.length)];
+        c.style.animationDuration = dur + 's';
+        c.style.animationDelay = Math.random() * 1.2 + 's';
+        c.style.width = c.style.height = (6 + Math.random() * 8) + 'px';
+        if (Math.random() > 0.5) c.style.borderRadius = '50%';
+        document.body.appendChild(c);
+        setTimeout(() => c.remove(), (dur + 1.5) * 1000);
+      }
+    }
+
+    // ---------- Theme & sound ----------
+    function applyTheme(t) {
+      document.documentElement.setAttribute('data-theme', t);
+      $('themeBtn').textContent = t === 'dark' ? '☀️' : '🌙';
+      try { localStorage.setItem('abg_theme', t); } catch (e) {}
+    }
+
+    // ---------- Wiring ----------
+    $('addBtn').addEventListener('click', addPlayer);
+    $('startBtn').addEventListener('click', startGame);
+    $('resetBtn').addEventListener('click', resetGame);
+    $('rulesBtn').addEventListener('click', () => openModal('rulesModal'));
+    $('playAgainBtn').addEventListener('click', resetGame);
+    $('playerName').addEventListener('keydown', e => { if (e.key === 'Enter') addPlayer(); });
+
+    $('themeBtn').addEventListener('click', () => {
+      const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      applyTheme(next);
+    });
+    $('soundBtn').addEventListener('click', () => {
+      soundOn = !soundOn;
+      $('soundBtn').textContent = soundOn ? '🔊' : '🔇';
+      if (soundOn) ensureAudio();
+    });
+
+    document.querySelectorAll('[data-close]').forEach(b =>
+      b.addEventListener('click', () => closeModal(b.dataset.close)));
+    window.addEventListener('click', e => {
+      document.querySelectorAll('.modal').forEach(m => { if (e.target === m) m.style.display = 'none'; });
+    });
+    // Space to roll for the current human player
+    window.addEventListener('keydown', e => {
+      if (e.code === 'Space' && gameStarted && !busy) {
+        const name = order[currentIndex];
+        if (name && !players[name].isBot) { e.preventDefault(); rollDice(name); }
+      }
+    });
+    window.addEventListener('resize', () => { clearTimeout(window._rt); window._rt = setTimeout(refreshPositions, 120); });
+
+    // ---------- Init ----------
+    initBoard();
+    try { applyTheme(localStorage.getItem('abg_theme') || 'light'); } catch (e) {}
+  })();
+  </script>
+</body>
+</html>
