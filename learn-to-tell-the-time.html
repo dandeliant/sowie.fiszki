@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Learn to Tell Time in English</title>
+<style>
+    :root {
+        --primary: #3498db;
+        --primary-dark: #2980b9;
+        --secondary: #e74c3c;
+        --accent: #2ecc71;
+        --bg: #f0f4f8;
+        --card: #ffffff;
+        --text: #2c3e50;
+        --muted: #7f8c8d;
+        --track: #e6ecf2;
+        --shadow: 0 10px 30px rgba(0,0,0,0.08);
+        --radius: 16px;
+    }
+
+    [data-theme="dark"] {
+        --primary: #5dade2;
+        --primary-dark: #3498db;
+        --secondary: #ec7063;
+        --accent: #58d68d;
+        --bg: #0f172a;
+        --card: #1e293b;
+        --text: #e2e8f0;
+        --muted: #94a3b8;
+        --track: #334155;
+        --shadow: 0 10px 30px rgba(0,0,0,0.4);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+        font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        transition: background 0.3s, color 0.3s;
+        overflow-x: hidden;
+    }
+
+    .bg-bubbles { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+    .bg-bubbles span {
+        position: absolute; bottom: -120px; display: block;
+        width: 40px; height: 40px; border-radius: 50%;
+        background: var(--primary); opacity: 0.08;
+        animation: rise linear infinite;
+    }
+    @keyframes rise { to { transform: translateY(-110vh) scale(1.4); opacity: 0; } }
+
+    header {
+        background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+        color: white; padding: 1.5rem 1rem; text-align: center; box-shadow: var(--shadow);
+    }
+    header h1 { margin: 0 0 .3rem; font-size: 1.8rem; }
+    header p { margin: 0; opacity: .9; }
+
+    main { max-width: 780px; margin: 0 auto; padding: 1.2rem; }
+
+    .toolbar { display: flex; flex-wrap: wrap; gap: .5rem; justify-content: center; margin-bottom: 1rem; }
+    .toolbar .chip {
+        display: inline-flex; align-items: center; gap: .4rem;
+        background: var(--card); color: var(--text); border: 1px solid var(--track);
+        padding: .45rem .8rem; border-radius: 999px; cursor: pointer; font-size: .9rem;
+        user-select: none; box-shadow: var(--shadow); transition: transform .15s;
+    }
+    .toolbar .chip:hover { transform: translateY(-2px); }
+    .toolbar .chip.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+    .container {
+        background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow);
+        padding: 1.5rem; margin-bottom: 1.2rem; text-align: center;
+    }
+
+    /* Settings panel */
+    .panel {
+        background: var(--bg); border-radius: var(--radius); padding: 1rem 1.2rem;
+        margin-bottom: 1.2rem; text-align: left;
+    }
+    .panel summary { font-weight: 800; cursor: pointer; font-size: 1.05rem; outline: none; }
+    .row { display: flex; align-items: center; flex-wrap: wrap; gap: .6rem; margin: .9rem 0; }
+    .row-label { font-weight: 700; min-width: 110px; }
+    .seg-group { display: flex; flex-wrap: wrap; gap: .4rem; }
+    .seg {
+        padding: .45rem .8rem; border: 2px solid var(--track); border-radius: 8px;
+        background: var(--card); color: var(--text); font-weight: 700; font-size: .9rem;
+        cursor: pointer; transition: all .15s; box-shadow: none;
+    }
+    .seg:hover { border-color: var(--primary); transform: translateY(-1px); }
+    .seg.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+    .range-box { display: inline-flex; align-items: center; gap: .25rem; }
+    .range-box input {
+        width: 70px; font-size: 1rem; font-weight: 700; padding: .4rem; text-align: center;
+        border: 2px solid var(--track); border-radius: 8px; background: var(--card); color: var(--text);
+    }
+    .spin { display: flex; flex-direction: column; }
+    .spin button {
+        width: 26px; height: 20px; line-height: 1; padding: 0; margin: 1px 0; font-size: .65rem;
+        background: var(--track); color: var(--text); box-shadow: none; border-radius: 5px;
+    }
+
+    .clock-row { display: flex; flex-direction: column; align-items: center; gap: .4rem; }
+    .analog { width: 220px; height: 220px; }
+    .analog .face { fill: var(--card); stroke: var(--primary); stroke-width: 4; }
+    .analog .tick { stroke: var(--muted); stroke-width: 2; }
+    .analog .tick.major { stroke: var(--text); stroke-width: 3; }
+    .analog .hand { stroke-linecap: round; transition: transform .4s cubic-bezier(.34,1.56,.64,1); transform-origin: 100px 100px; }
+    .analog .hour-hand { stroke: var(--text); stroke-width: 6; }
+    .analog .minute-hand { stroke: var(--primary); stroke-width: 4; }
+    .analog .pin { fill: var(--secondary); }
+    .analog .num { fill: var(--text); font-size: 13px; font-weight: 700; text-anchor: middle; dominant-baseline: central; }
+
+    .digital-time {
+        font-size: 4rem; font-weight: 800; color: var(--primary); margin: .6rem 0; letter-spacing: 2px;
+        min-height: 4.5rem; display: flex; align-items: center; justify-content: center; font-variant-numeric: tabular-nums;
+    }
+    .digital-time .ampm { font-size: 1.6rem; margin-left: .5rem; color: var(--muted); align-self: flex-end; margin-bottom: .7rem; }
+
+    .timer-wrap { margin: .4rem 0 .2rem; }
+    .timer-text { font-weight: 700; color: var(--secondary); }
+    .timer-bar { height: 6px; background: var(--track); border-radius: 3px; overflow: hidden; max-width: 260px; margin: .3rem auto 0; }
+    .timer-fill { height: 100%; width: 100%; background: var(--secondary); transition: width 1s linear; }
+
+    button {
+        padding: .75rem 1.2rem; border: none; border-radius: 10px; background: var(--primary); color: #fff;
+        font-size: 1rem; cursor: pointer; margin: .3rem; font-weight: 700;
+        transition: transform .12s, opacity .2s, box-shadow .2s; box-shadow: 0 4px 12px rgba(52,152,219,.25);
+    }
+    button:hover { transform: translateY(-2px); }
+    button:active { transform: translateY(0); }
+    button:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+    button.secondary { background: var(--secondary); box-shadow: 0 4px 12px rgba(231,76,60,.25); }
+    button.accent { background: var(--accent); box-shadow: 0 4px 12px rgba(46,204,113,.25); }
+    button.ghost { background: transparent; color: var(--text); border: 2px solid var(--track); box-shadow: none; }
+
+    .choices { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem; margin: 1rem 0; }
+    @media (max-width: 520px) { .choices { grid-template-columns: 1fr; } }
+    .choice {
+        background: var(--card); color: var(--text); border: 2px solid var(--track); border-radius: 12px;
+        padding: .9rem 1rem; font-size: 1.05rem; font-weight: 600; cursor: pointer; text-align: left;
+        transition: all .15s; display: flex; align-items: center; gap: .6rem; box-shadow: none;
+    }
+    .choice .key { background: var(--track); color: var(--text); border-radius: 6px; padding: .1rem .5rem; font-size: .85rem; }
+    .choice:hover:not(:disabled) { border-color: var(--primary); transform: translateY(-2px); }
+    .choice.correct { border-color: var(--accent); background: rgba(46,204,113,.15); color: var(--accent); }
+    .choice.wrong { border-color: var(--secondary); background: rgba(231,76,60,.12); color: var(--secondary); }
+
+    .typing-wrap { margin: 1rem 0; }
+    .typing-wrap input {
+        width: 90%; max-width: 420px; padding: .85rem 1rem; font-size: 1.05rem;
+        border: 2px solid var(--track); border-radius: 12px; background: var(--card); color: var(--text);
+    }
+    .typing-wrap input:focus { outline: none; border-color: var(--primary); }
+
+    .feedback { font-size: 1.15rem; margin: .8rem 0; padding: .9rem; border-radius: 10px; display: none; font-weight: 600; }
+    .feedback.correct { background: rgba(46,204,113,.18); color: var(--accent); display: block; }
+    .feedback.wrong { background: rgba(231,76,60,.18); color: var(--secondary); display: block; }
+    .feedback.neutral { background: var(--track); color: var(--text); display: block; }
+
+    .hint { margin: .6rem 0; font-style: italic; color: var(--muted); min-height: 1.2rem; }
+
+    .progress-bar { height: 12px; background: var(--track); border-radius: 6px; overflow: hidden; margin: 1rem 0 .4rem; }
+    .progress { height: 100%; width: 0%; border-radius: 6px; background: linear-gradient(90deg, var(--accent), var(--primary)); transition: width .4s ease; }
+    .progress-text { text-align: right; font-size: .85rem; color: var(--muted); }
+
+    .stats { display: flex; gap: .5rem; margin-top: 1rem; flex-wrap: wrap; }
+    .stat { flex: 1; min-width: 70px; background: var(--bg); border-radius: 12px; padding: .7rem .4rem; }
+    .stat-value { font-size: 1.5rem; font-weight: 800; color: var(--primary); }
+    .stat-label { font-size: .8rem; color: var(--muted); }
+
+    kbd { background: var(--track); border-radius: 4px; padding: .05rem .35rem; font-size: .8rem; }
+    .help { font-size: .85rem; color: var(--muted); margin-top: .6rem; }
+
+    @keyframes popIn { 0% { transform: scale(.5); opacity: 0; } 70% { transform: scale(1.15); } 100% { transform: scale(1); opacity: 1; } }
+    .pop-in { display: inline-block; animation: popIn .4s ease forwards; }
+
+    .confetti { position: fixed; top: -10px; width: 10px; height: 14px; z-index: 999; pointer-events: none; }
+    @keyframes fall { to { transform: translateY(105vh) rotate(720deg); opacity: 0; } }
+
+    /* ── Powrot do Sowie Fiszki + Jak grac ── */
+    .back-link {
+        display: inline-flex; align-items: center; gap: 6px;
+        background: var(--card); color: var(--primary);
+        border: 1px solid var(--track); border-radius: 999px;
+        padding: .5rem 1.1rem; text-decoration: none;
+        font-weight: 700; font-size: .95rem; box-shadow: var(--shadow);
+        transition: transform .15s ease, background .2s ease;
+    }
+    .back-link:hover { transform: translateY(-1px); background: var(--bg); }
+    .back-top-wrap { text-align: center; padding: .9rem 1rem 0; }
+    .back-bottom-wrap { text-align: center; margin: .5rem 0 1.8rem; }
+
+    .htp-btn {
+        position: fixed; bottom: 16px; right: 16px; z-index: 40;
+        margin: 0; padding: .6rem 1rem; border-radius: 999px;
+        background: var(--accent); color: #fff; box-shadow: var(--shadow);
+    }
+    .htp-modal {
+        position: fixed; inset: 0; background: rgba(15,23,42,0.6);
+        display: none; align-items: center; justify-content: center;
+        z-index: 60; padding: 1rem;
+    }
+    .htp-modal.show { display: flex; }
+    .htp-box {
+        background: var(--card); color: var(--text); border: 1px solid var(--track);
+        border-radius: 16px; padding: 1.6rem; max-width: 480px; width: 100%;
+        box-shadow: var(--shadow); text-align: left; max-height: 85vh; overflow-y: auto;
+    }
+    .htp-box h3 { margin: 0 0 .8rem; color: var(--primary); }
+    .htp-box ol { margin: 0 0 1rem; padding-left: 1.3rem; }
+    .htp-box li { margin: .45rem 0; line-height: 1.4; }
+    .htp-box .htp-close { width: 100%; margin-top: .4rem; }
+
+    @media print {
+        .back-link, .back-top-wrap, .back-bottom-wrap, .htp-btn, .htp-modal, .toolbar, .bg-bubbles { display: none !important; }
+    }
+</style>
+</head>
+<body>
+<div class="bg-bubbles" id="bubbles"></div>
+
+<div class="back-top-wrap"><a href="app.html" class="back-link">← Powrót do Sowie Fiszki</a></div>
+
+<header>
+    <h1>🕐 Learn to Tell Time in English</h1>
+    <p>Read the clock, answer the phrase, and hear it spoken aloud</p>
+</header>
+
+<main>
+    <div class="toolbar">
+        <span class="chip active" id="ttsChip">🔊 Voice: On</span>
+        <span class="chip" id="themeChip">🌙 Dark</span>
+        <span class="chip" id="resetChip">↺ Reset</span>
+    </div>
+
+    <details class="panel" id="settings">
+        <summary>⚙️ Settings</summary>
+
+        <div class="row">
+            <span class="row-label">Display:</span>
+            <div class="seg-group" data-setting="display">
+                <button class="seg" data-value="analog">Analog</button>
+                <button class="seg" data-value="digital">Digital</button>
+                <button class="seg active" data-value="both">Both</button>
+            </div>
+        </div>
+
+        <div class="row">
+            <span class="row-label">Format:</span>
+            <div class="seg-group" data-setting="format">
+                <button class="seg active" data-value="12">12-hour</button>
+                <button class="seg" data-value="24">24-hour</button>
+            </div>
+        </div>
+
+        <div class="row">
+            <span class="row-label">Difficulty:</span>
+            <div class="seg-group" data-setting="difficulty">
+                <button class="seg active" data-value="easy">Easy</button>
+                <button class="seg" data-value="medium">Medium</button>
+                <button class="seg" data-value="hard">Hard</button>
+            </div>
+        </div>
+
+        <div class="row">
+            <span class="row-label">Interval:</span>
+            <div class="seg-group" data-setting="interval">
+                <button class="seg" data-value="1">1 min</button>
+                <button class="seg" data-value="5">5 min</button>
+                <button class="seg active" data-value="15">15 min</button>
+                <button class="seg" data-value="30">30 min</button>
+                <button class="seg" data-value="60">1 hr</button>
+            </div>
+        </div>
+
+        <div class="row">
+            <span class="row-label">Time range:</span>
+            <span>From</span>
+            <span class="range-box">
+                <input type="text" id="rangeFrom" value="01:00" readonly>
+                <span class="spin"><button data-range="from" data-unit="h" data-dir="1">▲</button><button data-range="from" data-unit="h" data-dir="-1">▼</button></span>
+                <span class="spin"><button data-range="from" data-unit="m" data-dir="1">▲</button><button data-range="from" data-unit="m" data-dir="-1">▼</button></span>
+            </span>
+            <span>to</span>
+            <span class="range-box">
+                <input type="text" id="rangeTo" value="23:00" readonly>
+                <span class="spin"><button data-range="to" data-unit="h" data-dir="1">▲</button><button data-range="to" data-unit="h" data-dir="-1">▼</button></span>
+                <span class="spin"><button data-range="to" data-unit="m" data-dir="1">▲</button><button data-range="to" data-unit="m" data-dir="-1">▼</button></span>
+            </span>
+        </div>
+
+        <div class="row">
+            <span class="row-label">Answer mode:</span>
+            <div class="seg-group" data-setting="answerMode">
+                <button class="seg active" data-value="mc">Multiple Choice</button>
+                <button class="seg" data-value="typing">Typing</button>
+            </div>
+        </div>
+
+        <div class="row">
+            <span class="row-label">Timer:</span>
+            <div class="seg-group" data-setting="timer">
+                <button class="seg active" data-value="0">Off</button>
+                <button class="seg" data-value="30">30s</button>
+                <button class="seg" data-value="60">60s</button>
+            </div>
+        </div>
+    </details>
+
+    <div class="container">
+        <div class="clock-row">
+            <svg class="analog" id="analog" viewBox="0 0 200 200" aria-hidden="true">
+                <circle class="face" cx="100" cy="100" r="92"/>
+                <g id="ticks"></g>
+                <g id="numbers"></g>
+                <line class="hand hour-hand" id="hourHand" x1="100" y1="100" x2="100" y2="55"/>
+                <line class="hand minute-hand" id="minuteHand" x1="100" y1="100" x2="100" y2="32"/>
+                <circle class="pin" cx="100" cy="100" r="5"/>
+            </svg>
+            <div class="digital-time" id="digitalTime"></div>
+        </div>
+
+        <div class="timer-wrap" id="timerWrap" style="display:none;">
+            <span class="timer-text">Time left: <span id="timerValue">0</span>s</span>
+            <div class="timer-bar"><div class="timer-fill" id="timerFill"></div></div>
+        </div>
+
+        <button id="listenButton" class="accent">🔊 Listen <kbd>L</kbd></button>
+
+        <div class="choices" id="choices"></div>
+
+        <div class="typing-wrap" id="typingWrap" style="display:none;">
+            <input type="text" id="userInput" placeholder="Type the time, e.g. It's quarter past five" autocomplete="off">
+        </div>
+
+        <div class="hint" id="hint"></div>
+        <div class="feedback" id="feedback"></div>
+
+        <div>
+            <button id="checkButton" class="accent" style="display:none;">Check Answer</button>
+            <button id="hintButton" class="ghost">💡 Hint</button>
+            <button id="showAnswerButton" class="ghost">Show Answer</button>
+            <button id="nextButton" class="secondary">Next Time ▶</button>
+        </div>
+
+        <div class="progress-bar"><div class="progress" id="progress"></div></div>
+        <div class="progress-text" id="progressText">0/20 this round</div>
+
+        <div class="stats">
+            <div class="stat"><div class="stat-value" id="correctStat">0</div><div class="stat-label">Correct</div></div>
+            <div class="stat"><div class="stat-value" id="attemptsStat">0</div><div class="stat-label">Attempts</div></div>
+            <div class="stat"><div class="stat-value" id="accuracyStat">0%</div><div class="stat-label">Accuracy</div></div>
+            <div class="stat"><div class="stat-value" id="streakStat">0</div><div class="stat-label">Streak</div></div>
+            <div class="stat"><div class="stat-value" id="bestStat">0</div><div class="stat-label">Best</div></div>
+        </div>
+
+        <p class="help">Keys: <kbd>1</kbd>–<kbd>4</kbd> answer · <kbd>L</kbd> listen · <kbd>H</kbd> hint · <kbd>Enter</kbd> next</p>
+    </div>
+</main>
+
+<div class="back-bottom-wrap"><a href="app.html" class="back-link">← Wróć do Sowie Fiszki</a></div>
+
+<button class="htp-btn" onclick="document.getElementById('htpModal').classList.add('show')">ℹ️ Jak grać?</button>
+<div class="htp-modal" id="htpModal" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="htp-box">
+    <h3>ℹ️ Jak grać? — Która godzina?</h3>
+    <ol>
+      <li>Zobacz <strong>zegar</strong> (analogowy i/lub cyfrowy) — Twoim zadaniem jest podać godzinę po angielsku.</li>
+      <li><strong>Multiple Choice</strong>: wybierz poprawne zdanie (np. „It's quarter past five."). <strong>Typing</strong>: wpisz je samodzielnie.</li>
+      <li><strong>🔊 Listen</strong> odczytuje poprawną godzinę na głos (lektor angielski).</li>
+      <li><strong>💡 Hint</strong> podpowiada regułę, a <strong>Show Answer</strong> pokazuje odpowiedź.</li>
+      <li><strong>Next Time ▶</strong> losuje kolejną godzinę.</li>
+      <li>W <strong>⚙️ Settings</strong> ustawisz: analog/cyfrowy, format 12/24 h, poziom, interwał minut, zakres godzin, tryb odpowiedzi i licznik czasu.</li>
+      <li>Skróty: <strong>1–4</strong> = odpowiedź · <strong>L</strong> = posłuchaj · <strong>H</strong> = podpowiedź · <strong>Enter</strong> = następna.</li>
+    </ol>
+    <button class="htp-close" onclick="document.getElementById('htpModal').classList.remove('show')">Zamknij</button>
+  </div>
+</div>
+
+<script>
+(function () {
+    "use strict";
+
+    /* ---------- Number-to-words ---------- */
+    const HOURS = ["twelve","one","two","three","four","five","six","seven","eight","nine","ten","eleven","twelve"];
+    const MIN_WORDS = {5:"five",10:"ten",15:"quarter",20:"twenty",25:"twenty-five"};
+
+    function minutePhrase(m) {
+        if (MIN_WORDS[m]) return MIN_WORDS[m];
+        return m + (m === 1 ? " minute" : " minutes");
+    }
+    function timeToExpression(hour12, minute) {
+        const h = hour12;
+        if (minute === 0) return `It's ${HOURS[h]} o'clock.`;
+        if (minute === 30) return `It's half past ${HOURS[h]}.`;
+        const nextHour = (h % 12) + 1;
+        if (minute < 30) return `It's ${minutePhrase(minute)} past ${HOURS[h]}.`;
+        return `It's ${minutePhrase(60 - minute)} to ${HOURS[nextHour]}.`;
+    }
+
+    /* ---------- Persistence ---------- */
+    const ROUND_SIZE = 20;
+    const DIFF_INTERVAL = { easy: 15, medium: 5, hard: 1 };
+    const store = {
+        load() { try { return JSON.parse(localStorage.getItem("ttt2") || "{}"); } catch { return {}; } },
+        save(s) { try { localStorage.setItem("ttt2", JSON.stringify(s)); } catch {} }
+    };
+    const saved = store.load();
+
+    const state = {
+        hour24: 1, minute: 0, expression: "", answered: false, userAnswer: "",
+        // settings
+        display: saved.display || "both",
+        format: saved.format || "12",
+        difficulty: saved.difficulty || "easy",
+        interval: saved.interval || 15,
+        answerMode: saved.answerMode || "mc",
+        timer: saved.timer || 0,
+        rangeFrom: saved.rangeFrom != null ? saved.rangeFrom : 60,   // minutes since midnight
+        rangeTo: saved.rangeTo != null ? saved.rangeTo : 1380,
+        tts: saved.tts !== false,
+        theme: saved.theme || "light",
+        // stats
+        roundCount: saved.roundCount || 0,
+        correct: saved.correct || 0,
+        attempts: saved.attempts || 0,
+        streak: saved.streak || 0,
+        best: saved.best || 0
+    };
+
+    function persist() {
+        store.save({
+            display: state.display, format: state.format, difficulty: state.difficulty,
+            interval: state.interval, answerMode: state.answerMode, timer: state.timer,
+            rangeFrom: state.rangeFrom, rangeTo: state.rangeTo, tts: state.tts, theme: state.theme,
+            roundCount: state.roundCount, correct: state.correct, attempts: state.attempts,
+            streak: state.streak, best: state.best
+        });
+    }
+
+    /* ---------- DOM ---------- */
+    const $ = id => document.getElementById(id);
+    const els = {
+        digital: $("digitalTime"), choices: $("choices"), typingWrap: $("typingWrap"), userInput: $("userInput"),
+        feedback: $("feedback"), hint: $("hint"),
+        progress: $("progress"), progressText: $("progressText"),
+        correct: $("correctStat"), attempts: $("attemptsStat"), accuracy: $("accuracyStat"),
+        streak: $("streakStat"), best: $("bestStat"),
+        listen: $("listenButton"), check: $("checkButton"), hintBtn: $("hintButton"),
+        showAnswer: $("showAnswerButton"), next: $("nextButton"),
+        analog: $("analog"), hourHand: $("hourHand"), minuteHand: $("minuteHand"),
+        timerWrap: $("timerWrap"), timerValue: $("timerValue"), timerFill: $("timerFill"),
+        rangeFrom: $("rangeFrom"), rangeTo: $("rangeTo"),
+        ttsChip: $("ttsChip"), themeChip: $("themeChip"), resetChip: $("resetChip")
+    };
+
+    /* ---------- Analog clock build ---------- */
+    (function buildClock() {
+        const ticks = $("ticks"), numbers = $("numbers");
+        for (let i = 0; i < 60; i++) {
+            const a = (i / 60) * 2 * Math.PI;
+            const outer = 92, inner = i % 5 === 0 ? 80 : 86;
+            const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+            line.setAttribute("x1", 100 + Math.sin(a) * inner);
+            line.setAttribute("y1", 100 - Math.cos(a) * inner);
+            line.setAttribute("x2", 100 + Math.sin(a) * outer);
+            line.setAttribute("y2", 100 - Math.cos(a) * outer);
+            line.setAttribute("class", "tick" + (i % 5 === 0 ? " major" : ""));
+            ticks.appendChild(line);
+        }
+        for (let n = 1; n <= 12; n++) {
+            const a = (n / 12) * 2 * Math.PI;
+            const t = document.createElementNS("http://www.w3.org/2000/svg", "text");
+            t.setAttribute("x", 100 + Math.sin(a) * 66);
+            t.setAttribute("y", 100 - Math.cos(a) * 66);
+            t.setAttribute("class", "num");
+            t.textContent = n;
+            numbers.appendChild(t);
+        }
+    })();
+
+    function setHands(hour24, minute) {
+        els.minuteHand.style.transform = `rotate(${minute * 6}deg)`;
+        els.hourHand.style.transform = `rotate(${((hour24 % 12) + minute / 60) * 30}deg)`;
+    }
+
+    /* ---------- Display ---------- */
+    function displayDigital(hour24, minute) {
+        const mm = minute < 10 ? "0" + minute : "" + minute;
+        let text, ampm = "";
+        if (state.format === "12") {
+            text = (hour24 % 12 || 12) + ":" + mm;
+            ampm = hour24 < 12 ? "AM" : "PM";
+        } else {
+            text = String(hour24).padStart(2, "0") + ":" + mm;
+        }
+        els.digital.innerHTML = "";
+        [...text].forEach((ch, i) => {
+            const span = document.createElement("span");
+            span.textContent = ch; span.className = "pop-in";
+            span.style.animationDelay = `${i * 0.07}s`;
+            els.digital.appendChild(span);
+        });
+        if (ampm) {
+            const ap = document.createElement("span");
+            ap.className = "ampm"; ap.textContent = ampm;
+            els.digital.appendChild(ap);
+        }
+    }
+
+    function renderClock() {
+        els.analog.style.display = state.display === "digital" ? "none" : "";
+        els.digital.style.display = state.display === "analog" ? "none" : "flex";
+        setHands(state.hour24, state.minute);
+        displayDigital(state.hour24, state.minute);
+    }
+
+    /* ---------- Text-to-speech ---------- */
+    let voice = null;
+    function pickVoice() {
+        const voices = speechSynthesis.getVoices();
+        voice = voices.find(v => /en[-_]GB/i.test(v.lang)) ||
+                voices.find(v => /^en/i.test(v.lang)) || voices[0] || null;
+    }
+    if ("speechSynthesis" in window) { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
+    function speak(text) {
+        if (!state.tts || !("speechSynthesis" in window)) return;
+        speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(text);
+        if (voice) u.voice = voice;
+        u.lang = voice ? voice.lang : "en-GB";
+        u.rate = 0.95;
+        speechSynthesis.speak(u);
+    }
+
+    /* ---------- Random time within range + interval ---------- */
+    function randomTime() {
+        const from = state.rangeFrom, to = state.rangeTo, step = state.interval;
+        if (to <= from) return null;
+        const steps = Math.floor((to - from) / step);
+        if (steps < 0) return null;
+        const total = from + Math.floor(Math.random() * (steps + 1)) * step;
+        return { hour24: Math.floor(total / 60) % 24, minute: total % 60 };
+    }
+
+    function randomExpression() {
+        // for distractors: a plausible but different time at current granularity
+        const h = Math.floor(Math.random() * 12) + 1;
+        const maxStep = state.interval >= 60 ? 60 : state.interval;
+        const slots = Math.floor(60 / maxStep);
+        const m = (Math.floor(Math.random() * slots) * maxStep) % 60;
+        return timeToExpression(h, m);
+    }
+
+    /* ---------- Choices / typing ---------- */
+    function buildChoices(correctExpr) {
+        const set = new Set([correctExpr]);
+        let guard = 0;
+        while (set.size < 4 && guard++ < 80) set.add(randomExpression());
+        const arr = [...set];
+        for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; }
+        return arr;
+    }
+    function renderChoices() {
+        els.choices.innerHTML = "";
+        buildChoices(state.expression).forEach((text, i) => {
+            const btn = document.createElement("button");
+            btn.className = "choice";
+            btn.innerHTML = `<span class="key">${i + 1}</span><span>${text}</span>`;
+            btn.dataset.value = text;
+            btn.addEventListener("click", () => handleChoice(btn));
+            els.choices.appendChild(btn);
+        });
+    }
+    function renderAnswerArea() {
+        const mc = state.answerMode === "mc";
+        els.choices.style.display = mc ? "grid" : "none";
+        els.typingWrap.style.display = mc ? "none" : "block";
+        els.check.style.display = mc ? "none" : "inline-block";
+        if (mc) { renderChoices(); }
+        else { els.userInput.value = ""; els.userInput.disabled = false; els.check.disabled = false; setTimeout(() => els.userInput.focus(), 0); }
+    }
+
+    /* ---------- Round flow ---------- */
+    function nextQuestion() {
+        clearTimer();
+        const t = randomTime();
+        if (!t) {
+            els.feedback.className = "feedback wrong";
+            els.feedback.textContent = "⚠️ Invalid time range — set 'From' earlier than 'to'.";
+            return;
+        }
+        state.hour24 = t.hour24; state.minute = t.minute;
+        state.expression = timeToExpression(t.hour24 % 12 || 12, t.minute);
+        state.answered = false; state.userAnswer = "";
+
+        renderClock();
+        renderAnswerArea();
+        els.feedback.className = "feedback"; els.feedback.style.display = "none";
+        els.hint.textContent = "";
+        els.showAnswer.disabled = false; els.hintBtn.disabled = false;
+        updateProgress();
+        startTimer();
+    }
+
+    function lockAnswers(wrongBtn) {
+        if (state.answerMode === "mc") {
+            [...els.choices.children].forEach(btn => {
+                btn.disabled = true;
+                if (btn.dataset.value === state.expression) btn.classList.add("correct");
+                if (btn === wrongBtn) btn.classList.add("wrong");
+            });
+        } else {
+            els.userInput.disabled = true; els.check.disabled = true;
+        }
+        els.showAnswer.disabled = true; els.hintBtn.disabled = true;
+    }
+
+    function score(isCorrect) {
+        state.answered = true;
+        state.attempts++;
+        state.roundCount++;
+        if (isCorrect) {
+            state.correct++; state.streak++; state.best = Math.max(state.best, state.streak);
+        } else {
+            state.streak = 0;
+        }
+        speak(state.expression);
+        updateStats(); updateProgress(); persist();
+    }
+
+    function handleChoice(btn) {
+        if (state.answered) return;
+        clearTimer();
+        const isCorrect = btn.dataset.value === state.expression;
+        score(isCorrect);
+        if (isCorrect) {
+            els.feedback.className = "feedback correct";
+            els.feedback.textContent = "✅ Correct! " + state.expression;
+            celebrate();
+            lockAnswers(null);
+        } else {
+            els.feedback.className = "feedback wrong";
+            els.feedback.textContent = "❌ Not quite. The answer is: " + state.expression;
+            lockAnswers(btn);
+        }
+    }
+
+    function normalize(s) {
+        return s.trim().toLowerCase().replace(/[.,!?]+$/, "").replace(/\bit is\b/g, "it's").replace(/\s+/g, " ");
+    }
+    function checkTyping() {
+        if (state.answered) return;
+        const val = els.userInput.value.trim();
+        if (!val) {
+            els.feedback.className = "feedback wrong";
+            els.feedback.textContent = "Please type your answer first.";
+            return;
+        }
+        clearTimer();
+        const isCorrect = normalize(val) === normalize(state.expression);
+        score(isCorrect);
+        if (isCorrect) {
+            els.feedback.className = "feedback correct";
+            els.feedback.textContent = "✅ Correct! " + state.expression;
+            celebrate();
+        } else {
+            els.feedback.className = "feedback wrong";
+            els.feedback.textContent = "❌ Not quite. The answer is: " + state.expression;
+        }
+        lockAnswers(null);
+    }
+
+    function showAnswer() {
+        if (state.answered) return;
+        clearTimer();
+        score(false);
+        els.feedback.className = "feedback neutral";
+        els.feedback.textContent = "👀 The answer is: " + state.expression;
+        lockAnswers(null);
+    }
+
+    function timeUp() {
+        if (state.answered) return;
+        score(false);
+        els.feedback.className = "feedback wrong";
+        els.feedback.textContent = "⏰ Time's up! The answer is: " + state.expression;
+        lockAnswers(null);
+    }
+
+    /* ---------- Hint ---------- */
+    function showHint() {
+        const m = state.minute;
+        let h;
+        if (m === 0) h = "It's exactly on the hour — use \"o'clock\".";
+        else if (m === 15) h = "It's quarter past the hour.";
+        else if (m === 30) h = "It's half past the hour.";
+        else if (m === 45) h = "It's quarter to the next hour.";
+        else if (m < 30) h = `It's ${m} minute${m === 1 ? "" : "s"} past the hour.`;
+        else h = `It's ${60 - m} minute${60 - m === 1 ? "" : "s"} to the next hour.`;
+        els.hint.textContent = "💡 " + h;
+    }
+
+    /* ---------- Timer ---------- */
+    let timerId = null, timeLeft = 0;
+    function clearTimer() { if (timerId) { clearInterval(timerId); timerId = null; } els.timerWrap.style.display = "none"; }
+    function startTimer() {
+        clearTimer();
+        if (!state.timer) return;
+        timeLeft = state.timer;
+        els.timerWrap.style.display = "block";
+        els.timerValue.textContent = timeLeft;
+        els.timerFill.style.width = "100%";
+        timerId = setInterval(() => {
+            timeLeft--;
+            els.timerValue.textContent = Math.max(timeLeft, 0);
+            els.timerFill.style.width = (timeLeft / state.timer * 100) + "%";
+            if (timeLeft <= 0) { clearTimer(); timeUp(); }
+        }, 1000);
+    }
+
+    /* ---------- Stats / progress ---------- */
+    function updateStats() {
+        els.correct.textContent = state.correct;
+        els.attempts.textContent = state.attempts;
+        els.accuracy.textContent = (state.attempts ? Math.round(state.correct / state.attempts * 100) : 0) + "%";
+        els.streak.textContent = state.streak;
+        els.best.textContent = state.best;
+    }
+    function updateProgress() {
+        const inRound = state.roundCount % ROUND_SIZE;
+        const shown = inRound === 0 && state.roundCount > 0 ? ROUND_SIZE : inRound;
+        els.progress.style.width = (shown / ROUND_SIZE * 100) + "%";
+        els.progressText.textContent = `${shown}/${ROUND_SIZE} this round`;
+    }
+
+    /* ---------- Confetti & bubbles ---------- */
+    function celebrate() {
+        const colors = ["#3498db","#2ecc71","#e74c3c","#f1c40f","#9b59b6"];
+        for (let i = 0; i < 24; i++) {
+            const c = document.createElement("div");
+            c.className = "confetti";
+            c.style.left = Math.random() * 100 + "vw";
+            c.style.background = colors[Math.floor(Math.random() * colors.length)];
+            c.style.animation = `fall ${1 + Math.random()}s ease-in forwards`;
+            c.style.transform = `rotate(${Math.random() * 360}deg)`;
+            document.body.appendChild(c);
+            setTimeout(() => c.remove(), 2200);
+        }
+    }
+    (function bubbles() {
+        const wrap = $("bubbles");
+        for (let i = 0; i < 12; i++) {
+            const s = document.createElement("span");
+            const size = 20 + Math.random() * 60;
+            s.style.left = Math.random() * 100 + "vw";
+            s.style.width = s.style.height = size + "px";
+            s.style.animationDuration = 12 + Math.random() * 14 + "s";
+            s.style.animationDelay = -Math.random() * 20 + "s";
+            wrap.appendChild(s);
+        }
+    })();
+
+    /* ---------- Settings wiring ---------- */
+    function setSegActive(setting, value) {
+        const group = document.querySelector(`.seg-group[data-setting="${setting}"]`);
+        if (!group) return;
+        group.querySelectorAll(".seg").forEach(b => b.classList.toggle("active", b.dataset.value === String(value)));
+    }
+    function fmtRange(min) {
+        return String(Math.floor(min / 60)).padStart(2, "0") + ":" + String(min % 60).padStart(2, "0");
+    }
+    function renderRange() {
+        els.rangeFrom.value = fmtRange(state.rangeFrom);
+        els.rangeTo.value = fmtRange(state.rangeTo);
+    }
+
+    document.querySelectorAll(".seg-group").forEach(group => {
+        group.addEventListener("click", e => {
+            const btn = e.target.closest(".seg");
+            if (!btn) return;
+            const setting = group.dataset.setting, value = btn.dataset.value;
+            setSegActive(setting, value);
+
+            if (setting === "display") { state.display = value; renderClock(); }
+            else if (setting === "format") { state.format = value; renderClock(); }
+            else if (setting === "difficulty") {
+                state.difficulty = value; state.interval = DIFF_INTERVAL[value];
+                setSegActive("interval", state.interval);
+                nextQuestion();
+            }
+            else if (setting === "interval") {
+                state.interval = parseInt(value, 10);
+                const diff = Object.keys(DIFF_INTERVAL).find(k => DIFF_INTERVAL[k] === state.interval) || "";
+                state.difficulty = diff;
+                setSegActive("difficulty", diff);
+                nextQuestion();
+            }
+            else if (setting === "answerMode") { state.answerMode = value; renderAnswerArea(); }
+            else if (setting === "timer") { state.timer = parseInt(value, 10); startTimer(); }
+            persist();
+        });
+    });
+
+    document.querySelectorAll("[data-range]").forEach(btn => {
+        btn.addEventListener("click", () => {
+            const key = btn.dataset.range === "from" ? "rangeFrom" : "rangeTo";
+            const dir = parseInt(btn.dataset.dir, 10);
+            let h = Math.floor(state[key] / 60), m = state[key] % 60;
+            if (btn.dataset.unit === "h") h = (h + dir + 24) % 24;
+            else m = (m + dir * 5 + 60) % 60;
+            state[key] = h * 60 + m;
+            renderRange(); persist();
+        });
+    });
+
+    /* ---------- Chips ---------- */
+    function applyTheme() {
+        document.documentElement.setAttribute("data-theme", state.theme === "dark" ? "dark" : "");
+        els.themeChip.textContent = state.theme === "dark" ? "☀️ Light" : "🌙 Dark";
+    }
+    function applyTtsChip() {
+        els.ttsChip.classList.toggle("active", state.tts);
+        els.ttsChip.textContent = state.tts ? "🔊 Voice: On" : "🔇 Voice: Off";
+    }
+    els.ttsChip.addEventListener("click", () => { state.tts = !state.tts; if (!state.tts) speechSynthesis.cancel(); applyTtsChip(); persist(); });
+    els.themeChip.addEventListener("click", () => { state.theme = state.theme === "dark" ? "light" : "dark"; applyTheme(); persist(); });
+    els.resetChip.addEventListener("click", () => {
+        if (!confirm("Reset all progress and stats?")) return;
+        Object.assign(state, { roundCount: 0, correct: 0, attempts: 0, streak: 0, best: 0 });
+        updateStats(); persist(); nextQuestion();
+    });
+
+    /* ---------- Buttons & keyboard ---------- */
+    els.listen.addEventListener("click", () => speak(state.expression));
+    els.check.addEventListener("click", checkTyping);
+    els.hintBtn.addEventListener("click", showHint);
+    els.showAnswer.addEventListener("click", showAnswer);
+    els.next.addEventListener("click", nextQuestion);
+    els.userInput.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); checkTyping(); } });
+
+    document.addEventListener("keydown", e => {
+        if (document.activeElement === els.userInput) return; // typing handles its own keys
+        if (e.key >= "1" && e.key <= "4") {
+            const btn = els.choices.children[+e.key - 1];
+            if (btn && !btn.disabled && state.answerMode === "mc") btn.click();
+        } else if (e.key === "Enter") { nextQuestion(); }
+        else if (e.key.toLowerCase() === "l") { speak(state.expression); }
+        else if (e.key.toLowerCase() === "h") { if (!els.hintBtn.disabled) showHint(); }
+    });
+
+    /* ---------- Init ---------- */
+    applyTheme();
+    applyTtsChip();
+    setSegActive("display", state.display);
+    setSegActive("format", state.format);
+    setSegActive("difficulty", state.difficulty);
+    setSegActive("interval", state.interval);
+    setSegActive("answerMode", state.answerMode);
+    setSegActive("timer", state.timer);
+    renderRange();
+    updateStats();
+    nextQuestion();
+})();
+</script>
+</body>
+</html>
