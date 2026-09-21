@@ -1519,7 +1519,7 @@ function initPWA() {
     window.addEventListener('appinstalled', () => {
         hidePWABanner();
         deferredInstallPrompt = null;
-        toast('Notesownik zainstalowany!', 'success');
+        toast('NoteSownik zainstalowany!', 'success');
     });
 
     // Bind banner buttons
