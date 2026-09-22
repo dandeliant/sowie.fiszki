@@ -4295,7 +4295,7 @@ const BOOKS = {
     }
   }
 
-  // ─── IMPULS 3 (szkoła średnia, klasa 2) ───────────────
+  // ─── IMPULSE 3 (szkoła ponadpodstawowa, klasa 2) ───────────────
   ,impuls3: {
     id: 'impuls3',
     language: 'en', schoolType: 'secondary', grade: 2,
