@@ -6570,7 +6570,7 @@ h2{text-align:center;font-size:9pt;color:#888;margin-bottom:4px;font-weight:400}
 //  STUDY INIT
 // ══════════════════════════════════════════════
 // forcedPool — opcjonalna lista indeksów (kartkówka z wybranych słówek)
-function startStudy(key, forcedPool = null) {
+function startStudy(key, forcedPool = null, reviewSort = false) {
   currentUnitKey = key;
   const units = getUnitsWithCustom(currentBookId);
   const u = units[key];
@@ -6590,8 +6590,18 @@ function startStudy(key, forcedPool = null) {
   }
 
   if (forcedPool !== null) {
-    // Tryb kartkówki — tylko wybrane słówka, ignoruj flagę known
+    // Tryb kartkówki / powtórki — tylko wybrane słówka, ignoruj flagę known
     pool = [...forcedPool];
+    if (reviewSort) {
+      // „Ucz się dalej": najpierw NAJTRUDNIEJSZE słowa (ostatni błąd → najwięcej
+      // pomyłek → najniższa łatwość ef), potem coraz łatwiejsze.
+      pool.sort((a, b) => {
+        const A = ws[a] || {}, B = ws[b] || {};
+        if (!!B.lastError !== !!A.lastError) return B.lastError ? 1 : -1;
+        if ((B.errCount || 0) !== (A.errCount || 0)) return (B.errCount || 0) - (A.errCount || 0);
+        return (A.ef || 2.5) - (B.ef || 2.5);
+      });
+    }
   } else {
     pool = activeWords.map((_,i) => i).filter(i => !ws[i].known);
     // Priorytet: błędy z poprzedniej sesji i słowa dawno niepowtarzane
@@ -6636,7 +6646,7 @@ function startStudy(key, forcedPool = null) {
 // Wymuszona pula = wszystkie indeksy; postęp (known/FSRS) zostaje zapisany.
 function restartUnit() {
   const idxs = (activeWords && activeWords.length) ? activeWords.map((_, i) => i) : null;
-  startStudy(currentUnitKey, idxs);
+  startStudy(currentUnitKey, idxs, true); // reviewSort = od najtrudniejszych
 }
 
 // ─── Powtórka błędów ─────────────────────────
