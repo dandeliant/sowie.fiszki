@@ -108,6 +108,12 @@
   .entry .thumb img{width:100%;height:100%;object-fit:cover;display:block}
   .entry .txt .en{font-size:22px;font-weight:900;line-height:1.05}
   .entry .txt .pl{color:var(--muted);font-weight:800;font-size:15px;margin-top:2px}
+  .entry .sent{margin-top:7px;padding-top:7px;border-top:1px dashed #eef3fd;font-size:13.5px;color:#33425f;line-height:1.35}
+  .entry .sent-en{font-weight:700;font-style:italic}
+  .entry .sent-pl{color:var(--muted);font-weight:600;font-size:12.5px;margin-top:2px}
+  .spk-sm{width:30px;height:30px;border-radius:50%;border:none;cursor:pointer;font-size:14px;vertical-align:middle;
+    background:#e8f2ff;color:var(--blue-d);margin-left:6px;display:inline-flex;align-items:center;justify-content:center;transition:transform .12s}
+  .spk-sm:active{transform:scale(.9)}
   .entry .side{display:flex;align-items:center;gap:8px}
   .spk{
     width:46px;height:46px;border-radius:50%;border:none;cursor:pointer;font-size:22px;
@@ -198,6 +204,7 @@
     .print-entry .thumb img{width:100%;height:100%;object-fit:cover}
     .print-entry .en{font-size:19px;font-weight:900}
     .print-entry .pl{color:#555;font-weight:700;font-size:13px}
+    .print-entry .psent{color:#333;font-size:12px;margin-top:3px;line-height:1.3}
     .print-entry .qr img{width:60px;height:60px}
     .print-foot{text-align:center;color:#888;font-size:11px;margin-top:6px}
   }
@@ -318,7 +325,8 @@ let curBookId = null, curBook = null;
 let allEntries = [];      // wszystkie słówka podręcznika (z nadpisaniami)
 let entries = [];         // po filtrze unitu
 let overrides = {};       // "unit|pl" -> {image_url, image_path, audio_link}
-let audioMap = {};        // "unit|pl" -> URL nagrania z listy słówek (word_audio)
+let audioMap = {};        // "unit|pl" -> {en, sentEn, sentPl} nagrania z word_audio
+let sentMap = {};         // "pl" -> {pl, en} zdanie przykładowe z word_sentences
 let qrCache = {};         // link -> dataURL
 let pageIdx = 0;
 const PER_PAGE = 5;
@@ -434,6 +442,7 @@ async function openBook(id){
 
   overrides = await loadOverrides(id);
   audioMap = await loadBookAudio(id);
+  sentMap = await loadBookSentences(id);
   buildAllEntries();
   buildUnitSelect();
   applyUnitFilter();
@@ -450,18 +459,41 @@ async function loadOverrides(bookId){
 }
 
 // Nagrania wymowy z listy słówek (tabela word_audio z migracji #28/#41/#42).
-// Bierzemy nagranie słowa docelowego (EN): audio_url_en (bilingual) lub audio_url (legacy).
+// Bierzemy: słowo EN (audio_url_en/audio_url) + zdanie EN/PL (audio_url_sent_en/_pl).
 async function loadBookAudio(bookId){
   const map={};
   if(!SB) return map;
   try{
     const { data } = await SB.from('word_audio').select('*').eq('book_id',bookId);
     (data||[]).forEach(r=>{
-      const u = r.audio_url_en || r.audio_url || null;
-      if(u) map[key(r.unit_key, r.word_pl)] = u;
+      map[key(r.unit_key, r.word_pl)] = {
+        en:     r.audio_url_en || r.audio_url || null,
+        sentEn: r.audio_url_sent_en || null,
+        sentPl: r.audio_url_sent_pl || null
+      };
     });
   }catch(e){ console.warn('loadBookAudio',e && e.message); }
   return map;
+}
+
+// Zdania przykładowe z tabeli word_sentences (klucz: book_id + word_pl).
+async function loadBookSentences(bookId){
+  const map={};
+  if(!SB) return map;
+  try{
+    const { data } = await SB.from('word_sentences').select('word_pl,sentence_pl,sentence_target').eq('book_id',bookId);
+    (data||[]).forEach(r=>{ map[r.word_pl] = { pl:r.sentence_pl||'', en:r.sentence_target||'' }; });
+  }catch(e){ console.warn('loadBookSentences',e && e.message); }
+  return map;
+}
+
+// Zdanie inline z data.js (4-elem [pl,en,sentPl,sentEn] lub 5-elem z emoji).
+function isSent(s){ if(!s||typeof s!=='string') return false; try{ return /\p{L}/u.test(s); }catch(e){ return /[A-Za-zÀ-ɏЀ-ӿ]/.test(s); } }
+function getInlineSent(w){
+  if(!w) return {sentPl:'',sentEn:''};
+  if(w[2] && !isSent(w[2]) && (isSent(w[3])||isSent(w[4]))) return {sentPl:w[3]||'', sentEn:w[4]||''};
+  if(isSent(w[2]) || isSent(w[3])) return {sentPl:w[2]||'', sentEn:w[3]||''};
+  return {sentPl:'',sentEn:''};
 }
 
 function buildAllEntries(){
@@ -475,9 +507,15 @@ function buildAllEntries(){
       if(!pl || !en) return;
       const emoji = (w[2] && isEmoji(w[2])) ? w[2] : (w[4] && isEmoji(w[4]) ? w[4] : '');
       const ov = overrides[key(uk,pl)] || {};
+      const au = audioMap[key(uk,pl)] || {};
+      // zdanie przykładowe: najpierw inline z data.js, potem z word_sentences
+      let { sentPl, sentEn } = getInlineSent(w);
+      if(!sentEn && !sentPl){ const s = sentMap[pl]; if(s){ sentPl = s.pl; sentEn = s.en; } }
       allEntries.push({ unitKey:uk, unitName:u.name||uk, pl, en, emoji,
         image_url:ov.image_url||null, image_path:ov.image_path||null, audio_link:ov.audio_link||null,
-        custom_en: audioMap[key(uk,pl)] || null });
+        custom_en: au.en||null,
+        sentPl: sentPl||'', sentEn: sentEn||'',
+        custom_sent_en: au.sentEn||null, custom_sent_pl: au.sentPl||null });
     });
   });
 }
@@ -534,10 +572,17 @@ function renderPage(){
     const qrImg = (e.audio_link && qrCache[e.audio_link])
       ? `<div class="qr"><img src="${qrCache[e.audio_link]}" alt="QR"></div>` : '';
     const editBtn = adminMode ? `<button class="edit-btn" data-edit="${gi}">✏️ Edytuj</button>` : '';
+    let sentHtml='';
+    if(e.sentEn || e.sentPl){
+      sentHtml = `<div class="sent">
+        <span class="sent-en">${esc(e.sentEn||'')}</span>${e.sentEn?`<button class="spk-sm" title="Posłuchaj zdania" data-spk-sent="${gi}">🔊</button>`:''}
+        ${e.sentPl?`<div class="sent-pl">${esc(e.sentPl)}</div>`:''}
+      </div>`;
+    }
     html += `<div class="entry">
       ${editBtn}
       <div class="thumb">${thumb}</div>
-      <div class="txt"><div class="en">${esc(e.en)}</div><div class="pl">${esc(e.pl)}</div></div>
+      <div class="txt"><div class="en">${esc(e.en)}</div><div class="pl">${esc(e.pl)}</div>${sentHtml}</div>
       <div class="side">
         ${qrImg}
         <button class="spk" title="Posłuchaj" data-spk="${gi}">🔊</button>
@@ -704,9 +749,10 @@ function doPrint(){
     slice.forEach(e=>{
       const thumb = e.image_url ? `<img src="${esc(e.image_url)}">` : (e.emoji||'🖼️');
       const qr = (e.audio_link && qrCache[e.audio_link]) ? `<div class="qr"><img src="${qrCache[e.audio_link]}"></div>` : '<div class="qr"></div>';
+      const ps = e.sentEn ? `<div class="psent"><i>${esc(e.sentEn)}</i>${e.sentPl?` — ${esc(e.sentPl)}`:''}</div>` : '';
       html += `<div class="print-entry">
         <div class="thumb">${thumb}</div>
-        <div><div class="en">${esc(e.en)}</div><div class="pl">${esc(e.pl)}</div></div>
+        <div><div class="en">${esc(e.en)}</div><div class="pl">${esc(e.pl)}</div>${ps}</div>
         ${qr}
       </div>`;
     });
@@ -718,6 +764,8 @@ function doPrint(){
 
 /* ---------- INIT ---------- */
 document.getElementById('page').addEventListener('click', ev=>{
+  const ss = ev.target.closest('[data-spk-sent]');
+  if(ss){ const e = entries[+ss.dataset.spkSent]; if(e) speak(e.sentEn, e.custom_sent_en); return; }
   const s = ev.target.closest('[data-spk]');
   if(s){ const e = entries[+s.dataset.spk]; if(e) speak(e.en, e.custom_en, e.audio_link); return; }
   const ed = ev.target.closest('[data-edit]');
