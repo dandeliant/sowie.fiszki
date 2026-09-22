@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Polish ⇄ English Language Game</title>
+  <style>
+    :root {
+      --bg1: #0f2027;
+      --bg2: #203a43;
+      --bg3: #2c5364;
+      --accent: #4f9dff;
+      --accent-2: #7c5cff;
+      --good: #28c76f;
+      --bad: #ff5c75;
+      --glass: rgba(255, 255, 255, 0.08);
+      --glass-border: rgba(255, 255, 255, 0.18);
+      --text: #f2f6ff;
+      --muted: #9fb3c8;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      padding: 24px 16px 60px;
+      color: var(--text);
+      background: linear-gradient(135deg, var(--bg1), var(--bg2), var(--bg3));
+      background-size: 400% 400%;
+      animation: gradientShift 18s ease infinite;
+    }
+
+    @keyframes gradientShift {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+
+    h1 {
+      font-size: clamp(22px, 4vw, 32px);
+      margin: 4px 0 18px;
+      text-align: center;
+      letter-spacing: 0.5px;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+
+    /* ---- Scoreboard ---- */
+    #scoreboard {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: center;
+      margin-bottom: 16px;
+      width: 100%;
+      max-width: 640px;
+    }
+
+    .stat {
+      flex: 1 1 90px;
+      background: var(--glass);
+      border: 1px solid var(--glass-border);
+      border-radius: 14px;
+      padding: 10px 8px;
+      text-align: center;
+      backdrop-filter: blur(8px);
+    }
+
+    .stat .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+    .stat .value { font-size: 22px; font-weight: 700; margin-top: 2px; }
+
+    /* ---- Controls bar ---- */
+    #controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+      margin-bottom: 18px;
+    }
+
+    .toggle-btn {
+      background: var(--glass);
+      border: 1px solid var(--glass-border);
+      color: var(--text);
+      padding: 8px 14px;
+      border-radius: 999px;
+      cursor: pointer;
+      font-size: 13px;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .toggle-btn:hover { background: rgba(255, 255, 255, 0.16); }
+    .toggle-btn.active {
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      border-color: transparent;
+    }
+
+    /* ---- Game card ---- */
+    #game-container {
+      width: 100%;
+      max-width: 640px;
+      background: var(--glass);
+      border: 1px solid var(--glass-border);
+      border-radius: 22px;
+      padding: 26px 22px 30px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+      backdrop-filter: blur(14px);
+    }
+
+    #progress-wrap {
+      height: 6px;
+      background: rgba(255, 255, 255, 0.12);
+      border-radius: 99px;
+      overflow: hidden;
+      margin-bottom: 22px;
+    }
+    #progress-bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      transition: width 0.4s ease;
+    }
+
+    #prompt-label { font-size: 13px; color: var(--muted); text-align: center; margin-bottom: 6px; }
+
+    #question-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 24px;
+    }
+
+    #question {
+      font-size: clamp(20px, 3.4vw, 26px);
+      font-weight: 700;
+      text-align: center;
+      line-height: 1.3;
+    }
+
+    .speak-icon {
+      background: var(--glass);
+      border: 1px solid var(--glass-border);
+      color: var(--text);
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      min-width: 40px;
+      cursor: pointer;
+      font-size: 18px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s ease;
+    }
+    .speak-icon:hover { background: var(--accent); transform: scale(1.08); }
+
+    #options {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    @media (max-width: 480px) {
+      #options { grid-template-columns: 1fr; }
+    }
+
+    .option {
+      position: relative;
+      padding: 16px 44px 16px 18px;
+      border: 1px solid var(--glass-border);
+      cursor: pointer;
+      border-radius: 14px;
+      transition: transform 0.12s ease, background-color 0.2s ease, border-color 0.2s ease;
+      background: rgba(255, 255, 255, 0.06);
+      font-size: 16px;
+      text-align: left;
+      user-select: none;
+    }
+    .option:hover { background: rgba(79, 157, 255, 0.22); transform: translateY(-2px); }
+    .option .kbd {
+      position: absolute;
+      left: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      display: none;
+    }
+    .option .label-text { display: inline-block; }
+    .option.correct { background: rgba(40, 199, 111, 0.28); border-color: var(--good); }
+    .option.wrong { background: rgba(255, 92, 117, 0.28); border-color: var(--bad); }
+    .option.disabled { pointer-events: none; opacity: 0.85; }
+
+    .option .mini-speak {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      opacity: 0.55;
+      font-size: 16px;
+      transition: opacity 0.2s ease;
+    }
+    .option:hover .mini-speak { opacity: 1; }
+
+    #feedback {
+      margin-top: 18px;
+      min-height: 26px;
+      font-weight: 700;
+      text-align: center;
+      font-size: 16px;
+    }
+    #feedback.good { color: var(--good); }
+    #feedback.bad { color: var(--bad); }
+
+    /* ---- Remediation / type-the-answer ---- */
+    #answerContainer {
+      margin-top: 16px;
+      display: none;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--glass-border);
+      border-radius: 14px;
+      padding: 16px;
+    }
+    #answerText { margin: 0 0 10px; font-size: 14px; color: var(--muted); }
+    #answerText b { color: var(--text); }
+    #userAnswer {
+      width: 100%;
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid var(--glass-border);
+      border-radius: 10px;
+      color: var(--text);
+      padding: 10px 12px;
+      font-size: 15px;
+      resize: vertical;
+      min-height: 44px;
+    }
+    .row-buttons { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+
+    .primary-btn, .ghost-btn {
+      border-radius: 10px;
+      padding: 10px 18px;
+      cursor: pointer;
+      font-size: 14px;
+      border: 1px solid var(--glass-border);
+      transition: all 0.2s ease;
+    }
+    .primary-btn { background: linear-gradient(90deg, var(--accent), var(--accent-2)); color: #fff; border-color: transparent; }
+    .primary-btn:hover { filter: brightness(1.1); }
+    .ghost-btn { background: var(--glass); color: var(--text); }
+    .ghost-btn:hover { background: rgba(255, 255, 255, 0.16); }
+
+    #next-row { margin-top: 16px; display: flex; justify-content: center; gap: 10px; }
+
+    .kbd {
+      font-family: monospace;
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid var(--glass-border);
+      border-radius: 6px;
+      padding: 1px 7px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    footer {
+      margin-top: 28px;
+      font-size: 12px;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .hint { font-size: 12px; color: var(--muted); text-align: center; margin-top: 14px; }
+
+    /* ── Powrót do Sowie Fiszki + Jak grać ── */
+    .back-link{display:inline-flex;align-items:center;gap:6px;background:var(--glass);color:var(--text);
+      border:1px solid var(--glass-border);border-radius:999px;padding:9px 16px;text-decoration:none;
+      font-weight:700;font-size:14px;backdrop-filter:blur(8px);transition:all .2s}
+    .back-link:hover{background:rgba(255,255,255,.16);transform:translateY(-1px)}
+    .back-top{margin-bottom:12px}
+    .back-bottom{margin-top:8px}
+    .htp-btn{position:fixed;bottom:16px;right:16px;z-index:60;border:none;border-radius:999px;padding:10px 16px;
+      background:linear-gradient(90deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;font-size:14px;cursor:pointer;
+      box-shadow:0 8px 22px rgba(0,0,0,.35)}
+    .htp-modal{position:fixed;inset:0;background:rgba(5,10,20,.7);display:none;align-items:center;justify-content:center;z-index:70;padding:16px}
+    .htp-modal.show{display:flex}
+    .htp-box{background:#16283a;border:1px solid var(--glass-border);border-radius:18px;padding:24px;max-width:460px;width:100%;
+      color:var(--text);box-shadow:0 20px 50px rgba(0,0,0,.5);max-height:85vh;overflow-y:auto}
+    .htp-box h3{margin:0 0 12px;background:linear-gradient(90deg,var(--accent),var(--accent-2));-webkit-background-clip:text;background-clip:text;color:transparent}
+    .htp-box ol{margin:0 0 14px;padding-left:20px;line-height:1.5}
+    .htp-box li{margin:7px 0}
+    .htp-close{width:100%;border:none;border-radius:10px;padding:11px;background:linear-gradient(90deg,var(--accent),var(--accent-2));color:#fff;font-weight:700;cursor:pointer}
+
+    @media print{.back-link,.back-top,.back-bottom,.htp-btn,.htp-modal,#controls,.speak-icon,.mini-speak{display:none!important}}
+  </style>
+</head>
+<body>
+  <div class="back-top"><a href="app.html" class="back-link">← Powrót do Sowie Fiszki</a></div>
+  <h1>1000 słówek · Polish ⇄ English</h1>
+
+  <div id="scoreboard">
+    <div class="stat"><div class="label">Wynik / Score</div><div class="value" id="stat-score">0</div></div>
+    <div class="stat"><div class="label">Seria / Streak</div><div class="value" id="stat-streak">0</div></div>
+    <div class="stat"><div class="label">Rekord / Best</div><div class="value" id="stat-best">0</div></div>
+    <div class="stat"><div class="label">Trafność / Acc.</div><div class="value" id="stat-acc">—</div></div>
+  </div>
+
+  <div id="controls">
+    <button class="toggle-btn" id="dir-btn" title="Zmień kierunek tłumaczenia">🔄 <span id="dir-label">PL → EN</span></button>
+    <button class="toggle-btn active" id="speak-btn" title="Automatyczne czytanie na głos">🔊 Auto-czytanie: ON</button>
+    <button class="toggle-btn active" id="sound-btn" title="Dźwięki">🎵 Dźwięki: ON</button>
+    <button class="toggle-btn" id="reset-btn" title="Zacznij od nowa">♻️ Reset</button>
+  </div>
+
+  <div id="game-container">
+    <div id="progress-wrap"><div id="progress-bar"></div></div>
+
+    <div id="prompt-label">Wybierz poprawne tłumaczenie:</div>
+    <div id="question-row">
+      <div id="question">…</div>
+      <button class="speak-icon" id="question-speak" title="Przeczytaj na głos">🔊</button>
+    </div>
+
+    <div id="options"></div>
+
+    <div id="feedback"></div>
+
+    <div id="answerContainer">
+      <p id="answerText">Poprawna odpowiedź to: <b><span id="correctAnswer"></span></b>. Przepisz ją, aby utrwalić:</p>
+      <textarea id="userAnswer" placeholder="Wpisz poprawną odpowiedź…"></textarea>
+      <div class="row-buttons">
+        <button class="primary-btn" id="sendButton">Sprawdź</button>
+        <button class="ghost-btn" id="skipTypeButton">Pomiń</button>
+      </div>
+    </div>
+
+    <div id="next-row" style="display:none;">
+      <button class="primary-btn" id="nextButton">Następne pytanie ➜ <span class="kbd">Enter</span></button>
+    </div>
+
+    <div class="hint">Klawisze <span class="kbd">1</span>–<span class="kbd">4</span> wybierają odpowiedź • <span class="kbd">Enter</span> = dalej • <span class="kbd">S</span> = przeczytaj</div>
+  </div>
+
+  <div class="back-bottom"><a href="app.html" class="back-link">← Wróć do Sowie Fiszki</a></div>
+  <footer>© Daniel Ostrowski, 2023 — ulepszona wersja 2026</footer>
+
+  <button class="htp-btn" onclick="document.getElementById('htpModal').classList.add('show')">ℹ️ Jak grać?</button>
+  <div class="htp-modal" id="htpModal" onclick="if(event.target===this)this.classList.remove('show')">
+    <div class="htp-box">
+      <h3>ℹ️ Jak grać? — 1000 słówek</h3>
+      <ol>
+        <li>Na górze pojawia się słowo — Twoim zadaniem jest wybrać poprawne <b>tłumaczenie</b> z czterech opcji.</li>
+        <li>Przyciskiem <b>🔄 PL → EN / EN → PL</b> zmieniasz kierunek tłumaczenia.</li>
+        <li><b>🔊</b> czyta słowo/opcję po angielsku (brytyjski głos). <b>Auto-czytanie</b> i <b>Dźwięki</b> możesz włączyć/wyłączyć.</li>
+        <li>Za poprawną odpowiedź +100 pkt i rośnie <b>seria</b>; za błędną −50 i pojawia się pole, w którym <b>przepisujesz</b> poprawną odpowiedź, żeby ją utrwalić (+50).</li>
+        <li>Skróty: <b>1–4</b> = wybór odpowiedzi · <b>Enter</b> = następne · <b>S</b> = przeczytaj.</li>
+      </ol>
+      <button class="htp-close" onclick="document.getElementById('htpModal').classList.remove('show')">Zamknij</button>
+    </div>
+  </div>
+
+  <script>
+    /* ====== DATA ====== */
+    const polishWords = ["ten ,ta,to,ci te, w większości się nie tłumaczy","nazwisko, nazwa","z, o ,od","bardzo","do, ku, na, po, za, dla, przy, aby, żeby","przez","I","tylko, własnie","przedimek nieokreślony, najczęściej nie tłumaczony, wstawiamy przed reczownikami policzalnymi w liczbie pojedynczej ze spółgłoską w wymowie","forma, tworzyc","w","zdanie","jest","świetnie","to","mysleć, uważac","ty","mówic, powiedziec","że, ten ,tamten , to …., który","pomoc, pomagać","on","niski, cichy, nisko, cicho, przygnębiony ","był , była(przed respółgłoską w wymowie tylko z ","linia, lina, kolejka, rząd","dla, do , po","różnic się","na","skrecić, zakręt, obrót","są, jesteś","przyczyna, powód, pot: ponieważ","z","dużo","kiedy, gdy ,ponieważ, (tak) jak,","znaczyć, skąpy  , złośliwy, średni","ja","przed","jego","ruszać, ruch","oni","prawy, poprawny, dobry","być","chłopiec","przy, w , o , na","stary","jeden","także , za (np. duży)","mieć","ten sam, taki sam","ten, ta","Powiedzieć","od, z","robic (3 os licz poj) lub operator w present simple","albo","komplet, grupa","miał , mieliśmy …..","trzy","przez","chcieć","gorący","powietrze","słowo","cóż, dobrze","ale","także","co","grać","kilka, niektóre","małe","my","koniec, kończyć","umiec, potrafić","połozyc","na zewnatrz","dom","inne","czytac","byli, byłes","dłoń","wszystko","Port","tam","olbrzymi","kiedy, gdy","zaklecie, literować","na","dodad","używać,użycie","nawet, równy","twój","ziemia, lądować","jak","tutaj","powiedział","musieć","przedimek nieokreślony, najczęściej nietłumaczony, wstawiamy przed rzeczownikiem policzalnym w liczbie pojedynczej z samogłoską w wymowie","duży","każdy","wysoki, wysoko","ona","taki","który","stosowac sie do, iśc za, sledzić","robic lub operator w present simple","działac, ustawa","ich","dlaczego","czas","pytac","jeśli","męzczyzna, człowiek","będzie","zmiana, zmieniac","sposób, droga","poszedł, poszli","o , okolo","światło, zapalac, jasny, lekki","wiele, dużo","rodzaj","potem, wtedy","zależy co jest przed  np. I am off mam wolne w pracy !!!!","ich","potrzebowac, potrzeba","pisać","dom","(np, zrobilby, dalabym itp. he would do, I would give)","obraz, wyobrażac","lubić, jak","próbowac","więc, taki","nas","te","znowu","jej","zwierze","długi","wskazywac, punkt","robic","mama","rzecz","świat","widzieć","blisko, obok","jego","budowac","dwa","swoje, sobie, ja","mieć","Ziemia","patrzeć, wyglądac","ojciec","wiecej","głowa. Głowny","dzień","stać, stoisko","móc","posiadać, własny","iśc","strona","przychodzić przyjeżdzać","powinien","robił lub operator w past simple","państwo , wieś","liczba, numer, wiele","znalezione, znalazł","dżwięk , brzmiec","odpowiedz, odpowiadać","nie, żadnych","szkoła","najwięcej","rosnąć","ludzie","studiować, uczyć sie","moje","ciągle","nad, przez","uczyc sie","wiedzieć, znać","roślina, fabryka, sadzić","woda, podlewać","okładka, przykrywać","niż","jedzenia, pokarm","dzwonić, nazywac , rozmowa tel","słońce","pierwszy","cztery","kto, który","pomiędzy","móc","stan, panstwo , oświadczać","w dół","trzymać, zachowywać cos","strona","oko","byc uzywane w czasie perfect lub w stronie biernej","nigdy","teraz","ostatni","znalezć, uważac za…","pozwolic, wynajmowac","jakikolwiek, jakieś, żadne","myśl, lub mysleć w czasie przeszłym","nowy","miasto","praca, pracować","drzewo","część","krzyż, przechodzić przez","wziąć","gospodarstwo, uprawiać","dostać","twardy, trudny","miejsce","zaczynać","robić w czasie przeszłym I zrobione","móc","mieszkać, żyć","opowiadanie, historia","gdzie","widzieć w czasie przeszłym","po","daleko","z powrotem, plecy","morze","mało. Mały","rysować","tylko","lewy, pozostawiony","okrągły, okrążąć, w kółko, runda","pózno","człowiek , mężczyzna","biegać","rok","przeczenie do not","przyjechał, przyszła","podczas gdy, pewien czas","pokazywać","nacisnąć, prasa","każdy","blisko","dobry, dobrze","noc","mi, mnie","prawdziwy","dawać","życie","nasze","niewiele","pod","północ, północny","otwierać","dziesięć","wydawać się","proste","razem","kilka","następny","samogłoska","biały","kierunku, do ,ku","dzieci","wojna","zaczynać","lezeć w czasie przeszłym","dostawać, stawać się w czasie przeszłym","przeciwko","chodzić , spacerować","wzór","przykład","wolny , wolno","łatwość, łagodzić","centrum, środek","papier, gazeta","miłość, kochać","grupa, zespół","osoba","zawsze","pieniądze","muzyka","służyć, obsługiwać","tamte","pojawiać się","razem, oboje","droga","zaznaczać , ocena, znak, ślad","mapa","często","deszcz, pada deszcz","list, litera","rządzić, zasada","dopóki","rządzić","mila","ciagnać, nalewać","rzeka","zimny","samochód","zauważyć, ogłoszenie, wymówienie","stopy","głos","opieka, troszczyć się","rozdział, jednostka","drugi","siła, władza","książka","miasto","nosić","świetny, w porządku","zabrać w czasie przeszłym","pewny","nauki ścisłe","latać","jeść","spadać, upadek","pokój, miejsce","prowadzic, przewodzić, kierować","przyjaciel","płakać","zaczynać w czasie przeszłym","ciemny, mroczny","pomysł","maszyna","ryba, łowić ryby","zanotować ,notatka, zauważyć","góra, górski","czekać","zatrzymać się","plan, zaplanować","jeden raz, kiedyś","liczba, figura, postać , dojść do wniosku","podstawa, spód","gwiazda","słyszeć","pudełko","koń","rzeczownik","ciąć, obcinać","pole, boisko, dziedzina","pewny","odpoczynak, odpoczywać","oglądać","poprawiać","kolor, kolorować","być w stanie coś zrobic","twarz","walić, funt","drewno, las","zrobione I do w czasie perfest","głowny","piękno","wystarczająco","prowadzić samochód","zwykły, prosty, gładki, bez dodatków","stac w czasie przeszłym","dziewczynka","zawierac","zwykły","przód","młody","uczyć kogoś","gotowy","tydzień","nad","ostatni, koncowy , finał","zawsze, kiedykolwiek","dawać w czasie przeszłym","czerwony","zielony","lista, spis, wymieniać","och","chociaż, jednak","szybki","czuć","rozwijać","rozmawiać","ocean","ptak","ciepły","wkrótce","wolny, darmowy","ciało","minuta","pies","silny","rodzina, rodzinny","spacjalny, szczególny","bezpośredni","umył","poza","za, z tyłu","opuśić. Wychodzic , zostawiac","wyrażny, przejrzysty","piosenka","ogon","miara, mierzyć","produkować","drzwi","fakt","produkować","ulica","czarny","cal","krótki","pomnożyć","liczebnik","nic","klasa, klasowy","kurs","wiatr","zostac","pytanie","koło, kierownica","stać się , zdarzyć","pełny","calkowity, ukończony","siła, zmuszać","statek","niebieski","teren, obszar","przedmiot, cel","połowa","decydować","skała","powierzchnia","porządek, rozkaz, zamówienie","głeboki","pożar, ogień","księżyc","południe","wyspa","problem, zadanie","stopa","kawałek","układ, system","powiedzieć w czasie przeszłym","zajęty","widzieć, znać w czasie przeszłym","testowac, badać , próbować, próba, badanie","zdawać, podawać","płyta, nagrywac","od, od tego czasu, odkąd","łódż","szczyt","powszechny, wspolny, pospolity","cały","złoto, złoty","król","możliwy","przestrzeń, miejsce, kosmos","samolot","usłyszeć w czasie przeszłym","zamiast kogoś","najlepszy","suchy","godzina","cud, zastanawiać się","lepszy","śmiać się","prawdziwy","tysiąc","podczas","temu np. 2 dni temu","sto","biegać w czasie przeszłym","pięć","sprawdzić","pamiętać","gra","krok, stopień","kształt, forma","wczesny","przyrównywać","trzymac","gorący","zachód","tracic, spóznic się, panna","ziemia, teren, grunt","przynosić w czasie przeszłym","zainteresowanie, udział, odsetki","upał, podgrzewać","sięgac","śnieg, pada śnieg","szybki, szybko","męczyć się","czasownik","przynosić","śpiewać","tak","słuchac","odległy, daleki","sześć","wypełniać","stół","podróżować","malować","mniej","język","rano","wśród","wielki, okazaly, świetny","kot","piłka, bal","wiek","jeszcze, a mimo to","brać pod uwage, rozważać","fala, machać","typ, rodzaj, pisać na maszynie","upuśćić, spadek, kropla","prawo","serce","kawałek, trochę","jestem","wybrzeże","terażniejszy, obecny, present","kopia, kopiować","ciężki","zwrot, wyrażenie","taniec, tańczyć","cichy","silnik","wysoki","pozycja, położenie, stanowiski","piasek","ręka","gleba, ziemia","szeroki","toczyć , rolka, bułka","żeglować","temperatura","materiał, materialny","palec u ręki","rozmiar","przemysł","urozmaicać, różnić sie","wartość","roztrzygać, zasiedlać","walka, walczyć","mówic","lezeć, kłamać, kłamstwo","waga","bicie, bić, rytm","ogólny, generalny, generał","ekscytować, podniecać się","lód","naturalny,","sprawa, material, mieć znaczenie","widok, pogląd","koło. Okrąg, krążyć","sens, znaczenie","para","ucho","zawierać","jeszcze, inne","podzielic","całkiem","sylaba","złamac w czasie przeszłym","czuc w czasie przeszłym","sprawa, przypadek, walizka , skrzynia","może","środkowy","podnosić","zabić","nagły","syn","liczyc","jezioro","kwadrat","chwila, moment","powód","skala, rozmiar","długość","głosny","reprezentować","wiosna","sztuka","obserwowac, Zauważyć","podmiot, przedmiot","dziecko","okolica, rejon","prosty, jasny, bezpośredni","energia","spółgłoska","polować","naród","prawdopodobny","słownik","łóżko","mleko","brat","prędkość, szybkość","jajko","metoda, sposób","jazda, jezdzić","narząd, organ","komórka","płacić","wierzyc, uważać","wiek","odrobina, ułamek","sekcja, część, odcinek","las","sukienka","siadać","chmura","rasa, wyścig","zaskoczyć, niespodzianaka","okno","cichy, cicho","sklep, zapasy, schowek","kamień","lato","malutki","pociąg","wspinać się","spać","chłodny, opanowany","udowadniać, dowód","projekt, projektować","samotny","biedny","noga","wiele","ćwicznie, ćwiczyć","doświadczenie, eksperyment","ściana","dno, dół, pupa","zlapać","wierzchowiec, dosiadać","żelazo, prasować, żelazko","pragnienie, życznie","pojedynczy","klucz","niebo","kij, przyklejać, wtykać","tablica, pokład, deska","mieszkanie, płaski","radość","dwadzieścia","zima","skóra","siedzieć w czasie przeszłym","uśmiech. Uśmiechać się","napisane lub pisac w czasie perfect","gniesć, zmarszczka, zagięcie","dziki","dziura","instrument, narzędzie","handel , wymieniac, handlować","trzymany lub trzymać w czasie perfect","melodia","szkło, szklanka","wycieczka","trawa","biuro","krowa","otrzymywać","praca","rzad, wiosłować","skraj, krawędż","buzia","znak","dokładny","odwiedzać","symbol","przeszły, miniony","umierać","miękki","najmniej, najmniejszy","zabawa","problem, kłopoty","jasny, pogodny, bystry","krzyczec, krzyk","benzyna, gaz","z wyjątkiem","pogoda","piasc w czasie przeszłym","miesiąc","nasienie, ziarno","million","ton, sygnał","niedżwiedż, znosić, nieść","dołączyc, przyłaczyć się","kończyc","sugerowac, proponowac","szczęśliwy","czysty, sprzątać","nadzieja, mieć nadzieje","łamac, przerwa","kwiat","kobieta, dama","ubierać","podwórko, ogródek ,jard","dziwny, obcy","wzrost, podnosić się","miniony lub iść w czasie perfect","zły","skok, skakać","dmuchać","dziecko","olej, oliwa, ropa","osiem","krew","wioska","dotyk, dotykać","poznawac, spotykać","rosnąć w czasie przeszłym","korzeń","cent","kupowac","mieszać","podwyża, podnosić","zespoł, drużyna","rozwiązac","drut","metal","kosztować","czy","zagubione, zgubić w czasie przeszłym","pchac","brązowy","siedem","nosic (ubranie)","akapit","ogród","trzeci","równy","czy mam otworzyc","wysylac w czasie przeszłym lub wysłane","trzymać w czasie przeszłym","wybierać","włosy","spadać w czasie przeszłym(fel) lub ścinać w terażniejszym","opisywać","pasowac, odpowiedni, w dobrej kondycji fizycznej","gotowac, kucharz","przepływ, strumień","podłoga, piętro","jasny, sprawiedliwy","obojetnie który, i jeden i drugi","bank","wynik, rezultat","zbierać","palić","oszczędzać, ratować","wzgórze, pogórek","kontrolowac","bezbieczny","dziesiętny, ulamek dziesiętny","delikatny","cieżarówka","kobieta","hałas","kapitan","poziom","ćwiczyc","szansa","oddzielić","zbierać","trudny","sklep","lekarz","rozciągac","proszę","rzut, rzucać","chronic","świecić","południe","własnośc, posiadłość","czyje, czyja….","rubryka, kolumna","lokalizować","molekuła, cząsteczka","pierścionek, krąg","wybierac","charakter, postać","błędny, błąd","owad","szary","łapać w czasie przeszłym lub złapany","powtarzać","okres","wymagac","wskazywać","szeroki","radio","przygotowywac","mówić w czasie przeszłym","sól","atom","nos","człowiek, ludzki","liczba mnoga, mnogi","złość, wściekłość","skutek, efekt","twierdzic, ządać","elektryczny","kontynent","oczekiwać","tlen","plon, roślina uprawna","cukier","nowoczesny","śmierc","element, pierwiastek","ładny","uderzac","umiejętnośc","uczeń, student","kobiety","róg","pora roku, sezon","przyjęcie, partia","rozwiązanie","zapas, dostarczać","magnes","kość","srebro , srebrny","szyna, poręcz","dziękowac","wyobrazać sobie","gałąż, oddział","dostarczać , zaopatrywać","pasowac, zapałka, mecz","zgadzać się","przyrostek","w ten sposób, a zatem","zwłaszcza","stolica","figa","nie będzie","bac się","krzesło","wielki","niebezpieczeństwo","siostra","owoc, owoce","stal, stalowy","bogaty","ozmawiać, dyskutowac, omawiać","gruby","do przodu","żołnierz","podobny","proces, przetwarzać","przewodnik, oprowadzać","operować działać , obsługiwać","doświadczenie","zgadywac","wynik ,zaliczać","konieczny","jabłko","ostry","kupowac w czasie przeszłym","skrzydło","prowadzic, kierowac w czasie przeszłym","tworzyć","boisko, wysokość","sasiad","płaszcz","myć","masa, msza","nietoperz, kij, rakietka","karta","raczej","zespół","tłum","lina","kukurydza, zboże","poslizgnąć się, halka","porównywac","zwyciężać","wiersz","sen, śnić","sznurek","wieczór","dzwonek","warunek, stan","zależeć od","karmic","mięso","narzędzie","pocierac","całkowity","rura, tubka","podstawowy","sławny","pachniec, wąchać, zapach,","dolar","dolina","potok, nurt","ani, żaden","obawiać się, strach","podwójny","wzrok","miejsce","chudy, cienki","przybywac","trójkąt","mistrz, pan","planeta","szlak, tor, droga","śpieszyć się","rodzic","wódz, szef, głowny","brzeg, wybrzeże","kolonia","podział, oddział","zegar ścienny","kartka papieru, prześcieradło","moje","substancja","wiązać, krawat, węzeł","przychylność, faworyzowac","wejście, wchodzić","łączyć","głowny, ważny, major","stanowisko","świerzy","spedzać, wydawać","szukac","akord","wysyłac","gruby","żółty","zadowolony","broń","autentyczny, pierwotny","pozwolić","dzielic","drukować","stacja, dworzec","martwy","miejsce, plamka","chleb","pustynia","opłata, pobierać, oskarżenia","garnitur","właściwy, odpowiedni","prad, obecny","bar, krata ,tabliczka (czekolady)","podwozic ,winda, podnosic","oferowac, oferta","róza, rosnąć w czasie przeszłym","częśc, odcinek","kontynuować, trwać","niewolnik","blok, klocek, bryła","kaczka","lista, wykres","nagły","kapelusz, czapka","rynek","sprzedawac","stopień","odnosić sukces, sukces","zaludniac","firma","pisklę","odejmowac","drogi, jeleń","wydarzenie","wróg","szczególny","odpowiedź, odpowiadac","umowa","pic","plywać","zdarzac się ,wydarzać","termin, określenia","wspierać, wsparcie","naprzeciwko, przciwny","mowa, przemowa","żona","natura, środowisko","but","łańcuch, zasięg","ramię","para, parowac, gotować na parze","rozprzestrzenianie się, zasięg","ruch","organizować, aranżować","ścieżka","obóz","ciecz","wynalezc, wymyślic","kłoda, dziennik, zapisywać w dzienniku","wełna, bawełna","znaczyc w czasie przeszłym","rodzić się","wspołczynnik","określać, ustalać","zęby","kwarta","muszla","dziewięc","szyja"];
+
+    const englishWords = ["the","name","of","very","to","through","and","just","a","form","in","sentence","is","great","it","think","you","say","that","help","he","low","was","line","for","differ","on","turn","are","cause","with","much","as","mean","i","before","his","move","they","right","be","boy","at","old","one","too","have","same","this","tell","from","does","or","set","had","three","by","want","hot","air","word","well","but","also","what","play","some","small","we","end","can","put","out","home","other","read","were","hand","all","port","there","large","when","spell","up","add","use","even","your","land","how","here","said","must","an","big","each","high","she","such","which","follow","do","act","their","why","time","ask","if","men","will","change","way","went","about","light","many","kind","then","off","them","need","write","house","would….by","picture","like","try","so","us","these","again","her","animal","long","point","make","mother","thing","world","see","near","him","build","two","self","has","earth","look","father","more","head","day","stand","could","own","go","page","come","should","did","country","number","found","sound","answer","no","school","most","grow","people","study","my","still","over","learn","know","plant","water","cover","than","food","call","sun","first","four","who","between","may","state","down","keep","side","eye","been","never","now","last","find","let","any","thought","new","city","work","tree","part","cross","take","farm","get","hard","place","start","made","might","live","story","where","saw","after","far","back","sea","little","draw","only","left","round","late","man","run","year","don't","came","while","show","press","every","close","good","night","me","real","give","life","our","few","under","north","open","ten","seem","simple","together","several","next","vowel","white","toward","children","war","begin","lay","got","against","walk","pattern","example","slow","ease","center","paper","love","group","person","always","money","music","serve","those","appear","both","road","mark","map","often","rain","letter","rule","until","govern","mile","pull","river","cold","car","notice","feet","voice","care","unit","second","power","book","town","carry","fine","took","certain","science","fly","eat","fall","room","lead","friend","cry","began","dark","idea","machine","fish","note","mountain","wait","stop","plan","once","figure","base","star","hear","box","horse","noun","cut","field","sure","rest","watch","correct","color","able","face","pound","wood","done","main","beauty","enough","drive","plain","stood","girl","contain","usual","front","young","teach","ready","week","above","final","ever","gave","red","green","list","oh","though","quick","feel","develop","talk","ocean","bird","warm","soon","free","body","minute","dog","strong","family","special","direct","mind","pose","behind","leave","clear","song","tail","measure","produce","door","fact","product","street","black","inch","short","multiply","numeral","nothing","class","course","wind","stay","question","wheel","happen","full","complete","force","ship","blue","area","object","half","decide","rock","surface","order","deep","fire","moon","south","island","problem","foot","piece","system","told","busy","knew-","test","pass","record","since","boat","top","common","whole","gold","king","possible","space","plane","heard","stead","best","dry","hour","wonder","better","laugh","true","thousand","during","ago","hundred","ran","five","check","remember","game","step","shape","early","equate","hold","hot","west","miss","ground","brought","interest","heat","reach","snow","fast","tire","verb","bring","sing","yes","listen","distant","six","fill","table","travel","paint","less","language","morning","among","grand","cat","ball","century","yet","consider","wave","type","drop","law","heart","bit","am","coast","present","copy","heavy","phrase","dance","silent","engine","tall","position","sand","arm","soil","wide","roll","sail","temperature","material","finger","size","industry","vary","value","settle","fight","speak","lie","weight","beat","general","excite","ice","natural","matter","view","circle","sense","pair","ear","include","else","divide","quite","syllable","broke","felt","case","perhaps","middle","pick","kill","sudden","son","count","lake","square","moment","reason","scale","length","loud","represent","spring","art.","observe","subject","child","region","straight","energy","consonant","hunt","nation","probable","dictionary","bed","milk","brother","speed","egg","method","ride","organ","cell","pay","believe","age","fraction","section","forest","dress","sit","cloud","race","surprise","window","quiet","store","stone","summer","tiny","train","climb","sleep","cool","prove","design","lone","poor","leg","lot","exercise","experiment","wall","bottom","catch","mount","iron","wish","single","key","sky","stick","board","flat","joy","twenty","winter","skin","sat","smile","written","crease","wild","hole","instrument","trade","kept","melody","glass","trip","grass","office","cow","receive","job","row","edge","mouth","sign","exact","visit","symbol","past","die","soft","least","fun","trouble","bright","shout","gas","except","weather","wrote","month","seed","million","tone","bear","join","finish","suggest","happy","clean","hope","break","flower","lady","clothe","yard","strange","rise","gone","bad","jump","blow","baby","oil","eight","blood","village","touch","meet","grew","root","cent","buy","mix","raise","team","solve","wire","metal","cost","whether","lost","push","brown","seven","wear","paragraph","garden","third","equal","shall","sent","held","choose","hair","fell","describe","fit","cook","flow","floor","fair","either","bank","result","collect","burn","save","hill","control","safe","decimal","gentle","truck","woman","noise","captain","level","practice","chance","separate","gather","difficult","shop","doctor","stretch","please","throw","protect","shine","noon","property","whose","column","locate","molecule","ring","select","character","wrong","insect","gray","caught","repeat","period","require","indicate","broad","radio","prepare","spoke","salt","atom","nose","human","plural","anger","effect","claim","electric","continent","expect","oxygen","crop","sugar","modern","death","element","pretty","hit","skill","student","women","corner","season","party","solution","supply","magnet","bone","silver","rail","thank","imagine","branch","provide","match","agree","suffix","thus","especially","capital","fig","won't","afraid","chair","huge","danger","sister","fruit","steel","rich","discuss","thick","forward","soldier","similar","process","guide","operate","experience","guess","score","necessary","apple","sharp","bought","wing","led","create","pitch","neighbor","coat","wash","mass","bat","card","rather","band","crowd","rope","corn","slip","compare","win","poem","dream","string","evening","bell","condition","depend","feed","meat","tool","rub","total","tube","basic","famous","smell","dollar","valley","stream","nor","fear","double","sight","seat","thin","arrive","triangle","master","planet","track","hurry","parent","chief","shore","colony","division","clock","sheet","mine","substance","tie","favor","enter","connect","major","post","fresh","spend","search","chord","send","fat","yellow","glad","gun","original","allow","share","print","station","dead","spot","bread","desert","charge","suit","proper","current","bar","lift","offer","rose","segment","continue","slave","block","duck","chart","instant","hat","market","sell","degree","success","populate","company","chick","subtract","dear","event","enemy","particular","reply","deal","drink","swim","occur","term","support","opposite","speech","wife","nature","shoe","range","shoulder","steam","spread","motion","arrange","path","camp","liquid","invent","log","cotton","meant","born","quotient","determine","teeth","quart","shell","nine","neck"];
+
+    /* ====== STATE ====== */
+    const state = {
+      score: 0,
+      streak: 0,
+      best: Number(localStorage.getItem('pl_en_best') || 0),
+      answered: 0,
+      correct: 0,
+      direction: 'PL_EN',   // or 'EN_PL'
+      autoSpeak: true,
+      sound: true,
+      current: null,
+      locked: false,
+      lastIndex: -1,
+    };
+
+    /* ====== HELPERS ====== */
+    function shuffle(array) {
+      for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+      }
+      return array;
+    }
+
+    // The English list contains a few data artifacts (e.g. "art.", "knew-", "would….by").
+    // Clean a word purely for nicer speech / typing comparison — display stays raw.
+    function cleanForSpeech(word) {
+      return word.replace(/…|\.+$|-+$/g, '').replace(/\s+/g, ' ').trim();
+    }
+
+    /* ====== TEXT-TO-SPEECH ====== */
+    let enVoice = null;
+    function pickVoice() {
+      const voices = window.speechSynthesis ? speechSynthesis.getVoices() : [];
+      enVoice = voices.find(v => /en[-_]GB/i.test(v.lang)) ||
+                voices.find(v => /^en/i.test(v.lang)) || null;
+    }
+    if (window.speechSynthesis) {
+      pickVoice();
+      speechSynthesis.onvoiceschanged = pickVoice;
+    }
+
+    function speak(text) {
+      if (!window.speechSynthesis || !text) return;
+      const clean = cleanForSpeech(text);
+      if (!clean) return;
+      speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(clean);
+      u.lang = 'en-GB';
+      if (enVoice) u.voice = enVoice;
+      u.rate = 0.95;
+      speechSynthesis.speak(u);
+    }
+
+    /* ====== SOUND FX (Web Audio) ====== */
+    let audioCtx = null;
+    function beep(type) {
+      if (!state.sound) return;
+      try {
+        audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+        const o = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        o.connect(g); g.connect(audioCtx.destination);
+        if (type === 'good') { o.frequency.setValueAtTime(660, audioCtx.currentTime); o.frequency.setValueAtTime(880, audioCtx.currentTime + 0.1); }
+        else { o.frequency.setValueAtTime(300, audioCtx.currentTime); o.frequency.setValueAtTime(180, audioCtx.currentTime + 0.12); }
+        o.type = 'sine';
+        g.gain.setValueAtTime(0.18, audioCtx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.25);
+        o.start();
+        o.stop(audioCtx.currentTime + 0.25);
+      } catch (e) { /* audio not available */ }
+    }
+
+    /* ====== QUESTION GENERATION ====== */
+    // In PL_EN: prompt = Polish, options = English (spoken).
+    // In EN_PL: prompt = English (spoken), options = Polish.
+    function generateQuestion() {
+      let idx;
+      do { idx = Math.floor(Math.random() * polishWords.length); }
+      while (idx === state.lastIndex && polishWords.length > 1);
+      state.lastIndex = idx;
+
+      const isPLEN = state.direction === 'PL_EN';
+      const promptPool = isPLEN ? polishWords : englishWords;
+      const answerPool = isPLEN ? englishWords : polishWords;
+
+      const promptWord = promptPool[idx];
+      const correct = answerPool[idx];
+
+      const wrong = shuffle(answerPool.filter((w, i) => i !== idx)).slice(0, 3);
+      const options = shuffle([correct, ...wrong]);
+
+      return {
+        prompt: promptWord,
+        options,
+        correct,
+        speakable: isPLEN ? null : promptWord, // English prompt can be spoken
+        answerSpeakable: isPLEN ? correct : null, // English answer can be spoken
+      };
+    }
+
+    /* ====== RENDER ====== */
+    const $ = id => document.getElementById(id);
+
+    function renderStats() {
+      $('stat-score').textContent = state.score;
+      $('stat-streak').textContent = state.streak;
+      $('stat-best').textContent = state.best;
+      $('stat-acc').textContent = state.answered ? Math.round(state.correct / state.answered * 100) + '%' : '—';
+    }
+
+    function renderQuestion() {
+      const q = state.current;
+      $('question').textContent = q.prompt;
+      $('prompt-label').textContent = state.direction === 'PL_EN'
+        ? 'Wybierz poprawne tłumaczenie angielskie:'
+        : 'Wybierz poprawne tłumaczenie polskie:';
+
+      // The speaker on the prompt only makes sense for English prompts.
+      $('question-speak').style.display = q.speakable ? 'inline-flex' : 'none';
+
+      const container = $('options');
+      container.innerHTML = '';
+      q.options.forEach((opt, i) => {
+        const el = document.createElement('div');
+        el.className = 'option';
+        el.dataset.value = opt;
+
+        const label = document.createElement('span');
+        label.className = 'label-text';
+        label.textContent = `${i + 1}. ${opt}`;
+        el.appendChild(label);
+
+        // English options get a tiny speaker.
+        if (state.direction === 'PL_EN') {
+          const mini = document.createElement('span');
+          mini.className = 'mini-speak';
+          mini.textContent = '🔊';
+          mini.title = 'Przeczytaj';
+          mini.addEventListener('click', (e) => { e.stopPropagation(); speak(opt); });
+          el.appendChild(mini);
+        }
+
+        el.addEventListener('click', () => checkAnswer(opt, el));
+        container.appendChild(el);
+      });
+    }
+
+    function setFeedback(text, kind) {
+      const f = $('feedback');
+      f.textContent = text;
+      f.className = kind || '';
+    }
+
+    /* ====== GAME FLOW ====== */
+    function newRound() {
+      state.locked = false;
+      state.current = generateQuestion();
+      setFeedback('');
+      $('answerContainer').style.display = 'none';
+      $('userAnswer').value = '';
+      $('next-row').style.display = 'none';
+      renderQuestion();
+
+      // Auto-read the English prompt (EN_PL mode) on a fresh question.
+      if (state.autoSpeak && state.current.speakable) {
+        setTimeout(() => speak(state.current.speakable), 250);
+      }
+    }
+
+    function checkAnswer(selected, el) {
+      if (state.locked) return;
+      state.locked = true;
+      state.answered++;
+
+      const correct = state.current.correct;
+      const optionEls = [...document.querySelectorAll('.option')];
+      optionEls.forEach(o => {
+        o.classList.add('disabled');
+        if (o.dataset.value === correct) o.classList.add('correct');
+      });
+
+      if (selected === correct) {
+        state.score += 100;
+        state.streak++;
+        state.correct++;
+        if (state.streak > 0 && state.streak % 5 === 0) {
+          setFeedback(`✅ Świetnie! Seria ${state.streak} z rzędu! (+100)`, 'good');
+        } else {
+          setFeedback('✅ Poprawnie! Dobra robota! (+100)', 'good');
+        }
+        beep('good');
+        // Read the correct English answer aloud (PL_EN mode).
+        if (state.autoSpeak && state.current.answerSpeakable) speak(state.current.answerSpeakable);
+        $('next-row').style.display = 'flex';
+      } else {
+        state.score -= 50;
+        state.streak = 0;
+        if (el) el.classList.add('wrong');
+        setFeedback('❌ Niepoprawnie. (−50)', 'bad');
+        beep('bad');
+        if (state.autoSpeak && state.current.answerSpeakable) speak(state.current.answerSpeakable);
+        showRemediation(correct);
+      }
+
+      if (state.score > state.best) {
+        state.best = state.score;
+        localStorage.setItem('pl_en_best', String(state.best));
+      }
+      renderStats();
+    }
+
+    function showRemediation(correct) {
+      const box = $('answerContainer');
+      $('correctAnswer').textContent = correct;
+      box.style.display = 'block';
+      $('userAnswer').focus();
+      // Speaker for the correct answer (only useful for English).
+    }
+
+    // Single, persistent handlers — fixes the original bug of stacking listeners.
+    $('sendButton').addEventListener('click', () => {
+      const typed = $('userAnswer').value.trim().toLowerCase();
+      const target = cleanForSpeech(state.current.correct).toLowerCase();
+      if (!typed) return;
+      if (typed === target || typed === state.current.correct.trim().toLowerCase()) {
+        state.score += 50;
+        setFeedback('✅ Dobrze przepisane! (+50)', 'good');
+        beep('good');
+        renderStats();
+        $('answerContainer').style.display = 'none';
+        $('next-row').style.display = 'flex';
+        $('nextButton').focus();
+      } else {
+        setFeedback('Spróbuj jeszcze raz — przepisz dokładnie.', 'bad');
+      }
+    });
+
+    $('skipTypeButton').addEventListener('click', () => {
+      $('answerContainer').style.display = 'none';
+      $('next-row').style.display = 'flex';
+      $('nextButton').focus();
+    });
+
+    $('nextButton').addEventListener('click', newRound);
+    $('question-speak').addEventListener('click', () => {
+      const q = state.current;
+      speak(q.speakable || q.correct);
+    });
+
+    /* ====== CONTROLS ====== */
+    $('dir-btn').addEventListener('click', () => {
+      state.direction = state.direction === 'PL_EN' ? 'EN_PL' : 'PL_EN';
+      $('dir-label').textContent = state.direction === 'PL_EN' ? 'PL → EN' : 'EN → PL';
+      newRound();
+    });
+
+    $('speak-btn').addEventListener('click', (e) => {
+      state.autoSpeak = !state.autoSpeak;
+      e.currentTarget.classList.toggle('active', state.autoSpeak);
+      e.currentTarget.textContent = `🔊 Auto-czytanie: ${state.autoSpeak ? 'ON' : 'OFF'}`;
+    });
+
+    $('sound-btn').addEventListener('click', (e) => {
+      state.sound = !state.sound;
+      e.currentTarget.classList.toggle('active', state.sound);
+      e.currentTarget.textContent = `🎵 Dźwięki: ${state.sound ? 'ON' : 'OFF'}`;
+    });
+
+    $('reset-btn').addEventListener('click', () => {
+      state.score = 0; state.streak = 0; state.answered = 0; state.correct = 0;
+      renderStats();
+      newRound();
+    });
+
+    /* ====== KEYBOARD ====== */
+    document.addEventListener('keydown', (e) => {
+      const typing = document.activeElement === $('userAnswer');
+      if (typing) {
+        if (e.key === 'Enter') { e.preventDefault(); $('sendButton').click(); }
+        return;
+      }
+      if (['1', '2', '3', '4'].includes(e.key) && !state.locked) {
+        const els = [...document.querySelectorAll('.option')];
+        const el = els[Number(e.key) - 1];
+        if (el) { e.preventDefault(); el.click(); }
+      } else if (e.key === 'Enter') {
+        if ($('next-row').style.display !== 'none') { e.preventDefault(); newRound(); }
+      } else if (e.key.toLowerCase() === 's') {
+        const q = state.current;
+        speak(q.speakable || q.correct);
+      }
+    });
+
+    /* ====== INIT ====== */
+    function init() {
+      renderStats();
+      newRound();
+    }
+    window.addEventListener('load', init);
+  </script>
+</body>
+</html>
