@@ -334,15 +334,17 @@
         T('e8-participles', 'Imiesłów czynny i bierny'),
         T('e8-state', 'Czasowniki wyrażające stany'),
         T('e8-phrasal', 'Czasowniki złożone (phrasal verbs)'),
+        T('e8-going-to', 'be going to', 'be-going-to'),
+        T('e8-have-to', 'have to', 'have-to'),
+        T('e8-would-like', 'would like to', 'would-like-to'),
+      ]},
+      { name: 'Czasy', emoji: '⏳', topics: [
         T('e8-present-simple', 'Present Simple', 'present-simple'),
         T('e8-present-continuous', 'Present Continuous', 'present-continuous'),
         T('e8-present-perfect', 'Present Perfect', 'present-perfect'),
         T('e8-past-simple', 'Past Simple', 'past-simple'),
         T('e8-past-continuous', 'Past Continuous', 'past-continuous'),
         T('e8-future-simple', 'Future Simple', 'future-simple'),
-        T('e8-going-to', 'be going to', 'be-going-to'),
-        T('e8-have-to', 'have to', 'have-to'),
-        T('e8-would-like', 'would like to', 'would-like-to'),
       ]},
       { name: 'Rzeczownik', emoji: '📦', topics: [
         T('e8-count', 'Policzalne i niepoliczalne'),
@@ -442,6 +444,8 @@
         T('mp-reg', 'Regularne i nieregularne'),
         T('mp-part', 'Imiesłów czynny i bierny'),
         T('mp-phrasal', 'Phrasal verbs'),
+      ]},
+      { name: 'Czasy', emoji: '⏳', topics: [
         T('mp-present-simple', 'Present Simple', 'present-simple'),
         T('mp-present-continuous', 'Present Continuous', 'present-continuous'),
         T('mp-present-perfect', 'Present Perfect', 'present-perfect'),
@@ -505,6 +509,8 @@
     cats: [
       { name: 'Czasownik (rozszerzenia)', emoji: '🏃', topics: [
         T('mr-perfect-modal', 'Perfect modals (must have done…)'),
+      ]},
+      { name: 'Czasy (rozszerzenia)', emoji: '⏳', topics: [
         T('mr-future-perfect', 'Future Perfect'),
         T('mr-fpc', 'Future Perfect Continuous'),
         T('mr-ppc2', 'Past Perfect Continuous'),
