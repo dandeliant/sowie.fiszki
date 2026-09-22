@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Have got — pogoda i ubrania</title>
+<style>
+  :root{
+    --bg:#eef4ff; --card:#ffffff; --ink:#243b53; --muted:#6b7a90; --border:#dce6f5;
+    --accent:#4f46e5; --accent2:#7c3aed; --ok:#16a34a; --no:#dc2626;
+    --cold:#5bc0eb; --hot:#f6ae2d; --rain:#38bdf8; --mild:#94a3b8; --warm:#fb923c;
+    --shadow:0 10px 30px rgba(30,50,90,.12);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
+    background:radial-gradient(1000px 500px at 10% -10%,rgba(91,192,235,.14),transparent 60%),
+               radial-gradient(900px 500px at 110% 0%,rgba(246,174,45,.12),transparent 55%),var(--bg);
+    color:var(--ink);min-height:100vh;display:flex;flex-direction:column;align-items:center;gap:14px;padding:16px;}
+  .back-link{display:inline-flex;align-items:center;gap:6px;background:var(--card);color:var(--accent);
+    border:1px solid var(--border);border-radius:999px;padding:.5rem 1.1rem;text-decoration:none;font-weight:700;font-size:.95rem;box-shadow:var(--shadow);transition:transform .15s}
+  .back-link:hover{transform:translateY(-1px)}
+  h1{font-size:clamp(1.4rem,3.5vw,2rem);text-align:center;color:var(--accent2)}
+  .subtitle{color:var(--muted);font-size:.9rem;text-align:center;margin-top:-6px}
+  .card{background:var(--card);border-radius:20px;box-shadow:var(--shadow);border:1px solid var(--border);padding:18px;max-width:760px;width:100%}
+  .controls{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;align-items:center}
+  button{font-family:inherit;font-weight:700;font-size:.95rem;border:none;border-radius:12px;padding:11px 16px;cursor:pointer;color:#fff;transition:transform .12s,box-shadow .2s,opacity .2s;box-shadow:0 4px 12px rgba(79,70,229,.25)}
+  button:hover{transform:translateY(-2px)}
+  button:disabled{opacity:.45;cursor:not-allowed;transform:none;box-shadow:none}
+  .btn-new{background:linear-gradient(135deg,#5bc0eb,#4f46e5)}
+  .btn-check{background:linear-gradient(135deg,#7ac74f,#16a34a)}
+  .btn-ghost{background:var(--card);color:var(--ink);border:1.5px solid var(--border);box-shadow:none}
+  select{padding:8px 10px;border-radius:10px;border:1.5px solid var(--border);background:var(--card);color:var(--ink);font-family:inherit;font-weight:700}
+
+  .cards{display:flex;flex-direction:column;gap:14px;margin-top:14px}
+  .wcard{border-radius:16px;border:1px solid var(--border);overflow:hidden;box-shadow:0 4px 14px rgba(30,50,90,.08);background:#fff}
+  .wc-head{display:flex;align-items:center;gap:12px;padding:12px 16px;color:#20334d}
+  .wcard.cold .wc-head{background:linear-gradient(135deg,#dbf1ff,#bfe4ff)}
+  .wcard.hot  .wc-head{background:linear-gradient(135deg,#ffefc9,#ffe0a0)}
+  .wcard.warm .wc-head{background:linear-gradient(135deg,#ffe6cf,#ffd0a8)}
+  .wcard.rain .wc-head{background:linear-gradient(135deg,#d6f0ff,#b6e3fb)}
+  .wcard.mild .wc-head{background:linear-gradient(135deg,#eef2f7,#dbe3ec)}
+  .wc-emoji{font-size:2rem;line-height:1;filter:drop-shadow(0 2px 2px rgba(0,0,0,.12))}
+  .wc-cond{font-weight:800;font-size:1.05rem}
+  .wc-cond .pl{display:block;font-size:.72rem;font-weight:600;color:#5a6b82;opacity:.85}
+  .wc-body{padding:14px 16px;font-size:1.06rem;line-height:1.7;display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap}
+  .wc-text{flex:1;min-width:180px}
+  .subj{font-weight:800;color:var(--accent2)}
+  .item{white-space:nowrap;font-weight:600}
+  .tick{color:var(--ok);font-weight:900}
+  .cross{color:var(--no);font-weight:900}
+  .blank{display:inline-block;min-width:92px;border-bottom:2.5px solid var(--accent2);color:transparent;user-select:none}
+  .ans{font-weight:800;border-radius:6px;padding:0 5px}
+  .ans.pos{color:#0e7a3b;background:rgba(122,199,79,.16)}
+  .ans.neg{color:#b3261e;background:rgba(220,38,38,.10)}
+  .spk{flex:none;width:36px;height:36px;border-radius:50%;border:1px solid var(--border);background:var(--card);color:var(--accent);cursor:pointer;font-size:1rem;box-shadow:none;padding:0;display:inline-flex;align-items:center;justify-content:center}
+  .spk:hover{transform:scale(1.08)}
+  .spk.speaking{animation:pulse 1s ease infinite;background:var(--accent);color:#fff}
+  @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
+
+  .voice-row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:center;margin-top:14px;font-size:.85rem;color:var(--muted)}
+  .voice-row select,.voice-row input[type=range]{accent-color:var(--accent)}
+  .voice-row select{max-width:230px}
+  .read-all{background:linear-gradient(135deg,#f6ae2d,#fb7185);color:#3a2a00}
+  .hidden{display:none!important}
+
+  .back-top{padding:0 0 2px}.back-bottom{margin:2px 0 22px}
+  .htp-btn{position:fixed;bottom:16px;right:16px;z-index:60;border-radius:999px;padding:.6rem 1rem;background:linear-gradient(135deg,#7c3aed,#5bc0eb);color:#fff;box-shadow:var(--shadow)}
+  .htp-modal{position:fixed;inset:0;background:rgba(20,30,60,.6);display:none;align-items:center;justify-content:center;z-index:70;padding:1rem}
+  .htp-modal.show{display:flex}
+  .htp-box{background:var(--card);border-radius:16px;padding:1.6rem;max-width:480px;width:100%;box-shadow:var(--shadow);text-align:left;max-height:85vh;overflow-y:auto}
+  .htp-box h3{margin:0 0 .8rem;color:var(--accent2)}.htp-box ol{margin:0 0 1rem;padding-left:1.3rem}.htp-box li{margin:.45rem 0;line-height:1.4}
+  .htp-close{width:100%;margin-top:.4rem;border-radius:12px;padding:.75rem;background:linear-gradient(135deg,#7c3aed,#5bc0eb);color:#fff}
+  @media print{.back-link,.back-top,.back-bottom,.htp-btn,.htp-modal,.controls,.voice-row,.spk,.read-all{display:none!important}}
+</style>
+</head>
+<body>
+<div class="back-top"><a href="app.html" class="back-link">← Powrót do Sowie Fiszki</a></div>
+
+<h1>🌦️ Have got — pogoda i ubrania</h1>
+<div class="subtitle">Ćwicz <b>have got / has got</b> i przeczenia — ubrania i akcesoria dopasowane do pogody</div>
+
+<div class="card">
+  <div class="controls">
+    <button class="btn-new" onclick="generate()">🎲 Nowe zdania</button>
+    <button class="btn-check" id="btnCheck" onclick="reveal()" disabled>✅ Sprawdź</button>
+    <label style="color:var(--muted);font-weight:700;font-size:.85rem">Ile zdań:
+      <select id="count" onchange="generate()">
+        <option>3</option><option selected>5</option><option>6</option><option>8</option>
+      </select>
+    </label>
+  </div>
+
+  <div class="cards" id="cards"></div>
+
+  <div class="voice-row" id="voiceRow">
+    <label>🔊 Głos: <select id="voiceSel"></select></label>
+    <label>⏩ Tempo: <input type="range" id="rate" min="0.6" max="1.1" step="0.05" value="0.92"></label>
+    <button class="read-all hidden" id="btnReadAll" onclick="readAll()">▶ Odczytaj wszystko</button>
+    <button class="btn-ghost hidden" id="btnStop" onclick="stopReading()">⏹ Stop</button>
+  </div>
+</div>
+
+<div class="back-bottom"><a href="app.html" class="back-link">← Wróć do Sowie Fiszki</a></div>
+
+<button class="htp-btn" onclick="document.getElementById('htpModal').classList.add('show')">ℹ️ Jak grać?</button>
+<div class="htp-modal" id="htpModal" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="htp-box">
+    <h3>ℹ️ Jak grać? — Have got: pogoda i ubrania</h3>
+    <ol>
+      <li>Kliknij <b>🎲 Nowe zdania</b> — losują się osoby, pogoda oraz pasujące do niej ubrania i akcesoria.</li>
+      <li>Uzupełnij luki formą czasownika <b>have got</b>: <i>has got / have got</i> (✓) oraz <i>hasn't got / haven't got</i> (✗).</li>
+      <li>Kliknij <b>✅ Sprawdź</b> — pojawią się poprawne odpowiedzi i przyciski odczytu.</li>
+      <li><b>🔊</b> czyta pojedyncze zdanie, <b>▶ Odczytaj wszystko</b> — całość. Głos brytyjski (Google UK English) wybierzesz na dole.</li>
+      <li>Ćwiczysz liczbę pojedynczą (<i>I / he / she</i>) i mnogą (<i>they</i> — dwie osoby, ubrania w liczbie mnogiej).</li>
+    </ol>
+    <button class="htp-close" onclick="document.getElementById('htpModal').classList.remove('show')">Zamknij</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+
+  const WEATHER = [
+    {en:'cold',     pl:'zimno',      emoji:'🥶', group:'cold'},
+    {en:'freezing', pl:'mroźno',     emoji:'❄️', group:'cold'},
+    {en:'warm',     pl:'ciepło',     emoji:'🌤️', group:'warm'},
+    {en:'hot',      pl:'gorąco',     emoji:'☀️', group:'hot'},
+    {en:'wet',      pl:'mokro',      emoji:'🌧️', group:'rain'},
+    {en:'rainy',    pl:'deszczowo',  emoji:'🌧️', group:'rain'},
+    {en:'cloudy',   pl:'pochmurno',  emoji:'☁️', group:'mild'},
+    {en:'foggy',    pl:'mgliście',   emoji:'🌫️', group:'mild'},
+    {en:'winter',   pl:'zima',       emoji:'⛄', group:'cold', season:true},
+    {en:'summer',   pl:'lato',       emoji:'🏖️', group:'hot',  season:true},
+    {en:'autumn',   pl:'jesień',     emoji:'🍂', group:'rain', season:true},
+    {en:'spring',   pl:'wiosna',     emoji:'🌸', group:'warm', season:true},
+  ];
+  const SECONDARY = { cold:['windy','snowy'], hot:['sunny'], warm:['sunny'], rain:['windy'], mild:['grey','windy'] };
+
+  // Ubrania/akcesoria per pogoda. s = liczba poj., p = liczba mnoga (dla „they").
+  const CLOTHES = {
+    cold: [
+      {s:'a sweater',plural:'sweaters',pl:'sweter',e:'🧶'},
+      {s:'a warm coat',plural:'warm coats',pl:'ciepły płaszcz',e:'🧥'},
+      {s:'a scarf',plural:'scarves',pl:'szalik',e:'🧣'},
+      {s:'gloves',plural:'gloves',pl:'rękawiczki',e:'🧤'},
+      {s:'a woolly hat',plural:'woolly hats',pl:'wełniana czapka',e:'🧢'},
+      {s:'warm boots',plural:'warm boots',pl:'ciepłe buty',e:'🥾'},
+    ],
+    hot: [
+      {s:'a sun hat',plural:'sun hats',pl:'kapelusz',e:'👒'},
+      {s:'sunglasses',plural:'sunglasses',pl:'okulary słoneczne',e:'🕶️'},
+      {s:'a T-shirt',plural:'T-shirts',pl:'koszulka',e:'👕'},
+      {s:'shorts',plural:'shorts',pl:'krótkie spodenki',e:'🩳'},
+      {s:'sandals',plural:'sandals',pl:'sandały',e:'🩴'},
+      {s:'sun cream',plural:'sun cream',pl:'krem do opalania',e:'🧴'},
+    ],
+    warm: [
+      {s:'a light jacket',plural:'light jackets',pl:'lekka kurtka',e:'🧥'},
+      {s:'a T-shirt',plural:'T-shirts',pl:'koszulka',e:'👕'},
+      {s:'a cap',plural:'caps',pl:'czapka z daszkiem',e:'🧢'},
+      {s:'trainers',plural:'trainers',pl:'trampki',e:'👟'},
+      {s:'a hoodie',plural:'hoodies',pl:'bluza z kapturem',e:'🧥'},
+    ],
+    rain: [
+      {s:'an umbrella',plural:'umbrellas',pl:'parasol',e:'☂️'},
+      {s:'a raincoat',plural:'raincoats',pl:'płaszcz przeciwdeszczowy',e:'🧥'},
+      {s:'wellington boots',plural:'wellington boots',pl:'kalosze',e:'🥾'},
+      {s:'a waterproof jacket',plural:'waterproof jackets',pl:'kurtka przeciwdeszczowa',e:'🧥'},
+      {s:'a hood',plural:'hoods',pl:'kaptur',e:'🧥'},
+    ],
+    mild: [
+      {s:'a jacket',plural:'jackets',pl:'kurtka',e:'🧥'},
+      {s:'a hoodie',plural:'hoodies',pl:'bluza z kapturem',e:'🧥'},
+      {s:'a cap',plural:'caps',pl:'czapka z daszkiem',e:'🧢'},
+      {s:'trainers',plural:'trainers',pl:'trampki',e:'👟'},
+      {s:'a light coat',plural:'light coats',pl:'lekki płaszcz',e:'🧥'},
+    ],
+  };
+  const NAMES_F=['Sandra','Mia','Emma','Olivia','Ava','Lena','Nina','Zoe','Julia','Mary','Lucy','Sofia'];
+  const NAMES_M=['Tom','Oliver','Erik','Noah','Liam','Lucas','Adam','Hugo','Max','Ben','Alex','Leo'];
+
+  const rand=a=>a[Math.floor(Math.random()*a.length)];
+  function shuffle(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
+
+  function makePerson(){
+    const r=Math.random();
+    if(r<0.22) return {A:'I',B:'I',have:'have got',havent:"haven't got",plural:false};
+    if(r<0.5){ const n=rand(NAMES_F); return {A:n,B:'she',have:'has got',havent:"hasn't got",plural:false}; }
+    if(r<0.78){ const n=rand(NAMES_M); return {A:n,B:'he',have:'has got',havent:"hasn't got",plural:false}; }
+    let a=rand(NAMES_M),b=rand(NAMES_F); return {A:a+' and '+b,B:'they',have:'have got',havent:"haven't got",plural:true};
+  }
+  function itemForm(it,plural){ return plural ? it.plural : it.s; }
+
+  let cards=[], checked=false;
+
+  function makeCard(){
+    const w=rand(WEATHER), g=w.group;
+    const pool=shuffle(CLOTHES[g]);
+    const it1=pool[0], it2=pool[1];
+    const person=makePerson();
+    let intro="It's "+w.en;
+    if(!w.season && SECONDARY[g] && Math.random()<0.4) intro+=" and "+rand(SECONDARY[g]);
+    intro+= w.season ? "." : " today.";
+    return {w,g,it1,it2,person,intro};
+  }
+
+  function generate(){
+    const n=parseInt(document.getElementById('count').value,10)||5;
+    cards=Array.from({length:n},makeCard);
+    checked=false;
+    render();
+    document.getElementById('btnCheck').disabled=false;
+    document.getElementById('btnReadAll').classList.add('hidden');
+    document.getElementById('btnStop').classList.add('hidden');
+    stopReading();
+  }
+
+  function cardText(c){ // pełne zdanie do odczytu (bez znaczników)
+    const p=c.person;
+    return c.intro+" "+c.person.A+" "+p.have+" "+itemForm(c.it1,p.plural)+
+      ", but "+p.B+" "+p.havent+" "+itemForm(c.it2,p.plural)+".";
+  }
+
+  function render(){
+    const box=document.getElementById('cards');
+    box.innerHTML=cards.map((c,idx)=>{
+      const p=c.person;
+      const i1=itemForm(c.it1,p.plural), i2=itemForm(c.it2,p.plural);
+      const posEl = checked ? `<span class="ans pos">${p.have}</span>` : `<span class="blank">_________</span>`;
+      const negEl = checked ? `<span class="ans neg">${p.havent}</span>` : `<span class="blank">_________</span>`;
+      const spk = checked ? `<button class="spk" data-idx="${idx}" title="Przeczytaj">🔊</button>` : '';
+      return `<div class="wcard ${c.g}">
+        <div class="wc-head"><span class="wc-emoji">${c.w.emoji}</span>
+          <span class="wc-cond">${c.intro}<span class="pl">${c.w.pl}</span></span></div>
+        <div class="wc-body">
+          <span class="wc-text"><span class="subj">${c.person.A}</span> ${posEl}
+            <span class="item">${c.it1.e} ${i1}</span> <span class="tick">✓</span>,
+            but <span class="subj">${p.B}</span> ${negEl}
+            <span class="item">${c.it2.e} ${i2}</span> <span class="cross">✗</span>.</span>
+          ${spk}
+        </div>
+      </div>`;
+    }).join('');
+    if(checked){
+      box.querySelectorAll('.spk').forEach(b=>{ b.onclick=()=>speak(cardText(cards[+b.dataset.idx]),b); });
+    }
+  }
+
+  function reveal(){
+    if(!cards.length) generate();
+    checked=true; render();
+    document.getElementById('btnReadAll').classList.remove('hidden');
+    document.getElementById('btnStop').classList.remove('hidden');
+  }
+
+  // ── TTS (brytyjski głos Google) ──
+  let voices=[];
+  function loadVoices(){
+    if(!('speechSynthesis'in window))return;
+    voices=speechSynthesis.getVoices();
+    const en=voices.filter(v=>/^en/i.test(v.lang));
+    const gb=en.filter(v=>/en[-_]GB/i.test(v.lang));
+    const list=gb.length?gb:(en.length?en:voices);
+    list.sort((a,b)=>(/google uk english/i.test(a.name)?0:1)-(/google uk english/i.test(b.name)?0:1));
+    const sel=document.getElementById('voiceSel');
+    if(!list.length){sel.innerHTML='<option>Brak głosów</option>';return;}
+    sel.innerHTML=list.map(v=>`<option value="${v.name}">${v.name} (${v.lang})</option>`).join('');
+    const pref=list.find(v=>/google uk english female/i.test(v.name))||list.find(v=>/google uk english/i.test(v.name))||list.find(v=>/female/i.test(v.name))||list[0];
+    if(pref) sel.value=pref.name;
+  }
+  function chosenVoice(){ const n=document.getElementById('voiceSel').value; return voices.find(v=>v.name===n)||null; }
+  let curBtn=null;
+  function clearSpeaking(){ if(curBtn){curBtn.classList.remove('speaking');curBtn=null;} }
+  function speak(text,btn){
+    if(!('speechSynthesis'in window))return;
+    speechSynthesis.cancel();clearSpeaking();
+    const u=new SpeechSynthesisUtterance(text);
+    const v=chosenVoice(); if(v){u.voice=v;u.lang=v.lang;}else u.lang='en-GB';
+    u.rate=parseFloat(document.getElementById('rate').value)||0.92;
+    if(btn){curBtn=btn;btn.classList.add('speaking');u.onend=clearSpeaking;u.onerror=clearSpeaking;}
+    speechSynthesis.speak(u);
+  }
+  let reading=false;
+  function readAll(){
+    if(!('speechSynthesis'in window)||!cards.length)return;
+    speechSynthesis.cancel();clearSpeaking();reading=true;
+    const seq=cards.map(cardText); let i=0;
+    (function next(){
+      if(!reading||i>=seq.length){reading=false;return;}
+      const u=new SpeechSynthesisUtterance(seq[i]);
+      const v=chosenVoice(); if(v){u.voice=v;u.lang=v.lang;}else u.lang='en-GB';
+      u.rate=parseFloat(document.getElementById('rate').value)||0.92;
+      u.onend=()=>{i++;next();}; u.onerror=()=>{i++;next();};
+      speechSynthesis.speak(u);
+    })();
+  }
+  function stopReading(){ reading=false; if('speechSynthesis'in window) speechSynthesis.cancel(); clearSpeaking(); }
+
+  window.generate=generate; window.reveal=reveal; window.readAll=readAll; window.stopReading=stopReading;
+  if('speechSynthesis'in window){ loadVoices(); speechSynthesis.onvoiceschanged=loadVoices; }
+  generate();
+})();
+</script>
+</body>
+</html>
