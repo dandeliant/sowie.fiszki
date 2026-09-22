@@ -4303,7 +4303,7 @@ const BOOKS = {
     shortName: 'Impulse 3',
     icon: '⚡',
     color: '#0984e3',
-    description: 'Klasa 2 · Szkoła Średnia',
+    description: 'Klasa 2 · Szkoła Ponadpodstawowa',
     units: {
       unit1: {
         name: 'Unit 1', icon: '👥', color: '#a29bfe',
@@ -17082,7 +17082,7 @@ const BOOKS = {
     shortName: 'Repetytorium',
     icon: '📗',
     color: '#00b894',
-    description: 'Repetytorium · poziom podstawowy i rozszerzony · Liceum / technikum',
+    description: 'Repetytorium · poziom podstawowy i rozszerzony · Szkoła Ponadpodstawowa',
     units: {
       unit1: {
         name: 'Unit 1 · Człowiek', icon: '🧑', color: '#00b894',
