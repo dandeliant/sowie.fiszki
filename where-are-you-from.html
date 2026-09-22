@@ -51,7 +51,7 @@
   .dialog{margin-top:16px;display:none;flex-direction:column;gap:9px}
   .dialog.show{display:flex}
   .turn{display:flex;align-items:flex-start;gap:9px}
-  .who{flex:none;width:60px;font-weight:800;border-radius:9px;padding:5px 6px;text-align:center;font-size:.85rem}
+  .who{flex:none;min-width:56px;font-weight:800;border-radius:9px;padding:5px 9px;text-align:center;font-size:.82rem;white-space:nowrap}
   .who.anna{background:var(--anna);color:#b3316b}
   .who.leo{background:var(--leo);color:#1d5fa8}
   .line{flex:1;background:#f6f9ff;border:1px solid var(--border);border-radius:10px;padding:8px 12px;font-size:1.02rem;line-height:1.5;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -125,10 +125,10 @@
     <h3>ℹ️ Jak grać? — Where are you from?</h3>
     <ol>
       <li>Kliknij <b>🎲 Nowa tabela</b> — losują się osoby (Me, Mum, Dad, Sister, Grandma, Grandpa), ich kraje i pasujące kontynenty.</li>
-      <li>Kliknij <b>💬 Pokaż dialog</b> — pojawia się rozmowa Anny i Leo z <b>lukami</b>. Uczniowie próbują uzupełnić odpowiedzi (na głos lub w zeszycie).</li>
+      <li>Kliknij <b>💬 Pokaż dialog</b> — pojawia się rozmowa Anny i Twojej postaci (osoby <b>„Me"</b> z tabeli) z <b>lukami</b>. Uczniowie próbują uzupełnić odpowiedzi (na głos lub w zeszycie).</li>
       <li>Kliknij <b>✅ Sprawdź</b> — pokazują się <b>pełne odpowiedzi</b> i przyciski odczytu.</li>
       <li><b>🔊</b> przy zdaniu czyta pojedynczą kwestię; <b>▶ Odczytaj cały dialog</b> czyta całość. Głos brytyjski (Google UK English) wybierzesz na dole.</li>
-      <li>Uwaga na krótkie odpowiedzi: <i>Yes, it is / No, it isn't</i>, <i>Yes, she is / No, he isn't</i> oraz zdania <i>It's in Europe / She's from Brazil</i>.</li>
+      <li>Ćwiczysz liczbę <b>pojedynczą</b> (<i>Yes, she is / No, he isn't</i>) i <b>mnogą</b> (<i>Are your parents from…? No, they aren't. They're from…</i>) oraz kontynenty (<i>It's in Europe</i>).</li>
     </ol>
     <button class="htp-close" onclick="document.getElementById('htpModal').classList.remove('show')">Zamknij</button>
   </div>
@@ -160,6 +160,8 @@
     {en:'Czechia',   pl:'Czechy',          cont:'Europe'},
     {en:'Slovakia',  pl:'Słowacja',        cont:'Europe'},
     {en:'Belarus',   pl:'Białoruś',        cont:'Europe'},
+    {en:'Poland',    pl:'Polska',          cont:'Europe'},
+    {en:'the USA',   pl:'Stany Zjednoczone', cont:'North America'},
   ];
   const CONTINENTS = ['Europe','Asia','Africa','North America','South America'];
 
@@ -172,25 +174,31 @@
     {key:'grandpa', label:'Grandpa', pl:'Dziadek', gender:'m',   pron:'he',  contr:"he's"},
   ];
   const NAMES_M = ['Leo','Oliver','Erik','Noah','Liam','Lucas','Adam','Hugo','Max','Oskar','Filip','Ben','Alex','Tom'];
-  const NAMES_F = ['Sofia','Mia','Anna','Emma','Olivia','Ava','Lena','Nina','Zoe','Julia','Hania','Ela','Kaja','Maya'];
+  const NAMES_F = ['Sofia','Mia','Emma','Olivia','Ava','Lena','Nina','Zoe','Julia','Hania','Ela','Kaja','Maya','Lucy'];
 
   const rand = a => a[Math.floor(Math.random()*a.length)];
   function shuffle(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
   const cap = s => s.charAt(0).toUpperCase()+s.slice(1);
 
   let rows = [];   // {role, name, country}
+  let meName = '';
 
   function newTable(){
     const cs = shuffle(COUNTRIES).slice(0,6);
+    // Czasem rodzice / dziadkowie są z tego SAMEGO kraju — wtedy liczba mnoga
+    // brzmi naturalnie („They're from Poland."). Gdy różne — „...from X and Y.".
+    const shareP = Math.random()<0.45, shareG = Math.random()<0.45;
+    const cFor = { me:cs[0], mum:cs[1], dad:shareP?cs[1]:cs[2], sister:cs[3], grandma:cs[4], grandpa:shareG?cs[4]:cs[5] };
     const males = shuffle(NAMES_M), females = shuffle(NAMES_F);
     let mi=0, fi=0;
-    rows = ROLES.map((role,i)=>{
+    rows = ROLES.map((role)=>{
       let name;
       if(role.gender==='m') name=males[mi++];
       else if(role.gender==='f') name=females[fi++];
       else name = Math.random()<0.5 ? males[mi++] : females[fi++];
-      return {role, name, country:cs[i]};
+      return {role, name, country:cFor[role.key]};
     });
+    meName = rows[0].name;
     renderTable();
     // reset dialogu
     document.getElementById('dialog').classList.remove('show');
@@ -230,6 +238,17 @@
   function fromClause(role, country){ // np. "I'm from Portugal." / "She's from Brazil."
     return cap(role.contr)+" from "+country.en+".";
   }
+  // Liczba mnoga: parents / grandparents (they). Zwraca {blank, hint}.
+  function pluralAnswer(a, b, guess){ // a,b = obiekty kraju
+    const same = a.en===b.en;
+    if(same && a.en===guess.en) return {blank:"Yes, they are", hint:""};
+    const from = same ? ("They're from "+a.en+".") : ("They're from "+a.en+" and "+b.en+".");
+    return {blank:"No, they aren't", hint:from};
+  }
+  function guessForPair(a,b){ // czasem trafiony (Yes), częściej nietrafiony (No)
+    if(a.en===b.en && Math.random()<0.45) return a; // wspólny kraj → Yes
+    return rand(COUNTRIES);
+  }
 
   let dialogTurns = null;
   let checked = false;
@@ -256,22 +275,23 @@
     A("Is "+me.country.en+" in "+gc.cont+"?");
     L(gc.match?"Yes, it is":"No, it isn't", gc.match?"":("It's in "+me.country.cont+"."));
 
-    // 4. Mama — kraj
+    // 4. Mama — kraj (liczba pojedyncza: she)
     g = guessCountry(mum.country);
     A("Is your mum from "+g.country.en+"?");
     L(ynPerson(g.match, mum.role), g.match?"":fromClause(mum.role, mum.country));
 
-    // 5. Mama — kontynent
-    gc = guessCont(mum.country.cont);
-    A("Is "+mum.country.en+" in "+gc.cont+"?");
-    L(gc.match?"Yes, it is":"No, it isn't", gc.match?"":("It's in "+mum.country.cont+"."));
+    // 5. Rodzice — liczba MNOGA (they)
+    let pg = guessForPair(mum.country, dad.country);
+    let pa = pluralAnswer(mum.country, dad.country, pg);
+    A("Are your parents from "+pg.en+"?");
+    L(pa.blank, pa.hint);
 
-    // 6. Tata — kraj
-    g = guessCountry(dad.country);
-    A("Is your dad from "+g.country.en+"?");
-    L(ynPerson(g.match, dad.role), g.match?"":fromClause(dad.role, dad.country));
+    // 6. Tata — kontynent
+    gc = guessCont(dad.country.cont);
+    A("Is "+dad.country.en+" in "+gc.cont+"?");
+    L(gc.match?"Yes, it is":"No, it isn't", gc.match?"":("It's in "+dad.country.cont+"."));
 
-    // 7. Siostra — skąd (otwarte)
+    // 7. Siostra — skąd (otwarte, she)
     A("Where is your sister from?");
     L(cap(sister.role.contr)+" from "+sister.country.en, "");
 
@@ -280,17 +300,18 @@
     A("Is "+sister.country.en+" in "+gc.cont+"?");
     L(gc.match?"Yes, it is":"No, it isn't", gc.match?"":("It's in "+sister.country.cont+"."));
 
-    // 9. Babcia — kraj
+    // 9. Babcia — kraj (liczba pojedyncza: she)
     g = guessCountry(grandma.country);
     A("Is your grandma from "+g.country.en+"?");
     L(ynPerson(g.match, grandma.role), g.match?"":fromClause(grandma.role, grandma.country));
 
-    // 10. Babcia — kontynent
-    gc = guessCont(grandma.country.cont);
-    A("Is "+grandma.country.en+" in "+gc.cont+"?");
-    L(gc.match?"Yes, it is":"No, it isn't", gc.match?"":("It's in "+grandma.country.cont+"."));
+    // 10. Dziadkowie — liczba MNOGA (they)
+    pg = guessForPair(grandma.country, grandpa.country);
+    pa = pluralAnswer(grandma.country, grandpa.country, pg);
+    A("Are your grandparents from "+pg.en+"?");
+    L(pa.blank, pa.hint);
 
-    // 11. Dziadek — skąd (otwarte)
+    // 11. Dziadek — skąd (otwarte, he)
     A("And where is your grandpa from?");
     L(cap(grandpa.role.contr)+" from "+grandpa.country.en, "");
 
@@ -321,7 +342,7 @@
       } else {
         inner = `<span class="blank">____________</span>.${t.hint?(' <span class="hint">'+t.hint+'</span>'):''}`;
       }
-      return `<div class="turn"><div class="who leo">Leo <span style="font-size:.7rem">${t.n}</span></div>
+      return `<div class="turn"><div class="who leo">${meName} <span style="font-size:.7rem">${t.n}</span></div>
         <div class="line"><span class="txt">${inner}</span>
         ${checked?`<button class="spk" data-idx="${idx}" title="Przeczytaj">🔊</button>`:''}</div></div>`;
     }).join('');
