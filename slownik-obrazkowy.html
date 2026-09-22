@@ -318,6 +318,7 @@ let curBookId = null, curBook = null;
 let allEntries = [];      // wszystkie słówka podręcznika (z nadpisaniami)
 let entries = [];         // po filtrze unitu
 let overrides = {};       // "unit|pl" -> {image_url, image_path, audio_link}
+let audioMap = {};        // "unit|pl" -> URL nagrania z listy słówek (word_audio)
 let qrCache = {};         // link -> dataURL
 let pageIdx = 0;
 const PER_PAGE = 5;
@@ -343,9 +344,20 @@ function pickVoice(){
   }catch(e){}
 }
 if('speechSynthesis' in window){ pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
-function speak(text, audioLink){
-  if(audioLink){ try{ const a=new Audio(audioLink); a.play().catch(()=>ttsSay(text)); return; }catch(e){} }
-  ttsSay(text);
+function speak(text){
+  // kolejne argumenty = linki do audio (nagranie z listy słówek, wklejony link);
+  // próbujemy po kolei, a gdy żaden nie zagra → TTS.
+  const urls = Array.prototype.slice.call(arguments, 1).filter(Boolean);
+  tryAudio(urls, 0, text);
+}
+function tryAudio(urls, i, text){
+  if(i >= urls.length){ ttsSay(text); return; }
+  try{
+    const a = new Audio(urls[i]);
+    a.onerror = () => tryAudio(urls, i+1, text);
+    const pr = a.play();
+    if(pr && pr.catch) pr.catch(() => tryAudio(urls, i+1, text));
+  }catch(e){ tryAudio(urls, i+1, text); }
 }
 function ttsSay(text){
   try{ speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance(text); u.lang='en-GB'; if(voiceUK)u.voice=voiceUK; u.rate=.9; u.pitch=1.02; speechSynthesis.speak(u); }catch(e){}
@@ -421,6 +433,7 @@ async function openBook(id){
   window.scrollTo(0,0);
 
   overrides = await loadOverrides(id);
+  audioMap = await loadBookAudio(id);
   buildAllEntries();
   buildUnitSelect();
   applyUnitFilter();
@@ -436,6 +449,21 @@ async function loadOverrides(bookId){
   return map;
 }
 
+// Nagrania wymowy z listy słówek (tabela word_audio z migracji #28/#41/#42).
+// Bierzemy nagranie słowa docelowego (EN): audio_url_en (bilingual) lub audio_url (legacy).
+async function loadBookAudio(bookId){
+  const map={};
+  if(!SB) return map;
+  try{
+    const { data } = await SB.from('word_audio').select('*').eq('book_id',bookId);
+    (data||[]).forEach(r=>{
+      const u = r.audio_url_en || r.audio_url || null;
+      if(u) map[key(r.unit_key, r.word_pl)] = u;
+    });
+  }catch(e){ console.warn('loadBookAudio',e && e.message); }
+  return map;
+}
+
 function buildAllEntries(){
   allEntries=[];
   const units = curBook.units||{};
@@ -448,7 +476,8 @@ function buildAllEntries(){
       const emoji = (w[2] && isEmoji(w[2])) ? w[2] : (w[4] && isEmoji(w[4]) ? w[4] : '');
       const ov = overrides[key(uk,pl)] || {};
       allEntries.push({ unitKey:uk, unitName:u.name||uk, pl, en, emoji,
-        image_url:ov.image_url||null, image_path:ov.image_path||null, audio_link:ov.audio_link||null });
+        image_url:ov.image_url||null, image_path:ov.image_path||null, audio_link:ov.audio_link||null,
+        custom_en: audioMap[key(uk,pl)] || null });
     });
   });
 }
@@ -504,14 +533,14 @@ function renderPage(){
       : (e.emoji ? e.emoji : '🖼️');
     const qrImg = (e.audio_link && qrCache[e.audio_link])
       ? `<div class="qr"><img src="${qrCache[e.audio_link]}" alt="QR"></div>` : '';
-    const editBtn = adminMode ? `<button class="edit-btn" onclick="openEdit(${gi})">✏️ Edytuj</button>` : '';
+    const editBtn = adminMode ? `<button class="edit-btn" data-edit="${gi}">✏️ Edytuj</button>` : '';
     html += `<div class="entry">
       ${editBtn}
       <div class="thumb">${thumb}</div>
       <div class="txt"><div class="en">${esc(e.en)}</div><div class="pl">${esc(e.pl)}</div></div>
       <div class="side">
         ${qrImg}
-        <button class="spk" title="Posłuchaj" onclick="speak(${JSON.stringify(e.en)}, ${e.audio_link?JSON.stringify(e.audio_link):'null'})">🔊</button>
+        <button class="spk" title="Posłuchaj" data-spk="${gi}">🔊</button>
       </div>
     </div>`;
   });
@@ -688,6 +717,12 @@ function doPrint(){
 }
 
 /* ---------- INIT ---------- */
+document.getElementById('page').addEventListener('click', ev=>{
+  const s = ev.target.closest('[data-spk]');
+  if(s){ const e = entries[+s.dataset.spk]; if(e) speak(e.en, e.custom_en, e.audio_link); return; }
+  const ed = ev.target.closest('[data-edit]');
+  if(ed){ openEdit(+ed.dataset.edit); return; }
+});
 renderPicker();
 detectAdmin();
 </script>
