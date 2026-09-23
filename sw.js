@@ -5,7 +5,7 @@
 //  cache-first dla fontow i CDN. Nowy SW czeka na zgode klienta
 //  (postMessage SKIP_WAITING) — pokaz banera "Nowa wersja dostepna".
 // ═══════════════════════════════════════════════════════
-const CACHE_NAME = 'sowie-fiszki-v1.145';
+const CACHE_NAME = 'sowie-fiszki-v1.146';
 
 const PRECACHE_ASSETS = [
   './',
@@ -24,6 +24,14 @@ const PRECACHE_ASSETS = [
   './1000-slowek.html',
   './slownik-obrazkowy.html',
   './car-racer.html',
+  './penpal/index.html',
+  './penpal/admin.html',
+  './penpal/assets/style.css',
+  './penpal/assets/common.js',
+  './penpal/assets/matcher.js',
+  './penpal/assets/editor.js',
+  './penpal/assets/form.js',
+  './penpal/assets/admin.js',
   './notesownik/',
   './notesownik/index.html',
   './notesownik/styles.css',
