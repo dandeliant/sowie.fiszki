@@ -66,16 +66,22 @@ body.racing .back-link{opacity:0;pointer-events:none}
 /* verge/pobocze neon */
 .verge{position:absolute;left:0;right:0;top:43.5%;bottom:0;pointer-events:none;
   background:linear-gradient(180deg,#241a44,#0f0b22);}
-.road{position:absolute;left:12%;right:12%;top:43.5%;bottom:0;background:linear-gradient(180deg,#2a2f3b,#161a24);
-  clip-path:polygon(43% 0,57% 0,100% 100%,0 100%);overflow:hidden;box-shadow:0 0 60px #000 inset}
+/* Szeroka autostrada wielopasmowa */
+.road{position:absolute;left:4%;right:4%;top:43.5%;bottom:0;background:linear-gradient(180deg,#2a2f3b,#161a24);
+  clip-path:polygon(41% 0,59% 0,100% 100%,0 100%);overflow:hidden;box-shadow:0 0 70px #000 inset}
 .road:before{content:"";position:absolute;inset:0;
-  background:linear-gradient(90deg,transparent 0 2%,#38e8ff55 2% 3%,transparent 3% 97%,#c66bff55 97% 98%,transparent 98%);
-  clip-path:polygon(43% 0,57% 0,100% 100%,0 100%)}
-.road:after{content:"";position:absolute;inset:0;
-  background:repeating-linear-gradient(180deg,transparent 0 60px,#eafcff 60px 96px,transparent 96px 176px);
-  clip-path:polygon(49.4% 0,50.6% 0,53% 100%,47% 100%);animation:road .42s linear infinite;filter:drop-shadow(0 0 6px #9fe9ff)}
-@keyframes road{to{background-position:0 176px}}
-body.boost .road:after{animation-duration:.24s}
+  background:linear-gradient(90deg,#ffd95e88 0 1.2%,transparent 1.2% 4%,transparent 96% 98.8%,#ffd95e88 98.8% 100%);
+  clip-path:polygon(41% 0,59% 0,100% 100%,0 100%)}
+/* Linie rozdzielające pasy (4 przerywane linie → 5 pasów), zbiegają się w horyzoncie */
+.ll{position:absolute;inset:0;pointer-events:none;
+  background:repeating-linear-gradient(180deg,transparent 0 50px,#eafcff 50px 86px,transparent 86px 164px);
+  animation:road .8s linear infinite;filter:drop-shadow(0 0 5px #9fe9ff);opacity:.55}
+.ll.l1{clip-path:polygon(50.3% 0,49.7% 0,19.1% 100%,20.9% 100%)}
+.ll.l2{clip-path:polygon(50.3% 0,49.7% 0,39.1% 100%,40.9% 100%)}
+.ll.l3{clip-path:polygon(50.3% 0,49.7% 0,59.1% 100%,60.9% 100%)}
+.ll.l4{clip-path:polygon(50.3% 0,49.7% 0,79.1% 100%,80.9% 100%)}
+@keyframes road{to{background-position:0 164px}}
+body.boost .ll{animation-duration:.46s}
 
 /* HUD */
 .hud{position:absolute;z-index:30;top:16px;left:0;right:0;display:flex;justify-content:center;gap:10px;pointer-events:none;flex-wrap:wrap;padding:0 12px}
@@ -181,7 +187,7 @@ body.crashing #player{animation:crash .4s}
   <div class="sun"></div>
   <div class="skyline"></div>
   <div class="verge"></div>
-  <div class="road"></div>
+  <div class="road"><div class="ll l1"></div><div class="ll l2"></div><div class="ll l3"></div><div class="ll l4"></div></div>
   <div class="vignette"></div>
 
   <div class="hud">
@@ -249,7 +255,8 @@ function newRound(){
   spawnWave(roundId);
 }
 function spawnWave(id){
-  let lanes=shuffle([.30,.50,.70]);
+  // 5 pasów autostrady — wybieramy 3 dla aut z odpowiedziami
+  let lanes=shuffle([.16,.33,.50,.67,.84]).slice(0,3);
   let opts=shuffle(WORDS).slice(0,3);
   if(!opts.some(x=>x[1]==cur[1])) opts[Math.floor(Math.random()*3)]=cur;
   opts=shuffle(opts);
@@ -258,8 +265,9 @@ function spawnWave(id){
     const hl=document.createElement("span"); hl.className="hl"; c.appendChild(hl);
     c.dataset.a=x[1]; c.dataset.round=id; c.dataset.lane=lanes[i];
     // t = postęp 0 (horyzont) → ~1.1 (przy graczu). Ujemny t = jeszcze za horyzontem (opóźniony wjazd).
-    c.dataset.t=(-0.12 - i*0.42 - Math.random()*0.10).toFixed(3);
-    c.dataset.speed=(0.0044 + Math.random()*0.0010).toFixed(5);
+    c.dataset.t=(-0.12 - i*0.36 - Math.random()*0.10).toFixed(3);
+    // Wolniej — spokojniejszy, czytelny wyścig
+    c.dataset.speed=(0.00245 + Math.random()*0.00055).toFixed(5);
     c.style.setProperty("--c",colors[Math.floor(Math.random()*colors.length)]);
     targets.appendChild(c);
   });
@@ -283,17 +291,17 @@ function check(){let pb=bounds(player);document.querySelectorAll(".target").forE
   }})}
 function frame(){
   if(run){
-    let sp=.0049, boost=(keys.ArrowUp||keys.w);
+    let sp=.0056, boost=(keys.ArrowUp||keys.w);
     document.body.classList.toggle("boost",!!boost);
     if(keys.ArrowLeft||keys.a)px-=sp;
     if(keys.ArrowRight||keys.d)px+=sp;
-    if(boost)py-=sp*.6;
-    if(keys.ArrowDown||keys.s)py+=sp*.6;
-    px=Math.max(.20,Math.min(.80,px)); py=Math.max(.60,Math.min(.86,py));
+    if(boost)py-=sp*.55;
+    if(keys.ArrowDown||keys.s)py+=sp*.55;
+    px=Math.max(.10,Math.min(.90,px)); py=Math.max(.60,Math.min(.86,py));
     player.style.left=(px*100)+"%"; player.style.top=(py*100)+"%";
-    if(engineOsc)engineOsc.frequency.value=boost?98:66;
+    if(engineOsc)engineOsc.frequency.value=boost?92:64;
 
-    const mul=boost?1.34:(keys.ArrowDown||keys.s)?.5:1;
+    const mul=boost?1.28:(keys.ArrowDown||keys.s)?.5:1;
     document.querySelectorAll(".target").forEach(c=>{
       let t=parseFloat(c.dataset.t)+parseFloat(c.dataset.speed)*mul;
       c.dataset.t=t;
