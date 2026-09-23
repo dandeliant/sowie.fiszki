@@ -82,7 +82,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public.penpal_config, public.penpal_matc
 
 -- Wysłanie zgłoszenia (formularz nauczyciela). Zwraca {ok,id,token} lub {ok:false,error}.
 CREATE OR REPLACE FUNCTION public.penpal_submit(p_data JSONB)
-RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions AS $$
 DECLARE v_open BOOLEAN; v_id TEXT; v_token TEXT;
 BEGIN
   SELECT form_open INTO v_open FROM public.penpal_config WHERE id = 1;
@@ -110,7 +110,7 @@ END; $$;
 
 -- Odczyt własnego zgłoszenia po (id, token). Zwraca obiekt camelCase lub NULL.
 CREATE OR REPLACE FUNCTION public.penpal_get_own(p_id TEXT, p_token TEXT)
-RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions AS $$
 DECLARE r public.penpal_submissions;
 BEGIN
   SELECT * INTO r FROM public.penpal_submissions WHERE id = p_id AND edit_token = p_token;
@@ -123,7 +123,7 @@ END; $$;
 
 -- Aktualizacja własnego zgłoszenia po (id, token). Blokowana gdy formularz zamknięty.
 CREATE OR REPLACE FUNCTION public.penpal_update_own(p_id TEXT, p_token TEXT, p_data JSONB)
-RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions AS $$
 DECLARE v_open BOOLEAN; v_hit INT;
 BEGIN
   SELECT form_open INTO v_open FROM public.penpal_config WHERE id = 1;
