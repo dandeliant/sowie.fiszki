@@ -157,6 +157,15 @@
   .qr-live{display:flex;align-items:center;gap:10px;margin-top:8px}
   .qr-live img{width:84px;height:84px;border:1px solid var(--line);border-radius:10px;padding:4px;background:#fff}
 
+  /* stop audio */
+  #stopAudio{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);
+    background:#e64545;color:#fff;border:none;padding:12px 26px;border-radius:999px;font-family:inherit;font-weight:800;font-size:16px;
+    cursor:pointer;box-shadow:0 8px 24px rgba(230,69,69,.42);z-index:95;display:none;align-items:center;gap:8px;
+    animation:stopPulse 1.4s ease-in-out infinite}
+  #stopAudio.on{display:inline-flex}
+  #stopAudio:active{transform:translateX(-50%) scale(.95)}
+  @keyframes stopPulse{0%,100%{box-shadow:0 8px 24px rgba(230,69,69,.42)}50%{box-shadow:0 8px 30px rgba(230,69,69,.7)}}
+
   /* toast */
   .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);opacity:0;
     background:var(--ink);color:#fff;padding:12px 20px;border-radius:999px;font-weight:800;z-index:90;
@@ -192,7 +201,7 @@
   @media print{
     body{background:#fff}
     .back-link,.back-top,.htp-btn,.htp-modal,.toolbar,.nav,.search,.stats,
-    .stage,.modal-bg,.toast,.subtitle,h1.title,.site-footer,#pickView{display:none !important}
+    .stage,.modal-bg,.toast,#stopAudio,.subtitle,h1.title,.site-footer,#pickView{display:none !important}
     #printRoot{display:block}
     .print-page{page-break-after:always;padding:6mm 4mm}
     .print-head{text-align:center;font-weight:900;font-size:20px;color:#1f5fd0;margin-bottom:6px}
@@ -305,6 +314,8 @@
   </div>
 </div>
 
+<button id="stopAudio" onclick="stopAllAudio()">⏹️ Zatrzymaj</button>
+
 <div class="toast" id="toast"></div>
 
 <!-- print target -->
@@ -352,7 +363,18 @@ function pickVoice(){
   }catch(e){}
 }
 if('speechSynthesis' in window){ pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
+let _curAudio = null;   // aktualnie grający plik audio (do zatrzymania)
+function showStop(){ const b=document.getElementById('stopAudio'); if(b) b.classList.add('on'); }
+function hideStop(){ const b=document.getElementById('stopAudio'); if(b) b.classList.remove('on'); }
+function stopAllAudio(){
+  try{ if(_curAudio){ _curAudio.pause(); _curAudio.currentTime = 0; } }catch(e){}
+  _curAudio = null;
+  try{ if('speechSynthesis' in window) speechSynthesis.cancel(); }catch(e){}
+  hideStop();
+}
 function speak(text){
+  // najpierw zatrzymaj cokolwiek gra, potem odtwórz nowe
+  stopAllAudio();
   // kolejne argumenty = linki do audio (nagranie z listy słówek, wklejony link);
   // próbujemy po kolei, a gdy żaden nie zagra → TTS.
   const urls = Array.prototype.slice.call(arguments, 1).filter(Boolean);
@@ -362,13 +384,24 @@ function tryAudio(urls, i, text){
   if(i >= urls.length){ ttsSay(text); return; }
   try{
     const a = new Audio(urls[i]);
-    a.onerror = () => tryAudio(urls, i+1, text);
+    _curAudio = a;
+    showStop();   // pokaż od razu — schowamy przy błędzie/końcu
+    a.onerror = () => { if(_curAudio===a){ _curAudio=null; hideStop(); } tryAudio(urls, i+1, text); };
+    a.onended = () => { if(_curAudio===a){ _curAudio=null; hideStop(); } };
     const pr = a.play();
-    if(pr && pr.catch) pr.catch(() => tryAudio(urls, i+1, text));
+    if(pr && pr.catch) pr.catch(() => { if(_curAudio===a){ _curAudio=null; hideStop(); } tryAudio(urls, i+1, text); });
   }catch(e){ tryAudio(urls, i+1, text); }
 }
 function ttsSay(text){
-  try{ speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance(text); u.lang='en-GB'; if(voiceUK)u.voice=voiceUK; u.rate=.9; u.pitch=1.02; speechSynthesis.speak(u); }catch(e){}
+  try{
+    if(!('speechSynthesis' in window)) return;
+    speechSynthesis.cancel();
+    const u=new SpeechSynthesisUtterance(text); u.lang='en-GB'; if(voiceUK)u.voice=voiceUK; u.rate=.9; u.pitch=1.02;
+    u.onstart = () => showStop();
+    u.onend   = () => hideStop();
+    u.onerror = () => hideStop();
+    speechSynthesis.speak(u);
+  }catch(e){}
 }
 
 /* ---------- QR (qrcode-generator: synchroniczne createDataURL) ---------- */
@@ -619,6 +652,7 @@ document.addEventListener('keydown',e=>{
 });
 
 function backToPicker(){
+  stopAllAudio();
   document.getElementById('bookView').style.display='none';
   document.getElementById('pickView').style.display='';
   window.scrollTo(0,0);
