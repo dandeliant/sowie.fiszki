@@ -245,9 +245,9 @@ function speak(t,lang){if(!speech||!("speechSynthesis"in window))return;speechSy
 function shuffle(a){return [...a].sort(()=>Math.random()-.5)}
 
 /* ── rundy ── */
-let roundId=0;
+let roundId=0, roundResolved=false;
 function newRound(){
-  roundId++;
+  roundId++; roundResolved=false;
   let choices=shuffle(WORDS);
   cur=choices.find(x=>x[1]!=last)||choices[0]; last=cur[1];
   word.textContent=cur[0];
@@ -279,6 +279,7 @@ function check(){let pb=bounds(player);document.querySelectorAll(".target").forE
   if(c.dataset.hit||parseFloat(c.dataset.t)<0.15||!overlap(pb,bounds(c)))return;
   if(Number(c.dataset.round)!==roundId){return;} c.dataset.hit=1;
   if(c.dataset.a===cur[1]){
+    roundResolved=true;
     score+=10+(combo>=2?5:0);combo++;winSound();speak(cur[1],TARGET_LANG);
     c.style.opacity=0;c.style.transform+=" scale(1.5)";show("✓ ŚWIETNIE!",true);
     scoreEl.textContent=score;comboEl.textContent=combo;setTimeout(newRound,850);
@@ -321,6 +322,11 @@ function frame(){
       c.style.zIndex=Math.round(12+ease*20);
     });
     check();
+    // Przegapiona cała fala (żadne auto trafione) → nowa runda, żeby gra nie stanęła.
+    if(run && !roundResolved){
+      const alive=[...document.querySelectorAll(".target")].some(c=>Number(c.dataset.round)===roundId);
+      if(!alive){ combo=0; comboEl.textContent=0; newRound(); }
+    }
   }
   requestAnimationFrame(frame)
 }
