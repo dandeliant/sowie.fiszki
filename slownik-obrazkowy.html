@@ -230,23 +230,28 @@
     .back-link,.back-top,.htp-btn,.htp-modal,.toolbar,.nav,.search,.stats,
     .stage,.modal-bg,.toast,#stopAudio,.say-card,.subtitle,h1.title,.site-footer,#pickView{display:none !important}
     #printRoot{display:block}
-    .print-title{text-align:center;font-weight:900;font-size:18px;color:#1f5fd0;margin:0 0 8px}
+    .print-header{display:flex;align-items:center;justify-content:space-between;gap:14px;
+      margin-bottom:8px;padding-bottom:7px;border-bottom:2px solid #cfe0fb}
+    .print-htext{flex:1}
+    .print-title{font-weight:900;font-size:18px;color:#1f5fd0;margin:0}
+    .print-note{color:#555;font-weight:700;font-size:10px;margin-top:3px}
+    .print-hqr{text-align:center;flex:0 0 auto}
+    .print-hqr img{width:84px;height:84px;display:block}
+    .print-hqr-lbl{font-size:8px;font-weight:800;color:#1f5fd0;margin-top:1px}
     .print-uhead{font-weight:900;font-size:13px;color:#1f5fd0;margin:8px 0 5px;padding-bottom:3px;
       border-bottom:1.5px dashed #cfe0fb;break-after:avoid;page-break-after:avoid}
     /* 3 kolumny — więcej słówek na stronę */
     .print-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-bottom:6px}
-    .print-entry{display:grid;grid-template-columns:30px 1fr 42px;gap:5px;align-items:center;
-      border:1px solid #d8e3f7;border-radius:8px;padding:4px 5px;
+    .print-entry{display:grid;grid-template-columns:32px 1fr;gap:6px;align-items:center;
+      border:1px solid #d8e3f7;border-radius:8px;padding:5px 7px;
       break-inside:avoid;page-break-inside:avoid}
-    .print-entry .thumb{width:30px;height:30px;border-radius:6px;overflow:hidden;display:flex;
-      align-items:center;justify-content:center;background:#eef5ff;font-size:18px}
+    .print-entry .thumb{width:32px;height:32px;border-radius:6px;overflow:hidden;display:flex;
+      align-items:center;justify-content:center;background:#eef5ff;font-size:19px}
     .print-entry .thumb img{width:100%;height:100%;object-fit:cover}
-    .print-entry .en{font-size:12px;font-weight:900;line-height:1.05}
-    .print-entry .pl{color:#555;font-weight:700;font-size:9px}
-    .print-entry .psent{color:#333;font-size:8px;margin-top:2px;line-height:1.2}
+    .print-entry .en{font-size:12.5px;font-weight:900;line-height:1.05}
+    .print-entry .pl{color:#555;font-weight:700;font-size:9.5px}
+    .print-entry .psent{color:#333;font-size:8.5px;margin-top:2px;line-height:1.2}
     .print-entry .psent i{font-style:italic}
-    .print-entry .qr{width:auto;height:auto;border:none;padding:0;background:none}
-    .print-entry .qr img{width:42px;height:42px;display:block}
     .print-foot{text-align:center;color:#888;font-size:9px;margin-top:8px}
   }
 </style>
@@ -263,8 +268,8 @@
       <li>Wybierz <b>podręcznik</b> — słowniczek utworzy się automatycznie z jego listy słówek.</li>
       <li>Przeglądaj jak <b>obracane kartki</b> (strzałki lub ← →), każda strona to kilka słówek z obrazkiem.</li>
       <li>Kliknij <b>🔊</b>, aby usłyszeć wymowę (lektor brytyjski).</li>
-      <li>Admin/nauczyciel: kliknij <b>✏️ Tryb edycji</b>, aby wgrać obrazek i wkleić link do wymowy — <b>kod QR wygeneruje się sam</b>.</li>
-      <li><b>🖨️ Drukuj / PDF</b> — zapisz gotowy słowniczek z obrazkami i kodami QR.</li>
+      <li>Admin/nauczyciel: kliknij <b>✏️ Tryb edycji</b>, aby wgrać obrazek i (opcjonalnie) wkleić link do wymowy.</li>
+      <li><b>🖨️ Drukuj / PDF</b> — słówka w 3 kolumnach; u góry <b>jeden kod QR</b> otwierający ten słowniczek online (z wymową 🔊).</li>
     </ol>
     <button onclick="document.getElementById('htp').classList.remove('on')">Rozumiem</button>
   </div>
@@ -334,10 +339,6 @@
     <label>Link do wymowy (bezpośredni plik audio) — opcjonalnie</label>
     <input id="audioLink" type="url" placeholder="https://… .mp3">
     <div class="hint">Odtwarzany po zeskanowaniu QR / kliknięciu 🔊. Gdy pusty, użyte będzie nagranie z listy słówek lub lektor TTS.</div>
-    <div class="qr-live" id="qrLive" style="display:none">
-      <img id="qrLiveImg" alt="Kod QR słówka">
-      <span class="hint">Kod QR tego słówka (na wydruk) — po zeskanowaniu otwiera kartę wymowy z odtwarzaczem.</span>
-    </div>
 
     <div class="modal-actions">
       <button class="btn" onclick="closeEdit()">Anuluj</button>
@@ -446,7 +447,8 @@ function ttsSay(text){
 // niezależnie od tego, gdzie admin je wygenerował.
 const SAY_BASE = 'https://sowiefiszki.com/slownik-obrazkowy';
 function deepLink(e){ return SAY_BASE + '?say=' + encodeURIComponent(curBookId + '~' + e.unitKey + '~' + e.pl); }
-function qrFor(e){ return makeQR(deepLink(e)); }
+function bookLink(){ return SAY_BASE + '?book=' + encodeURIComponent(curBookId); }
+function bookQR(){ return makeQR(bookLink()); }
 
 function makeQR(text){
   if(!text) return '';
@@ -618,7 +620,7 @@ function applyUnitFilter(){
 }
 
 function preloadQR(){
-  entries.forEach(e=>qrFor(e));   // deep-link QR dla każdego słówka (cache)
+  bookQR();   // jeden QR do słowniczka podręcznika (na wydruk)
 }
 
 /* ---------- RENDER PAGE ---------- */
@@ -645,7 +647,6 @@ function renderPage(){
     const thumb = e.image_url
       ? `<img src="${esc(e.image_url)}" alt="">`
       : (e.emoji ? e.emoji : '🖼️');
-    const qrImg = `<div class="qr"><img src="${qrFor(e)}" alt="QR — zeskanuj, aby usłyszeć"></div>`;
     const editBtn = adminMode ? `<button class="edit-btn" data-edit="${gi}">✏️ Edytuj</button>` : '';
     let sentHtml='';
     if(e.sentEn || e.sentPl){
@@ -659,7 +660,6 @@ function renderPage(){
       <div class="thumb">${thumb}</div>
       <div class="txt"><div class="en">${esc(e.en)}</div><div class="pl">${esc(e.pl)}</div>${sentHtml}</div>
       <div class="side">
-        ${qrImg}
         <button class="spk" title="Posłuchaj" data-spk="${gi}">🔊</button>
       </div>
     </div>`;
@@ -722,10 +722,6 @@ function openEdit(gi){
   else { prev.textContent = e.emoji || '🖼️'; document.getElementById('rmImgBtn').style.display='none'; }
   document.getElementById('audioLink').value = e.audio_link||'';
   document.getElementById('imgFile').value='';
-  // QR = stały deep-link do karty wymowy tego słówka (niezależny od linku audio)
-  const q = qrFor(e);
-  if(q){ document.getElementById('qrLiveImg').src=q; document.getElementById('qrLive').style.display=''; }
-  else document.getElementById('qrLive').style.display='none';
   document.getElementById('editBg').classList.add('on');
 }
 function closeEdit(){ document.getElementById('editBg').classList.remove('on'); }
@@ -792,7 +788,6 @@ async function saveEntry(){
     // sync ten sam wpis w allEntries (gdy filtr)
     const ae = allEntries.find(x=>x.unitKey===e.unitKey && x.pl===e.pl);
     if(ae){ ae.image_url=image_url; ae.image_path=image_path; ae.audio_link=audio_link; }
-    qrFor(e);
 
     closeEdit(); renderPage(); toast('Zapisano ✅');
   }catch(err){
@@ -809,18 +804,22 @@ async function saveEntry(){
 /* ---------- PRINT (siatka 3-kolumnowa, auto-łamanie stron) ---------- */
 function printEntryHtml(e){
   const thumb = e.image_url ? `<img src="${esc(e.image_url)}">` : (e.emoji||'🖼️');
-  const qr = `<div class="qr"><img src="${qrFor(e)}"></div>`;
   const ps = e.sentEn ? `<div class="psent"><i>${esc(e.sentEn)}</i>${e.sentPl?`<br>${esc(e.sentPl)}`:''}</div>` : '';
   return `<div class="print-entry">
     <div class="thumb">${thumb}</div>
     <div><div class="en">${esc(e.en)}</div><div class="pl">${esc(e.pl)}</div>${ps}</div>
-    ${qr}
   </div>`;
 }
 function doPrint(){
-  preloadQR();
+  const qImg = bookQR();
   const root = document.getElementById('printRoot');
-  let html = `<div class="print-title">📖 ${esc(curBook.name||'')} — słowniczek obrazkowy</div>`;
+  let html = `<div class="print-header">
+      <div class="print-htext">
+        <div class="print-title">📖 ${esc(curBook.name||'')} — słowniczek obrazkowy</div>
+        <div class="print-note">Zeskanuj kod QR, aby otworzyć interaktywny słowniczek online (obrazki + wymowa 🔊).</div>
+      </div>
+      ${qImg?`<div class="print-hqr"><img src="${qImg}"><div class="print-hqr-lbl">Słowniczek online</div></div>`:''}
+    </div>`;
   // grupuj po rozdziale (zachowując kolejność), każdy w siatce 3-kolumnowej
   const groups = [];
   entries.forEach(e=>{
@@ -833,7 +832,7 @@ function doPrint(){
     g.items.forEach(e=>{ html += printEntryHtml(e); });
     html += `</div>`;
   });
-  html += `<div class="print-foot">Sowie Fiszki · zeskanuj kod QR, aby usłyszeć wymowę i zobaczyć kartę słówka</div>`;
+  html += `<div class="print-foot">Sowie Fiszki · słowniczek obrazkowy · wymowa online po zeskanowaniu kodu QR</div>`;
   root.innerHTML = html;
   setTimeout(()=>window.print(), 150);
 }
@@ -903,10 +902,15 @@ document.getElementById('page').addEventListener('click', ev=>{
   const ed = ev.target.closest('[data-edit]');
   if(ed){ openEdit(+ed.dataset.edit); return; }
 });
-const _say = new URLSearchParams(location.search).get('say');
+const _params = new URLSearchParams(location.search);
+const _say = _params.get('say');
+const _book = _params.get('book');
 if(_say){
   const parts = _say.split('~');
   openSayCard(parts[0], parts[1], parts.slice(2).join('~'));
+} else if(_book && BOOKS[_book]){
+  renderPicker();
+  openBook(_book);
 } else {
   renderPicker();
 }
