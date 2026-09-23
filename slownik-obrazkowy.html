@@ -549,10 +549,14 @@ function effAccess(book){
     visibleToTeacher:isPublic && !isAdminOnly, visibleToParent:isPublic && !isAdminOnly, tier:'free', hasOverride:false };
 }
 // Czy pokazać podręcznik w pickerze wg roli + przydziału.
+// UWAGA: admin_books utworzone przez admina są przez RLS publiczne (widoczne dla
+// anon), dlatego NIE wolno ich pokazywać na skróty — muszą przejść przez
+// book_access_overrides / effAccess jak zwykłe podręczniki. Inaczej override
+// „tylko admin/przydzieleni" jest ignorowany (bug: publiczna widoczność).
 function canSeeBook(book){
-  if(myRole==='admin') return true;
-  if(myBooks && myBooks.has(book.id)) return true;            // przydzielony przez nauczyciela
-  if(book._isAdminBook) return true;                          // RLS już przepuścił (publiczny/własny/przydzielony)
+  if(myRole==='admin') return true;                          // admin widzi wszystko
+  if(myBooks && myBooks.has(book.id)) return true;           // przydzielony przez nauczyciela
+  if(book._isAdminBook && book.createdBy && uid && book.createdBy===uid) return true; // twórca widzi swój
   const a = effAccess(book);
   if(myRole==='teacher') return a.visibleToTeacher;
   if(myRole==='parent')  return a.visibleToParent;
