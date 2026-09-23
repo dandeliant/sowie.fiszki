@@ -298,6 +298,7 @@
       <div class="right">
         <select class="unit-sel" id="unitSel" onchange="applyUnitFilter()"></select>
         <button class="btn admin" id="adminBtn" style="display:none" onclick="toggleAdmin()">✏️ Tryb edycji</button>
+        <button class="btn" onclick="shareBook()">🔗 Udostępnij</button>
         <button class="btn primary" onclick="doPrint()">🖨️ Drukuj / PDF</button>
       </div>
     </div>
@@ -379,6 +380,11 @@ let sentMap = {};         // "pl" -> {pl, en} zdanie przykładowe z word_sentenc
 let qrCache = {};         // link -> dataURL
 let pageIdx = 0;
 const PER_PAGE = 5;
+
+// Dostęp (jak w aplikacji): publiczne + przydzielone (user_books)
+let myRole = 'guest';     // 'guest'|'student'|'teacher'|'parent'|'admin'
+let myBooks = null;       // Set przydzielonych book_id (null = admin/brak filtra)
+let accessOverrides = {}; // book_id -> {visible_to_*, tier} (book_access_overrides)
 
 const LANG_LABEL = {en:'🇬🇧 Angielski', fr:'🇫🇷 Francuski', de:'🇩🇪 Niemiecki', ru:'🇷🇺 Rosyjski', es:'🇪🇸 Hiszpański', it:'🇮🇹 Włoski'};
 const LANG_ORDER = ['en','fr','de','ru','es','it'];
@@ -462,17 +468,96 @@ function makeQR(text){
   }catch(e){ return ''; }
 }
 
-/* ---------- session / admin ---------- */
-async function detectAdmin(){
-  if(!SB) return;
+/* ---------- session / rola / dostęp ---------- */
+async function detectUser(){
+  // nadpisania widoczności — publiczne (anon SELECT), zawsze próbujemy
+  accessOverrides = await loadAccessOverrides();
+  // podręczniki nauczyciela/admina — RLS sam filtruje co widać (publiczne/własne/przydzielone)
+  await loadAdminBooks();
+  if(!SB){ myRole='guest'; return; }
   try{
     const { data:{ session } } = await SB.auth.getSession();
-    if(!session) return;
+    if(!session){ myRole='guest'; return; }
     uid = session.user.id;
-    const { data } = await SB.from('profiles').select('is_admin,is_teacher').eq('id',uid).single();
-    isStaff = !!(data && (data.is_admin || data.is_teacher));
+    const { data } = await SB.from('profiles').select('is_admin,is_teacher,is_parent').eq('id',uid).single();
+    if(data && data.is_admin){ myRole='admin'; isStaff=true; }
+    else if(data && data.is_teacher){ myRole='teacher'; isStaff=true; }
+    else if(data && data.is_parent){ myRole='parent'; }
+    else { myRole='student'; }
     if(isStaff){ document.getElementById('adminBtn').style.display=''; }
-  }catch(e){}
+    if(myRole!=='admin'){ myBooks = await loadMyBooks(uid); }
+  }catch(e){ myRole='guest'; }
+}
+
+async function loadAccessOverrides(){
+  const map={};
+  if(!SB) return map;
+  try{
+    const { data } = await SB.from('book_access_overrides').select('*');
+    (data||[]).forEach(r=>{ map[r.book_id]=r; });
+  }catch(e){ console.warn('loadAccessOverrides',e && e.message); }
+  return map;
+}
+async function loadMyBooks(userId){
+  try{
+    const { data } = await SB.from('user_books').select('book_id').eq('user_id',userId);
+    if(data && data.length) return new Set(data.map(r=>r.book_id));
+  }catch(e){ console.warn('loadMyBooks',e && e.message); }
+  return null;
+}
+// Podręczniki admina/nauczyciela (admin_books/units/words) — RLS decyduje co widać.
+async function loadAdminBooks(){
+  if(!SB) return;
+  try{
+    const [rb, ru, rw] = await Promise.all([
+      SB.from('admin_books').select('*'),
+      SB.from('admin_units').select('*'),
+      SB.from('admin_words').select('*')
+    ]);
+    (rb.data||[]).forEach(row=>{
+      if(!BOOKS[row.book_id]){
+        BOOKS[row.book_id] = { id:row.book_id, name:row.name, shortName:row.short_name||row.name,
+          icon:row.icon||'📖', color:row.color||'#a29bfe', description:row.description||'',
+          language:row.language||'en', schoolType:row.school_type||'courses',
+          grade:(row.grade!=null)?row.grade:undefined, createdBy:row.created_by||null,
+          units:{}, _isAdminBook:true };
+      }
+    });
+    (ru.data||[]).forEach(row=>{ const b=BOOKS[row.book_id]; if(!b) return;
+      if(!b.units[row.unit_key]) b.units[row.unit_key]={name:row.name,icon:row.icon||'📖',color:row.color||'#a29bfe',words:[]}; });
+    (rw.data||[]).forEach(row=>{ const b=BOOKS[row.book_id]; if(!b) return; const u=b.units[row.unit_key]; if(!u) return;
+      if(row.original_pl){ const i=u.words.findIndex(w=>w[0]===row.original_pl); if(i!==-1){ if(row.is_deleted) u.words.splice(i,1); else u.words[i]=[row.word_pl,row.word_target]; } }
+      else if(!row.is_deleted){ if(!u.words.find(w=>w[0]===row.word_pl)) u.words.push([row.word_pl,row.word_target]); } });
+  }catch(e){ console.warn('loadAdminBooks',e && e.message); }
+}
+
+// Efektywny dostęp (kopia getEffectiveBookAccess z app.html).
+function effAccess(book){
+  const o = accessOverrides[book.id];
+  if(o){
+    return { visibleToGuest:!!o.visible_to_guest, visibleToStudent:!!o.visible_to_student,
+      visibleToTeacher:!!o.visible_to_teacher, visibleToParent:!!o.visible_to_parent,
+      tier:(o.tier==='premium')?'premium':'free', hasOverride:true };
+  }
+  const isPublic = book.defaultAccess === true && !book.adminOnly;
+  const isAdminOnly = book.adminOnly === true;
+  const isCoursesOrGrammar = !isAdminOnly && (book.schoolType==='courses' || book.schoolType==='grammar' || book.schoolType==='other');
+  if(isCoursesOrGrammar){
+    return { visibleToGuest:false, visibleToStudent:true, visibleToTeacher:true, visibleToParent:true, tier:'premium', hasOverride:false };
+  }
+  return { visibleToGuest:isPublic, visibleToStudent:isPublic && !isAdminOnly,
+    visibleToTeacher:isPublic && !isAdminOnly, visibleToParent:isPublic && !isAdminOnly, tier:'free', hasOverride:false };
+}
+// Czy pokazać podręcznik w pickerze wg roli + przydziału.
+function canSeeBook(book){
+  if(myRole==='admin') return true;
+  if(myBooks && myBooks.has(book.id)) return true;            // przydzielony przez nauczyciela
+  if(book._isAdminBook) return true;                          // RLS już przepuścił (publiczny/własny/przydzielony)
+  const a = effAccess(book);
+  if(myRole==='teacher') return a.visibleToTeacher;
+  if(myRole==='parent')  return a.visibleToParent;
+  if(myRole==='student') return a.visibleToStudent;
+  return a.visibleToGuest;                                    // gość
 }
 
 /* ---------- PICKER ---------- */
@@ -482,6 +567,7 @@ function renderPicker(){
   const byLang = {};
   Object.keys(BOOKS).forEach(id=>{
     const b = BOOKS[id]; if(!b || !b.units) return;
+    if(!canSeeBook(b)) return;               // publiczne + przydzielone
     const hay = ((b.name||'')+' '+(b.shortName||'')+' '+(b.description||'')).toLowerCase();
     if(q && hay.indexOf(q)===-1) return;
     const lang = b.language || 'en';
@@ -492,7 +578,14 @@ function renderPicker(){
     const ia=LANG_ORDER.indexOf(a), ib=LANG_ORDER.indexOf(b);
     return (ia<0?99:ia)-(ib<0?99:ib);
   });
-  if(!langs.length){ grid.innerHTML='<p style="text-align:center;color:#6b7a99;font-weight:700">Brak podręczników pasujących do wyszukiwania.</p>'; return; }
+  if(!langs.length){
+    if(q){ grid.innerHTML='<p style="text-align:center;color:#6b7a99;font-weight:700">Brak podręczników pasujących do wyszukiwania.</p>'; return; }
+    const hint = (myRole==='guest')
+      ? 'Zaloguj się, aby zobaczyć więcej podręczników przydzielonych przez nauczyciela. Kod QR lub link do konkretnego słowniczka otworzy go bez logowania.'
+      : 'Brak przypisanych podręczników. Poproś nauczyciela o dostęp albo otwórz słowniczek z kodu QR / linku.';
+    grid.innerHTML = `<p style="text-align:center;color:#6b7a99;font-weight:700;line-height:1.5">${hint}<br><a href="index.html" class="back-link" style="margin-top:12px;display:inline-flex">Zaloguj się →</a></p>`;
+    return;
+  }
   langs.forEach(lang=>{
     const list = byLang[lang].sort((a,b)=>(a.name||'').localeCompare(b.name||'','pl'));
     html += `<div class="lang-group"><h2>${LANG_LABEL[lang]||('🌍 '+lang)}</h2><div class="book-grid">`;
@@ -801,6 +894,25 @@ async function saveEntry(){
   }
 }
 
+/* ---------- UDOSTĘPNIANIE ---------- */
+function shareBook(){
+  if(!curBookId){ return; }
+  const url = bookLink();
+  if(navigator.share){
+    navigator.share({ title: (curBook.name||'Słowniczek')+' — słowniczek obrazkowy', url })
+      .catch(()=>copyBookLink(url));
+  } else {
+    copyBookLink(url);
+  }
+}
+function copyBookLink(url){
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(url).then(()=>toast('Skopiowano link 🔗')).catch(()=>window.prompt('Skopiuj link do słowniczka:', url));
+  } else {
+    window.prompt('Skopiuj link do słowniczka:', url);
+  }
+}
+
 /* ---------- PRINT (siatka 3-kolumnowa, auto-łamanie stron) ---------- */
 function printEntryHtml(e){
   const thumb = e.image_url ? `<img src="${esc(e.image_url)}">` : (e.emoji||'🖼️');
@@ -902,19 +1014,21 @@ document.getElementById('page').addEventListener('click', ev=>{
   const ed = ev.target.closest('[data-edit]');
   if(ed){ openEdit(+ed.dataset.edit); return; }
 });
-const _params = new URLSearchParams(location.search);
-const _say = _params.get('say');
-const _book = _params.get('book');
-if(_say){
-  const parts = _say.split('~');
-  openSayCard(parts[0], parts[1], parts.slice(2).join('~'));
-} else if(_book && BOOKS[_book]){
-  renderPicker();
-  openBook(_book);
-} else {
-  renderPicker();
-}
-detectAdmin();
+(async function initApp(){
+  await detectUser();   // rola + dostęp (publiczne + przydzielone) + podręczniki admina/nauczyciela
+  const params = new URLSearchParams(location.search);
+  const say = params.get('say');
+  const book = params.get('book');
+  if(say){
+    const parts = say.split('~');
+    openSayCard(parts[0], parts[1], parts.slice(2).join('~'));   // QR słowa — bez logowania
+  } else if(book && BOOKS[book]){
+    renderPicker();
+    openBook(book);                                              // QR/link podręcznika — bez logowania
+  } else {
+    renderPicker();
+  }
+})();
 </script>
 </body>
 </html>
