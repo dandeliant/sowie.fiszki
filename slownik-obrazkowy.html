@@ -225,23 +225,29 @@
   /* ── PRINT ── */
   #printRoot{display:none}
   @media print{
+    @page{ margin:8mm; }
     body{background:#fff}
     .back-link,.back-top,.htp-btn,.htp-modal,.toolbar,.nav,.search,.stats,
     .stage,.modal-bg,.toast,#stopAudio,.say-card,.subtitle,h1.title,.site-footer,#pickView{display:none !important}
     #printRoot{display:block}
-    .print-page{page-break-after:always;padding:6mm 4mm}
-    .print-head{text-align:center;font-weight:900;font-size:20px;color:#1f5fd0;margin-bottom:6px}
-    .print-sub{text-align:center;color:#666;font-weight:700;font-size:12px;margin-bottom:10px}
-    .print-entry{display:grid;grid-template-columns:70px 1fr 64px;gap:10px;align-items:center;
-      border:1.5px solid #d8e3f7;border-radius:12px;padding:8px 10px;margin-bottom:8px}
-    .print-entry .thumb{width:70px;height:70px;border-radius:10px;overflow:hidden;display:flex;
-      align-items:center;justify-content:center;background:#eef5ff;font-size:36px}
+    .print-title{text-align:center;font-weight:900;font-size:18px;color:#1f5fd0;margin:0 0 8px}
+    .print-uhead{font-weight:900;font-size:13px;color:#1f5fd0;margin:8px 0 5px;padding-bottom:3px;
+      border-bottom:1.5px dashed #cfe0fb;break-after:avoid;page-break-after:avoid}
+    /* 3 kolumny — więcej słówek na stronę */
+    .print-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-bottom:6px}
+    .print-entry{display:grid;grid-template-columns:30px 1fr 42px;gap:5px;align-items:center;
+      border:1px solid #d8e3f7;border-radius:8px;padding:4px 5px;
+      break-inside:avoid;page-break-inside:avoid}
+    .print-entry .thumb{width:30px;height:30px;border-radius:6px;overflow:hidden;display:flex;
+      align-items:center;justify-content:center;background:#eef5ff;font-size:18px}
     .print-entry .thumb img{width:100%;height:100%;object-fit:cover}
-    .print-entry .en{font-size:19px;font-weight:900}
-    .print-entry .pl{color:#555;font-weight:700;font-size:13px}
-    .print-entry .psent{color:#333;font-size:12px;margin-top:3px;line-height:1.3}
-    .print-entry .qr img{width:60px;height:60px}
-    .print-foot{text-align:center;color:#888;font-size:11px;margin-top:6px}
+    .print-entry .en{font-size:12px;font-weight:900;line-height:1.05}
+    .print-entry .pl{color:#555;font-weight:700;font-size:9px}
+    .print-entry .psent{color:#333;font-size:8px;margin-top:2px;line-height:1.2}
+    .print-entry .psent i{font-style:italic}
+    .print-entry .qr{width:auto;height:auto;border:none;padding:0;background:none}
+    .print-entry .qr img{width:42px;height:42px;display:block}
+    .print-foot{text-align:center;color:#888;font-size:9px;margin-top:8px}
   }
 </style>
 </head>
@@ -786,7 +792,7 @@ async function saveEntry(){
     // sync ten sam wpis w allEntries (gdy filtr)
     const ae = allEntries.find(x=>x.unitKey===e.unitKey && x.pl===e.pl);
     if(ae){ ae.image_url=image_url; ae.image_path=image_path; ae.audio_link=audio_link; }
-    if(audio_link) makeQR(audio_link);
+    qrFor(e);
 
     closeEdit(); renderPage(); toast('Zapisano ✅');
   }catch(err){
@@ -800,31 +806,36 @@ async function saveEntry(){
   }
 }
 
-/* ---------- PRINT ---------- */
+/* ---------- PRINT (siatka 3-kolumnowa, auto-łamanie stron) ---------- */
+function printEntryHtml(e){
+  const thumb = e.image_url ? `<img src="${esc(e.image_url)}">` : (e.emoji||'🖼️');
+  const qr = `<div class="qr"><img src="${qrFor(e)}"></div>`;
+  const ps = e.sentEn ? `<div class="psent"><i>${esc(e.sentEn)}</i>${e.sentPl?`<br>${esc(e.sentPl)}`:''}</div>` : '';
+  return `<div class="print-entry">
+    <div class="thumb">${thumb}</div>
+    <div><div class="en">${esc(e.en)}</div><div class="pl">${esc(e.pl)}</div>${ps}</div>
+    ${qr}
+  </div>`;
+}
 function doPrint(){
   preloadQR();
   const root = document.getElementById('printRoot');
-  let html='';
-  const tp = totalPages();
-  for(let p=0;p<tp;p++){
-    const slice = entries.slice(p*PER_PAGE, p*PER_PAGE+PER_PAGE);
-    html += `<div class="print-page">
-      <div class="print-head">📖 ${esc(curBook.name||'')} — słowniczek obrazkowy</div>
-      <div class="print-sub">${esc([...new Set(slice.map(e=>e.unitName))].join(' · '))}</div>`;
-    slice.forEach(e=>{
-      const thumb = e.image_url ? `<img src="${esc(e.image_url)}">` : (e.emoji||'🖼️');
-      const qr = `<div class="qr"><img src="${qrFor(e)}"></div>`;
-      const ps = e.sentEn ? `<div class="psent"><i>${esc(e.sentEn)}</i>${e.sentPl?` — ${esc(e.sentPl)}`:''}</div>` : '';
-      html += `<div class="print-entry">
-        <div class="thumb">${thumb}</div>
-        <div><div class="en">${esc(e.en)}</div><div class="pl">${esc(e.pl)}</div>${ps}</div>
-        ${qr}
-      </div>`;
-    });
-    html += `<div class="print-foot">Sowie Fiszki · zeskanuj kod QR, aby usłyszeć wymowę · strona ${p+1}/${tp}</div></div>`;
-  }
+  let html = `<div class="print-title">📖 ${esc(curBook.name||'')} — słowniczek obrazkowy</div>`;
+  // grupuj po rozdziale (zachowując kolejność), każdy w siatce 3-kolumnowej
+  const groups = [];
+  entries.forEach(e=>{
+    let g = groups[groups.length-1];
+    if(!g || g.name !== e.unitName){ g = {name:e.unitName, items:[]}; groups.push(g); }
+    g.items.push(e);
+  });
+  groups.forEach(g=>{
+    html += `<div class="print-uhead">${esc(g.name)}</div><div class="print-grid">`;
+    g.items.forEach(e=>{ html += printEntryHtml(e); });
+    html += `</div>`;
+  });
+  html += `<div class="print-foot">Sowie Fiszki · zeskanuj kod QR, aby usłyszeć wymowę i zobaczyć kartę słówka</div>`;
   root.innerHTML = html;
-  setTimeout(()=>window.print(), 120);
+  setTimeout(()=>window.print(), 150);
 }
 
 /* ---------- KARTA WYMOWY (deep-link z QR: ?say=book~unit~pl) ---------- */
