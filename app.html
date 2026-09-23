@@ -6228,20 +6228,44 @@ function showCardImage() {
   const img = document.getElementById('cardImgEl');
   if (!wrap || !img) return;
   if (curIdx === null) { wrap.style.display = 'none'; return; }
-  const s = DB.getSentence(currentBookId, activeWords[curIdx][0]);
-  if (s && s.image_url) {
-    img.src = s.image_url;
+  const url = getWordPhotoUrl(activeWords[curIdx][0]);
+  if (url) {
+    img.src = url;
     img.onerror = () => { wrap.style.display = 'none'; };
     wrap.style.display = '';
   } else {
     wrap.style.display = 'none';
   }
 }
+// Zwraca URL zdjęcia powiązanego ze słówkiem: najpierw ze Słowniczka
+// obrazkowego (dictionary_words, migracja #57), potem z word_sentences.
+// Używane globalnie: lista słówek, fiszki, gry, wydruki — zamiast/oprócz emoji.
+function getWordPhotoUrl(pl, bookId) {
+  const bId = bookId || currentBookId;
+  if (!bId) return '';
+  if (typeof DB !== 'undefined' && DB.getWordImageUrl) {
+    const u = DB.getWordImageUrl(bId, pl);
+    if (u) return u;
+  }
+  const s = (typeof DB !== 'undefined' && DB.getSentence) ? DB.getSentence(bId, pl) : null;
+  if (s && s.image_url) return s.image_url;
+  return '';
+}
 function getWordImg(pl) {
-  if (!currentBookId) return '';
-  const s = DB.getSentence(currentBookId, pl);
-  if (!s || !s.image_url) return '';
-  return '<img src="' + esc(s.image_url) + '" style="width:22px;height:22px;object-fit:cover;border-radius:4px;margin-right:5px;vertical-align:middle" onerror="this.style.display=\'none\'">';
+  const url = getWordPhotoUrl(pl);
+  if (!url) return '';
+  return '<img src="' + esc(url) + '" style="width:22px;height:22px;object-fit:cover;border-radius:4px;margin-right:5px;vertical-align:middle" onerror="this.style.display=\'none\'">';
+}
+// Wizual słówka do miejsc DOM (gry/karty): zdjęcie <img> jeśli jest,
+// w przeciwnym razie emoji. px = rozmiar kwadratu.
+function getWordVisualHtml(pl, px) {
+  const url = getWordPhotoUrl(pl);
+  const size = px || 40;
+  if (url) {
+    return '<img src="' + esc(url) + '" style="width:' + size + 'px;height:' + size + 'px;object-fit:cover;border-radius:10px;vertical-align:middle" onerror="this.style.display=\'none\'">';
+  }
+  const em = getWordEmojiRaw(pl);
+  return em ? '<span style="font-size:' + Math.round(size*0.8) + 'px;line-height:1">' + em + '</span>' : '';
 }
 function setWordEmoji(pl) {
   const current = getWordEmojiRaw(pl);
@@ -12126,7 +12150,7 @@ function spellGenerate() {
     const pl = c.dataset.pl, en = c.dataset.en;
     const s = DB.getSentence(currentBookId, pl);
     const emoji = getWordEmojiRaw(pl);
-    const imgUrl = s?.image_url || '';
+    const imgUrl = getWordPhotoUrl(pl) || '';
     return {pl, en, emoji, imgUrl};
   });
 
@@ -12348,8 +12372,7 @@ function sbFormatWord(word, display) {
     if (em) return em + ' ' + word.pl;
   }
   if (display === 'img') {
-    const s = DB.getSentence(currentBookId, word.pl);
-    if (s?.image_url) return '🖼️' + word.pl;
+    if (getWordPhotoUrl(word.pl)) return '🖼️' + word.pl;
   }
   return word.pl;
 }
@@ -12455,7 +12478,7 @@ function cubesGetWordPool() {
   return raw.map(([pl, en]) => {
     const s = DB.getSentence(currentBookId, pl);
     const emoji = getWordEmojiRaw(pl);
-    const imgUrl = s?.image_url || '';
+    const imgUrl = getWordPhotoUrl(pl) || '';
     const isSingle = !/\s/.test(en.trim()) && !/\s/.test(pl.trim());
     return {pl, en, emoji, imgUrl, isSingle};
   });
@@ -15036,7 +15059,7 @@ function boardGenerate() {
       const [pl, en] = words[wordIdx];
       const s = DB.getSentence(currentBookId, pl);
       const emoji = getWordEmojiRaw(pl);
-      const imgUrl = s?.image_url || '';
+      const imgUrl = getWordPhotoUrl(pl) || '';
       boardCells.push({type: 'word', pl, en, emoji, imgUrl});
       wordIdx++;
     } else {
@@ -15346,7 +15369,7 @@ function dobbleGenerate() {
   dobbleSymbols = selected.map(w => {
     const s = DB.getSentence(currentBookId, w.pl);
     const emoji = getWordEmojiRaw(w.pl);
-    return { pl: w.pl, en: w.en, emoji, imgUrl: s?.image_url || '' };
+    return { pl: w.pl, en: w.en, emoji, imgUrl: getWordPhotoUrl(w.pl) || '' };
   });
 
   dobbleCards = generateDobbleSet(p);
@@ -15750,7 +15773,7 @@ function icNewGame() {
   // Zbierz słowa z obrazkami lub emoji
   const all = u.words.map(([pl, en]) => {
     const s = DB.getSentence(currentBookId, pl);
-    const imgUrl = s?.image_url || '';
+    const imgUrl = getWordPhotoUrl(pl) || '';
     const emoji = getWordEmojiRaw(pl);
     return {pl, en, imgUrl, emoji, matched: false};
   }).filter(p => p.imgUrl || p.emoji); // tylko te z obrazkiem lub emoji
@@ -15865,7 +15888,7 @@ function icPrint() {
   // Zbierz słowa z obrazkami/emoji
   const pairs = u.words.map(([pl, en]) => {
     const s = DB.getSentence(currentBookId, pl);
-    const imgUrl = s?.image_url || '';
+    const imgUrl = getWordPhotoUrl(pl) || '';
     const emoji = getWordEmojiRaw(pl);
     return {pl, en, imgUrl, emoji};
   }).filter(p => p.imgUrl || p.emoji);
@@ -16744,6 +16767,15 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   if (typeof DB.loadWordAudioCache === 'function') {
     DB.loadWordAudioCache().catch(()=>{});
+  }
+  // Cache zdjęć ze Słowniczka (dictionary_words) — używane w nauce/grach/wydrukach.
+  if (typeof DB.loadDictImagesCache === 'function') {
+    DB.loadDictImagesCache().then(() => {
+      const sWordList = document.getElementById('sWordList');
+      if (sWordList && sWordList.classList.contains('active') && typeof openWordList === 'function' && typeof currentUnitKey !== 'undefined' && currentUnitKey) {
+        try { openWordList(currentUnitKey); } catch(e) {}
+      }
+    }).catch(()=>{});
   }
 })();
 
@@ -26679,7 +26711,8 @@ if ('serviceWorker' in navigator) {
     if (w[2] && typeof w[2] === 'string' && w[2].length <= 4 && !/\s/.test(w[2]) && !/[a-zA-Z0-9]/.test(w[2])) emoji = w[2];
     if (!emoji && typeof getWordEmojiRaw === 'function') emoji = getWordEmojiRaw(pl) || '';
     let imgUrl = '';
-    if (typeof DB !== 'undefined' && DB.getSentence){ const s = DB.getSentence(book.id, pl); imgUrl = (s && s.image_url) || ''; }
+    if (typeof getWordPhotoUrl === 'function'){ imgUrl = getWordPhotoUrl(pl, book.id) || ''; }
+    else if (typeof DB !== 'undefined' && DB.getSentence){ const s = DB.getSentence(book.id, pl); imgUrl = (s && s.image_url) || ''; }
     return { emoji, imgUrl };
   }
 

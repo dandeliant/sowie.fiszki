@@ -210,6 +210,12 @@ const DB = (() => {
       console.warn('[loadProfile] word_audio niedostępne:', e.message);
     }
 
+    // Załaduj cache zdjęć ze Słowniczka (dictionary_words, migracja #57).
+    // Używane globalnie: nauka, gry, wydruki — zamiast/oprócz emoji.
+    try { await loadDictImagesCache(); } catch(e) {
+      console.warn('[loadProfile] dictionary_words niedostępne:', e.message);
+    }
+
     return _profile;
   }
 
@@ -3255,6 +3261,35 @@ const DB = (() => {
     delete _bookAccessOverrides[bookId];
   }
 
+  // ── DICTIONARY IMAGES (migracja #57) ────────────────────────
+  // Zdjecia wgrane w Slowniczku obrazkowym (dictionary_words.image_url).
+  // Uzywane globalnie: nauka, gry, wydruki — zamiast/oprocz emoji.
+  // Cache: "book_id|word_pl" → image_url. Klucz bez unit_key, bo wiekszosc
+  // miejsc w app.html zna tylko (bookId, wordPl) i szuka po wszystkich unitach.
+  let _dictImages = {};
+
+  function getDictImagesCache() { return _dictImages || {}; }
+
+  // Zwraca URL zdjecia dla slowka (currentBook + pl) lub null.
+  function getWordImageUrl(bookId, wordPl) {
+    if (!bookId || !wordPl) return null;
+    return _dictImages[bookId + '|' + wordPl] || null;
+  }
+
+  async function loadDictImagesCache() {
+    _dictImages = {};
+    try {
+      const { data, error } = await supabase
+        .from('dictionary_words').select('book_id, word_pl, image_url');
+      if (error) return; // migracja #57 nieuruchomiona — brak zdjec, graceful
+      (data || []).forEach(r => {
+        if (r.image_url) _dictImages[r.book_id + '|' + r.word_pl] = r.image_url;
+      });
+    } catch (e) {
+      console.warn('[loadDictImagesCache] niedostepne:', e && e.message);
+    }
+  }
+
   // ── WORD AUDIO (migracje #28 + #41 + #42) ───────────────────
   // Custom nagrania wymowy slowek + ZDAN przykladowych przez admina/nauczyciela.
   // Migracja #41: odrebne kolumny PL/EN dla slow.
@@ -4108,6 +4143,9 @@ const DB = (() => {
     loadWordAudioCache,
     uploadWordAudio,
     deleteWordAudio,
+    getDictImagesCache,
+    getWordImageUrl,
+    loadDictImagesCache,
     loadAudioStats,
     loadAudioOrphans,
     deleteAudioOrphans,
