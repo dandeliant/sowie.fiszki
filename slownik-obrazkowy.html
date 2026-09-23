@@ -157,6 +157,32 @@
   .qr-live{display:flex;align-items:center;gap:10px;margin-top:8px}
   .qr-live img{width:84px;height:84px;border:1px solid var(--line);border-radius:10px;padding:4px;background:#fff}
 
+  /* karta wymowy (deep-link z QR) */
+  .say-card{position:fixed;inset:0;z-index:70;display:none;align-items:center;justify-content:center;padding:20px;
+    background:
+      radial-gradient(1000px 500px at 50% -10%,#d9ecff 0%,transparent 60%),
+      radial-gradient(800px 400px at 110% 10%,#e9fbf7 0%,transparent 55%),
+      linear-gradient(180deg,#f4f9ff 0%,#eef4ff 100%);overflow:auto}
+  .say-card.on{display:flex}
+  .say-inner{background:#fff;border:2px solid var(--line);border-radius:28px;box-shadow:var(--shadow);
+    max-width:440px;width:100%;padding:24px 22px 20px;text-align:center;margin:auto}
+  .say-brand{font-weight:900;color:var(--blue-d);font-size:13px;margin-bottom:12px;display:flex;align-items:center;justify-content:center;gap:6px;letter-spacing:.3px}
+  .say-img{width:170px;height:170px;margin:0 auto 16px;border-radius:24px;overflow:hidden;display:flex;align-items:center;justify-content:center;
+    background:linear-gradient(135deg,#eaf3ff,#f3fbff);border:1px solid #e4edfb;font-size:88px;box-shadow:0 6px 18px rgba(31,95,208,.12)}
+  .say-img img{width:100%;height:100%;object-fit:cover}
+  .say-en{font-size:34px;font-weight:900;line-height:1.1}
+  .say-pl{color:var(--muted);font-weight:800;font-size:18px;margin-top:4px}
+  .say-sent{margin-top:14px;padding-top:14px;border-top:1px dashed var(--line);font-size:15px;color:#33425f;line-height:1.4}
+  .say-sent-en{font-weight:700;font-style:italic}
+  .say-sent-pl{color:var(--muted);font-weight:600;font-size:13px;margin-top:3px}
+  .say-play{margin-top:18px;width:100%;background:linear-gradient(135deg,var(--blue),#57a0ff);color:#fff;border:none;
+    padding:16px;border-radius:16px;font-family:inherit;font-weight:900;font-size:18px;cursor:pointer;
+    box-shadow:0 8px 20px rgba(47,123,239,.35);display:flex;align-items:center;justify-content:center;gap:10px;transition:transform .12s}
+  .say-play.sent{background:linear-gradient(135deg,var(--teal),#3fd0c4);box-shadow:0 8px 20px rgba(18,179,166,.3);font-size:16px;padding:13px;margin-top:10px}
+  .say-play:active{transform:scale(.98)}
+  .say-open{display:inline-block;margin-top:16px;color:var(--blue-d);font-weight:800;text-decoration:none;background:none;border:none;font-family:inherit;font-size:15px;cursor:pointer}
+  .say-open:active{transform:scale(.97)}
+
   /* stop audio */
   #stopAudio{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);
     background:#e64545;color:#fff;border:none;padding:12px 26px;border-radius:999px;font-family:inherit;font-weight:800;font-size:16px;
@@ -201,7 +227,7 @@
   @media print{
     body{background:#fff}
     .back-link,.back-top,.htp-btn,.htp-modal,.toolbar,.nav,.search,.stats,
-    .stage,.modal-bg,.toast,#stopAudio,.subtitle,h1.title,.site-footer,#pickView{display:none !important}
+    .stage,.modal-bg,.toast,#stopAudio,.say-card,.subtitle,h1.title,.site-footer,#pickView{display:none !important}
     #printRoot{display:block}
     .print-page{page-break-after:always;padding:6mm 4mm}
     .print-head{text-align:center;font-weight:900;font-size:20px;color:#1f5fd0;margin-bottom:6px}
@@ -299,12 +325,12 @@
     </div>
     <div class="hint">Obrazek zostanie automatycznie zmniejszony i zapisany w chmurze.</div>
 
-    <label>Link do wymowy (bezpośredni plik audio)</label>
-    <input id="audioLink" type="url" placeholder="https://… .mp3" oninput="onAudioLinkInput()">
-    <div class="hint">Z tego linku automatycznie powstanie kod QR (po zapisaniu).</div>
+    <label>Link do wymowy (bezpośredni plik audio) — opcjonalnie</label>
+    <input id="audioLink" type="url" placeholder="https://… .mp3">
+    <div class="hint">Odtwarzany po zeskanowaniu QR / kliknięciu 🔊. Gdy pusty, użyte będzie nagranie z listy słówek lub lektor TTS.</div>
     <div class="qr-live" id="qrLive" style="display:none">
-      <img id="qrLiveImg" alt="Podgląd QR">
-      <span class="hint">Podgląd kodu QR</span>
+      <img id="qrLiveImg" alt="Kod QR słówka">
+      <span class="hint">Kod QR tego słówka (na wydruk) — po zeskanowaniu otwiera kartę wymowy z odtwarzaczem.</span>
     </div>
 
     <div class="modal-actions">
@@ -312,6 +338,11 @@
       <button class="btn primary" id="saveBtn" onclick="saveEntry()">✅ Zapisz / Akceptuj</button>
     </div>
   </div>
+</div>
+
+<!-- ===== KARTA WYMOWY (po zeskanowaniu QR ?say=) ===== -->
+<div class="say-card" id="sayCard">
+  <div class="say-inner" id="sayInner"></div>
 </div>
 
 <button id="stopAudio" onclick="stopAllAudio()">⏹️ Zatrzymaj</button>
@@ -405,6 +436,12 @@ function ttsSay(text){
 }
 
 /* ---------- QR (qrcode-generator: synchroniczne createDataURL) ---------- */
+// Baza deep-linku — zawsze produkcyjna domena, żeby wydrukowane kody działały
+// niezależnie od tego, gdzie admin je wygenerował.
+const SAY_BASE = 'https://sowiefiszki.com/slownik-obrazkowy';
+function deepLink(e){ return SAY_BASE + '?say=' + encodeURIComponent(curBookId + '~' + e.unitKey + '~' + e.pl); }
+function qrFor(e){ return makeQR(deepLink(e)); }
+
 function makeQR(text){
   if(!text) return '';
   if(qrCache[text]) return qrCache[text];
@@ -575,7 +612,7 @@ function applyUnitFilter(){
 }
 
 function preloadQR(){
-  [...new Set(entries.filter(e=>e.audio_link).map(e=>e.audio_link))].forEach(l=>makeQR(l));
+  entries.forEach(e=>qrFor(e));   // deep-link QR dla każdego słówka (cache)
 }
 
 /* ---------- RENDER PAGE ---------- */
@@ -602,8 +639,7 @@ function renderPage(){
     const thumb = e.image_url
       ? `<img src="${esc(e.image_url)}" alt="">`
       : (e.emoji ? e.emoji : '🖼️');
-    const qrImg = (e.audio_link && qrCache[e.audio_link])
-      ? `<div class="qr"><img src="${qrCache[e.audio_link]}" alt="QR"></div>` : '';
+    const qrImg = `<div class="qr"><img src="${qrFor(e)}" alt="QR — zeskanuj, aby usłyszeć"></div>`;
     const editBtn = adminMode ? `<button class="edit-btn" data-edit="${gi}">✏️ Edytuj</button>` : '';
     let sentHtml='';
     if(e.sentEn || e.sentPl){
@@ -680,7 +716,10 @@ function openEdit(gi){
   else { prev.textContent = e.emoji || '🖼️'; document.getElementById('rmImgBtn').style.display='none'; }
   document.getElementById('audioLink').value = e.audio_link||'';
   document.getElementById('imgFile').value='';
-  refreshQrLive(e.audio_link||'');
+  // QR = stały deep-link do karty wymowy tego słówka (niezależny od linku audio)
+  const q = qrFor(e);
+  if(q){ document.getElementById('qrLiveImg').src=q; document.getElementById('qrLive').style.display=''; }
+  else document.getElementById('qrLive').style.display='none';
   document.getElementById('editBg').classList.add('on');
 }
 function closeEdit(){ document.getElementById('editBg').classList.remove('on'); }
@@ -700,14 +739,6 @@ function removeImage(){
   const e = entries[editIdx];
   document.getElementById('imgPrev').textContent = (e && e.emoji) || '🖼️';
   document.getElementById('rmImgBtn').style.display='none';
-}
-function onAudioLinkInput(){ refreshQrLive(document.getElementById('audioLink').value.trim()); }
-function refreshQrLive(link){
-  const box=document.getElementById('qrLive');
-  if(!link){ box.style.display='none'; return; }
-  const url = makeQR(link);
-  if(url){ document.getElementById('qrLiveImg').src=url; box.style.display=''; }
-  else box.style.display='none';
 }
 
 function loadImg(file){ return new Promise((res,rej)=>{ const img=new Image(); img.onload=()=>res(img); img.onerror=rej; img.src=URL.createObjectURL(file); }); }
@@ -782,7 +813,7 @@ function doPrint(){
       <div class="print-sub">${esc([...new Set(slice.map(e=>e.unitName))].join(' · '))}</div>`;
     slice.forEach(e=>{
       const thumb = e.image_url ? `<img src="${esc(e.image_url)}">` : (e.emoji||'🖼️');
-      const qr = (e.audio_link && qrCache[e.audio_link]) ? `<div class="qr"><img src="${qrCache[e.audio_link]}"></div>` : '<div class="qr"></div>';
+      const qr = `<div class="qr"><img src="${qrFor(e)}"></div>`;
       const ps = e.sentEn ? `<div class="psent"><i>${esc(e.sentEn)}</i>${e.sentPl?` — ${esc(e.sentPl)}`:''}</div>` : '';
       html += `<div class="print-entry">
         <div class="thumb">${thumb}</div>
@@ -796,6 +827,62 @@ function doPrint(){
   setTimeout(()=>window.print(), 120);
 }
 
+/* ---------- KARTA WYMOWY (deep-link z QR: ?say=book~unit~pl) ---------- */
+async function openSayCard(bookId, unitKey, pl){
+  document.getElementById('pickView').style.display='none';
+  document.getElementById('bookView').style.display='none';
+  const inner = document.getElementById('sayInner');
+  curBookId = bookId; curBook = BOOKS[bookId];
+  if(!curBook){ inner.innerHTML = sayNotFound(pl); document.getElementById('sayCard').classList.add('on'); bindSayOpen(); return; }
+  overrides = await loadOverrides(bookId);
+  audioMap  = await loadBookAudio(bookId);
+  sentMap   = await loadBookSentences(bookId);
+  buildAllEntries();
+  const e = allEntries.find(x=>x.unitKey===unitKey && x.pl===pl) || allEntries.find(x=>x.pl===pl);
+  document.getElementById('sayCard').classList.add('on');
+  if(!e){ inner.innerHTML = sayNotFound(pl); bindSayOpen(); return; }
+  renderSayCard(e);
+}
+function sayNotFound(pl){
+  return `<div class="say-brand">📖 Sowie Fiszki · Słowniczek</div>
+    <div class="say-img">🔎</div>
+    <div class="say-en">${esc(pl||'—')}</div>
+    <div class="say-pl">Nie znaleziono tego słówka.</div>
+    <button class="say-open" id="sayOpenBtn">Otwórz cały słowniczek →</button>`;
+}
+function renderSayCard(e){
+  const img = e.image_url ? `<img src="${esc(e.image_url)}">` : (e.emoji || '🔊');
+  let sent = '';
+  if(e.sentEn || e.sentPl){
+    sent = `<div class="say-sent"><span class="say-sent-en">${esc(e.sentEn||'')}</span>${e.sentPl?`<div class="say-sent-pl">${esc(e.sentPl)}</div>`:''}</div>`;
+  }
+  const sentBtn = e.sentEn ? `<button class="say-play sent" id="sayPlaySent">🗣️ Odtwórz zdanie</button>` : '';
+  document.getElementById('sayInner').innerHTML = `
+    <div class="say-brand">📖 Sowie Fiszki · Słowniczek</div>
+    <div class="say-img">${img}</div>
+    <div class="say-en">${esc(e.en)}</div>
+    <div class="say-pl">${esc(e.pl)}</div>
+    ${sent}
+    <button class="say-play" id="sayPlayWord">▶️ Odtwórz wymowę</button>
+    ${sentBtn}
+    <button class="say-open" id="sayOpenBtn">Otwórz cały słowniczek →</button>`;
+  document.getElementById('sayPlayWord').onclick = () => speak(e.en, e.custom_en, e.audio_link);
+  const sb = document.getElementById('sayPlaySent'); if(sb) sb.onclick = () => speak(e.sentEn, e.custom_sent_en);
+  bindSayOpen();
+  // próba auto-odtworzenia (mobilne przeglądarki mogą zablokować bez dotknięcia — jest przycisk)
+  setTimeout(()=>{ try{ speak(e.en, e.custom_en, e.audio_link); }catch(_){} }, 400);
+}
+function bindSayOpen(){
+  const b = document.getElementById('sayOpenBtn');
+  if(b) b.onclick = () => {
+    stopAllAudio();
+    document.getElementById('sayCard').classList.remove('on');
+    if(curBookId && BOOKS[curBookId]) openBook(curBookId);
+    else { document.getElementById('pickView').style.display=''; }
+    history.replaceState(null,'', location.pathname);   // usuń ?say= z adresu
+  };
+}
+
 /* ---------- INIT ---------- */
 document.getElementById('page').addEventListener('click', ev=>{
   const ss = ev.target.closest('[data-spk-sent]');
@@ -805,7 +892,13 @@ document.getElementById('page').addEventListener('click', ev=>{
   const ed = ev.target.closest('[data-edit]');
   if(ed){ openEdit(+ed.dataset.edit); return; }
 });
-renderPicker();
+const _say = new URLSearchParams(location.search).get('say');
+if(_say){
+  const parts = _say.split('~');
+  openSayCard(parts[0], parts[1], parts.slice(2).join('~'));
+} else {
+  renderPicker();
+}
 detectAdmin();
 </script>
 </body>
