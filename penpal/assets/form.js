@@ -10,6 +10,7 @@
   const form = $('#form');
   const submitBtn = $('#submit');
   let editing = null; // {id, token}
+  const startedAt = Date.now(); // do anty-botowego limitu czasu (min. 3 s)
 
   const updateSummary = () => {
     const n = editor.students().filter(s => s.name).length;
@@ -52,7 +53,6 @@
       const res = await API.getOwn(m[1], m[2]);
       editing = { id: m[1], token: m[2] };
       editor.setData(res.submission);
-      $('#consent').checked = true;
       $('#edit-chip').classList.remove('hidden');
       submitBtn.textContent = 'Zapisz zmiany';
       updateSummary();
@@ -68,14 +68,15 @@
 
   form.addEventListener('submit', async e => {
     e.preventDefault();
-    const data = editor.getData();
-    if (!data) return;
-    if (!$('#consent').checked) {
-      $('#consent').focus();
-      toast('Zaznacz oświadczenie o zgodach.', 'error');
+    // Anty-bot: honeypot (ukryte pole „website" wypełni tylko bot).
+    if (form.website.value) return;
+    // Anty-bot: formularz wysłany zbyt szybko (<3 s) = najpewniej automat.
+    if (!editing && Date.now() - startedAt < 3000) {
+      toast('Poczekaj chwilę i spróbuj ponownie.', 'error');
       return;
     }
-    data.consent = true;
+    const data = editor.getData();
+    if (!data) return;
     data.website = form.website.value;
     submitBtn.disabled = true;
     submitBtn.textContent = 'Wysyłanie…';

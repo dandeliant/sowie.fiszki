@@ -24,9 +24,9 @@
         <button type="button" class="btn btn-sm js-add">+ Dodaj ucznia</button>
       </div>
     </div>
-    <p class="muted small" style="margin-bottom:6px">Wpisz imię (i np. pierwszą literę nazwiska), klasę i oddział. Klasa jest potrzebna do dopasowania rówieśników.</p>
+    <p class="muted small" style="margin-bottom:6px">Wpisz <b>tylko imię</b> (a gdy w klasie jest kilka takich samych — dodaj pierwszą literę nazwiska, np. „Ania K."), klasę i oddział. Nie podawaj pełnych nazwisk. Klasa jest potrzebna do dopasowania rówieśników.</p>
     <table class="students">
-      <thead><tr><th></th><th>Imię i nazwisko</th><th>Klasa</th><th>Oddział</th><th></th></tr></thead>
+      <thead><tr><th></th><th>Imię</th><th>Klasa</th><th>Oddział</th><th></th></tr></thead>
       <tbody></tbody>
     </table>
     <div class="empty js-empty">Brak uczniów – dodaj pierwszą osobę lub wklej całą listę.</div>
@@ -138,7 +138,7 @@
       tr.dataset.id = st.id || uid();
       tr.innerHTML = `
         <td class="num"></td>
-        <td class="name"><input class="js-name" maxlength="80" placeholder="Imię i nazwisko" aria-label="Imię i nazwisko" value="${esc(st.name || '')}"></td>
+        <td class="name"><input class="js-name" maxlength="80" placeholder="Imię (np. Ania K.)" aria-label="Imię" value="${esc(st.name || '')}"></td>
         <td class="grade"><select class="js-grade" aria-label="Klasa">${this.gradeOptions(st.grade)}</select></td>
         <td class="section"><input class="js-section" maxlength="3" placeholder="a" aria-label="Oddział" value="${esc(st.section || '')}"></td>
         <td class="del"><button type="button" class="btn btn-ghost btn-icon js-del" title="Usuń" aria-label="Usuń ucznia">${ICON_TRASH}</button></td>`;

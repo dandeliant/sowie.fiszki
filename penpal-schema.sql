@@ -85,6 +85,10 @@ CREATE OR REPLACE FUNCTION public.penpal_submit(p_data JSONB)
 RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions AS $$
 DECLARE v_open BOOLEAN; v_id TEXT; v_token TEXT;
 BEGIN
+  -- Anty-bot honeypot: ukryte pole „website" wypełnia tylko bot -> udaj sukces, nie zapisuj.
+  IF COALESCE(TRIM(p_data->>'website'), '') <> '' THEN
+    RETURN jsonb_build_object('ok', true, 'id', 'x', 'token', 'x');
+  END IF;
   SELECT form_open INTO v_open FROM public.penpal_config WHERE id = 1;
   IF v_open IS NULL THEN v_open := TRUE; END IF;
   IF v_open = FALSE THEN RETURN jsonb_build_object('ok', false, 'error', 'Zgłoszenia są obecnie zamknięte.'); END IF;
