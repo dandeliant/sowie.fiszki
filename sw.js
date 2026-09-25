@@ -5,7 +5,7 @@
 //  cache-first dla fontow i CDN. Nowy SW czeka na zgode klienta
 //  (postMessage SKIP_WAITING) — pokaz banera "Nowa wersja dostepna".
 // ═══════════════════════════════════════════════════════
-const CACHE_NAME = 'sowie-fiszki-v1.148';
+const CACHE_NAME = 'sowie-fiszki-v1.149';
 
 const PRECACHE_ASSETS = [
   './',
@@ -71,7 +71,9 @@ self.addEventListener('install', event => {
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))))
+      // Kasuj tylko STARE cache tego SW — nie ruszaj cache pod-aplikacji o własnym
+      // scope (np. /grammar-city/ ma swój SW i własny cache).
+      .then(keys => Promise.all(keys.filter(k => k.startsWith('sowie-fiszki-') && k !== CACHE_NAME).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
