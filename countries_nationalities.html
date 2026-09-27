@@ -40,6 +40,10 @@
   }
   .clabel .en{opacity:0;height:0;overflow:hidden;display:block;font-size:.9rem;transition:.25s}
   .clabel.reveal .en{opacity:.7;height:auto;margin-top:2px}
+  .person{display:inline-block;margin-bottom:8px;font-weight:900;font-size:1.15rem;padding:6px 18px;border-radius:999px;
+    background:#f3e8ff;color:#7c3aed;border:2px solid #e0c9ff}
+  .enhint{display:inline-block;margin-top:8px;font-weight:900;font-size:1.15rem;padding:5px 18px;border-radius:999px;
+    background:#e6fcf5;color:#0b7a52;border:2px solid #b2f2e0}
   .questions{margin-top:16px;display:flex;flex-direction:column;gap:8px}
   .qline{background:#fff7e6;color:#8a6d00;border:2px solid #ffe8a3;border-radius:14px;padding:10px 14px;font-weight:900;font-size:1.05rem}
   .btns{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:20px}
@@ -85,17 +89,21 @@
 <button class="htp-btn" onclick="document.getElementById('htp').classList.add('show')">ℹ️ Jak grać?</button>
 
 <h1>🌍 Where are you from?</h1>
-<div class="sub">Państwa i narodowości · Where are you from? · What's your nationality?</div>
+<div class="sub">Państwa · narodowości · osoby · miejsca · Where are you from? · Where is he?</div>
 
 <div class="modes">
   <button class="modebtn on" data-mode="country" onclick="setMode(this)">🏳️ Państwa</button>
   <button class="modebtn" data-mode="nat" onclick="setMode(this)">🗣️ Narodowości</button>
   <button class="modebtn" data-mode="both" onclick="setMode(this)">✨ Wszystko</button>
+  <button class="modebtn" data-mode="people" onclick="setMode(this)">🧑 Osoby</button>
+  <button class="modebtn" data-mode="places" onclick="setMode(this)">📍 Miejsca</button>
 </div>
 
 <div class="card">
+  <div class="person" id="person" style="display:none">🙋 (I)</div>
   <div class="flag" id="flag">🏁</div>
   <div class="clabel" id="clabel"><span class="pl">—</span><span class="en" id="clabelEn"></span></div>
+  <div class="enhint" id="enHint" style="display:none"></div>
 
   <div class="questions" id="questions"></div>
 
@@ -119,17 +127,19 @@
   <div class="htp-box">
     <h2>ℹ️ Jak grać?</h2>
     <ol>
-      <li>Wybierz, co ćwiczysz: <b>🏳️ Państwa</b>, <b>🗣️ Narodowości</b> albo <b>✨ Wszystko</b>.</li>
-      <li>Kliknij <b>🎲 Wylosuj</b> — pojawi się flaga i pytanie.</li>
-      <li>Odpowiedz na głos, np. <b>I'm from Poland.</b> / <b>I'm Polish.</b></li>
+      <li>Wybierz zakładkę: <b>🏳️ Państwa</b>, <b>🗣️ Narodowości</b>, <b>✨ Wszystko</b> (o sobie: <i>I</i>), <b>🧑 Osoby</b> (he/she/you/we/they) albo <b>📍 Miejsca</b>.</li>
+      <li>Kliknij <b>🎲 Wylosuj</b> — pojawi się emoji, osoba i pytanie.</li>
+      <li>Odpowiedz na głos, np. <b>He's from Australia.</b> / <b>He's Australian.</b> / <b>He's at home.</b></li>
       <li>Kliknij <b>👁️ Pokaż odpowiedź</b>, żeby sprawdzić i posłuchać 🔊.</li>
     </ol>
     <div class="tbl">
       <b>Konstrukcje:</b><br>
-      • Where are you from? → <b>I'm from + państwo</b><br>
-      &nbsp;&nbsp;<i>I'm from Spain. / I'm from the UK.</i><br>
-      • What's your nationality? → <b>I'm + narodowość</b><br>
-      &nbsp;&nbsp;<i>I'm Spanish. / I'm British.</i>
+      • Where are you from? → <b>I'm from + państwo</b> <i>(I'm from Spain.)</i><br>
+      • What's your nationality? → <b>I'm + narodowość</b> <i>(I'm Spanish.)</i><br>
+      • 🧑 Osoby: Where is he from? → <b>He's from Australia.</b><br>
+      &nbsp;&nbsp;What's his nationality? → <b>He's Australian.</b><br>
+      • 📍 Miejsca: Where is he? → <b>He is at home. / He's at home.</b><br>
+      &nbsp;&nbsp;przyimki: <i>at</i> home/school/a cafe · <i>on</i> holiday · <i>in</i> the park/garden
     </div>
     <button class="close" onclick="document.getElementById('htp').classList.remove('show')">Zamknij</button>
   </div>
@@ -149,27 +159,57 @@ const COUNTRIES = [
   { pl:'Turcja',         en:'Turkey',    flag:'🇹🇷', nat:'Turkish' },
 ];
 
-let mode='country', cur=null, count=0, spinT=null;
+// Osoby (różne od domyślnego „I") — poprawne formy be / poss / czasownik
+const PEOPLE = [
+  { subj:'he',   cap:'He',   be:"He's",    are:'is',  poss:'his',   emoji:'👦' },
+  { subj:'she',  cap:'She',  be:"She's",   are:'is',  poss:'her',   emoji:'👧' },
+  { subj:'you',  cap:'You',  be:"You're",  are:'are', poss:'your',  emoji:'🧑' },
+  { subj:'we',   cap:'We',   be:"We're",   are:'are', poss:'our',   emoji:'👨‍👩‍👦' },
+  { subj:'they', cap:'They', be:"They're", are:'are', poss:'their', emoji:'👫' },
+];
+
+// Miejsca — przyimek (at/on/in) baked osobno, „en" to nazwa z przedimkiem (bez przyimka)
+const PLACES = [
+  { pl:'w domu',       en:'home',          prep:'at', emoji:'🏠' },
+  { pl:'w szkole',     en:'school',        prep:'at', emoji:'🏫' },
+  { pl:'na obozie',    en:'a summer camp', prep:'at', emoji:'🏕️' },
+  { pl:'na wakacjach', en:'holiday',       prep:'on', emoji:'🏖️' },
+  { pl:'w parku',      en:'the park',      prep:'in', emoji:'🌳' },
+  { pl:'w ogrodzie',   en:'the garden',    prep:'in', emoji:'🪴' },
+  { pl:'w kawiarni',   en:'a cafe',        prep:'at', emoji:'☕' },
+  { pl:'na basenie',   en:'the swimming pool', prep:'at', emoji:'🏊' },
+  { pl:'w kinie',      en:'the cinema',    prep:'at', emoji:'🎬' },
+  { pl:'na plaży',     en:'the beach',     prep:'on', emoji:'🏖️' },
+];
+
+let mode='country', cur=null, curPerson=null, count=0, spinT=null;
 const $ = id => document.getElementById(id);
 const rand = a => a[Math.floor(Math.random()*a.length)];
+const poolFor = () => (mode==='places') ? PLACES : COUNTRIES;
+const emojiOf = it => it.flag || it.emoji;
 
 function setMode(btn){
   document.querySelectorAll('.modebtn').forEach(b=>b.classList.remove('on'));
   btn.classList.add('on'); mode = btn.dataset.mode;
-  // odśwież pytania jeśli już coś wylosowano
-  if(cur) renderQuestions();
+  draw(true);              // świeże losowanie z właściwej puli (bez zliczania)
 }
 
 function questionsFor(){
-  const q=[];
-  if(mode==='country' || mode==='both') q.push('Where are you from?');
-  if(mode==='nat' || mode==='both') q.push("What's your nationality?");
+  const q=[], p=curPerson;
+  if(mode==='country'){ q.push('Where are you from?'); }
+  else if(mode==='nat'){ q.push("What's your nationality?"); }
+  else if(mode==='both'){ q.push('Where are you from?'); q.push("What's your nationality?"); }
+  else if(mode==='people'){ q.push(`Where ${p.are} ${p.subj} from?`); q.push(`What's ${p.poss} nationality?`); }
+  else if(mode==='places'){ q.push(`Where ${p.are} ${p.subj}?`); }
   return q;
 }
 function answersFor(c){
-  const a=[];
-  if(mode==='country' || mode==='both') a.push("I'm from " + c.en + ".");
-  if(mode==='nat' || mode==='both') a.push("I'm " + c.nat + ".");
+  const a=[], p=curPerson;
+  if(mode==='country'){ a.push("I'm from "+c.en+"."); }
+  else if(mode==='nat'){ a.push("I'm "+c.nat+"."); }
+  else if(mode==='both'){ a.push("I'm from "+c.en+"."); a.push("I'm "+c.nat+"."); }
+  else if(mode==='people'){ a.push(p.be+" from "+c.en+"."); a.push(p.be+" "+c.nat+"."); }
+  else if(mode==='places'){ a.push(p.cap+" "+p.are+" "+c.prep+" "+c.en+"."); a.push(p.be+" "+c.prep+" "+c.en+"."); }
   return a;
 }
 
@@ -177,26 +217,38 @@ function renderQuestions(){
   $('questions').innerHTML = questionsFor().map(q=>'<div class="qline">'+q+'</div>').join('');
 }
 
-function draw(){
+function draw(silent){
   $('answer').classList.remove('show');
   $('answer').innerHTML = '';
   $('clabel').classList.remove('reveal');
   $('btnReveal').disabled = true;
 
+  const pool = poolFor();
   $('flag').classList.add('spinning');
   clearInterval(spinT);
-  spinT = setInterval(()=>{ $('flag').textContent = rand(COUNTRIES).flag; }, 80);
+  spinT = setInterval(()=>{ $('flag').textContent = emojiOf(rand(pool)); }, 80);
 
   setTimeout(()=>{
     clearInterval(spinT);
-    cur = rand(COUNTRIES);
-    $('flag').textContent = cur.flag;
+    cur = rand(pool);
+    curPerson = (mode==='people' || mode==='places') ? rand(PEOPLE) : null;
+
+    $('flag').textContent = emojiOf(cur);
     $('flag').classList.remove('spinning');
     $('clabel').querySelector('.pl').textContent = cur.pl;
-    $('clabelEn').textContent = cur.en;
+    $('clabelEn').textContent = cur.en || '';
+
+    // badge osoby
+    if(curPerson){ $('person').style.display=''; $('person').textContent = curPerson.emoji+' ('+curPerson.subj+')'; }
+    else $('person').style.display='none';
+
+    // podpowiedź angielska miejsca (widoczna od razu — uczeń dodaje tylko przyimek + osobę)
+    if(mode==='places'){ $('enHint').style.display=''; $('enHint').textContent = cur.en; }
+    else $('enHint').style.display='none';
+
     renderQuestions();
     $('btnReveal').disabled = false;
-    count++; $('counter').textContent = 'Wylosowano: '+count;
+    if(!silent){ count++; $('counter').textContent = 'Wylosowano: '+count; }
   }, 780);
 }
 
