@@ -2939,6 +2939,7 @@ szkoła	school"></textarea>
       <div class="card-face card-front">
         <div class="card-label" id="cardFrontLabel">Polski</div>
         <div class="card-word" id="wPl">Kliknij „Generuj" 🎲</div>
+        <div id="cardFrontCtx" style="display:none;margin:8px 2px 0;font-size:1.02rem;font-weight:700;color:var(--muted);line-height:1.45;max-width:34ch"></div>
         <div id="cardImg" style="margin:4px 0;display:none"><img id="cardImgEl" style="max-width:80px;max-height:60px;border-radius:8px;object-fit:cover"></div>
         <div class="card-back-actions"><button class="btn-speak" id="btnSpeakPl" onclick="speakQCurr(event)" style="display:none">🔊 Posłuchaj</button></div>
         <div class="card-hint">Kliknij kartę lub naciśnij Spację</div>
@@ -4718,6 +4719,40 @@ let currentUnitKey = 'unit1';
 let activeWords = [], pool = [], ws = {};
 let activeAllWords = [];
 let curIdx = null, mode = 'card', revealed = false, flipped = false, active = false;
+
+// ── FISZKI KONTEKSTOWE (#59) ──────────────────────────────────────
+// currentCtx = wylosowany kontekst BIEŻĄCEJ ekspozycji fiszki (ten sam na
+// przodzie i tyle; ustalany raz w generate(), nie zmienia się przy flip/re-render).
+let currentCtx = null;
+const _ctxBags = {};   // 'book|pl' -> {order:[], pos, last}  (shuffle-bag, bez powtórzeń)
+function pickContext(wordPl){
+  // Konteksty działają w kierunku pl→en (przód: polskie hasło + luka po angielsku).
+  if (studyDir !== 'pl_en') return null;
+  if (!currentBookId || typeof DB==='undefined' || !DB.getContexts) return null;
+  const arr = DB.getContexts(currentBookId, wordPl);
+  if (!arr || !arr.length) return null;              // brak kontekstu → stare zachowanie
+  if (arr.length === 1) return arr[0];               // 1 kontekst → zawsze ten
+  const key = currentBookId + '|' + wordPl;
+  let bag = _ctxBags[key];
+  if (!bag || bag.pos >= bag.order.length){
+    const order = arr.map((_,i)=>i);
+    for (let i=order.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [order[i],order[j]]=[order[j],order[i]]; }
+    if (bag && order[0]===bag.last && order.length>1){ [order[0],order[1]]=[order[1],order[0]]; } // nie powtarzaj na styku cykli
+    bag = _ctxBags[key] = { order, pos:0, last: bag?bag.last:-1 };
+  }
+  const idx = bag.order[bag.pos++]; bag.last = idx;
+  return arr[idx] || arr[0];
+}
+// Odpowiedź oczekiwana w bieżącej ekspozycji (kontekst nadpisuje słowo bazowe).
+function ctxAnswer(){ return currentCtx ? currentCtx.answer : getA(curIdx); }
+// Pełne zdanie z pogrubioną odpowiedzią (do tyłu fiszki).
+function ctxFullHtml(ctx){
+  if (!ctx) return '';
+  const full = ctx.full || '', ans = ctx.answer || '';
+  const i = ans ? full.toLowerCase().indexOf(ans.toLowerCase()) : -1;
+  if (i < 0) return escHtml(full);
+  return escHtml(full.slice(0,i)) + '<b>' + escHtml(full.slice(i,i+ans.length)) + '</b>' + escHtml(full.slice(i+ans.length));
+}
 // Kolejność nauki: false = po kolei (wg listy słówek, domyślnie), true = losowo.
 // Zapamiętywane w localStorage. Przełączane przyciskiem „🔢 Po kolei / 🔀 Losowo".
 let studyRandomOrder = (() => { try { return localStorage.getItem('fiszki_study_random') === '1'; } catch(e){ return false; } })();
@@ -5397,6 +5432,7 @@ window.startReviewForUnit = function(bookId, unitKey) {
   // Przygotuj kontekst nauki (jak w selectBook, ale bez przejscia do sUnits)
   currentBookId = bookId;
   if (typeof DB.loadSentences === 'function') DB.loadSentences(bookId);
+  if (typeof DB.loadContexts === 'function') DB.loadContexts(bookId);
   if (typeof getBookAllWordsCustom === 'function') {
     activeAllWords = getBookAllWordsCustom(bookId);
   }
@@ -5680,6 +5716,7 @@ function refreshBooks() {
 function selectBook(bookId) {
   currentBookId = bookId;
   DB.loadSentences(bookId); // fire-and-forget — załaduj zdania do cache
+  if (typeof DB.loadContexts === 'function') DB.loadContexts(bookId); // fiszki kontekstowe (#59)
   activeAllWords = getBookAllWordsCustom(bookId);
   const book = BOOKS[bookId];
   document.getElementById('unitScreenTitle').textContent = book.icon + ' ' + book.name;
@@ -7978,6 +8015,7 @@ function generate() {
   _syncGenBtn(); // sesja trwa — schowaj „Generuj" (dalej karty lecą same)
   curIdx = pickNext();
   if (curIdx === null) { showDone(); return; }
+  currentCtx = pickContext(activeWords[curIdx][0]);   // fiszki kontekstowe — wybór raz na ekspozycję
   renderCard(); updateStats();
   owlMsg(OI[Math.floor(Math.random() * OI.length)], 2400); setOwl('');
 }
@@ -8020,11 +8058,19 @@ function renderCard() {
       showCardImage();
       document.getElementById('btnSpeakPl').style.display = '';
     }
+    // fiszka kontekstowa — zdanie z luką pod polskim hasłem (przód)
+    const _fc = document.getElementById('cardFrontCtx');
+    if (_fc){ if (currentCtx){ _fc.textContent = currentCtx.gap; _fc.style.display=''; } else { _fc.textContent=''; _fc.style.display='none'; } }
 
   } else if (mode === 'quiz') {
     const qa = document.getElementById('quizArea'); qa.style.display = 'block'; reAnim(qa);
-    document.getElementById('qLabel').textContent = getTranslLabel();
-    document.getElementById('qPl').textContent = q;
+    if (currentCtx) {
+      document.getElementById('qLabel').textContent = q + ' — uzupełnij lukę:';
+      document.getElementById('qPl').textContent = currentCtx.gap;
+    } else {
+      document.getElementById('qLabel').textContent = getTranslLabel();
+      document.getElementById('qPl').textContent = q;
+    }
     buildQuiz(curIdx);
     document.getElementById('qSpeak').style.display = 'none';
 
@@ -8044,7 +8090,7 @@ function renderCard() {
     document.getElementById('tRes').innerHTML = '';
     document.getElementById('tSpeak').style.display = 'none';
     _typeSetupHints(); // emoji + zdanie (podpowiedz w nawiasie + luka)
-    buildAlphaKeys('tInp', a);
+    buildAlphaKeys('tInp', ctxAnswer());
     setTimeout(() => inp.focus(), 120);
 
   } else if (mode === 'missing') {
@@ -8209,6 +8255,18 @@ function flipCard() {
 // ══════════════════════════════════════════════
 function showCardSentence() {
   if (curIdx === null) return;
+  // Fiszka kontekstowa (#59): pokaż PEŁNE zdanie z pogrubioną odpowiedzią + tłumaczenie PL.
+  if (currentCtx && mode === 'card') {
+    const panel = document.getElementById('sentencePanel');
+    document.getElementById('sentencePl').textContent = currentCtx.pl || '';
+    document.getElementById('sentenceRowPl').style.display = currentCtx.pl ? '' : 'none';
+    document.getElementById('sentenceTarget').innerHTML = ctxFullHtml(currentCtx);
+    document.getElementById('sentenceRowTarget').style.display = '';
+    document.getElementById('sentenceLangBadge').textContent = (getBookLang().split('-')[0] || 'en').toUpperCase();
+    document.getElementById('btnEditSentence').style.display = isCurrentUserAdmin() ? '' : 'none';
+    panel.style.display = '';
+    return;
+  }
   const word = activeWords[curIdx];
   const wordPl = word[0];
   const wordTarget = word[1];
@@ -8338,6 +8396,12 @@ function openWordEditor(){
   msg.textContent = ''; msg.style.color = '';
   document.getElementById('wordEditModal').style.display = 'flex';
   setTimeout(() => document.getElementById('wordEditPl').focus(), 60);
+  // Fiszki kontekstowe (#59) — wczytaj istniejące konteksty do edytora
+  _ctxEditWordPl = wordPl;
+  _ctxEdit = (typeof DB.getContexts === 'function' ? DB.getContexts(currentBookId, wordPl) : [])
+    .map(c => ({ gap:c.gap||'', answer:c.answer||'', full:c.full||'', pl:c.pl||'' }));
+  renderCtxRows();
+  const cmsg = document.getElementById('ctxMsg'); if (cmsg){ cmsg.textContent=''; cmsg.style.color=''; }
   // Bezpiecznik: bind eventow rekordera (idempotentne, robi nic jesli juz zbindowane)
   if (typeof _waBindEvents === 'function') _waBindEvents();
   // Inicjalizacja sekcji nagrywania (Phase C) — pokazuje status istniejącego nagrania
@@ -8348,6 +8412,56 @@ function closeWordEditor(){
   document.getElementById('wordEditModal').style.display = 'none';
   // Sprzątnij zasoby nagrywania (mikrofon, blob URLs)
   if (typeof _wordAudioCleanup === 'function') _wordAudioCleanup();
+}
+
+// ── EDYTOR ZDAŃ KONTEKSTOWYCH (#59) ───────────────────────────────
+let _ctxEdit = [];          // [{gap,answer,full,pl}, ...]
+let _ctxEditWordPl = '';
+function ctxEditField(i, field, val){ if (_ctxEdit[i]) _ctxEdit[i][field] = val; updateCtxCount(); }
+function ctxAddRow(){ if (_ctxEdit.length >= 20){ _ctxMsg('⚠️ Limit 20 zdań na hasło.', 'var(--danger)'); return; } _ctxEdit.push({gap:'',answer:'',full:'',pl:''}); renderCtxRows(); const rows=document.querySelectorAll('#ctxList .ctx-row'); const last=rows[rows.length-1]; if(last){ last.querySelector('input,textarea')?.focus(); last.scrollIntoView({block:'nearest'});} }
+function ctxDelRow(i){ _ctxEdit.splice(i,1); renderCtxRows(); }
+function updateCtxCount(){ const el=document.getElementById('ctxCount'); if(el) el.textContent=_ctxEdit.length+'/20'; const add=document.getElementById('btnCtxAdd'); if(add) add.disabled=_ctxEdit.length>=20; }
+function _ctxMsg(t,c){ const m=document.getElementById('ctxMsg'); if(m){ m.textContent=t; m.style.color=c||'var(--muted)'; } }
+function renderCtxRows(){
+  const wrap = document.getElementById('ctxList'); if(!wrap) return;
+  if(!_ctxEdit.length){ wrap.innerHTML='<div style="font-size:.7rem;color:var(--muted);font-weight:600;font-style:italic">Brak zdań kontekstowych. Kliknij „➕ Dodaj zdanie", aby ćwiczyć słowo w różnych zdaniach.</div>'; updateCtxCount(); return; }
+  wrap.innerHTML = _ctxEdit.map((c,i)=>`
+    <div class="ctx-row" data-i="${i}" style="background:var(--surface2);border:1.5px solid var(--border);border-radius:10px;padding:9px 10px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
+        <span style="font-size:.68rem;font-weight:800;color:var(--muted)">Zdanie ${i+1}</span>
+        <button type="button" onclick="ctxDelRow(${i})" style="background:transparent;border:1.5px solid var(--danger);color:var(--danger);border-radius:100px;padding:2px 9px;font-weight:800;font-size:.62rem;cursor:pointer;font-family:inherit">🗑️ Usuń</button>
+      </div>
+      <input type="text" value="${esc(c.gap)}"    oninput="ctxEditField(${i},'gap',this.value)"    placeholder="Zdanie z luką: Can I ______ your phone?" style="width:100%;box-sizing:border-box;margin-bottom:5px;padding:6px 8px;font-size:.78rem;font-weight:600;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:var(--text)">
+      <div style="display:flex;gap:5px">
+        <input type="text" value="${esc(c.answer)}" oninput="ctxEditField(${i},'answer',this.value)" placeholder="Odpowiedź (borrow)" style="flex:1;min-width:0;box-sizing:border-box;padding:6px 8px;font-size:.78rem;font-weight:700;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:var(--text)">
+      </div>
+      <input type="text" value="${esc(c.full)}"   oninput="ctxEditField(${i},'full',this.value)"  placeholder="Pełne zdanie: Can I borrow your phone?" style="width:100%;box-sizing:border-box;margin-top:5px;padding:6px 8px;font-size:.78rem;font-weight:600;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:var(--text)">
+      <input type="text" value="${esc(c.pl)}"     oninput="ctxEditField(${i},'pl',this.value)"    placeholder="Tłumaczenie PL: Czy mogę pożyczyć twój telefon?" style="width:100%;box-sizing:border-box;margin-top:5px;padding:6px 8px;font-size:.78rem;font-weight:600;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:var(--text)">
+    </div>`).join('');
+  updateCtxCount();
+}
+async function saveContextsEdit(){
+  if (typeof DB.saveContexts !== 'function'){ _ctxMsg('❌ Brak migracji #59 (word_contexts).','var(--danger)'); return; }
+  if (!(isCurrentUserAdmin() || isCurrentUserTeacher())){ _ctxMsg('❌ Tylko admin/nauczyciel.','var(--danger)'); return; }
+  // Auto-uzupełnienie: gap↔full na podstawie answer
+  const norm = _ctxEdit.map(c=>{
+    let gap=(c.gap||'').trim(), full=(c.full||'').trim(), answer=(c.answer||'').trim(), pl=(c.pl||'').trim();
+    if(!gap && full && answer){ const i=full.toLowerCase().indexOf(answer.toLowerCase()); if(i>=0) gap=full.slice(0,i)+'______'+full.slice(i+answer.length); }
+    if(!full && gap && answer){ full=gap.replace('______', answer).replace(/_{3,}/, answer); }
+    return {gap,full,answer,pl};
+  });
+  const empties = norm.filter(c=>!c.gap&&!c.full&&!c.answer&&!c.pl).length;
+  const valid = norm.filter(c=>c.gap&&c.answer&&c.full&&c.pl);
+  const partial = norm.length - empties - valid.length;
+  if (partial>0){ _ctxMsg('⚠️ Uzupełnij wszystkie 4 pola w każdym zdaniu (luka, odpowiedź, pełne zdanie, tłumaczenie).','var(--danger)'); return; }
+  if (valid.length>20){ _ctxMsg('⚠️ Limit 20 zdań.','var(--danger)'); return; }
+  const btn=document.getElementById('btnCtxSave'); btn.disabled=true; const old=btn.textContent; btn.textContent='⏳ Zapisuję…';
+  try{
+    await DB.saveContexts(currentBookId, _ctxEditWordPl, valid.map(c=>({gap:c.gap,answer:c.answer,full:c.full,pl:c.pl})));
+    _ctxMsg('✅ Zapisano '+valid.length+' zdań kontekstowych.','var(--success)');
+    delete _ctxBags[currentBookId+'|'+_ctxEditWordPl];   // reset shuffle-bag dla tego słowa
+  }catch(e){ _ctxMsg('❌ '+(e.message||'Błąd zapisu'),'var(--danger)'); }
+  finally{ btn.disabled=false; btn.textContent=old; }
 }
 
 async function saveWordEdit(){
@@ -9128,7 +9242,7 @@ function _bulkAudioEditWord(wordIdx, lang) {
 //  QUIZ
 // ══════════════════════════════════════════════
 function buildQuiz(ci) {
-  const ans = getA(ci);
+  const ans = (ci === curIdx && currentCtx) ? currentCtx.answer : getA(ci);
   // Dystraktory zblizone do prawidlowej odpowiedzi (Levenshtein + literowki)
   const fieldIdx = studyDir === 'pl_en' ? 1 : 0;
   let wrongs = (typeof generateDistractors === 'function')
@@ -9292,7 +9406,7 @@ function checkType() {
   const inp = document.getElementById('tInp'), u = inp.value.trim();
   if (!u) return;
   _typedDayEntry(); // każda próba sprawdzenia liczy się do warunku ≥20 wpisów
-  const cor = getA(curIdx), ok = wordMatchStrict(u, cor);
+  const cor = ctxAnswer(), ok = wordMatchStrict(u, cor);
   const r = document.getElementById('tRes');
   if (ok) {
     revealed = true; inp.disabled = true; document.getElementById('btnChk').disabled = true;
@@ -9342,14 +9456,14 @@ function _typeAutoCheck() {
   if (mode !== 'type' || revealed || curIdx === null) return;
   const inp = document.getElementById('tInp'); if (!inp) return;
   const u = inp.value.trim(); if (!u) return;
-  if (wordMatchStrict(u, getA(curIdx))) checkType();
+  if (wordMatchStrict(u, ctxAnswer())) checkType();
 }
 
 // Uczen nie zna slowa → pokaz odpowiedz, oznacz jako Trudne (lapse), powtorka wg algorytmu.
 function typeRevealAnswer() {
   if (mode !== 'type' || revealed || curIdx === null) return;
   const inp = document.getElementById('tInp');
-  const cor = getA(curIdx), u = (inp.value || '').trim();
+  const cor = ctxAnswer(), u = (inp.value || '').trim();
   revealed = true; inp.disabled = true;
   document.getElementById('btnChk').disabled = true;
   document.getElementById('btnTypeReveal').style.display = 'none';
@@ -9417,6 +9531,13 @@ function _typeSetupHints() {
   // Emoji (klucz = polskie slowo) — nad slowem do wpisania.
   const em = getWordEmojiRaw(wordPl);
   if (em) { emojiEl.textContent = em; emojiEl.style.display = ''; }
+  // Fiszka kontekstowa (#59): pokaż zdanie z luką (i tłumaczenie PL jako podpowiedź).
+  if (currentCtx) {
+    let html = '';
+    if (currentCtx.pl) html += '<div style="color:var(--muted,#8a8f98);font-style:italic">(' + esc(currentCtx.pl) + ')</div>';
+    html += '<div style="margin-top:4px;color:var(--text)">' + esc(currentCtx.gap) + '</div>';
+    hintEl.innerHTML = html; hintEl.style.display = ''; return;
+  }
   // Zdania — pomijamy, gdy wyrazenie do wpisania ma wiecej niz 3 wyrazy.
   const ans = getA(curIdx);
   const ansWords = String(ans || '').trim().split(/\s+/).filter(Boolean).length;
@@ -16885,11 +17006,11 @@ function scramblePhrase(phrase) {
 
 function buildScramble() {
   if (curIdx === null) return;
-  const q = getQ(curIdx), a = getA(curIdx);
+  const q = getQ(curIdx), a = ctxAnswer();   // kontekst nadpisuje słowo bazowe
   scrAnswer = a;
 
   document.getElementById('scrambleLabel').textContent = '🔀 Popraw kolejność liter w każdym słowie';
-  document.getElementById('scrambleClue').textContent = '💡 ' + q;
+  document.getElementById('scrambleClue').textContent = currentCtx ? ('💡 ' + q + ' — ' + currentCtx.gap) : ('💡 ' + q);
   document.getElementById('scrambleRes').className = 'type-result';
   document.getElementById('scrambleRes').innerHTML = '';
   document.getElementById('btnScrambleChk').disabled = false;
@@ -28373,6 +28494,18 @@ ${bodyHtml}
 
       </div>
     </div>
+
+    <!-- FISZKI KONTEKSTOWE (#59) — do 20 zdań z luką na słowo -->
+    <div class="modal-label" style="margin-top:12px;display:flex;align-items:center;justify-content:space-between">
+      <span>📝 Zdania kontekstowe</span><span id="ctxCount" style="color:var(--muted);font-weight:700;font-size:.72rem">0/20</span>
+    </div>
+    <div style="font-size:.62rem;color:var(--muted);font-weight:500;margin:-2px 0 6px;line-height:1.4">Do jednego hasła możesz dodać różne naturalne zdania. Odpowiedź w luce może być inną formą (borrow / borrowed / borrowing).</div>
+    <div id="ctxList" style="display:flex;flex-direction:column;gap:8px"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+      <button type="button" class="btn-modal-cancel" id="btnCtxAdd" onclick="ctxAddRow()">➕ Dodaj zdanie</button>
+      <button type="button" class="btn-modal-save" id="btnCtxSave" onclick="saveContextsEdit()">💾 Zapisz zdania</button>
+    </div>
+    <div id="ctxMsg" style="font-size:.75rem;font-weight:700;margin-top:6px;min-height:16px"></div>
 
     <div id="wordEditMsg" style="font-size:.78rem;font-weight:700;margin-top:8px;min-height:18px"></div>
     <div class="modal-btns">

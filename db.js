@@ -1122,6 +1122,51 @@ const DB = (() => {
     _sentences[bookId + '__' + wordPl] = { sentence_pl: sentencePl, sentence_target: sentenceTarget, image_url: imageUrl || '' };
   }
 
+  // ── FISZKI KONTEKSTOWE (word_contexts, migracja #59) ──────────────
+  // Cache: 'bookId__wordPl' → [ {gap, answer, full, pl, ord, id}, ... ] (do 20).
+  let _contexts = {};
+  async function loadContexts(bookId) {
+    try {
+      const { data, error } = await supabase
+        .from('word_contexts')
+        .select('id, word_pl, ord, sentence_gap, answer, full_sentence, translation_pl')
+        .eq('book_id', bookId)
+        .order('word_pl').order('ord');
+      if (error) return; // brak migracji #59 → brak kontekstów (graceful)
+      const map = {};
+      (data || []).forEach(r => {
+        const k = bookId + '__' + r.word_pl;
+        (map[k] = map[k] || []).push({ id:r.id, ord:r.ord, gap:r.sentence_gap, answer:r.answer, full:r.full_sentence, pl:r.translation_pl });
+      });
+      // scal do globalnego cache (nadpisz dany podręcznik)
+      Object.keys(_contexts).forEach(k => { if (k.indexOf(bookId + '__') === 0) delete _contexts[k]; });
+      Object.assign(_contexts, map);
+    } catch (e) { console.warn('[DB] loadContexts:', e && e.message); }
+  }
+  function getContexts(bookId, wordPl) { return _contexts[bookId + '__' + wordPl] || []; }
+  function hasContexts(bookId, wordPl) { return (_contexts[bookId + '__' + wordPl] || []).length > 0; }
+  // Admin: zapisz komplet kontekstów dla słowa (zastępuje istniejące).
+  async function saveContexts(bookId, wordPl, arr) {
+    const clean = (arr || [])
+      .map((c, i) => ({
+        book_id: bookId, word_pl: wordPl, ord: i,
+        sentence_gap: String(c.gap || '').trim(), answer: String(c.answer || '').trim(),
+        full_sentence: String(c.full || '').trim(), translation_pl: String(c.pl || '').trim(),
+        updated_by: _userId
+      }))
+      .filter(c => c.sentence_gap && c.answer && c.full_sentence && c.translation_pl)
+      .slice(0, 20);
+    // usuń stare, wstaw nowe
+    const { error: delErr } = await supabase.from('word_contexts').delete().eq('book_id', bookId).eq('word_pl', wordPl);
+    if (delErr) throw new Error(delErr.message);
+    if (clean.length) {
+      const { error: insErr } = await supabase.from('word_contexts').insert(clean);
+      if (insErr) throw new Error(insErr.message);
+    }
+    _contexts[bookId + '__' + wordPl] = clean.map((c, i) => ({ ord:i, gap:c.sentence_gap, answer:c.answer, full:c.full_sentence, pl:c.translation_pl }));
+    return _contexts[bookId + '__' + wordPl];
+  }
+
   // ═══════════════════════════════════════════════════════════════
   //  FLUSH — wymuś zapis przed wylogowaniem (await!)
   // ═══════════════════════════════════════════════════════════════
@@ -4118,6 +4163,10 @@ const DB = (() => {
     loadSentences,
     getSentence,
     saveSentence,
+    loadContexts,
+    getContexts,
+    hasContexts,
+    saveContexts,
     // admin — treść
     loadAdminData,
     adminAddWord,
