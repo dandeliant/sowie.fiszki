@@ -279,8 +279,8 @@ function levelComplete(){
 
 // ---------- punktacja ----------
 function addScore(n, label){
-  score+=n; updateHUD();
-  scorePop('+'+n+(label?' '+label:''));
+  score=Math.max(0,score+n); updateHUD();
+  scorePop((n>=0?'+':'')+n+(label?' '+label:''));
 }
 let popEl;
 function scorePop(txt){
@@ -300,10 +300,21 @@ addEventListener('keydown',e=>{
 });
 addEventListener('keyup',e=>{ if(typing())return; const k=e.key.toLowerCase(); key[k]=false; if(k==='shift'||k===' ')flyHeld=false; });
 
+// --- KAMERA: mysz/rysik (pointer events, TYLKO nie-dotyk) ---
 let dragging=false,lastX=0,lastY=0;
-$('game').addEventListener('pointerdown',e=>{ if(e.target.closest&&e.target.closest('#touch'))return; dragging=true;lastX=e.clientX;lastY=e.clientY; });
-addEventListener('pointerup',()=>dragging=false);
-addEventListener('pointermove',e=>{ if(!dragging)return; camYaw-=(e.clientX-lastX)*0.005; camPitch=clamp(camPitch+(e.clientY-lastY)*0.004,0.12,1.25); lastX=e.clientX;lastY=e.clientY; });
+$('game').addEventListener('pointerdown',e=>{ if(e.pointerType==='touch')return; if(e.target.closest&&e.target.closest('#touch'))return; dragging=true;lastX=e.clientX;lastY=e.clientY; });
+addEventListener('pointerup',e=>{ if(e.pointerType==='touch')return; dragging=false; });
+addEventListener('pointermove',e=>{ if(e.pointerType==='touch'||!dragging)return; camYaw-=(e.clientX-lastX)*0.005; camPitch=clamp(camPitch+(e.clientY-lastY)*0.004,0.12,1.25); lastX=e.clientX;lastY=e.clientY; });
+// --- KAMERA: dotyk (natywny, sledzony po identifier — jak w Grammar City) ---
+// Gałka (#stick) jest osobnym elementem z pointer-events:auto, wiec jej dotyk
+// NIE dociera do canvasu. Palec na pustym obszarze przechodzi przez #touch
+// (pointer-events:none) do canvasu i obraca kamere — niezaleznie od gałki.
+let camTouch=null;
+const _cvs=$('game');
+_cvs.addEventListener('touchstart',e=>{ if(camTouch)return; const t=e.changedTouches[0]; if(!t)return; camTouch={id:t.identifier,x:t.clientX,y:t.clientY}; },{passive:true});
+_cvs.addEventListener('touchmove',e=>{ if(!camTouch)return; for(const t of e.changedTouches){ if(t.identifier===camTouch.id){ camYaw-=(t.clientX-camTouch.x)*0.006; camPitch=clamp(camPitch+(t.clientY-camTouch.y)*0.004,0.12,1.25); camTouch.x=t.clientX; camTouch.y=t.clientY; } } },{passive:true});
+const _camEnd=e=>{ if(!camTouch)return; for(const t of e.changedTouches) if(t.identifier===camTouch.id){ camTouch=null; break; } };
+_cvs.addEventListener('touchend',_camEnd); _cvs.addEventListener('touchcancel',_camEnd);
 
 const stick=$('stick'),nub=$('nub'); let stickId=null,mv={x:0,y:0};
 function sStart(e){const t=e.changedTouches?e.changedTouches[0]:e;stickId=t.identifier??'m';sMove(e);}
@@ -451,7 +462,7 @@ function renderQuizQ(){
   const arr=[...opts].sort(()=>Math.random()-0.5); const box=$('quizOpts'); box.innerHTML='';
   arr.forEach(o=>{const b=document.createElement('button');b.className='opt';b.textContent=o;b.onclick=()=>answerQuiz(b,o,correct);box.appendChild(b);});
   renderProg('quizProg',quiz.results,quiz.list.length);
-  sayPL(`${q.pl} po angielsku to...`);          // odczyt pytania głosem PL
+  sayPL(q.pl);          // odczyt pytania glosem PL — samo slowo po polsku
 }
 function answerQuiz(btn,chosen,correct){
   [...$('quizOpts').children].forEach(b=>b.style.pointerEvents='none');
@@ -485,24 +496,51 @@ function renderProg(id,results,total){const box=$(id);box.innerHTML='';for(let i
 // ---------- komar: wpisywanie ----------
 let moz=null;
 function normEN(s){return String(s||'').toLowerCase().trim().replace(/[’']/g,"'").replace(/\s+/g,' ').replace(/^(a|an|the|to)\s+/,'');}
+const MOZ_GIVEUP_PENALTY=15;   // ile punktow traci gracz, gdy sie podda
 function startMosquito(mo){
   paused=true; betty.cooldown=6;
-  moz={mo,list:book.words.slice().sort(()=>Math.random()-0.5).slice(0,12),need:3,ok:0,results:[],idx:0};
+  moz={mo,list:book.words.slice().sort(()=>Math.random()-0.5).slice(0,12),need:3,ok:0,fails:0,idx:0};
   $('mozNeed').textContent='3'; $('mozFeed').hidden=true; $('mozInput').value='';
+  const gu=$('mozGiveUp'); if(gu){ gu.hidden=true; gu.textContent=`😞 Poddaje sie (-${MOZ_GIVEUP_PENALTY} pkt)`; }
   renderMozQ(); $('mozModal').classList.add('on'); setTimeout(()=>$('mozInput').focus(),60);
 }
-function renderMozQ(){moz.cur=moz.list[moz.idx%moz.list.length];$('mozWord').textContent=moz.cur.pl;$('mozInput').value='';$('mozFeed').hidden=true;renderProg('mozProg',moz.results,moz.need);setTimeout(()=>$('mozInput').focus(),20);}
+function mozProgArr(){const a=[];for(let i=0;i<moz.ok;i++)a.push(true);return a;}
+function renderMozQ(){
+  moz.cur=moz.list[moz.idx%moz.list.length]; moz.fails=0;
+  $('mozWord').textContent=moz.cur.pl; $('mozInput').value=''; $('mozFeed').hidden=true;
+  const gu=$('mozGiveUp'); if(gu) gu.hidden=true;
+  renderProg('mozProg',mozProgArr(),moz.need); setTimeout(()=>$('mozInput').focus(),20);
+}
 function submitMoz(){
   if(!moz) return; const u=normEN($('mozInput').value); if(!u)return;
   const ans=String(moz.cur.en).split(/[\/,]/).map(x=>normEN(x)); const ok=ans.includes(u);
   const fb=$('mozFeed'); fb.hidden=false;
-  if(ok){moz.ok++;moz.results.push(true);say(cleanEN(moz.cur.en));addScore(5);fb.textContent='✅ Dobrze!';fb.style.color='#8affc0';
-    if(moz.ok>=moz.need){setTimeout(endMoz,600);return;}}
-  else{moz.results.push(false);combo=0;fb.textContent=`❌ Poprawnie: ${cleanEN(moz.cur.en)}`;fb.style.color='#ffb3ae';}
-  renderProg('mozProg',moz.results,moz.need); moz.idx++; setTimeout(renderMozQ,ok?600:1200);
+  if(ok){
+    moz.ok++; say(cleanEN(moz.cur.en)); addScore(5);
+    fb.textContent='✅ Dobrze!'; fb.style.color='#8affc0';
+    renderProg('mozProg',mozProgArr(),moz.need);
+    if(moz.ok>=moz.need){ setTimeout(endMoz,600); return; }
+    moz.idx++; setTimeout(renderMozQ,600);       // dopiero po dobrej odpowiedzi nastepne slowo
+  } else {
+    moz.fails++; combo=0; $('mozInput').value='';
+    if(moz.fails>=5){
+      fb.textContent='❌ Nie udalo sie 5 razy. Sprobuj dalej lub sie poddaj.'; fb.style.color='#ffb3ae';
+      const gu=$('mozGiveUp'); if(gu) gu.hidden=false;
+    } else {
+      fb.textContent=`❌ Sprobuj jeszcze raz (${moz.fails}/5)`; fb.style.color='#ffb3ae';
+      setTimeout(()=>$('mozInput').focus(),20);
+    }
+  }
 }
 function endMoz(){$('mozModal').classList.remove('on');paused=false;const p=randMapPos();moz.mo.g.position.set(p.x,3,p.z);moz.mo.teleport=60;puff(moz.mo.g.position);betty.cooldown=6;addScore(20,'ucieczka! 🐞');moz=null;}
+function endMozGiveUp(){
+  if(!moz) return;
+  addScore(-MOZ_GIVEUP_PENALTY,'poddanie 😞');
+  $('mozModal').classList.remove('on'); paused=false;
+  const p=randMapPos(); moz.mo.g.position.set(p.x,3,p.z); moz.mo.teleport=60; puff(moz.mo.g.position); betty.cooldown=6; moz=null;
+}
 $('mozSubmit').onclick=submitMoz;
+{ const gu=$('mozGiveUp'); if(gu) gu.onclick=endMozGiveUp; }
 $('mozInput').addEventListener('keydown',e=>{ if(e.key==='Enter'){e.preventDefault();submitMoz();} });
 
 // ---------- toast ----------
