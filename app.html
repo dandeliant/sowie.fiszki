@@ -4345,6 +4345,11 @@ szkoła	school"></textarea>
       <input type="checkbox" id="classModalBulk" style="margin-top:2px;flex-shrink:0;width:16px;height:16px;cursor:pointer">
       <span>Wygeneruj loginy dla całej klasy po utworzeniu <span style="color:var(--muted);font-weight:500">(przejdziesz do ekranu generowania)</span></span>
     </label>
+    <div id="classModalRankWrap" style="display:none;margin-top:14px;border-top:1px dashed var(--border);padding-top:12px">
+      <div class="modal-label" style="margin-top:0">🏆 Ranking widoczny dla uczniów tej klasy</div>
+      <div style="font-size:.72rem;color:var(--muted);font-weight:600;line-height:1.45;margin-bottom:8px">Zaznacz klasy, których uczniowie pojawią się we wspólnym rankingu (top 10). Ta klasa jest zawsze w rankingu.</div>
+      <div id="classModalRankList" style="max-height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:4px"></div>
+    </div>
     <div class="modal-btns">
       <button class="btn-modal-cancel" onclick="closeModal('classModal')">Anuluj</button>
       <button class="btn-modal-save" id="btnClassSave" onclick="submitClass()">💾 Zapisz</button>
@@ -10097,10 +10102,10 @@ function particles(ok) {
   return;
 }
 function confetti() {
-  const c=document.getElementById('pc'); c.width=window.innerWidth; c.height=window.innerHeight;
-  const cx=c.getContext('2d'),em=['⭐','💖','🌟','🎉','✨','💛','🦄','🚀','🌈'];
-  const ps=Array.from({length:70},()=>({x:Math.random()*c.width,y:-20-Math.random()*80,vx:(Math.random()-.5)*4,vy:Math.random()*4+2,e:em[~~(Math.random()*em.length)],sz:17+Math.random()*13,r:Math.random()*360,rs:(Math.random()-.5)*8}));
-  let f=0;(function t(){ if(f>=200){cx.clearRect(0,0,c.width,c.height);return;} cx.clearRect(0,0,c.width,c.height); const a=f<140?1:1-(f-140)/60; ps.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.vy+=.06;p.r+=p.rs;cx.save();cx.globalAlpha=a;cx.font=p.sz+'px serif';cx.translate(p.x,p.y);cx.rotate(p.r*Math.PI/180);cx.fillText(p.e,-p.sz/2,-p.sz/2);cx.restore();}); f++;requestAnimationFrame(t);})();
+  // Wyłączono na prośbę użytkownika: deszcz 70 obracających się emoji na pełnoekranowym
+  // canvasie (koniec nauki, gry, rankingi) powodował lagi na słabszych komputerach.
+  // No-op zamiast usuwania wywołań (~15 miejsc) — tak samo jak particles().
+  return;
 }
 
 // ══════════════════════════════════════════════
@@ -18440,19 +18445,59 @@ function openClassModal() {
   const bulkChk = document.getElementById('classModalBulk');
   if (bulkWrap) bulkWrap.style.display = '';
   if (bulkChk) bulkChk.checked = false;
+  _classRankLoaded = false;
+  const rankWrap = document.getElementById('classModalRankWrap');
+  if (rankWrap) rankWrap.style.display = 'none';
   document.getElementById('classModal').style.display = 'flex';
   setTimeout(() => document.getElementById('classModalName').focus(), 80);
 }
 
+// Ranking międzyklasowy (migracja #60) — true tylko gdy lista klas się wczytała
+// i tabela istnieje; inaczej submitClass nie rusza powiązań.
+let _classRankLoaded = false;
+
 function openEditClassModal(classId, className) {
   _curClassEditId = classId;
-  document.getElementById('classModalTitle').textContent = '✏️ Zmień nazwę klasy';
+  document.getElementById('classModalTitle').textContent = '✏️ Edytuj klasę';
   document.getElementById('classModalName').value = className;
   document.getElementById('btnClassSave').textContent = '💾 Zapisz';
   const bulkWrap = document.getElementById('classModalBulkWrap');
   if (bulkWrap) bulkWrap.style.display = 'none'; // przy edycji — niepotrzebne
   document.getElementById('classModal').style.display = 'flex';
   setTimeout(() => document.getElementById('classModalName').focus(), 80);
+  loadClassRankSection(classId);
+}
+
+async function loadClassRankSection(classId) {
+  _classRankLoaded = false;
+  const wrap = document.getElementById('classModalRankWrap');
+  const list = document.getElementById('classModalRankList');
+  if (!wrap || !list || !DB.loadClassRankingLinks) return;
+  wrap.style.display = '';
+  list.innerHTML = '<div style="font-size:.75rem;color:var(--muted);font-weight:600">⏳ Ładowanie klas…</div>';
+  try {
+    const [classes, linked] = await Promise.all([DB.loadClasses(), DB.loadClassRankingLinks(classId)]);
+    if (_curClassEditId !== classId) return; // modal przełączony na inną klasę
+    if (linked === null) {
+      list.innerHTML = '<div style="font-size:.74rem;color:var(--muted);font-weight:600;line-height:1.45">Funkcja wymaga migracji <b>#60</b> (<code>class-ranking-links.sql</code>) w Supabase.</div>';
+      return;
+    }
+    const others = classes.filter(c => c.id !== classId);
+    const self = classes.find(c => c.id === classId);
+    const row = (c, checked, disabled) => {
+      const n = (c.class_members || []).length;
+      return `<label style="display:flex;align-items:center;gap:8px;font-size:.8rem;font-weight:700;color:var(--text);cursor:${disabled ? 'default' : 'pointer'};padding:4px 2px">
+        <input type="checkbox" class="class-rank-chk" value="${esc(c.id)}" ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''} style="width:16px;height:16px;flex-shrink:0">
+        <span>🏫 ${esc(c.name)} <span style="color:var(--muted);font-weight:600">· ${n} ${n === 1 ? 'uczeń' : 'uczniów'}${disabled ? ' · ta klasa' : ''}</span></span>
+      </label>`;
+    };
+    list.innerHTML = (self ? row(self, true, true) : '') +
+      (others.length ? others.map(c => row(c, linked.includes(c.id), false)).join('')
+        : '<div style="font-size:.74rem;color:var(--muted);font-weight:600">Nie masz innych klas do połączenia.</div>');
+    _classRankLoaded = true;
+  } catch (e) {
+    list.innerHTML = `<div style="font-size:.74rem;color:var(--danger);font-weight:600">❌ ${esc(e.message)}</div>`;
+  }
 }
 
 async function submitClass() {
@@ -18464,8 +18509,16 @@ async function submitClass() {
   btn.disabled = true; btn.textContent = 'Zapisuję…';
   try {
     const saved = await DB.saveClass(name, _curClassEditId);
+    let rankMsg = '';
+    if (_curClassEditId && _classRankLoaded && DB.saveClassRankingLinks) {
+      const ids = [...document.querySelectorAll('#classModalRankList .class-rank-chk:not(:disabled):checked')].map(c => c.value);
+      try {
+        await DB.saveClassRankingLinks(_curClassEditId, ids);
+        rankMsg = ids.length ? ' Ranking: +' + ids.length + (ids.length === 1 ? ' klasa.' : ' klasy.') : '';
+      } catch (e) { rankMsg = ' ⚠️ Ranking nie zapisany: ' + e.message; }
+    }
     closeModal('classModal');
-    toast(_curClassEditId ? '✅ Zmieniono nazwę klasy.' : '✅ Klasa „' + name + '" utworzona!');
+    toast(_curClassEditId ? '✅ Zapisano klasę.' + rankMsg : '✅ Klasa „' + name + '" utworzona!', rankMsg ? 3200 : undefined);
     // Po utworzeniu (nie edycji) z zaznaczonym bulk → ekran masowego tworzenia kont
     if (!_curClassEditId && bulk && saved && saved.id) {
       if (typeof openBulkStudents === 'function') openBulkStudents(saved.id, saved.name || name);
@@ -28964,24 +29017,72 @@ ${bodyHtml}
   function srMyRank(members,k){
     const me=uid(); const sorted=members.slice().sort((a,b)=>(b[k]||0)-(a[k]||0));
     const idx=sorted.findIndex(x=>x.user_id===me);
-    return { place: idx>=0?idx+1:null };
+    return { place: idx>=0?idx+1:null, val: idx>=0?(sorted[idx][k]||0):0 };
+  }
+  // Grupuje wiersze RPC wg puli (klasa ucznia) i wybiera najliczniejszą.
+  // Przy rankingu międzyklasowym (#60) pula = klasa ucznia + klasy wybrane przez nauczyciela.
+  function srPickPool(rows){
+    const groups={};
+    (rows||[]).forEach(r=>{ (groups[r.class_id]=groups[r.class_id]||{id:r.class_id,name:r.class_name,multi:false,members:[]}).members.push(r); if(r.multi_class) groups[r.class_id].multi=true; });
+    const cls=Object.values(groups).sort((a,b)=>b.members.length-a.members.length)[0]||null;
+    if(cls && cls.multi){
+      const names=[...new Set(cls.members.map(m=>m.member_class_name).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pl',{numeric:true}));
+      cls.title='Ranking klas: '+names.join(' · ');
+    } else if(cls){ cls.title='Ranking klasy '+(cls.name||''); }
+    return cls;
+  }
+  // Unikalne kamienie za miejsca 1–5 (statyczne SVG — bez animacji, lekkie dla CPU).
+  const SR_GEMS=[
+    {n:'Diament', a:'#ffffff',b:'#9ee9ff',c:'#38bdf8',s:'#0e7490',bg:'rgba(255,209,102,.20)',bd:'rgba(255,209,102,.75)'},
+    {n:'Szafir',  a:'#c7d7ff',b:'#4f7dff',c:'#1e3fae',s:'#172a7a',bg:'rgba(79,125,255,.16)', bd:'rgba(79,125,255,.6)'},
+    {n:'Rubin',   a:'#ffd0d6',b:'#ff3b5c',c:'#b3122e',s:'#7a0c1f',bg:'rgba(255,59,92,.14)',  bd:'rgba(255,59,92,.55)'},
+    {n:'Szmaragd',a:'#c9ffe4',b:'#22c97a',c:'#0b7a45',s:'#06502d'},
+    {n:'Ametyst', a:'#f0d9ff',b:'#b45cff',c:'#6b21a8',s:'#4a1574'},
+  ];
+  let _srGemSeq=0;
+  function srGem(place,size){
+    const g=SR_GEMS[place-1]; if(!g) return '';
+    const id='srGem'+(++_srGemSeq);
+    return '<svg width="'+size+'" height="'+size+'" viewBox="0 0 24 24" role="img" aria-label="'+g.n+'" style="display:block;flex-shrink:0;filter:drop-shadow(0 1px 2px rgba(0,0,0,.35))"><title>'+g.n+' — '+place+'. miejsce</title>'
+      +'<defs><linearGradient id="'+id+'" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="'+g.a+'"/><stop offset=".45" stop-color="'+g.b+'"/><stop offset="1" stop-color="'+g.c+'"/></linearGradient></defs>'
+      +'<polygon points="6,3 18,3 23,9 12,22 1,9" fill="url(#'+id+')" stroke="'+g.s+'" stroke-width="1" stroke-linejoin="round"/>'
+      +'<path d="M1 9H23M6 3L9 9L12 3L15 9L18 3M9 9L12 22L15 9" fill="none" stroke="'+g.s+'" stroke-width=".7" stroke-opacity=".55" stroke-linejoin="round"/>'
+      +'<polygon points="7,4 11,4 8.6,8" fill="#fff" opacity=".6"/></svg>';
+  }
+  function srCrown(w){
+    const id='srCrown'+(++_srGemSeq);
+    return '<svg width="'+w+'" height="'+Math.round(w*.72)+'" viewBox="0 0 24 17" role="img" aria-label="Złota korona" style="display:block;filter:drop-shadow(0 1px 2px rgba(0,0,0,.4))"><title>Złota korona — 1. miejsce</title>'
+      +'<defs><linearGradient id="'+id+'" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff3b0"/><stop offset=".5" stop-color="#ffcc00"/><stop offset="1" stop-color="#c98a00"/></linearGradient></defs>'
+      +'<path d="M2 15L1 4L7 9L12 1L17 9L23 4L22 15Z" fill="url(#'+id+')" stroke="#8a5a00" stroke-width="1" stroke-linejoin="round"/>'
+      +'<circle cx="12" cy="10.5" r="1.8" fill="#e11d48"/><circle cx="6.5" cy="12" r="1.2" fill="#2563eb"/><circle cx="17.5" cy="12" r="1.2" fill="#16a34a"/></svg>';
+  }
+  // Ikona miejsca: 1 = korona nad diamentem, 2–5 = kamień, dalej „#n".
+  function srPlaceBadge(place){
+    if(place===1) return '<div style="display:flex;flex-direction:column;align-items:center;line-height:0">'+srCrown(22)+srGem(1,26)+'</div>';
+    if(place<=3) return srGem(place,26);
+    if(place<=5) return srGem(place,21);
+    return '#'+place;
   }
   async function renderStudentRank(){
     try{
       if(!(window.DB && DB.loadMyClassRankings && DB.getUserId && DB.getUserId())) return;
       engageTop(); const card=$('sfRankCard'); if(!card) return;
       let rows=[]; try{ rows=await DB.loadMyClassRankings(); }catch(e){ return; }
-      const groups={}; (rows||[]).forEach(r=>{ (groups[r.class_id]=groups[r.class_id]||{id:r.class_id,name:r.class_name,members:[]}).members.push(r); });
-      const cls=Object.values(groups).sort((a,b)=>b.members.length-a.members.length)[0];
+      const cls=srPickPool(rows);
       if(!cls || cls.members.length<2){ _srData=null; card.innerHTML=''; return; }
       _srData=cls;
       let chips='';
       SR_CATS.forEach(c=>{ const r=srMyRank(cls.members,c.k); if(r.place) chips+='<span style="display:inline-block;background:rgba(255,255,255,.10);border-radius:100px;padding:3px 9px;font-size:.66rem;font-weight:800;margin:2px">'+c.ic+' '+c.t+': #'+r.place+'</span>'; });
+      // Zdobyty kamień w głównej kategorii (przyswojone słówka), gdy uczeń jest w top 5.
+      const main=srMyRank(cls.members,SR_CATS[0].k);
+      const won=(main.place && main.place<=5 && main.val>0) ? main.place : 0;
+      const icon=won ? srPlaceBadge(won) : '<div style="font-size:1.6rem">🏆</div>';
+      const award=won ? '<div style="font-size:.7rem;font-weight:800;color:var(--accent,#ffd166);margin-top:2px">'+(won===1?'👑 Złota korona + ':'')+SR_GEMS[won-1].n+' za '+won+'. miejsce'+(won<=3?' · diamentowe konto':'')+'</div>' : '';
       card.innerHTML='<div style="background:linear-gradient(135deg,rgba(255,209,102,.14),rgba(124,77,255,.12));border:2px solid rgba(255,209,102,.4);border-radius:16px;padding:13px 16px;margin-bottom:14px">'
         +'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
-        +'<div style="font-size:1.6rem">🏆</div>'
+        +'<div style="min-width:30px;display:flex;justify-content:center">'+icon+'</div>'
         +'<div style="flex:1;min-width:160px">'
-        +'<div style="font-weight:800;color:var(--text);font-size:.9rem">Ranking klasy '+escTxt(cls.name||'')+'</div>'
+        +'<div style="font-weight:800;color:var(--text);font-size:.9rem">'+escTxt(cls.title||'Ranking klasy')+'</div>'+award
         +'<div style="margin-top:3px">'+(chips||'<span style="font-size:.7rem;color:var(--muted)">Ucz się, aby wejść do rankingu!</span>')+'</div>'
         +'</div>'
         +'<button class="sf-btn sf-btn-ghost" style="font-size:.78rem;padding:8px 12px" onclick="window.__sfOpenStudentRank&&window.__sfOpenStudentRank()">Pełny ranking</button>'
@@ -28996,8 +29097,7 @@ ${bodyHtml}
     box.innerHTML='<button class="sf-x" data-close>✕</button><h2 class="sf-h">🏆 Ranking klasy</h2><p class="sf-sub">Ładowanie…</p>';
     bindClose(box); o.classList.add('show');
     let rows=[]; try{ rows=await DB.loadMyClassRankings(); }catch(e){}
-    const groups={}; (rows||[]).forEach(r=>{ (groups[r.class_id]=groups[r.class_id]||{id:r.class_id,name:r.class_name,members:[]}).members.push(r); });
-    const cls=Object.values(groups).sort((a,b)=>b.members.length-a.members.length)[0];
+    const cls=srPickPool(rows);
     if(!cls || !cls.members || !cls.members.length){
       box.innerHTML='<button class="sf-x" data-close>✕</button><h2 class="sf-h">🏆 Ranking klasy</h2><p class="sf-sub">Nie należysz jeszcze do żadnej klasy (albo klasa jest pusta). Poproś nauczyciela o dodanie Cię do klasy — wtedy zobaczysz tu ranking kolegów.</p>';
       bindClose(box); return;
@@ -29006,23 +29106,28 @@ ${bodyHtml}
     let tabs='<div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-bottom:12px">';
     SR_CATS.forEach((c,i)=>{ tabs+='<button id="srTab'+i+'" class="sf-btn sf-btn-ghost" style="font-size:.72rem;padding:7px 10px" onclick="window.__sfRankCat('+i+')">'+c.ic+' '+c.t+'</button>'; });
     tabs+='</div>';
-    box.innerHTML='<button class="sf-x" data-close>✕</button><h2 class="sf-h">🏆 Ranking klasy '+escTxt(_srData.name||'')+'</h2><p class="sf-sub">Domyślnie wg liczby przyswojonych słów • zakładki = inne kategorie</p>'+tabs+'<div id="srList"></div>';
+    box.innerHTML='<button class="sf-x" data-close>✕</button><h2 class="sf-h">🏆 '+escTxt(_srData.title||'Ranking klasy')+'</h2><p class="sf-sub">Top 10 · wg liczby przyswojonych słów (zakładki = inne kategorie)<br>Miejsca 1–5 zdobywają kamienie: 💎 Diament · Szafir · Rubin · Szmaragd · Ametyst · 1. miejsce — złota korona 👑</p>'+tabs+'<div id="srList"></div>';
     bindClose(box); window.__sfRankCat(0);
   };
   window.__sfRankCat=function(idx){
     const c=SR_CATS[idx]; if(!c||!_srData) return;
     SR_CATS.forEach((_,i)=>{ const t=$('srTab'+i); if(t){ t.style.background=i===idx?'var(--accent,#7c4dff)':''; t.style.color=i===idx?'#fff':''; } });
     const me=uid(); const sorted=_srData.members.slice().sort((a,b)=>(b[c.k]||0)-(a[c.k]||0));
-    const podium=['🥇','🥈','🥉'];
     let h='<div style="background:rgba(255,255,255,.04);border-radius:14px;padding:8px;max-height:50vh;overflow-y:auto">'; let shown=0;
     sorted.forEach((u,i)=>{ const val=u[c.k]||0; const isMe=u.user_id===me; if(val===0 && !isMe) return; if(i>=10 && !isMe) return; shown++;
-      const place=i+1; const md=place<=3?podium[place-1]:('#'+place);
-      // Podlinijka: poziom · XP · przyswojone słówka (widoczne w każdej kategorii)
-      const sub='⭐ '+(u.level||1)+' · '+(u.xp_total||0)+' XP · 📚 '+(u.well_learned||0);
-      h+='<div style="display:flex;align-items:center;gap:10px;padding:8px 6px;border-bottom:1px dashed rgba(255,255,255,.12);'+(isMe?'background:rgba(124,77,255,.18);border-radius:8px':'')+'">'
-        +'<div style="width:30px;text-align:center;font-weight:700">'+md+'</div>'
+      const place=i+1;
+      // Kamienie tylko za realny wynik (0 pkt nie zdobywa nagrody).
+      const md=(val>0 && place<=5) ? srPlaceBadge(place) : ('#'+place);
+      const gem=(val>0 && place<=3) ? SR_GEMS[place-1] : null;   // „diamentowe konto" top 3
+      // Podlinijka: [klasa ucznia przy rankingu międzyklasowym] · poziom · XP · przyswojone słówka
+      const sub=(_srData.multi && u.member_class_name ? '🏫 '+escTxt(u.member_class_name)+' · ' : '')+'⭐ '+(u.level||1)+' · '+(u.xp_total||0)+' XP · 📚 '+(u.well_learned||0);
+      const rowBg=gem ? 'background:'+gem.bg+';border:1.5px solid '+gem.bd+';border-radius:10px;margin:3px 0' : (isMe?'background:rgba(124,77,255,.18);border-radius:8px':'');
+      const nameGem=gem ? '<span style="display:inline-block;vertical-align:-3px;margin-left:5px">'+srGem(place,15)+'</span>' : '';
+      const meRing=(gem && isMe) ? ';box-shadow:0 0 0 2px rgba(124,77,255,.75)' : '';
+      h+='<div style="display:flex;align-items:center;gap:10px;padding:8px 6px;border-bottom:1px dashed rgba(255,255,255,.12);'+rowBg+meRing+'">'
+        +'<div style="width:32px;display:flex;justify-content:center;font-weight:700">'+md+'</div>'
         +'<div style="flex:1;min-width:0">'
-          +'<div style="font-weight:700;font-size:.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escTxt(u.username)+(isMe?' (Ty)':'')+'</div>'
+          +'<div style="font-weight:'+(gem?800:700)+';font-size:.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escTxt(u.username)+nameGem+(isMe?' (Ty)':'')+'</div>'
           +'<div style="font-size:.62rem;color:var(--muted);font-weight:700;margin-top:1px">'+sub+'</div>'
         +'</div>'
         +'<div style="font-weight:800;color:var(--accent,#ffd166);white-space:nowrap">'+val+c.unit+'</div></div>';

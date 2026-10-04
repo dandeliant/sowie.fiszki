@@ -2152,6 +2152,34 @@ const DB = (() => {
     return data || [];
   }
 
+  // Ranking międzyklasowy (migracja #60): które INNE klasy nauczyciela są
+  // widoczne w rankingu uczniów danej klasy. Zwraca null, gdy brak tabeli
+  // (migracja nieuruchomiona) — UI chowa wtedy sekcję.
+  async function loadClassRankingLinks(classId) {
+    if (!_userId || !classId) return [];
+    const { data, error } = await supabase
+      .from('class_ranking_links')
+      .select('linked_class_id')
+      .eq('class_id', classId);
+    if (error) { console.warn('[loadClassRankingLinks]', error.message); return null; }
+    return (data || []).map(r => r.linked_class_id);
+  }
+
+  async function saveClassRankingLinks(classId, linkedIds) {
+    if (!_profile?.isAdmin && !_profile?.isTeacher) throw new Error('Brak uprawnień');
+    const ids = [...new Set((linkedIds || []).filter(id => id && id !== classId))];
+    const { error: delErr } = await supabase
+      .from('class_ranking_links').delete().eq('class_id', classId);
+    if (delErr) throw new Error(delErr.message);
+    if (!ids.length) return [];
+    const { data, error } = await supabase
+      .from('class_ranking_links')
+      .insert(ids.map(id => ({ class_id: classId, linked_class_id: id })))
+      .select('linked_class_id');
+    if (error) throw new Error(error.message);
+    return (data || []).map(r => r.linked_class_id);
+  }
+
   // ═══════════════════════════════════════════════════════════════
   //  WYZWANIA KLASOWE (Wave 2, #8) — wymaga class-challenges-schema.sql
   // ═══════════════════════════════════════════════════════════════
@@ -4291,6 +4319,8 @@ const DB = (() => {
     loadClassLeaderboard,
     loadClassRankings,
     loadMyClassRankings,
+    loadClassRankingLinks,
+    saveClassRankingLinks,
     recordBestCombo,
     updateWellLearned,
     logDailyWords,
