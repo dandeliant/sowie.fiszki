@@ -1,10 +1,11 @@
 // Grammar City service worker: offline play after the first visit.
-const VERSION = 'grammar-city-v3';
+const VERSION = 'grammar-city-v4';
 const SHELL = [
   './',
   './index.html',
   './game.js',
   './questions.js',
+  './vocab-missions.js',
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png',
@@ -18,7 +19,9 @@ self.addEventListener('install', e => {
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== VERSION).map(k => caches.delete(k))))
+      // Cache API jest wspólne dla całej domeny — kasuj tylko stare cache Grammar City,
+      // nie cache głównej aplikacji Sowie Fiszki (sowie-fiszki-*).
+      .then(keys => Promise.all(keys.filter(k => k.startsWith('grammar-city-') && k !== VERSION).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });

@@ -48,7 +48,8 @@ function onBlock(x, z) {
 const groundAt = (x, z) => (onBlock(x, z) ? SIDE_H : 0);
 
 // ---------------------------------------------------------------- save
-const SAVE_KEY = 'grammarCity.v1';
+// Tryb słówek (vocab-missions.js) podaje własny klucz — osobny postęp per rozdział.
+const SAVE_KEY = window.GC_SAVE_KEY || 'grammarCity.v1';
 const freshSave = () => ({ done: {}, best: {}, money: 0, xp: 0 });
 let save = freshSave();
 try { const s = JSON.parse(localStorage.getItem(SAVE_KEY)); if (s && s.done) save = Object.assign(freshSave(), s); } catch (e) { /* storage unavailable */ }
@@ -931,7 +932,7 @@ const Sound = {
       this.eng = o; this.engGain = g; this.engFilter = f;
     } catch (e) { this.ctx = null; }
   },
-  toggle() { this.muted = !this.muted; if (this.master) this.master.gain.value = this.muted ? 0 : 0.55; },
+  toggle() { this.muted = !this.muted; window.GC_MUTED = this.muted; if (this.master) this.master.gain.value = this.muted ? 0 : 0.55; },
   tone(freq, dur, type = 'sine', vol = 0.18, delay = 0, end) {
     if (!this.ctx) return;
     const t = this.ctx.currentTime + delay, o = this.ctx.createOscillator(), g = this.ctx.createGain();
@@ -1491,7 +1492,7 @@ function updateHUD(dt, clock) {
   const obj = $('objective');
   const dist = route ? Math.round(routeLength()) : 0;
   let html;
-  if (dc >= MISSIONS.length) html = 'Grammar City należy do Ciebie!<small>Wszystkie misje ukończone. Możesz je powtarzać, aby poprawić wynik.</small>';
+  if (dc >= MISSIONS.length) html = (window.GC_DONE_TITLE || 'Grammar City należy do Ciebie!') + '<small>Wszystkie misje ukończone. Możesz je powtarzać, aby poprawić wynik.</small>';
   else if (gps && gps.kind === 'mission') html = `${P.car ? 'Jedź' : 'Idź'} do: ${esc(gps.m.place)}<small>${esc(gps.m.topic)} · ${gps.m.level} · ${dist} m</small>`;
   else if (gps) html = `Cel na mapie<small>${dist} m</small>`;
   else html = 'Wybierz misję na mapie<small>Naciśnij M, aby otworzyć mapę i ustawić GPS.</small>';
@@ -1557,7 +1558,7 @@ function openBriefing(m) {
           <p class="story-pl" id="story-pl" hidden>${esc(m.storyPL)}</p>
         </div>
       </div>
-      <div class="tip"><div class="tip-title">Ściąga gramatyczna</div>${m.tip}</div>
+      <div class="tip"><div class="tip-title">${window.GC_TIP_TITLE || 'Ściąga gramatyczna'}</div>${m.tip}</div>
       <div class="actions">
         <button class="btn" id="q-start">Rozpocznij misję</button>
         <button class="btn ghost" id="q-cancel">Wróć</button>
@@ -1574,7 +1575,10 @@ function openBriefing(m) {
 }
 function buildQuestions(m) {
   let pool;
-  if (m.final) {
+  if (m.final && m.questions && m.questions.length) {
+    // Tryb słówek: finał ma własną pulę pytań (src = misja, z której pochodzi słowo).
+    pool = shuffle(m.questions.slice()).slice(0, 15).map(q => Object.assign({ src: m }, q));
+  } else if (m.final) {
     const topics = shuffle(MISSIONS.filter(x => !x.final));
     pool = topics.slice(0, 15).map(x => Object.assign({}, x.questions[Math.floor(Math.random() * x.questions.length)], { src: x }));
   } else {
@@ -1642,6 +1646,7 @@ function renderQuestion() {
     $('order-check').onclick = answerOrder;
     $('order-clear').onclick = () => { if (quiz.answered) return; quiz.order = []; renderTiles(); };
   }
+  if (window.GC_onQuestion) { try { window.GC_onQuestion(q); } catch (e) { /* ignore */ } }
 }
 function renderTiles() {
   const ans = $('tiles-ans');
@@ -1670,6 +1675,7 @@ function registerAnswer(ok, given) {
   const segs = qCard.querySelectorAll('.seg'); segs[quiz.i].className = `seg ${ok ? 'ok' : 'no'}`;
   $('next-row').hidden = false;
   setTimeout(() => { const b = $('q-next'); if (b && q.t !== 't') b.focus(); }, 20);
+  if (window.GC_onAnswer) { try { window.GC_onAnswer(q, ok); } catch (e) { /* ignore */ } }
 }
 function answerChoice(i) {
   if (quiz.answered) return;
