@@ -389,6 +389,28 @@
   .speak-btn:hover { transform: scale(1.05); background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.3); }
   .speak-btn.speaking { border-color: var(--accent3); color: var(--accent3); box-shadow: 0 0 14px rgba(107,203,119,.35); }
 
+  /* Pisownia wylosowanej liczby (po kliknięciu liczby / „Say it in English") */
+  .number-words {
+    margin: 12px auto 2px;
+    width: min(92%, 620px);
+    box-sizing: border-box;
+    text-align: center;
+    padding: 10px 18px;
+    border-radius: 16px;
+    border: 2px solid rgba(107,203,119,.45);
+    background: rgba(107,203,119,.10);
+    color: var(--white);
+    font-family: 'Nunito', sans-serif;
+    font-size: clamp(1.05rem, 3.6vw, 1.55rem);
+    font-weight: 800;
+    line-height: 1.35;
+    word-break: break-word;
+    animation: wordsIn .3s ease;
+  }
+  .number-words[hidden] { display: none; }
+  .number-words .nw-num { color: var(--soft); opacity: .75; font-weight: 700; margin-right: 6px; }
+  @keyframes wordsIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
   .range-badge {
     font-size: 0.9rem;
     font-weight: 700;
@@ -611,6 +633,7 @@
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
         Say it in English
       </button>
+      <div class="number-words" id="numberWords" hidden></div>
       <div class="range-badge" id="rangeBadge">Range: 1 – 20</div>
       <div class="voice-badge" id="voiceBadge">🔊 Głos: ładowanie…</div>
     </div>
@@ -717,7 +740,24 @@
     return String(n);
   }
 
+  // Pokazuje pisownię liczby pod przyciskiem. Dla liczby z historii (innej niż
+  // aktualnie wylosowana) dopisuje ją z przodu, żeby było jasne, której dotyczy.
+  function showWords(n) {
+    const el = document.getElementById('numberWords');
+    if (!el) return;
+    // Nierozdzielany łącznik (U+2011): „thirty-nine" nie zawinie się w połowie.
+    const words = numToWords(n).replace(/-/g, '‑');
+    el.innerHTML = (n !== currentNumber ? '<span class="nw-num">' + n.toLocaleString() + ' =</span> ' : '') + words;
+    el.hidden = false;
+    el.style.animation = 'none'; el.offsetHeight; el.style.animation = '';
+  }
+  function hideWords() {
+    const el = document.getElementById('numberWords');
+    if (el) { el.hidden = true; el.textContent = ''; }
+  }
+
   function speakNumber(n) {
+    showWords(n);
     if (!('speechSynthesis' in window)) return;
     const text = numToWords(n);
     speechSynthesis.cancel();
@@ -807,8 +847,9 @@
     if(rolling) return;
     if(!validate()) return;
 
-    // Zatrzymaj wszelkie bieżące mówienie
+    // Zatrzymaj wszelkie bieżące mówienie i schowaj pisownię poprzedniej liczby
     if ('speechSynthesis' in window) speechSynthesis.cancel();
+    hideWords();
 
     const {min, max} = getRange();
     const btn = document.getElementById('genBtn');
@@ -1026,7 +1067,7 @@
     <ol>
       <li>Ustaw zakres (<b>From</b> / <b>To</b>) albo kliknij jeden z <b>Quick Ranges</b> (1–20, 1–100, …).</li>
       <li>Kliknij <b>🎰 SPIN THE WHEEL!</b> — animacja losowania + konfetti.</li>
-      <li>Kliknij <b>🔊 Say it in English</b> (lub na samą liczbę) → lektor przeczyta po brytyjsku.</li>
+      <li>Kliknij <b>🔊 Say it in English</b> (lub na samą liczbę) → lektor przeczyta po brytyjsku, a pod liczbą pojawi się jej <b>pisownia</b> (np. <i>three hundred and forty-seven</i>).</li>
       <li>W historii u dołu kliknij dowolną liczbę, żeby usłyszeć ją ponownie.</li>
       <li><b>🗑 Clear</b> czyści historię.</li>
     </ol>
