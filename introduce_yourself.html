@@ -231,12 +231,28 @@ function draw(){
 let voices=[];
 function loadVoices(){ voices = window.speechSynthesis ? speechSynthesis.getVoices() : []; }
 if(window.speechSynthesis){ loadVoices(); speechSynthesis.onvoiceschanged = loadVoices; }
+// Najładniejsze brytyjskie głosy: Google UK English (Chrome) → Microsoft „Online (Natural)"
+// (Edge) → dowolny en-GB. Bez zmiany wysokości (pitch) — to ona dawała sztuczne brzmienie.
+const isGB = v => /en[-_]GB/i.test(v.lang);
+function findVoice(tests){
+  for (const t of tests) { const v = voices.find(t); if (v) return v; }
+  return null;
+}
 function ukVoices(){
-  const gb = voices.filter(v=>/en-GB/i.test(v.lang));
-  const en = voices.filter(v=>/^en/i.test(v.lang));
-  const pool = gb.length?gb:en;
-  const female = pool.find(v=>/female|Hazel|Libby|Sonia|Google UK English Female/i.test(v.name)) || pool[0] || null;
-  const male = pool.find(v=>/male|George|Ryan|Google UK English Male/i.test(v.name)) || pool[1] || female;
+  const female = findVoice([
+    v => v.name === 'Google UK English Female',
+    v => isGB(v) && /Online \(Natural\)/i.test(v.name) && /Sonia|Libby|Maisie|Hollie|Bella|Mia/i.test(v.name),
+    v => isGB(v) && /Online \(Natural\)/i.test(v.name),
+    v => isGB(v) && /\bfemale\b|Hazel|Kate|Serena|Susan|Fiona/i.test(v.name),
+    v => isGB(v),
+    v => /^en/i.test(v.lang)
+  ]);
+  const male = findVoice([
+    v => v.name === 'Google UK English Male',
+    v => isGB(v) && /Online \(Natural\)/i.test(v.name) && /Ryan|Thomas|Oliver|Elliot|Alfie|Noah/i.test(v.name),
+    v => isGB(v) && /\bmale\b|George|Daniel|Arthur/i.test(v.name) && !/female/i.test(v.name),
+    v => isGB(v) && v !== female
+  ]) || female;
   return {female, male};
 }
 function speakText(text, speakerIndex, cb){
@@ -244,8 +260,8 @@ function speakText(text, speakerIndex, cb){
   const u = new SpeechSynthesisUtterance(text);
   const {female,male} = ukVoices();
   const v = speakerIndex===1 ? male : female;
-  if(v) u.voice=v;
-  u.lang='en-GB'; u.rate=.9; u.pitch = speakerIndex===1 ? 0.9 : 1.08;
+  if(v){ u.voice=v; u.lang=v.lang; } else u.lang='en-GB';
+  u.rate=.95; u.pitch=1;
   if(cb) u.onend = cb;
   speechSynthesis.speak(u);
 }
