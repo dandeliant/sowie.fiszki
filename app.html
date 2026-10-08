@@ -2446,6 +2446,10 @@ body.guest-mode .progress-wrap{opacity:.4;}
       <button class="duel-setup-opt" data-gm="elimination">Eliminacja<div class="dsh">3 złe = odpadasz</div></button>
       <button class="duel-setup-opt" data-gm="team">Drużynowy 2v2<div class="dsh">Tylko 4 graczy</div></button>
     </div>
+    <button id="duelOnlineEntryBtn" onclick="openDuelOnlineInvite()" style="width:100%;margin:0 0 12px;padding:11px 12px;border-radius:12px;border:2px solid var(--accent2);background:rgba(6,214,160,.1);color:var(--text);font-weight:800;font-size:.86rem;cursor:pointer;font-family:inherit;text-align:left">
+      🌐 Rywalizuj online z kimś z klasy
+      <div style="font-size:.68rem;font-weight:600;color:var(--muted);margin-top:2px">Wyszukaj ucznia ze swojej klasy i prześlij mu link z zaproszeniem — gracie na żywo, każdy na swoim urządzeniu.</div>
+    </button>
 
     <div style="font-size:.68rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:8px 0 4px">👥 Liczba graczy</div>
     <div id="duelSetupCount" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:10px">
@@ -2495,6 +2499,55 @@ body.guest-mode .progress-wrap{opacity:.4;}
     </div>
   </div>
 </div>
+
+<!-- ══ MODAL: RYWALIZACJA ONLINE — zaproszenie (migracja #61) ══ -->
+<div class="modal-overlay" id="duelOnlineModal" style="display:none" onclick="if(event.target===this)closeDuelOnlineInvite()">
+  <div class="modal-box" style="max-width:520px;max-height:92vh;overflow-y:auto">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px">
+      <div style="font-family:'Playfair Display',serif;font-size:1.2rem;color:var(--pink)">🌐 Rywalizacja online</div>
+      <button class="btn-modal-cancel" onclick="closeDuelOnlineInvite()" style="padding:4px 10px;font-size:.72rem">✕</button>
+    </div>
+    <div style="font-size:.74rem;color:var(--muted);font-weight:600;line-height:1.45;margin-bottom:10px">Wybierz osobę ze swojej klasy i prześlij jej link z zaproszeniem. Ty będziesz <b>Uczniem 1</b>, zaproszona osoba — <b>Uczniem 2</b>.</div>
+
+    <div style="font-size:.68rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:6px 0 4px">🔎 Wyszukaj ucznia</div>
+    <input type="text" id="donSearch" maxlength="30" placeholder="Wpisz ksywkę lub login…" autocomplete="off" oninput="donSearchDebounced()" style="width:100%;box-sizing:border-box;padding:9px 12px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:.85rem;font-weight:600;outline:none;font-family:inherit;margin-bottom:6px">
+    <div id="donResults" style="max-height:220px;overflow-y:auto;display:flex;flex-direction:column;gap:4px;margin-bottom:10px"></div>
+
+    <div style="font-size:.68rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:6px 0 4px">📚 Słówka</div>
+    <div id="donSrc" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px">
+      <button class="duel-setup-opt" data-dsrc="unit">Aktualny unit</button>
+      <button class="duel-setup-opt" data-dsrc="book">Cały podręcznik</button>
+    </div>
+    <div style="font-size:.68rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:6px 0 4px">🔢 Liczba pytań</div>
+    <div id="donRounds" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:12px">
+      <button class="duel-setup-opt" data-drounds="10">10</button>
+      <button class="duel-setup-opt" data-drounds="15">15</button>
+      <button class="duel-setup-opt" data-drounds="20">20</button>
+    </div>
+    <div style="font-size:.68rem;color:var(--muted);font-weight:600;margin-bottom:8px">⏱ 12 sekund na pytanie · 100 pkt za poprawną odpowiedź + do 50 pkt za szybkość.</div>
+    <div id="donMsg" style="font-size:.75rem;color:var(--danger);font-weight:700;min-height:16px;margin-bottom:6px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn-modal-cancel" onclick="closeDuelOnlineInvite()">Anuluj</button>
+      <button class="btn-modal-save" id="donSendBtn" onclick="donSendInvite()">📨 Prześlij link</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ SCREEN: RYWALIZACJA ONLINE 1 na 1 ══ -->
+<div class="screen" id="sDuelOnline">
+  <div style="width:100%;max-width:640px;margin:0 auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px">
+      <div style="font-family:'Playfair Display',serif;font-size:1.3rem;color:var(--pink)">🌐 Rywalizacja online</div>
+      <button class="btn-sm" id="donLeaveBtn" onclick="donLeave()" style="font-size:.7rem">✕ Wyjdź</button>
+    </div>
+    <div id="donRoleBadge" style="display:none;text-align:center;font-size:1.05rem;font-weight:900;padding:10px;border-radius:14px;margin-bottom:10px;background:rgba(255,133,195,.12);border:2px solid var(--pink);color:var(--text)"></div>
+    <div id="donScore" style="display:none;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px"></div>
+    <div id="donStage" style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px;text-align:center"></div>
+  </div>
+</div>
+
+<!-- Zaproszenie do rywalizacji (pokazywane Uczniowi 2) -->
+<div id="duelInviteBanner" style="display:none;position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:9500;width:min(440px,calc(100% - 32px));background:var(--surface);border:2px solid var(--pink);border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.35);padding:12px 14px"></div>
 
 <!-- ══ SCREEN: SCRAMBLE GAME (rozsypanka literowa interaktywna) ══ -->
 <div class="screen" id="sScrGame">
@@ -4655,14 +4708,18 @@ const XPV = { again: 2, hard: 5, medium: 9, good: 11, easy: 16 };
 // „klikanie". Tryby z SAMOOCENĄ / wyborem odpowiedzi dają mniej punktów;
 // tryby wymagające WPISANIA poprawnej odpowiedzi (z pamięci) — najwięcej.
 const XP_MODE_MULT = {
-  card: 0.5,                 // Fiszki — samoocena (najłatwiej „naklikać")
-  quiz: 0.8, tf: 0.6, match: 0.7, speed: 0.8, // wybór z opcji
-  missing: 0.9, gap: 0.9, scramble: 1.0, sentscr: 1.0, // częściowe wpisywanie/układanie
-  speak: 1.0, speakSent: 1.0, // mówienie
-  type: 1.3, typeSent: 1.3, dictate: 1.2, dictSent: 1.2 // pełne wpisanie z pamięci — premia
+  scramble: 1.0, sentscr: 1.0,                           // układanie (Rozsypanka, Zdanie)
+  type: 1.3, typeSent: 1.3, dictate: 1.2, dictSent: 1.2  // pełne wpisanie z pamięci — premia
 };
+// Tryby „łatwe" (×0,5): samoocena, wybór z opcji, częściowe wpisywanie, mówienie.
+// Stałe punkty wg ustaleń: Łatwe/szybko 8 · poprawnie (Średnie) 5 · po błędzie (Trudne) 3 · błąd 0.
+const XP_LOW_MODES = new Set(['card', 'quiz', 'speed', 'match', 'tf', 'missing', 'gap', 'speak', 'speakSent']);
+const XP_LOW = { easy: 8, good: 5, medium: 5, hard: 3, again: 0 };
 function _modeXpMult() { return (XP_MODE_MULT[mode] != null) ? XP_MODE_MULT[mode] : 1; }
-function _xpFor(r) { return Math.max(1, Math.round((XPV[r] || 0) * _modeXpMult())); }
+function _xpFor(r) {
+  if (XP_LOW_MODES.has(mode)) return XP_LOW[r] != null ? XP_LOW[r] : 0;
+  return Math.max(1, Math.round((XPV[r] || 0) * _modeXpMult()));
+}
 const DAILY_XP_GOAL = 100;
 const LVLS = [
   {l:1,i:'🌱',n:'Początkujący'},{l:2,i:'📚',n:'Uczeń'},{l:3,i:'⭐',n:'Pilny'},
@@ -9308,29 +9365,42 @@ function onQuiz(btn, ok, correct) {
 //  TYPE
 // ══════════════════════════════════════════════
 // Oznacza dzień jako „praca w trybie Wpisz" (raz dziennie) — do oceny tygodniowej.
+// Data LOKALNA (polska) YYYY-MM-DD — toISOString() dawało datę UTC, przez co
+// między północą a 2:00 wpisy liczyły się do poprzedniego dnia.
+function _localDay() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
 let _typedDayMark = '';
-function _markTypedDay() {
-  const today = new Date().toISOString().slice(0, 10);
+async function _markTypedDay() {
+  const today = _localDay();
   if (_typedDayMark === today) return;
   _typedDayMark = today;
-  try { if (DB.logTypedDay) DB.logTypedDay(); } catch(e) {}
+  let ok = false;
+  try { if (DB.logTypedDay) ok = await DB.logTypedDay(); } catch(e) {}
+  if (!ok) { _typedDayMark = ''; return; }   // nie zapisało się (offline) — ponowimy przy kolejnym wpisie
+  const o = _typedDayStore(); o.synced = true; _typedDaySave(o);
 }
 
 // ══════════════════════════════════════════════
 //  ZALICZENIE DZIENNEJ AKTYWNOŚCI (tryb Wpisz / Wpisz zd.)
 //  Dzień NIE liczy się od jednej odpowiedzi (można by oszukiwać). Zaliczenie,
 //  gdy spełniony JEDEN z warunków:
-//   A) opanowano ≥5 różnych słów (każde poprawnie za 1. razem min. 3×), LUB
-//   B) uczeń z trudnościami: ≥20 wpisów (prób sprawdzenia) i przy tym ≥2
-//      opanowane słowa — żeby nauka nie była nieskończenie długa/monotonna.
-//  Dopiero wtedy dzień idzie do oceny tygodniowej i pojawia się komunikat.
+//   A) ≥15 PEWNYCH trafień (poprawnie za 1. razem) obejmujących ≥5 różnych słów, LUB
+//   B) uczeń z trudnościami: ≥20 wpisów (prób sprawdzenia) i przy tym ≥6 pewnych
+//      trafień z ≥2 różnych słów — żeby nauka nie była nieskończenie długa.
+//  Dawniej wymagano 3 trafień TEGO SAMEGO słowa w ciągu dnia — harmonogram
+//  powtórek (FSRS) zdejmuje jednak opanowane słowo z puli po 1 trafieniu, więc
+//  uczniowie znający słówka nie mogli zaliczyć dnia nawet po godzinie nauki.
+//  Wysiłek jest ten sam (15 trafień), ale liczony łącznie, nie per słowo.
 // ══════════════════════════════════════════════
-const TYPED_DAY_WORDS_GOAL  = 5;  // A) ile różnych słów do zaliczenia
-const TYPED_DAY_REPS_GOAL   = 3;  // ile pewnych trafień, by słowo uznać za opanowane
+const TYPED_DAY_HITS_GOAL   = 15; // A) pewne trafienia łącznie
+const TYPED_DAY_WORDS_GOAL  = 5;  // A) min. różnych słów wśród trafień
 const TYPED_DAY_MIN_ENTRIES = 20; // B) minimalna liczba wpisów (prób sprawdzenia)
-const TYPED_DAY_MIN_WORDS   = 2;  // B) minimalna liczba opanowanych słów przy ≥20 wpisach
+const TYPED_DAY_MIN_HITS    = 6;  // B) min. pewnych trafień przy ≥20 wpisach
+const TYPED_DAY_MIN_WORDS   = 2;  // B) min. różnych słów przy ≥20 wpisach
 function _typedDayStore() {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = _localDay();
   let o = {};
   try { o = JSON.parse(localStorage.getItem('fiszki_typed_day') || '{}'); } catch(e) {}
   if (o.day !== today) o = { day: today, words: {}, entries: 0, credited: false };
@@ -9339,18 +9409,21 @@ function _typedDayStore() {
   return o;
 }
 function _typedDaySave(o) { try { localStorage.setItem('fiszki_typed_day', JSON.stringify(o)); } catch(e) {} }
-function _typedLearnedCount(o) { return Object.values(o.words).filter(n => n >= TYPED_DAY_REPS_GOAL).length; }
+function _typedDistinct(o) { return Object.keys(o.words).length; }
+function _typedHits(o) { return Object.values(o.words).reduce((s, n) => s + (n || 0), 0); }
 // Sprawdza warunki zaliczenia; jeśli spełnione — zalicza dzień i pokazuje komunikat.
 function _typedDayCheckCredit(o) {
-  if (o.credited) return true;
-  const learned = _typedLearnedCount(o);
-  const entries = o.entries || 0;
-  const met = (learned >= TYPED_DAY_WORDS_GOAL)
-           || (entries >= TYPED_DAY_MIN_ENTRIES && learned >= TYPED_DAY_MIN_WORDS);
+  if (o.credited) {
+    if (!o.synced) _markTypedDay();      // zaliczony lokalnie, ale zapis na serwerze się nie udał — ponów
+    return true;
+  }
+  const hits = _typedHits(o), distinct = _typedDistinct(o), entries = o.entries || 0;
+  const met = (hits >= TYPED_DAY_HITS_GOAL && distinct >= TYPED_DAY_WORDS_GOAL)
+           || (entries >= TYPED_DAY_MIN_ENTRIES && hits >= TYPED_DAY_MIN_HITS && distinct >= TYPED_DAY_MIN_WORDS);
   if (met) {
     o.credited = true; _typedDaySave(o);
     _markTypedDay();                     // ZALICZ dzień do oceny tygodniowej
-    _showDailyDoneMsg(learned);
+    _showDailyDoneMsg(distinct);
     return true;
   }
   return false;
@@ -9359,23 +9432,22 @@ function _typedDayCheckCredit(o) {
 function _typedDayEntry() {
   if (curIdx === null) return;
   const o = _typedDayStore();
-  if (o.credited) return;
+  if (o.credited) { _typedDayCheckCredit(o); return; }
   o.entries = (o.entries || 0) + 1;
   _typedDaySave(o);
   _typedDayCheckCredit(o);
 }
-// Wywoływane przy PEWNYM trafieniu (za 1. razem, bez pokazania odpowiedzi) — liczy opanowane słowa.
+// Wywoływane przy PEWNYM trafieniu (za 1. razem, bez pokazania odpowiedzi).
 function _typedDayProgress(firstTryCorrect) {
   if (!firstTryCorrect || curIdx === null || !activeWords[curIdx]) return;
   const o = _typedDayStore();
   if (o.credited) return;                // dzień już zaliczony
   const key = currentBookId + '|' + currentUnitKey + '|' + activeWords[curIdx][0];
-  const before = _typedLearnedCount(o);
-  o.words[key] = Math.min(TYPED_DAY_REPS_GOAL, (o.words[key] || 0) + 1);
+  o.words[key] = (o.words[key] || 0) + 1;
   _typedDaySave(o);
-  const after = _typedLearnedCount(o);
-  if (!_typedDayCheckCredit(o) && after > before) { // kolejne słowo opanowane dziś
-    setTimeout(() => toast('💪 Opanowane dziś: ' + after + ' słówek', 2600), 1700);
+  const hits = _typedHits(o);
+  if (!_typedDayCheckCredit(o) && hits % 5 === 0) { // postęp co 5 trafień
+    setTimeout(() => toast('💪 Postęp dnia: ' + hits + '/' + TYPED_DAY_HITS_GOAL + ' poprawnych wpisów (' + _typedDistinct(o) + ' słówek)', 2800), 1700);
   }
 }
 function _showDailyDoneMsg(learned) {
@@ -9726,7 +9798,7 @@ function rate(r, noAdvance) {
   if (r === 'again') tail = '🔁 powtórka wkrótce';
   else if (grad) tail = '🎓 Opanowane! · 📌 za ' + _dni(iv);
   else tail = '📌 za ' + _dni(iv);
-  toast('+' + xp + ' XP · ' + tail);
+  toast(xp > 0 ? ('+' + xp + ' XP · ' + tail) : tail);
 
   if (mode === 'card') {
     if (r === 'easy' || r === 'good') { particles(true); bounce('cardScene'); }
@@ -10293,8 +10365,8 @@ function _syncWellLearned(force) {
 }
 // ── System oceny sugerowanej (ocena szkolna 1-6) ──────────────────
 // OCENA TYGODNIOWA — wg liczby DNI w tygodniu z ZALICZONĄ dzienną aktywnością
-// w trybie „Wpisz". Dzień zalicza się dopiero po opanowaniu ≥5 różnych słów
-// (każde poprawnie za 1. razem min. 3×) — patrz _typedDayProgress. Chroni
+// w trybie „Wpisz". Dzień zalicza się dopiero po ≥15 pewnych trafieniach z ≥5
+// różnych słów (lub ≥20 wpisach i ≥6 trafieniach) — patrz _typedDayCheckCredit. Chroni
 // przed oszukiwaniem (jedna odpowiedź to za mało).
 //   1 dzień lub brak → 1, 2 dni → 2, 3 → 3, 4 → 4, 5+ dni → 5.
 // (Bonus +1 za opanowanie całego rozdziału w tygodniu — planowany, wymaga
@@ -14064,6 +14136,383 @@ window.startDuelFromSetup = function() {
   duelWords = shuffle(words).slice(0, Math.min(_duelSetup.rounds * 2, words.length)); // nadmiar do eliminacji/race
   closeDuelSetup();
   duelStartGame();
+};
+
+// ═══════════════════════════════════════════════════════════
+//  RYWALIZACJA ONLINE 1 NA 1 (migracja #61 student-duels.sql)
+//  Uczeń 1 wyszukuje kolegę z klasy i przesyła mu link z zaproszeniem
+//  (tylko zaproszenie — żadnych wiadomości). Uczeń 2 dostaje powiadomienie
+//  w aplikacji, dołącza i obaj odpowiadają na te same pytania w tym samym
+//  czasie. Synchronizacja przez polling RPC duel_get; punkty liczy serwer.
+// ═══════════════════════════════════════════════════════════
+let _donCfg = { src:'unit', rounds:10, guestId:null, guestName:'' };
+let _donResults = [];
+let _donSearchT = null;
+const _don = { id:null, role:0, data:null, poll:null, tick:null, qIdx:0, qStart:0, locked:false,
+               ansQueue:Promise.resolve(), offset:0, returnTo:'sLang', ended:false, qShownIdx:-1 };
+
+window.openDuelOnlineInvite = function() {
+  if (isGuest) { toast('🔒 Rywalizacja online jest dostępna po zalogowaniu.', 3000); return; }
+  if (!currentBookId) { toast('⚠️ Najpierw wybierz podręcznik.', 2400); return; }
+  closeDuelSetup();
+  _donCfg = { src: (currentUnitKey && currentUnitKey !== 'all') ? 'unit' : 'book', rounds:10, guestId:null, guestName:'' };
+  document.getElementById('donSearch').value = '';
+  document.getElementById('donMsg').textContent = '';
+  document.querySelectorAll('#duelOnlineModal .duel-setup-opt').forEach(b => { b.onclick = () => _donPick(b); });
+  _donActivate();
+  document.getElementById('duelOnlineModal').style.display = 'flex';
+  _donSearch();
+};
+window.closeDuelOnlineInvite = function() {
+  document.getElementById('duelOnlineModal').style.display = 'none';
+};
+function _donPick(b) {
+  if (b.hasAttribute('data-dsrc')) _donCfg.src = b.dataset.dsrc;
+  if (b.hasAttribute('data-drounds')) _donCfg.rounds = parseInt(b.dataset.drounds, 10);
+  _donActivate();
+}
+function _donActivate() {
+  document.querySelectorAll('#donSrc .duel-setup-opt').forEach(b => b.classList.toggle('active', b.dataset.dsrc === _donCfg.src));
+  document.querySelectorAll('#donRounds .duel-setup-opt').forEach(b => b.classList.toggle('active', b.dataset.drounds === String(_donCfg.rounds)));
+}
+window.donSearchDebounced = function() {
+  clearTimeout(_donSearchT);
+  _donSearchT = setTimeout(_donSearch, 350);
+};
+async function _donSearch() {
+  const box = document.getElementById('donResults');
+  const q = document.getElementById('donSearch').value.trim();
+  box.innerHTML = '<div style="font-size:.74rem;color:var(--muted);padding:6px">Szukam…</div>';
+  try {
+    _donResults = await DB.duelSearchPlayers(q);
+  } catch(e) {
+    box.innerHTML = '<div style="font-size:.74rem;color:var(--danger);font-weight:700;padding:6px">' + escHtml(e.message || 'Błąd') + '</div>';
+    return;
+  }
+  if (!_donResults.length) {
+    box.innerHTML = '<div style="font-size:.74rem;color:var(--muted);padding:6px;line-height:1.45">' +
+      (q ? 'Nikogo nie znaleziono.' : 'Nie należysz do żadnej klasy albo w Twojej klasie nie ma innych uczniów. Zaprosić można tylko osobę z tej samej klasy.') + '</div>';
+    return;
+  }
+  _donRenderResults();
+}
+function _donRenderResults() {
+  const box = document.getElementById('donResults');
+  box.innerHTML = _donResults.map((r, i) => {
+    const sel = r.user_id === _donCfg.guestId;
+    return `<button onclick="donSelectPlayer(${i})" style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:8px 10px;border-radius:10px;cursor:pointer;font-family:inherit;border:2px solid ${sel ? 'var(--accent2)' : 'var(--border)'};background:${sel ? 'rgba(6,214,160,.12)' : 'var(--surface2)'};color:var(--text)">
+      <span style="font-size:1.1rem">${sel ? '✅' : '👤'}</span>
+      <span style="flex:1;min-width:0"><span style="font-weight:800;font-size:.84rem">${escHtml(r.display_name || '')}</span>
+      <span style="display:block;font-size:.66rem;color:var(--muted);font-weight:600">${escHtml(r.class_name || '')}</span></span>
+    </button>`;
+  }).join('');
+}
+window.donSelectPlayer = function(i) {
+  const r = _donResults[i]; if (!r) return;
+  _donCfg.guestId = r.user_id; _donCfg.guestName = r.display_name || '';
+  document.getElementById('donMsg').textContent = '';
+  _donRenderResults();
+};
+
+// Pytania quizowe (4 opcje, kierunek PL→EN lub EN→PL losowo) — te same dla obu graczy.
+function _donBuildQuestions(words, n) {
+  const pool = words.filter(w => w && w[0] && w[1]);
+  const picked = shuffle(pool.slice()).slice(0, n);
+  return picked.map(w => {
+    const toEn = Math.random() < 0.5;
+    const field = toEn ? 1 : 0;
+    const ans = String(w[field]);
+    let opts = [];
+    try { opts = (typeof generateDistractors === 'function') ? generateDistractors(ans, pool, 3, field) : []; } catch(e) { opts = []; }
+    const seen = new Set([ans.toLowerCase(), ...opts.map(o => String(o).toLowerCase())]);
+    for (const x of shuffle(pool.slice())) {
+      if (opts.length >= 3) break;
+      const v = String(x[field]);
+      if (!seen.has(v.toLowerCase())) { seen.add(v.toLowerCase()); opts.push(v); }
+    }
+    const all = shuffle([ans, ...opts.slice(0, 3)]);
+    return { q: String(w[toEn ? 0 : 1]), dir: toEn ? 'pe' : 'ep', o: all, c: all.indexOf(ans) };
+  });
+}
+
+window.donSendInvite = async function() {
+  const msg = document.getElementById('donMsg');
+  msg.textContent = '';
+  if (!_donCfg.guestId) { msg.textContent = 'Wybierz osobę, którą chcesz zaprosić.'; return; }
+  const units = getUnitsWithCustom(currentBookId);
+  let words = [], unitKey = null, title = '';
+  const book = BOOKS[currentBookId] || {};
+  if (_donCfg.src === 'unit' && currentUnitKey && currentUnitKey !== 'all' && units[currentUnitKey]) {
+    words = (units[currentUnitKey].words || []).slice();
+    unitKey = currentUnitKey;
+    title = (book.name || '') + ' · ' + (units[currentUnitKey].name || currentUnitKey);
+  } else {
+    Object.values(units).forEach(u => { if (u && u.words) words = words.concat(u.words); });
+    title = (book.name || '') + ' · cały podręcznik';
+  }
+  if (words.length < 5) { msg.textContent = 'Za mało słówek (min. 5).'; return; }
+  const questions = _donBuildQuestions(words, Math.min(_donCfg.rounds, words.length));
+  if (questions.length < 5) { msg.textContent = 'Za mało słówek (min. 5).'; return; }
+  const btn = document.getElementById('donSendBtn');
+  btn.disabled = true;
+  try {
+    const id = await DB.duelCreate(_donCfg.guestId, currentBookId, unitKey, title, questions);
+    closeDuelOnlineInvite();
+    toast('📨 Link z zaproszeniem wysłany do: ' + _donCfg.guestName, 3000);
+    _donOpen(id);
+  } catch(e) {
+    msg.textContent = e.message || 'Nie udało się wysłać zaproszenia.';
+  } finally { btn.disabled = false; }
+};
+
+// ── Ekran pojedynku ──
+function _donOpen(id) {
+  _donStop();
+  const ib = document.getElementById('duelInviteBanner'); if (ib) ib.style.display = 'none';
+  const act = document.querySelector('.screen.active');
+  _don.returnTo = (act && act.id && act.id !== 'sDuelOnline') ? act.id : 'sLang';
+  Object.assign(_don, { id, role:0, data:null, qIdx:0, qStart:0, locked:false, ansQueue:Promise.resolve(), ended:false, qShownIdx:-1 });
+  document.getElementById('donRoleBadge').style.display = 'none';
+  document.getElementById('donScore').style.display = 'none';
+  document.getElementById('donStage').innerHTML = '<div style="font-size:.85rem;color:var(--muted);font-weight:700">Łączę…</div>';
+  showScreen('sDuelOnline');
+  _donPoll();
+  _don.poll = setInterval(_donPoll, 1500);
+  _don.tick = setInterval(_donTick, 200);
+}
+function _donStop() {
+  if (_don.poll) clearInterval(_don.poll);
+  if (_don.tick) clearInterval(_don.tick);
+  _don.poll = _don.tick = null;
+}
+function _donActive() {
+  const s = document.getElementById('sDuelOnline');
+  return s && s.classList.contains('active');
+}
+function _donServerNow() { return Date.now() + _don.offset; }
+
+async function _donPoll() {
+  if (!_don.id) return;
+  if (!_donActive()) { _donStop(); return; }
+  let d;
+  try { d = await DB.duelGet(_don.id); }
+  catch(e) { document.getElementById('donStage').innerHTML = '<div style="color:var(--danger);font-weight:700">' + escHtml(e.message || 'Błąd') + '</div>'; _donStop(); return; }
+  if (!d) return;
+  _don.offset = new Date(d.server_now).getTime() - Date.now();
+  const first = !_don.data;
+  _don.data = d;
+  _don.role = d.my_role;
+  if (first) _donShowRole();
+  _donRender();
+}
+function _donShowRole() {
+  const d = _don.data, b = document.getElementById('donRoleBadge');
+  const other = d.my_role === 1 ? d.guest_name : d.host_name;
+  b.innerHTML = (d.my_role === 1 ? '🥇 Jesteś Uczniem 1' : '🥈 Jesteś Uczniem 2') +
+    '<div style="font-size:.72rem;font-weight:700;color:var(--muted);margin-top:2px">Przeciwnik: ' + escHtml(other || '') + (d.title ? ' · ' + escHtml(d.title) : '') + '</div>';
+  b.style.display = 'block';
+  toast(d.my_role === 1 ? '🥇 Jesteś Uczniem 1' : '🥈 Jesteś Uczniem 2', 2600);
+}
+function _donNames() {
+  const d = _don.data;
+  return d.my_role === 1
+    ? { me: d.host_name, op: d.guest_name, myScore: d.host_score, opScore: d.guest_score, myDone: d.host_done, opDone: d.guest_done, myOk: d.host_correct, opOk: d.guest_correct }
+    : { me: d.guest_name, op: d.host_name, myScore: d.guest_score, opScore: d.host_score, myDone: d.guest_done, opDone: d.host_done, myOk: d.guest_correct, opOk: d.host_correct };
+}
+function _donRenderScore() {
+  const d = _don.data, n = (d.questions || []).length, s = _donNames();
+  const box = document.getElementById('donScore');
+  const card = (lbl, name, score, done, col) => `<div style="background:var(--surface);border:2px solid ${col};border-radius:12px;padding:8px 10px;text-align:center">
+    <div style="font-size:.64rem;font-weight:800;color:var(--muted);text-transform:uppercase">${lbl}</div>
+    <div style="font-size:.84rem;font-weight:800;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(name || '')}</div>
+    <div style="font-size:1.35rem;font-weight:900;color:${col}">${score} pkt</div>
+    <div style="height:6px;background:var(--surface2);border-radius:100px;overflow:hidden;margin-top:4px"><div style="height:100%;width:${n ? Math.round(done / n * 100) : 0}%;background:${col}"></div></div>
+    <div style="font-size:.64rem;font-weight:700;color:var(--muted);margin-top:2px">${done} / ${n}</div>
+  </div>`;
+  box.innerHTML = card('Ty', s.me, s.myScore, Math.max(s.myDone, _don.qIdx), 'var(--accent2)') + card('Przeciwnik', s.op, s.opScore, s.opDone, 'var(--pink)');
+  box.style.display = 'grid';
+}
+function _donRender() {
+  const d = _don.data, st = document.getElementById('donStage');
+  const s = _donNames();
+  if (d.status === 'invited') {
+    if (d.my_role === 1) {
+      st.innerHTML = `<div style="font-size:2.2rem">📨</div>
+        <div style="font-weight:800;font-size:1rem;color:var(--text);margin:6px 0">Zaproszenie wysłane do: ${escHtml(s.op || '')}</div>
+        <div style="font-size:.78rem;color:var(--muted);font-weight:600;margin-bottom:12px">Czekam, aż dołączy… (zaproszenie jest ważne 15 minut)</div>
+        <button class="btn-sm" onclick="donLeave()">Anuluj zaproszenie</button>`;
+    } else {
+      st.innerHTML = `<div style="font-size:2.2rem">⚔️</div>
+        <div style="font-weight:800;font-size:1rem;color:var(--text);margin:6px 0">${escHtml(s.op || '')} zaprasza Cię do rywalizacji!</div>
+        <div style="font-size:.78rem;color:var(--muted);font-weight:600;margin-bottom:12px">${escHtml(d.title || '')} · ${(d.questions || []).length} pytań</div>
+        <div style="display:flex;gap:8px;justify-content:center">
+          <button class="btn-sm" onclick="donRespond(false)">Odrzuć</button>
+          <button class="btn-sm accent" onclick="donRespond(true)">✅ Dołącz</button>
+        </div>`;
+    }
+    return;
+  }
+  if (['declined','expired','cancelled'].includes(d.status) && !_don.ended) {
+    const txt = d.status === 'declined' ? (escHtml(s.op || '') + ' odrzucił(a) zaproszenie.')
+      : d.status === 'expired' ? 'Zaproszenie wygasło.'
+      : (d.started_at ? 'Gra została przerwana — jeden z graczy wyszedł.' : 'Zaproszenie zostało anulowane.');
+    _don.ended = true; _donStop();
+    st.innerHTML = `<div style="font-size:2.2rem">${d.status === 'declined' ? '🙅' : '⌛'}</div>
+      <div style="font-weight:800;color:var(--text);margin:8px 0 12px">${txt}</div>
+      <button class="btn-sm accent" onclick="donLeave()">Wróć</button>`;
+    return;
+  }
+  if (d.status === 'playing' || d.status === 'finished') {
+    _donRenderScore();
+    if (d.status === 'finished') { _donRenderFinal(); return; }
+    _donTick();
+  }
+}
+// Odliczanie, pytania i timer (co 200 ms)
+function _donTick() {
+  const d = _don.data;
+  if (!d || d.status !== 'playing' || _don.ended) return;
+  if (!_donActive()) return;
+  const st = document.getElementById('donStage');
+  const startMs = new Date(d.started_at).getTime();
+  const now = _donServerNow();
+  if (now < startMs) {
+    const sec = Math.ceil((startMs - now) / 1000);
+    st.innerHTML = `<div style="font-size:.85rem;font-weight:800;color:var(--muted)">${d.my_role === 1 ? 'Jesteś Uczniem 1' : 'Jesteś Uczniem 2'} — przygotuj się!</div>
+      <div style="font-size:3.4rem;font-weight:900;color:var(--accent);margin:8px 0">${sec}</div>`;
+    _don.qShownIdx = -1;
+    return;
+  }
+  const qs = d.questions || [], n = qs.length;
+  if (_don.qIdx >= n) {
+    if (_don.qShownIdx !== 'wait') {
+      _don.qShownIdx = 'wait';
+      st.innerHTML = `<div style="font-size:2rem">⏳</div><div style="font-weight:800;color:var(--text);margin-top:6px">Ukończyłeś(-aś) wszystkie pytania!</div>
+        <div style="font-size:.78rem;color:var(--muted);font-weight:600;margin-top:4px">Czekam na przeciwnika…</div>`;
+    }
+    return;
+  }
+  const lim = (d.q_seconds || 12) * 1000;
+  if (_don.qShownIdx !== _don.qIdx) {
+    _don.qShownIdx = _don.qIdx; _don.qStart = Date.now(); _don.locked = false;
+    const q = qs[_don.qIdx];
+    st.innerHTML = `<div style="display:flex;justify-content:space-between;font-size:.72rem;font-weight:800;color:var(--muted);margin-bottom:6px">
+        <span>Pytanie ${_don.qIdx + 1} / ${n}</span><span>${q.dir === 'pe' ? '🇵🇱 → 🇬🇧' : '🇬🇧 → 🇵🇱'}</span></div>
+      <div style="height:8px;background:var(--surface2);border-radius:100px;overflow:hidden;margin-bottom:12px"><div id="donTimer" style="height:100%;width:100%;background:linear-gradient(90deg,var(--accent2),var(--accent))"></div></div>
+      <div style="font-size:1.4rem;font-weight:900;color:var(--text);margin-bottom:14px">${escHtml(q.q)}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${q.o.map((o, i) =>
+        `<button class="don-opt" data-i="${i}" onclick="donAnswer(${i})" style="padding:12px 8px;border-radius:12px;border:2px solid var(--border);background:var(--surface2);color:var(--text);font-weight:800;font-size:.9rem;cursor:pointer;font-family:inherit">${escHtml(o)}</button>`).join('')}</div>`;
+  }
+  const left = Math.max(0, lim - (Date.now() - _don.qStart));
+  const bar = document.getElementById('donTimer');
+  if (bar) bar.style.width = (left / lim * 100) + '%';
+  if (left <= 0 && !_don.locked) donAnswer(-1);
+}
+window.donAnswer = function(i) {
+  const d = _don.data;
+  if (!d || _don.locked || d.status !== 'playing') return;
+  _don.locked = true;
+  const idx = _don.qIdx, q = d.questions[idx];
+  const ms = Math.min((d.q_seconds || 12) * 1000, Date.now() - _don.qStart);
+  const ok = i === q.c;
+  document.querySelectorAll('#donStage .don-opt').forEach(b => {
+    const bi = parseInt(b.dataset.i, 10);
+    if (bi === q.c) { b.style.borderColor = 'var(--accent2)'; b.style.background = 'rgba(6,214,160,.18)'; }
+    else if (bi === i) { b.style.borderColor = 'var(--danger)'; b.style.background = 'rgba(239,71,111,.15)'; }
+    b.disabled = true;
+  });
+  // Odpowiedzi wysyłane po kolei (serwer przyjmuje tylko kolejny indeks)
+  _don.ansQueue = _don.ansQueue.then(() => DB.duelAnswer(_don.id, idx, ok, ms)).catch(e => console.warn('[duelAnswer]', e.message || e));
+  setTimeout(() => { _don.qIdx = idx + 1; _donTick(); if (_don.data) _donRenderScore(); }, ok ? 650 : 1100);
+};
+window.donRespond = async function(accept) {
+  try {
+    await DB.duelRespond(_don.id, accept);
+    if (!accept) { _don.ended = true; _donStop(); toast('Zaproszenie odrzucone.', 2000); donLeave(true); return; }
+    _donPoll();
+  } catch(e) { toast('⚠️ ' + (e.message || 'Błąd'), 3000); }
+};
+function _donRenderFinal() {
+  if (_don.ended) return;
+  _don.ended = true; _donStop();
+  const s = _donNames(), n = (_don.data.questions || []).length;
+  const win = s.myScore > s.opScore, draw = s.myScore === s.opScore;
+  document.getElementById('donStage').innerHTML = `<div style="font-size:2.6rem">${draw ? '🤝' : (win ? '🏆' : '💪')}</div>
+    <div style="font-family:'Playfair Display',serif;font-size:1.4rem;color:var(--text);margin:6px 0">${draw ? 'Remis!' : (win ? 'Wygrałeś(-aś)!' : 'Wygrywa ' + escHtml(s.op || 'przeciwnik') + '!')}</div>
+    <div style="font-size:.82rem;color:var(--muted);font-weight:700;margin-bottom:12px">Ty: ${s.myOk}/${n} poprawnych · ${escHtml(s.op || '')}: ${s.opOk}/${n} poprawnych</div>
+    <button class="btn-sm accent" onclick="donLeave(true)">Wróć</button>`;
+}
+window.donLeave = async function(silent) {
+  const d = _don.data;
+  if (d && !_don.ended && (d.status === 'invited' || d.status === 'playing')) {
+    if (!silent && d.status === 'playing' && !confirm('Opuścić grę? Pojedynek zostanie przerwany.')) return;
+    if (!(d.status === 'invited' && d.my_role === 2)) { try { await DB.duelCancel(_don.id); } catch(e) {} }
+  }
+  _donStop();
+  _don.id = null; _don.data = null; _don.ended = true;
+  const back = _don.returnTo && document.getElementById(_don.returnTo) ? _don.returnTo : 'sLang';
+  showScreen(back);
+};
+
+// ── Powiadomienie o zaproszeniu (Uczeń 2) ──
+const _donDismissed = new Set();
+let _donInvPoll = null;
+async function _donCheckInvites() {
+  if (isGuest || document.hidden || !DB.duelMyInvites) return;
+  if (_donActive()) return;
+  const list = await DB.duelMyInvites();
+  const inv = (list || []).find(x => !_donDismissed.has(x.id));
+  const b = document.getElementById('duelInviteBanner');
+  if (!inv) { b.style.display = 'none'; return; }
+  b.innerHTML = `<div style="display:flex;align-items:center;gap:10px">
+      <div style="font-size:1.8rem">⚔️</div>
+      <div style="flex:1;min-width:0"><div style="font-weight:800;font-size:.86rem;color:var(--text)">${escHtml(inv.host_name || '')} zaprasza Cię do rywalizacji!</div>
+      <div style="font-size:.7rem;color:var(--muted);font-weight:600">${escHtml(inv.title || '')}</div></div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+      <button class="btn-sm" onclick="donInviteAct('${inv.id}',false)">Odrzuć</button>
+      <button class="btn-sm accent" onclick="donInviteAct('${inv.id}',true)">✅ Dołącz</button>
+    </div>`;
+  b.style.display = 'block';
+}
+window.donInviteAct = async function(id, accept) {
+  _donDismissed.add(id);
+  document.getElementById('duelInviteBanner').style.display = 'none';
+  try {
+    await DB.duelRespond(id, accept);
+    if (accept) _donOpen(id); else toast('Zaproszenie odrzucone.', 2000);
+  } catch(e) { toast('⚠️ ' + (e.message || 'Błąd'), 3000); }
+};
+window._donInitInvites = function() {
+  if (isGuest || _donInvPoll) return;
+  setTimeout(_donCheckInvites, 2500);
+  _donInvPoll = setInterval(_donCheckInvites, 15000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) _donCheckInvites(); });
+  // Link z zaproszeniem: app.html?duel=<id>
+  try {
+    const p = new URLSearchParams(window.location.search);
+    const did = p.get('duel');
+    if (did && /^[0-9a-f-]{36}$/i.test(did)) {
+      window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
+      _donDismissed.add(did);
+      setTimeout(() => _donOpen(did), 300);
+    }
+  } catch(e) {}
+};
+
+// ── Ksywka (Moje konto) ──
+window.saveMyNickname = async function() {
+  const inp = document.getElementById('nicknameInput'), msg = document.getElementById('nicknameMsg');
+  if (isGuest) { msg.style.color = 'var(--danger)'; msg.textContent = 'Ksywka jest dostępna po zalogowaniu.'; return; }
+  msg.style.color = 'var(--muted)'; msg.textContent = 'Zapisuję…';
+  try {
+    const v = await DB.setMyNickname(inp.value.trim());
+    inp.value = v || '';
+    msg.style.color = 'var(--accent2)';
+    msg.textContent = v ? '✅ Zapisano! Inni widzą Cię jako: ' + v : '✅ Ksywka usunięta — inni widzą Twój login.';
+  } catch(e) {
+    msg.style.color = 'var(--danger)'; msg.textContent = e.message || 'Nie udało się zapisać.';
+  }
 };
 
 // ═══════════════════════════════════════════════════════════
@@ -17916,6 +18365,22 @@ async function openAdminAccess() {
   }
 }
 
+// Ksywka ucznia (migracja #61) + przycisk usunięcia dla admina / nauczyciela (moderacja).
+function _nickBadgeHtml(userId, nick) {
+  if (!nick) return '';
+  return `<span class="nick-badge" data-uid="${escHtml(userId)}" style="display:inline-flex;align-items:center;gap:4px;font-size:.62rem;font-weight:700;background:rgba(255,133,195,.12);color:var(--pink);padding:1px 4px 1px 7px;border-radius:100px;margin-left:4px;vertical-align:middle" onclick="event.stopPropagation()">🏷️ ${escHtml(nick)}
+    <button onclick="event.stopPropagation();modClearNickname('${escHtml(userId)}', this)" title="Usuń ksywkę (np. obraźliwą)" style="border:none;background:rgba(239,71,111,.15);color:var(--danger);border-radius:100px;font-size:.6rem;font-weight:900;cursor:pointer;padding:1px 6px;font-family:inherit">✕</button></span>`;
+}
+window.modClearNickname = async function(userId, btn) {
+  if (!confirm('Usunąć ksywkę tego ucznia? Uczeń będzie widoczny pod swoim loginem.')) return;
+  try {
+    await DB.clearUserNickname(userId);
+    const p = (_allProfiles || []).find(x => x.id === userId); if (p) p.nickname = null;
+    const badge = btn && btn.closest('.nick-badge'); if (badge) badge.remove();
+    toast('🏷️ Ksywka usunięta.', 2200);
+  } catch(e) { toast('⚠️ ' + (e.message || 'Nie udało się usunąć ksywki.'), 3500); }
+};
+
 function buildAccessUserCard(u) {
   const card = document.createElement('div');
   card.style.cssText = 'background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 16px;margin-bottom:8px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;transition:border-color .2s;flex-wrap:wrap';
@@ -17938,7 +18403,7 @@ function buildAccessUserCard(u) {
       <input type="checkbox" ${isSelected?'checked':''} onchange="bulkToggleUser('${u.id}', this.checked)" style="accent-color:var(--accent2);width:16px;height:16px;cursor:pointer">
     </label>
     <div style="min-width:0;flex:1">
-      <div style="font-size:.88rem;font-weight:700;color:var(--text)">${fmtNameWithLabel(u.id, u.username)} ${roleBadge}</div>
+      <div style="font-size:.88rem;font-weight:700;color:var(--text)">${fmtNameWithLabel(u.id, u.username)} ${roleBadge} ${_nickBadgeHtml(u.id, u.nickname)}</div>
       <div style="font-size:.65rem;color:var(--muted);display:flex;gap:10px;flex-wrap:wrap;margin-top:3px">
         <span>📅 Utworzone: <strong>${esc(created)}</strong></span>
         <span>🔑 Logowanie: ${loginTxt}</span>
@@ -18660,7 +19125,7 @@ function renderClassStudents(memberIds, allProfiles) {
       <div class="student-card-avatar">${idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : '👤'}</div>
       <div class="student-card-body" style="flex:1">
         <div style="display:flex;align-items:center;justify-content:space-between">
-          <div class="student-card-name">${fmtNameWithLabel(profile.id, profile.username)}</div>
+          <div class="student-card-name">${fmtNameWithLabel(profile.id, profile.username)} ${_nickBadgeHtml(profile.id, profile.nickname)}</div>
           <div style="display:flex;gap:5px">
             <button class="btn-sm" style="font-size:.65rem;padding:4px 9px" title="Prywatna etykieta" onclick="event.stopPropagation();openUserLabelModal('${profile.id}','${esc(profile.username)}',()=>renderClassStudents(_curClassMembers,_allProfiles))">✏️</button>
             <button class="btn-sm" style="font-size:.65rem;padding:4px 9px" title="Ustawienia konta (plan, bannery)" onclick="event.stopPropagation();openUserSettingsModal('${profile.id}','${esc(profile.username)}','${profile.plan||'free'}',${profile.hide_premium_banners===true},()=>renderClassStudents(_curClassMembers,_allProfiles))">⚙️</button>
@@ -19926,6 +20391,7 @@ if ('serviceWorker' in navigator) {
     setTimeout(maybeShowPromoBanner, 300);
     setTimeout(maybeShowTrialWelcomeBanner, 400);
     setTimeout(maybeShowPremiumExpiryBanner, 700);
+    try { if (typeof window._donInitInvites === 'function') window._donInitInvites(); } catch(e) {}
   }
   setTimeout(() => {
     const e = document.getElementById('owlMsg');
@@ -20359,6 +20825,17 @@ if ('serviceWorker' in navigator) {
       <div id="accountUsername" style="font-size:.95rem;font-weight:800;color:var(--text)">—</div>
       <div style="font-size:.65rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin:8px 0 3px">Plan</div>
       <div id="accountPlan" style="font-size:.82rem;font-weight:700;color:var(--accent)">—</div>
+    </div>
+
+    <!-- Ksywka (migracja #61) — widoczna dla innych uczniów (ranking, rywalizacja) -->
+    <div id="nicknameSection" style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:12px 16px;margin-bottom:14px">
+      <div style="font-size:.82rem;font-weight:800;color:var(--text);margin-bottom:4px">🏷️ Moja ksywka</div>
+      <div style="font-size:.68rem;color:var(--muted);font-weight:600;line-height:1.45;margin-bottom:8px">Widzą ją inni uczniowie w rankingu i rywalizacji zamiast loginu. 3–20 znaków. Nauczyciel lub admin może usunąć ksywkę obraźliwą.</div>
+      <div style="display:flex;gap:6px">
+        <input type="text" id="nicknameInput" maxlength="20" placeholder="np. Szybka Sowa" autocomplete="off" style="flex:1;min-width:0;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:.85rem;font-weight:600;outline:none;font-family:inherit">
+        <button class="btn-sm accent" onclick="saveMyNickname()" style="font-size:.72rem">💾 Zapisz</button>
+      </div>
+      <div id="nicknameMsg" style="font-size:.7rem;font-weight:700;margin-top:6px;min-height:14px"></div>
     </div>
 
     <!-- Glos lektora -->
@@ -20940,6 +21417,11 @@ if ('serviceWorker' in navigator) {
     } catch(e) {}
     document.getElementById('accountUsername').textContent = uname;
     document.getElementById('accountPlan').textContent = planLabel;
+    try {
+      const ni = document.getElementById('nicknameInput');
+      if (ni) ni.value = (DB.getMyNickname && DB.getMyNickname()) || '';
+      const nm = document.getElementById('nicknameMsg'); if (nm) nm.textContent = '';
+    } catch(e) {}
     document.getElementById('deleteExpectedName').textContent = uname;
     // Resetuj UI usuwania
     document.getElementById('deleteAccountConfirm').style.display = 'none';
@@ -29142,7 +29624,7 @@ ${bodyHtml}
       h+='<div style="display:flex;align-items:center;gap:10px;padding:8px 6px;border-bottom:1px dashed rgba(255,255,255,.12);'+rowBg+meRing+'">'
         +'<div style="width:32px;display:flex;justify-content:center;font-weight:700">'+md+'</div>'
         +'<div style="flex:1;min-width:0">'
-          +'<div style="font-weight:'+(gem?800:700)+';font-size:.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escTxt(u.username)+nameGem+(isMe?' (Ty)':'')+'</div>'
+          +'<div style="font-weight:'+(gem?800:700)+';font-size:.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escTxt(u.nickname||u.username)+nameGem+(isMe?' (Ty)':'')+'</div>'
           +'<div style="font-size:.62rem;color:var(--muted);font-weight:700;margin-top:1px">'+sub+'</div>'
         +'</div>'
         +'<div style="font-weight:800;color:var(--accent,#ffd166);white-space:nowrap">'+val+c.unit+'</div></div>';

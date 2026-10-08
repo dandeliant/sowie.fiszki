@@ -80,6 +80,7 @@ const DB = (() => {
       planExpiresAt: row.plan_expires_at || null,
       trialUsedAt:   row.trial_used_at   || null,
       hidePremiumBanners: row.hide_premium_banners === true,
+      nickname:      row.nickname        || null,   // migracja #61
       unitProgress
     };
   }
@@ -499,12 +500,14 @@ const DB = (() => {
 
   // Oznacza dzisiejszy dzien jako „praca w trybie Wpisz" (do oceny tygodniowej).
   // Fire-and-forget. Wymaga migracji add-typed-days.sql (#50).
+  // Zwraca true, gdy zapis się udał (app.html ponawia przy niepowodzeniu).
   async function logTypedDay() {
-    if (!_userId) return;
+    if (!_userId) return false;
     try {
       const { error } = await supabase.rpc('log_typed_day');
-      if (error) console.warn('[logTypedDay]', error.message);
-    } catch(e) { /* brak migracji / offline — ignorujemy */ }
+      if (error) { console.warn('[logTypedDay]', error.message); return false; }
+      return true;
+    } catch(e) { return false; /* brak migracji / offline */ }
   }
 
   // ── Szczegóły „Wpisz" (typed_answers, migracja #51) ──
@@ -2152,6 +2155,75 @@ const DB = (() => {
     return data || [];
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  //  KSYWKI + RYWALIZACJA ONLINE 1 NA 1 (migracja #61 student-duels.sql)
+  // ═══════════════════════════════════════════════════════════════
+  function getMyNickname() { return (_profile && _profile.nickname) || null; }
+  // Ustawia własną ksywkę (pusta = usuń). Walidacja i filtr słów w bazie.
+  async function setMyNickname(nick) {
+    if (!_userId) throw new Error('Musisz być zalogowany.');
+    const { data, error } = await supabase.rpc('set_my_nickname', { p_nickname: nick || '' });
+    if (error) throw new Error(_niceRpcError(error));
+    if (_profile) _profile.nickname = data || null;
+    return data || null;
+  }
+  // Admin / nauczyciel usuwa (np. obraźliwą) ksywkę ucznia.
+  async function clearUserNickname(userId) {
+    const { error } = await supabase.rpc('clear_user_nickname', { p_user: userId });
+    if (error) throw new Error(_niceRpcError(error));
+    if (userId === _userId && _profile) _profile.nickname = null;
+  }
+  // Ksywki członków klasy (moderacja w widoku klasy). Mapa user_id → nickname.
+  async function loadClassNicknames(classId) {
+    if (!classId) return {};
+    const { data, error } = await supabase.rpc('class_member_nicknames', { p_class: classId });
+    if (error) { console.warn('[loadClassNicknames]', error.message); return {}; }
+    const map = {}; (data || []).forEach(r => { map[r.user_id] = r.nickname; });
+    return map;
+  }
+  async function duelSearchPlayers(query) {
+    const { data, error } = await supabase.rpc('duel_search_players', { p_query: query || '' });
+    if (error) throw new Error(_niceRpcError(error));
+    return data || [];
+  }
+  async function duelCreate(guestId, bookId, unitKey, title, questions) {
+    const { data, error } = await supabase.rpc('duel_create', {
+      p_guest: guestId, p_book: bookId, p_unit: unitKey || null, p_title: title || '', p_questions: questions
+    });
+    if (error) throw new Error(_niceRpcError(error));
+    return data;
+  }
+  async function duelMyInvites() {
+    if (!_userId) return [];
+    const { data, error } = await supabase.rpc('duel_my_invites');
+    if (error) return [];   // brak migracji / offline — cicho
+    return data || [];
+  }
+  async function duelGet(id) {
+    const { data, error } = await supabase.rpc('duel_get', { p_id: id });
+    if (error) throw new Error(_niceRpcError(error));
+    return (data && data[0]) || null;
+  }
+  async function duelRespond(id, accept) {
+    const { error } = await supabase.rpc('duel_respond', { p_id: id, p_accept: !!accept });
+    if (error) throw new Error(_niceRpcError(error));
+  }
+  async function duelCancel(id) {
+    const { error } = await supabase.rpc('duel_cancel', { p_id: id });
+    if (error) console.warn('[duelCancel]', error.message);
+  }
+  async function duelAnswer(id, index, correct, ms) {
+    const { error } = await supabase.rpc('duel_answer', { p_id: id, p_index: index, p_correct: !!correct, p_ms: Math.round(ms || 0) });
+    if (error) throw new Error(_niceRpcError(error));
+  }
+  // Czytelny komunikat z błędu RPC (RAISE EXCEPTION) lub informacja o brakującej migracji.
+  function _niceRpcError(error) {
+    const m = (error && error.message) || 'Błąd';
+    if (/function .* does not exist|Could not find the function/i.test(m)) return 'Funkcja wymaga migracji #61 (student-duels.sql) w Supabase.';
+    if (/profiles_nickname_lower_uq|duplicate key/i.test(m)) return 'Ta ksywka jest już zajęta — wybierz inną.';
+    return m;
+  }
+
   // Ranking międzyklasowy (migracja #60): które INNE klasy nauczyciela są
   // widoczne w rankingu uczniów danej klasy. Zwraca null, gdy brak tabeli
   // (migracja nieuruchomiona) — UI chowa wtedy sekcję.
@@ -2886,15 +2958,16 @@ const DB = (() => {
   // Admin widzi wszystkich.
   async function loadAllProfiles() {
     if (!_profile?.isAdmin && !_profile?.isTeacher) return [];
-    let q = supabase
-      .from('profiles')
-      .select('id, username, xp, level, streak, total_sessions, total_answers, correct_answers, last_study_date, is_admin, is_teacher, is_parent, plan, plan_expires_at, trial_used_at, created_by, created_at, generated_password, hide_premium_banners');
-    if (!_profile.isAdmin && _profile.isTeacher) {
-      q = q.eq('created_by', _userId);
-    }
-    // Sortuj od najnowszych do najstarszych (created_at malejaco)
-    q = q.order('created_at', { ascending: false, nullsFirst: false });
-    const { data, error } = await q;
+    const COLS = 'id, username, xp, level, streak, total_sessions, total_answers, correct_answers, last_study_date, is_admin, is_teacher, is_parent, plan, plan_expires_at, trial_used_at, created_by, created_at, generated_password, hide_premium_banners';
+    const run = (cols) => {
+      let q = supabase.from('profiles').select(cols);
+      if (!_profile.isAdmin && _profile.isTeacher) q = q.eq('created_by', _userId);
+      // Sortuj od najnowszych do najstarszych (created_at malejaco)
+      return q.order('created_at', { ascending: false, nullsFirst: false });
+    };
+    // Ksywka (migracja #61) — bez migracji kolumny nie ma, więc fallback bez niej.
+    let { data, error } = await run(COLS + ', nickname');
+    if (error && /nickname/i.test(error.message)) ({ data, error } = await run(COLS));
     if (error) throw new Error(error.message);
     return data || [];
   }
@@ -4321,6 +4394,17 @@ const DB = (() => {
     loadMyClassRankings,
     loadClassRankingLinks,
     saveClassRankingLinks,
+    getMyNickname,
+    setMyNickname,
+    clearUserNickname,
+    loadClassNicknames,
+    duelSearchPlayers,
+    duelCreate,
+    duelMyInvites,
+    duelGet,
+    duelRespond,
+    duelCancel,
+    duelAnswer,
     recordBestCombo,
     updateWellLearned,
     logDailyWords,
