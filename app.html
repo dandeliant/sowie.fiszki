@@ -2447,8 +2447,8 @@ body.guest-mode .progress-wrap{opacity:.4;}
       <button class="duel-setup-opt" data-gm="team">Drużynowy 2v2<div class="dsh">Tylko 4 graczy</div></button>
     </div>
     <button id="duelOnlineEntryBtn" onclick="openDuelOnlineInvite()" style="width:100%;margin:0 0 12px;padding:11px 12px;border-radius:12px;border:2px solid var(--accent2);background:rgba(6,214,160,.1);color:var(--text);font-weight:800;font-size:.86rem;cursor:pointer;font-family:inherit;text-align:left">
-      🌐 Rywalizuj online z kimś z klasy
-      <div style="font-size:.68rem;font-weight:600;color:var(--muted);margin-top:2px">Wyszukaj ucznia ze swojej klasy i prześlij mu link z zaproszeniem — gracie na żywo, każdy na swoim urządzeniu.</div>
+      🌐 Rywalizuj online z kimś z klasy lub z nauczycielem
+      <div style="font-size:.68rem;font-weight:600;color:var(--muted);margin-top:2px">Wyszukaj kolegę z klasy albo swojego nauczyciela i prześlij link z zaproszeniem — gracie na żywo, każdy na swoim urządzeniu.</div>
     </button>
 
     <div style="font-size:.68rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:8px 0 4px">👥 Liczba graczy</div>
@@ -2507,9 +2507,9 @@ body.guest-mode .progress-wrap{opacity:.4;}
       <div style="font-family:'Playfair Display',serif;font-size:1.2rem;color:var(--pink)">🌐 Rywalizacja online</div>
       <button class="btn-modal-cancel" onclick="closeDuelOnlineInvite()" style="padding:4px 10px;font-size:.72rem">✕</button>
     </div>
-    <div style="font-size:.74rem;color:var(--muted);font-weight:600;line-height:1.45;margin-bottom:10px">Wybierz osobę ze swojej klasy i prześlij jej link z zaproszeniem. Ty będziesz <b>Uczniem 1</b>, zaproszona osoba — <b>Uczniem 2</b>.</div>
+    <div style="font-size:.74rem;color:var(--muted);font-weight:600;line-height:1.45;margin-bottom:10px">Wybierz osobę ze swojej klasy albo swojego nauczyciela (👩‍🏫) i prześlij link z zaproszeniem. Ty będziesz <b>Uczniem 1</b>, zaproszona osoba — <b>Uczniem 2</b>.</div>
 
-    <div style="font-size:.68rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:6px 0 4px">🔎 Wyszukaj ucznia</div>
+    <div style="font-size:.68rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:6px 0 4px">🔎 Wyszukaj ucznia lub nauczyciela</div>
     <input type="text" id="donSearch" maxlength="30" placeholder="Wpisz ksywkę lub login…" autocomplete="off" oninput="donSearchDebounced()" style="width:100%;box-sizing:border-box;padding:9px 12px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:.85rem;font-weight:600;outline:none;font-family:inherit;margin-bottom:6px">
     <div id="donResults" style="max-height:220px;overflow-y:auto;display:flex;flex-direction:column;gap:4px;margin-bottom:10px"></div>
 
@@ -14193,7 +14193,7 @@ async function _donSearch() {
   }
   if (!_donResults.length) {
     box.innerHTML = '<div style="font-size:.74rem;color:var(--muted);padding:6px;line-height:1.45">' +
-      (q ? 'Nikogo nie znaleziono.' : 'Nie należysz do żadnej klasy albo w Twojej klasie nie ma innych uczniów. Zaprosić można tylko osobę z tej samej klasy.') + '</div>';
+      (q ? 'Nikogo nie znaleziono.' : 'Nie należysz do żadnej klasy albo w Twojej klasie nie ma innych osób. Zaprosić można kolegę z tej samej klasy albo nauczyciela, który utworzył klasę.') + '</div>';
     return;
   }
   _donRenderResults();
@@ -14203,7 +14203,7 @@ function _donRenderResults() {
   box.innerHTML = _donResults.map((r, i) => {
     const sel = r.user_id === _donCfg.guestId;
     return `<button onclick="donSelectPlayer(${i})" style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:8px 10px;border-radius:10px;cursor:pointer;font-family:inherit;border:2px solid ${sel ? 'var(--accent2)' : 'var(--border)'};background:${sel ? 'rgba(6,214,160,.12)' : 'var(--surface2)'};color:var(--text)">
-      <span style="font-size:1.1rem">${sel ? '✅' : '👤'}</span>
+      <span style="font-size:1.1rem">${sel ? '✅' : (/^👩‍🏫/.test(r.class_name || '') ? '👩‍🏫' : '👤')}</span>
       <span style="flex:1;min-width:0"><span style="font-weight:800;font-size:.84rem">${escHtml(r.display_name || '')}</span>
       <span style="display:block;font-size:.66rem;color:var(--muted);font-weight:600">${escHtml(r.class_name || '')}</span></span>
     </button>`;
@@ -14307,13 +14307,18 @@ async function _donPoll() {
   if (first) _donShowRole();
   _donRender();
 }
+// Nauczyciel / admin w pojedynku to „Gracz”, uczeń — „Uczeń” (Uczeń 1 = zapraszający).
+function _donRoleLabel(role) {
+  const staff = (typeof isCurrentUserTeacher === 'function' && isCurrentUserTeacher()) || (typeof isCurrentUserAdmin === 'function' && isCurrentUserAdmin());
+  return 'Jesteś ' + (staff ? 'Graczem ' : 'Uczniem ') + role;
+}
 function _donShowRole() {
   const d = _don.data, b = document.getElementById('donRoleBadge');
   const other = d.my_role === 1 ? d.guest_name : d.host_name;
-  b.innerHTML = (d.my_role === 1 ? '🥇 Jesteś Uczniem 1' : '🥈 Jesteś Uczniem 2') +
+  b.innerHTML = (d.my_role === 1 ? '🥇 ' : '🥈 ') + _donRoleLabel(d.my_role) +
     '<div style="font-size:.72rem;font-weight:700;color:var(--muted);margin-top:2px">Przeciwnik: ' + escHtml(other || '') + (d.title ? ' · ' + escHtml(d.title) : '') + '</div>';
   b.style.display = 'block';
-  toast(d.my_role === 1 ? '🥇 Jesteś Uczniem 1' : '🥈 Jesteś Uczniem 2', 2600);
+  toast((d.my_role === 1 ? '🥇 ' : '🥈 ') + _donRoleLabel(d.my_role), 2600);
 }
 function _donNames() {
   const d = _don.data;
@@ -14380,7 +14385,7 @@ function _donTick() {
   const now = _donServerNow();
   if (now < startMs) {
     const sec = Math.ceil((startMs - now) / 1000);
-    st.innerHTML = `<div style="font-size:.85rem;font-weight:800;color:var(--muted)">${d.my_role === 1 ? 'Jesteś Uczniem 1' : 'Jesteś Uczniem 2'} — przygotuj się!</div>
+    st.innerHTML = `<div style="font-size:.85rem;font-weight:800;color:var(--muted)">${_donRoleLabel(d.my_role)} — przygotuj się!</div>
       <div style="font-size:3.4rem;font-weight:900;color:var(--accent);margin:8px 0">${sec}</div>`;
     _don.qShownIdx = -1;
     return;
