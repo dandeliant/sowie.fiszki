@@ -2293,6 +2293,57 @@ const DB = (() => {
     return paths.length;
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  //  KARTKÓWKI ONLINE (migracja #64 class-quizzes.sql)
+  //  Klucz odpowiedzi zostaje w bazie; uczeń dostaje pytania przez quiz_start,
+  //  a ocenianie robi funkcja SQL _quiz_regrade.
+  // ═══════════════════════════════════════════════════════════════
+  function _quizErr(error) {
+    const m = (error && error.message) || 'Błąd';
+    if (/function .* does not exist|Could not find the function|relation .*quiz.* does not exist/i.test(m))
+      return 'Kartkówki wymagają migracji #64 (class-quizzes.sql) w Supabase.';
+    return m;
+  }
+  async function _quizRpc(name, args) {
+    const { data, error } = await supabase.rpc(name, args || {});
+    if (error) throw new Error(_quizErr(error));
+    return data;
+  }
+  async function quizCreate(q) {
+    if (!_profile?.isAdmin && !_profile?.isTeacher) throw new Error('Kartkówki tworzy nauczyciel.');
+    const { data, error } = await supabase.from('quizzes').insert({
+      created_by: _userId, class_id: q.classId, title: q.title, book_id: q.bookId || null,
+      unit_keys: q.unitKeys || null, direction: q.direction, questions: q.questions,
+      duration_min: q.durationMin, starts_at: q.startsAt, show_results: !!q.showResults,
+      half_diacritics: !!q.halfDiacritics, shuffle: !!q.shuffle
+    }).select('id').single();
+    if (error) throw new Error(_quizErr(error));
+    return data.id;
+  }
+  async function quizGet(id) {
+    const { data, error } = await supabase.from('quizzes').select('*').eq('id', id).maybeSingle();
+    if (error) throw new Error(_quizErr(error));
+    return data;
+  }
+  async function quizDelete(id) {
+    const { error } = await supabase.from('quizzes').delete().eq('id', id);
+    if (error) throw new Error(_quizErr(error));
+  }
+  const quizTeacherList = () => _quizRpc('quiz_teacher_list');
+  const quizResults     = (id) => _quizRpc('quiz_results', { p_id: id });
+  const quizOverride    = (attemptId, index, pts) => _quizRpc('quiz_override', { p_attempt: attemptId, p_index: index, p_pts: pts });
+  const quizClose       = (id) => _quizRpc('quiz_close', { p_id: id });
+  const quizExtend      = (id, min) => _quizRpc('quiz_extend', { p_id: id, p_min: min });
+  const quizStart       = (id) => _quizRpc('quiz_start', { p_id: id });
+  const quizSave        = (id, answers, tabs, away) => _quizRpc('quiz_save', { p_id: id, p_answers: answers, p_tabs: tabs | 0, p_away: Math.round(away || 0) });
+  const quizSubmit      = (id, answers, tabs, away) => _quizRpc('quiz_submit', { p_id: id, p_answers: answers, p_tabs: tabs | 0, p_away: Math.round(away || 0) });
+  async function quizMyList() {
+    if (!_userId) return [];
+    const { data, error } = await supabase.rpc('quiz_my_list');
+    if (error) return [];   // brak migracji / offline — cicho
+    return data || [];
+  }
+
   // Czytelny komunikat z błędu RPC (RAISE EXCEPTION) lub informacja o brakującej migracji.
   function _niceRpcError(error) {
     const m = (error && error.message) || 'Błąd';
@@ -4479,6 +4530,8 @@ const DB = (() => {
     loadClassRankingLinks,
     saveClassRankingLinks,
     getMyNickname,
+    quizCreate, quizGet, quizDelete, quizTeacherList, quizResults, quizOverride,
+    quizClose, quizExtend, quizStart, quizSave, quizSubmit, quizMyList,
     getMyAvatarUrl,
     uploadMyAvatar,
     removeMyAvatar,
