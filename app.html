@@ -1116,7 +1116,7 @@ body.guest-mode .progress-wrap{opacity:.4;}
       <a class="btn-hdr" href="/slownik-obrazkowy" title="Słowniczek obrazkowy (obrazki + wymowa)" style="text-decoration:none">📖 <span class="btn-hdr-text">Słowniczek</span></a>
       <button class="btn-hdr" id="btnAchHdr" onclick="showAchievements()" title="Odznaki">🏆 <span class="achieve-badge-count" id="achieveCount">0</span></button>
       <button class="btn-hdr" onclick="openThemeModal()" title="Motyw">🎨</button>
-      <button class="btn-hdr" onclick="openAccountModal()" title="Moje konto">👤</button>
+      <button class="btn-hdr" id="hdrAccountBtn" onclick="openAccountModal()" title="Moje konto">👤</button>
       <span id="adminBadge" class="btn-hdr" style="display:none;color:var(--purple);background:rgba(162,155,254,.12);border-color:rgba(162,155,254,.3);cursor:pointer;" onclick="showScreen('sBooks')" title="Panel admina">🛡️ <span class="btn-hdr-text">Admin</span> <span id="adminNotifDot" style="display:none;background:var(--danger);color:#fff;border-radius:100px;padding:0 5px;font-size:.58rem;">!</span></span>
       <button class="btn-logout" onclick="logout()" id="btnLogout">Wyloguj</button>
     </div>
@@ -5093,6 +5093,7 @@ const BOOK_ALIASES = {
   superheroes2: 'SH2',
   superheroes3: 'SH3',
   link5:        'LK5',
+  link6:        'LK6',
   link7:        'LK7',
   link8:        'LK8',
   impuls3:      'I3',
@@ -5130,6 +5131,7 @@ const PUBLISHERS = {
   stepsplus4: { name: 'Oxford University Press', url: 'https://elt.oup.com/?cc=pl' },
   stepsplus5: { name: 'Oxford University Press', url: 'https://elt.oup.com/?cc=pl' },
   link5:      { name: 'Oxford University Press', url: 'https://elt.oup.com/?cc=pl' },
+  link6:      { name: 'Oxford University Press', url: 'https://elt.oup.com/?cc=pl' },
   link7:      { name: 'Oxford University Press', url: 'https://elt.oup.com/?cc=pl' },
   link8:      { name: 'Oxford University Press', url: 'https://elt.oup.com/?cc=pl' },
   // Grupa MAC
@@ -14515,6 +14517,91 @@ window.saveMyNickname = async function() {
   }
 };
 
+// ── Grafika profilowa (migracja #62) ──
+// Okrągła miniatura (lub fallback emoji). url tylko z naszego Storage (https).
+function _avatarImgHtml(url, size, fallback) {
+  const s = size || 28;
+  if (url && /^https:\/\//.test(url)) {
+    return `<img src="${escHtml(url)}" alt="" loading="lazy" style="width:${s}px;height:${s}px;border-radius:50%;object-fit:cover;flex-shrink:0;vertical-align:middle;border:2px solid var(--border);background:var(--surface2)">`;
+  }
+  return fallback == null ? '' : fallback;
+}
+function _renderAvatarPreview() {
+  const url = DB.getMyAvatarUrl ? DB.getMyAvatarUrl() : null;
+  const pv = document.getElementById('avatarPreview');
+  if (pv) pv.innerHTML = url ? `<img src="${escHtml(url)}" alt="" style="width:100%;height:100%;object-fit:cover">` : '👤';
+  const rb = document.getElementById('avatarRemoveBtn'); if (rb) rb.style.display = url ? '' : 'none';
+  _refreshHeaderAvatar();
+}
+function _refreshHeaderAvatar() {
+  const b = document.getElementById('hdrAccountBtn'); if (!b) return;
+  const url = (!isGuest && DB.getMyAvatarUrl) ? DB.getMyAvatarUrl() : null;
+  b.innerHTML = url ? `<img src="${escHtml(url)}" alt="" style="width:22px;height:22px;border-radius:50%;object-fit:cover;vertical-align:middle;display:block">` : '👤';
+}
+// Kadrowanie do kwadratu (środek) + zmniejszenie do 256×256 JPEG — mały plik w bazie.
+function _avatarCompress(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      try {
+        const side = Math.min(img.naturalWidth, img.naturalHeight);
+        const sx = (img.naturalWidth - side) / 2, sy = (img.naturalHeight - side) / 2;
+        const c = document.createElement('canvas'); c.width = c.height = 256;
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, 256, 256);
+        ctx.drawImage(img, sx, sy, side, side, 0, 0, 256, 256);
+        URL.revokeObjectURL(url);
+        c.toBlob(b => b ? resolve(b) : reject(new Error('Nie udało się przetworzyć obrazka.')), 'image/jpeg', 0.82);
+      } catch(e) { URL.revokeObjectURL(url); reject(e); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('To nie jest obsługiwany obrazek.')); };
+    img.src = url;
+  });
+}
+window.onAvatarFilePicked = async function(input) {
+  const file = input.files && input.files[0];
+  input.value = '';
+  const msg = document.getElementById('avatarMsg');
+  if (!file) return;
+  if (isGuest) { msg.style.color = 'var(--danger)'; msg.textContent = 'Grafika profilowa jest dostępna po zalogowaniu.'; return; }
+  if (!/^image\//.test(file.type)) { msg.style.color = 'var(--danger)'; msg.textContent = 'Wybierz plik graficzny (JPG, PNG, WEBP).'; return; }
+  if (file.size > 15 * 1024 * 1024) { msg.style.color = 'var(--danger)'; msg.textContent = 'Plik jest za duży (max 15 MB).'; return; }
+  msg.style.color = 'var(--muted)'; msg.textContent = 'Wysyłam…';
+  try {
+    const blob = await _avatarCompress(file);
+    await DB.uploadMyAvatar(blob);
+    msg.style.color = 'var(--accent2)'; msg.textContent = '✅ Zapisano grafikę profilową.';
+    _renderAvatarPreview();
+  } catch(e) {
+    msg.style.color = 'var(--danger)'; msg.textContent = e.message || 'Nie udało się zapisać.';
+  }
+};
+window.removeMyAvatarUi = async function() {
+  if (!confirm('Usunąć grafikę profilową?')) return;
+  const msg = document.getElementById('avatarMsg');
+  try {
+    await DB.removeMyAvatar();
+    msg.style.color = 'var(--accent2)'; msg.textContent = '✅ Grafika usunięta.';
+    _renderAvatarPreview();
+  } catch(e) { msg.style.color = 'var(--danger)'; msg.textContent = e.message || 'Nie udało się usunąć.'; }
+};
+// Moderacja: miniatura zdjęcia ucznia + ✕ (admin / nauczyciel).
+function _avatarModHtml(userId, url) {
+  if (!url) return '';
+  return `<span class="avatar-mod" style="display:inline-flex;align-items:center;gap:3px;vertical-align:middle;margin-right:4px" onclick="event.stopPropagation()">${_avatarImgHtml(url, 26)}
+    <button onclick="event.stopPropagation();modClearAvatar('${escHtml(userId)}', this)" title="Usuń grafikę profilową (np. nieodpowiednią)" style="border:none;background:rgba(239,71,111,.15);color:var(--danger);border-radius:100px;font-size:.58rem;font-weight:900;cursor:pointer;padding:1px 5px;font-family:inherit">✕</button></span>`;
+}
+window.modClearAvatar = async function(userId, btn) {
+  if (!confirm('Usunąć grafikę profilową tego użytkownika?')) return;
+  try {
+    await DB.clearUserAvatar(userId);
+    const p = (_allProfiles || []).find(x => x.id === userId); if (p) p.avatar_url = null;
+    const el = btn && btn.closest('.avatar-mod'); if (el) el.remove();
+    toast('🖼️ Grafika profilowa usunięta.', 2200);
+  } catch(e) { toast('⚠️ ' + (e.message || 'Nie udało się usunąć grafiki.'), 3500); }
+};
+
 // ═══════════════════════════════════════════════════════════
 //  GAMEPLAY
 // ═══════════════════════════════════════════════════════════
@@ -18403,7 +18490,7 @@ function buildAccessUserCard(u) {
       <input type="checkbox" ${isSelected?'checked':''} onchange="bulkToggleUser('${u.id}', this.checked)" style="accent-color:var(--accent2);width:16px;height:16px;cursor:pointer">
     </label>
     <div style="min-width:0;flex:1">
-      <div style="font-size:.88rem;font-weight:700;color:var(--text)">${fmtNameWithLabel(u.id, u.username)} ${roleBadge} ${_nickBadgeHtml(u.id, u.nickname)}</div>
+      <div style="font-size:.88rem;font-weight:700;color:var(--text)">${_avatarModHtml(u.id, u.avatar_url)}${fmtNameWithLabel(u.id, u.username)} ${roleBadge} ${_nickBadgeHtml(u.id, u.nickname)}</div>
       <div style="font-size:.65rem;color:var(--muted);display:flex;gap:10px;flex-wrap:wrap;margin-top:3px">
         <span>📅 Utworzone: <strong>${esc(created)}</strong></span>
         <span>🔑 Logowanie: ${loginTxt}</span>
@@ -19125,7 +19212,7 @@ function renderClassStudents(memberIds, allProfiles) {
       <div class="student-card-avatar">${idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : '👤'}</div>
       <div class="student-card-body" style="flex:1">
         <div style="display:flex;align-items:center;justify-content:space-between">
-          <div class="student-card-name">${fmtNameWithLabel(profile.id, profile.username)} ${_nickBadgeHtml(profile.id, profile.nickname)}</div>
+          <div class="student-card-name">${_avatarModHtml(profile.id, profile.avatar_url)}${fmtNameWithLabel(profile.id, profile.username)} ${_nickBadgeHtml(profile.id, profile.nickname)}</div>
           <div style="display:flex;gap:5px">
             <button class="btn-sm" style="font-size:.65rem;padding:4px 9px" title="Prywatna etykieta" onclick="event.stopPropagation();openUserLabelModal('${profile.id}','${esc(profile.username)}',()=>renderClassStudents(_curClassMembers,_allProfiles))">✏️</button>
             <button class="btn-sm" style="font-size:.65rem;padding:4px 9px" title="Ustawienia konta (plan, bannery)" onclick="event.stopPropagation();openUserSettingsModal('${profile.id}','${esc(profile.username)}','${profile.plan||'free'}',${profile.hide_premium_banners===true},()=>renderClassStudents(_curClassMembers,_allProfiles))">⚙️</button>
@@ -20350,6 +20437,19 @@ if ('serviceWorker' in navigator) {
         }
       }
     } catch(e) { console.warn('[BOOT] auto-delete inactive:', e.message); }
+    // Grafika profilowa (#62): „ostatnie wejście" (podstawa usuwania po 2 mies.) + ikona w nagłówku.
+    try { if (DB.touchLastSeen) DB.touchLastSeen(); if (typeof _refreshHeaderAvatar === 'function') _refreshHeaderAvatar(); } catch(e) {}
+    // Admin: codziennie kasuje pliki zdjęć usuniętych kont i nieaktywnych > 2 mies.
+    try {
+      if (DB.isAdmin && DB.isAdmin(currentUser) && DB.purgeAvatars) {
+        const lastKey = 'fiszki_avatar_purge_last_' + currentUser;
+        const today = new Date().toDateString();
+        if (localStorage.getItem(lastKey) !== today) {
+          await DB.purgeAvatars();
+          localStorage.setItem(lastKey, today);
+        }
+      }
+    } catch(e) { console.warn('[BOOT] avatar purge:', e.message); }
     // Admin: globalne czyszczenie wpisow activity_events >60 dni (raz dziennie)
     try {
       if (DB.isAdmin && DB.isAdmin(currentUser) && DB.cleanupOldActivityEvents) {
@@ -20827,6 +20927,23 @@ if ('serviceWorker' in navigator) {
       <div id="accountPlan" style="font-size:.82rem;font-weight:700;color:var(--accent)">—</div>
     </div>
 
+    <!-- Zdjęcie / grafika profilowa (migracja #62) -->
+    <div id="avatarSection" style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:12px 16px;margin-bottom:14px">
+      <div style="font-size:.82rem;font-weight:800;color:var(--text);margin-bottom:8px">🖼️ Grafika profilowa</div>
+      <div style="display:flex;align-items:center;gap:14px">
+        <div id="avatarPreview" style="width:72px;height:72px;border-radius:50%;flex-shrink:0;background:var(--surface);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:2rem;overflow:hidden">👤</div>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button class="btn-sm accent" onclick="document.getElementById('avatarFileInput').click()" style="font-size:.72rem">📷 Wybierz obrazek</button>
+            <button class="btn-sm" id="avatarRemoveBtn" onclick="removeMyAvatarUi()" style="font-size:.72rem;display:none">🗑️ Usuń</button>
+          </div>
+          <input type="file" id="avatarFileInput" accept="image/jpeg,image/png,image/webp,image/gif" style="display:none" onchange="onAvatarFilePicked(this)">
+          <div style="font-size:.66rem;color:var(--muted);font-weight:600;line-height:1.45;margin-top:6px">Widzą ją koledzy z klasy (ranking, rywalizacja). Nie musisz dodawać swojego zdjęcia — może to być dowolny obrazek. Grafika jest automatycznie usuwana, jeśli nie wejdziesz na Sowie Fiszki przez 2 miesiące. Nauczyciel może usunąć nieodpowiednią grafikę.</div>
+          <div id="avatarMsg" style="font-size:.7rem;font-weight:700;margin-top:4px;min-height:14px"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- Ksywka (migracja #61) — widoczna dla innych uczniów (ranking, rywalizacja) -->
     <div id="nicknameSection" style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:12px 16px;margin-bottom:14px">
       <div style="font-size:.82rem;font-weight:800;color:var(--text);margin-bottom:4px">🏷️ Moja ksywka</div>
@@ -21082,6 +21199,8 @@ if ('serviceWorker' in navigator) {
         <li><strong>Dane postępów nauki:</strong> punkty XP, poziom, odblokowane odznaki, czas ostatniej nauki, statystyki odpowiedzi, liczba sesji.</li>
         <li><strong>Dane roli:</strong> przynależność do klasy (uczeń ↔ nauczyciel), plan konta (Free/Premium/Teacher).</li>
         <li><strong>Preferencje:</strong> wybrany motyw interfejsu (przechowywany w localStorage przeglądarki).</li>
+        <li><strong>Grafika profilowa (dobrowolna):</strong> obrazek dodany w „Moje konto", zmniejszany do 256×256 px, widoczny dla uczniów z tej samej klasy, Nauczyciela i Administratora. Nie musi przedstawiać Użytkownika — zalecamy dowolny obrazek zamiast zdjęcia twarzy. Do jej automatycznego usuwania zapisujemy datę ostatniego wejścia na Platformę.</li>
+        <li><strong>Ksywka (dobrowolna):</strong> nazwa wyświetlana innym uczniom zamiast loginu; Nauczyciel lub Administrator może usunąć ksywkę niestosowną.</li>
         <li><strong>Dane w formularzu prośby o dostęp do podręcznika</strong> (dobrowolne, podawane tylko jeśli Użytkownik zdecyduje się wysłać prośbę): imię i nazwisko (wymagane do weryfikacji), szkoła i klasa, wybrany podręcznik oraz opcjonalna wiadomość. Dane te widzi <strong>wyłącznie Administrator</strong> — Nauczyciele nie mają do nich dostępu.</li>
         <li><strong>Dane techniczne:</strong> identyfikatory sesji (cookies Supabase Auth), pliki Service Worker dla działania PWA.</li>
       </ul>
@@ -21092,6 +21211,7 @@ if ('serviceWorker' in navigator) {
         <li><strong>Prowadzenie Konta i świadczenie usługi nauki</strong> — art. 6 ust. 1 lit. b RODO (wykonanie umowy).</li>
         <li><strong>Zarządzanie klasą przez Nauczyciela</strong> (Nauczyciel widzi login i postępy swoich uczniów) — art. 6 ust. 1 lit. b RODO.</li>
         <li><strong>Rozpatrywanie próśb o dostęp do podręczników</strong> (weryfikacja osoby wnioskującej na podstawie imienia i nazwiska) — art. 6 ust. 1 lit. a RODO (zgoda wyrażona przez wysłanie formularza).</li>
+        <li><strong>Grafika profilowa i ksywka</strong> — art. 6 ust. 1 lit. a RODO (zgoda wyrażona przez ich dodanie; można ją w każdej chwili wycofać, usuwając grafikę lub ksywkę w „Moje konto").</li>
         <li><strong>Ulepszanie Platformy, statystyki techniczne</strong> — art. 6 ust. 1 lit. f RODO (uzasadniony interes Administratora).</li>
         <li><strong>Obsługa zgłoszeń naruszeń</strong> — art. 6 ust. 1 lit. c RODO (obowiązek prawny).</li>
       </ul>
@@ -21113,6 +21233,7 @@ if ('serviceWorker' in navigator) {
         <li>Dane Konta — przez cały okres istnienia Konta.</li>
         <li>Po usunięciu Konta dane są usuwane niezwłocznie lub anonimizowane w terminie do 30 dni (czas wymagany na wykonanie kopii zapasowej).</li>
         <li>Prośby o dostęp do podręczników (w tym imię i nazwisko podane przy prośbie) — do 12 miesięcy od dnia rozpatrzenia, a następnie usuwane lub anonimizowane.</li>
+        <li>Grafika profilowa — do czasu jej usunięcia przez Użytkownika, Nauczyciela lub Administratora; jest <strong>automatycznie usuwana po 2 miesiącach bez wejścia na Platformę</strong> albo <strong>razem z Kontem</strong> (plik jest następnie trwale kasowany z serwera).</li>
         <li>Zgłoszenia naruszeń i ewentualna korespondencja reklamacyjna — do 3 lat od zakończenia sprawy (ze względu na możliwe roszczenia).</li>
       </ul>
 
@@ -21421,6 +21542,9 @@ if ('serviceWorker' in navigator) {
       const ni = document.getElementById('nicknameInput');
       if (ni) ni.value = (DB.getMyNickname && DB.getMyNickname()) || '';
       const nm = document.getElementById('nicknameMsg'); if (nm) nm.textContent = '';
+      const am = document.getElementById('avatarMsg'); if (am) am.textContent = '';
+      const as = document.getElementById('avatarSection'); if (as) as.style.display = isGuest ? 'none' : '';
+      if (typeof _renderAvatarPreview === 'function') _renderAvatarPreview();
     } catch(e) {}
     document.getElementById('deleteExpectedName').textContent = uname;
     // Resetuj UI usuwania
@@ -29594,6 +29718,7 @@ ${bodyHtml}
     box.innerHTML='<button class="sf-x" data-close>✕</button><h2 class="sf-h">🏆 Ranking klasy</h2><p class="sf-sub">Ładowanie…</p>';
     bindClose(box); o.classList.add('show');
     let rows=[]; try{ rows=await DB.loadMyClassRankings(); }catch(e){}
+    try{ window.__srAvatars = DB.loadClassAvatars ? await DB.loadClassAvatars() : {}; }catch(e){ window.__srAvatars={}; }
     const cls=srPickPool(rows);
     if(!cls || !cls.members || !cls.members.length){
       box.innerHTML='<button class="sf-x" data-close>✕</button><h2 class="sf-h">🏆 Ranking klasy</h2><p class="sf-sub">Nie należysz jeszcze do żadnej klasy (albo klasa jest pusta). Poproś nauczyciela o dodanie Cię do klasy — wtedy zobaczysz tu ranking kolegów.</p>';
@@ -29623,6 +29748,7 @@ ${bodyHtml}
       const meRing=(gem && isMe) ? ';box-shadow:0 0 0 2px rgba(124,77,255,.75)' : '';
       h+='<div style="display:flex;align-items:center;gap:10px;padding:8px 6px;border-bottom:1px dashed rgba(255,255,255,.12);'+rowBg+meRing+'">'
         +'<div style="width:32px;display:flex;justify-content:center;font-weight:700">'+md+'</div>'
+        +((typeof _avatarImgHtml==='function') ? _avatarImgHtml((window.__srAvatars||{})[u.user_id], 30, '<div style="width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;font-size:.95rem;flex-shrink:0">👤</div>') : '')
         +'<div style="flex:1;min-width:0">'
           +'<div style="font-weight:'+(gem?800:700)+';font-size:.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escTxt(u.nickname||u.username)+nameGem+(isMe?' (Ty)':'')+'</div>'
           +'<div style="font-size:.62rem;color:var(--muted);font-weight:700;margin-top:1px">'+sub+'</div>'

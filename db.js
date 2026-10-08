@@ -81,6 +81,8 @@ const DB = (() => {
       trialUsedAt:   row.trial_used_at   || null,
       hidePremiumBanners: row.hide_premium_banners === true,
       nickname:      row.nickname        || null,   // migracja #61
+      avatarUrl:     row.avatar_url      || null,   // migracja #62
+      avatarPath:    row.avatar_path     || null,
       unitProgress
     };
   }
@@ -2216,6 +2218,81 @@ const DB = (() => {
     const { error } = await supabase.rpc('duel_answer', { p_id: id, p_index: index, p_correct: !!correct, p_ms: Math.round(ms || 0) });
     if (error) throw new Error(_niceRpcError(error));
   }
+  // ═══════════════════════════════════════════════════════════════
+  //  ZDJĘCIE PROFILOWE (migracja #62 profile-avatars.sql)
+  //  Plik w bucket „avatars" pod {user_id}/{timestamp}.jpg. Stare pliki,
+  //  pliki usuniętych kont i nieaktywnych > 2 mies. trafiają do kolejki
+  //  avatar_purge_queue — admin kasuje je codziennie (purgeAvatars).
+  // ═══════════════════════════════════════════════════════════════
+  function getMyAvatarUrl() { return (_profile && _profile.avatarUrl) || null; }
+  async function _removeAvatarFiles(paths) {
+    const list = (paths || []).filter(Boolean);
+    if (!list.length) return;
+    const { error } = await supabase.storage.from('avatars').remove(list);
+    if (error) { console.warn('[avatars remove]', error.message); return; }
+    try { await supabase.rpc('avatar_purge_done', { p_paths: list }); } catch(e) {}
+  }
+  // blob — gotowy (skompresowany) obraz JPEG.
+  async function uploadMyAvatar(blob) {
+    if (!_userId) throw new Error('Musisz być zalogowany.');
+    if (!blob || blob.size > 300 * 1024) throw new Error('Obrazek jest za duży (max 300 KB po kompresji).');
+    const path = _userId + '/' + Date.now() + '.jpg';
+    const { error: upErr } = await supabase.storage.from('avatars').upload(path, blob, { contentType: 'image/jpeg', upsert: false });
+    if (upErr) {
+      if (/bucket not found/i.test(upErr.message)) throw new Error('Funkcja wymaga migracji #62 (profile-avatars.sql) w Supabase.');
+      throw new Error(upErr.message);
+    }
+    const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path);
+    const url = urlData && urlData.publicUrl;
+    const oldPath = _profile && _profile.avatarPath;
+    const { error } = await supabase.rpc('set_my_avatar', { p_url: url, p_path: path });
+    if (error) {
+      try { await supabase.storage.from('avatars').remove([path]); } catch(e) {}
+      throw new Error(/does not exist|Could not find the function/i.test(error.message)
+        ? 'Funkcja wymaga migracji #62 (profile-avatars.sql) w Supabase.' : error.message);
+    }
+    if (_profile) { _profile.avatarUrl = url; _profile.avatarPath = path; }
+    if (oldPath && oldPath !== path) { try { await _removeAvatarFiles([oldPath]); } catch(e) {} }
+    return url;
+  }
+  async function removeMyAvatar() {
+    if (!_userId) return;
+    await clearUserAvatar(_userId);
+  }
+  // Usunięcie zdjęcia: własnego albo (admin / nauczyciel) ucznia — np. nieodpowiedniego.
+  async function clearUserAvatar(userId) {
+    const { data, error } = await supabase.rpc('clear_user_avatar', { p_user: userId });
+    if (error) throw new Error(_niceRpcError(error).replace('#61 (student-duels.sql)', '#62 (profile-avatars.sql)'));
+    if (userId === _userId && _profile) { _profile.avatarUrl = null; _profile.avatarPath = null; }
+    if (data) await _removeAvatarFiles([data]);
+  }
+  // Zdjęcia kolegów z klasy (ranking, rywalizacja). Mapa user_id → url; cache 2 min.
+  let _classAvatarsCache = null, _classAvatarsAt = 0;
+  async function loadClassAvatars(force) {
+    if (!_userId) return {};
+    if (!force && _classAvatarsCache && Date.now() - _classAvatarsAt < 120000) return _classAvatarsCache;
+    const { data, error } = await supabase.rpc('class_avatars');
+    if (error) { return _classAvatarsCache || {}; }
+    const map = {}; (data || []).forEach(r => { map[r.user_id] = r.avatar_url; });
+    if (_profile && _profile.avatarUrl) map[_userId] = _profile.avatarUrl;
+    _classAvatarsCache = map; _classAvatarsAt = Date.now();
+    return map;
+  }
+  // „Ostatnie wejście" — podstawa automatycznego usuwania zdjęć po 2 mies. nieaktywności.
+  async function touchLastSeen() {
+    if (!_userId) return;
+    try { await supabase.rpc('touch_last_seen'); } catch(e) {}
+  }
+  // Admin: odepnij zdjęcia nieaktywnych > 2 mies. i skasuj pliki z kolejki. Zwraca liczbę plików.
+  async function purgeAvatars() {
+    if (!_profile?.isAdmin) return 0;
+    const { data, error } = await supabase.rpc('avatar_purge_list');
+    if (error) { console.warn('[avatar_purge_list]', error.message); return 0; }
+    const paths = (data || []).map(r => r.path).filter(Boolean);
+    for (let i = 0; i < paths.length; i += 100) await _removeAvatarFiles(paths.slice(i, i + 100));
+    return paths.length;
+  }
+
   // Czytelny komunikat z błędu RPC (RAISE EXCEPTION) lub informacja o brakującej migracji.
   function _niceRpcError(error) {
     const m = (error && error.message) || 'Błąd';
@@ -2965,8 +3042,9 @@ const DB = (() => {
       // Sortuj od najnowszych do najstarszych (created_at malejaco)
       return q.order('created_at', { ascending: false, nullsFirst: false });
     };
-    // Ksywka (migracja #61) — bez migracji kolumny nie ma, więc fallback bez niej.
-    let { data, error } = await run(COLS + ', nickname');
+    // Ksywka (#61) i zdjęcie profilowe (#62) — bez migracji kolumn nie ma, więc fallback bez nich.
+    let { data, error } = await run(COLS + ', nickname, avatar_url');
+    if (error && /avatar_url/i.test(error.message)) ({ data, error } = await run(COLS + ', nickname'));
     if (error && /nickname/i.test(error.message)) ({ data, error } = await run(COLS));
     if (error) throw new Error(error.message);
     return data || [];
@@ -3101,6 +3179,8 @@ const DB = (() => {
   // Po tej operacji sesja przestaje być ważna — klient powinien wylogować użytkownika.
   async function deleteOwnAccount() {
     if (!_userId) throw new Error('Nie jesteś zalogowany.');
+    // Zdjęcie profilowe kasujemy ze Storage, zanim zniknie konto (#62).
+    try { await removeMyAvatar(); } catch(e) {}
     const { data, error } = await supabase.rpc('delete_own_account');
     if (error) throw new Error(error.message);
     // Wyloguj i wyczyść lokalną sesję
@@ -4008,8 +4088,12 @@ const DB = (() => {
 
   async function adminDeleteUser(userId) {
     if (!_profile?.isAdmin && !_profile?.isTeacher) throw new Error('Brak uprawnień');
+    // Zdjęcie profilowe usuwamy ze Storage, póki konto jeszcze istnieje (#62).
+    try { await clearUserAvatar(userId); } catch(e) {}
     const { error } = await supabase.rpc('admin_delete_user', { target_user_id: userId });
     if (error) throw new Error(error.message);
+    // Konta usunięte kaskadowo (np. opiekun) — pliki z kolejki sprząta admin.
+    if (_profile?.isAdmin) { try { await purgeAvatars(); } catch(e) {} }
   }
 
   // Statystyki logowań (admin) — mapa userId -> { lastSignIn, authCreated }.
@@ -4395,6 +4479,13 @@ const DB = (() => {
     loadClassRankingLinks,
     saveClassRankingLinks,
     getMyNickname,
+    getMyAvatarUrl,
+    uploadMyAvatar,
+    removeMyAvatar,
+    clearUserAvatar,
+    loadClassAvatars,
+    touchLastSeen,
+    purgeAvatars,
     setMyNickname,
     clearUserNickname,
     loadClassNicknames,
