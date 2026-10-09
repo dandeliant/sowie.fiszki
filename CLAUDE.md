@@ -270,7 +270,7 @@ Krzyżówka · Wordsearch · Memory · Snake (Wąż wyrazowy) · Hangman · Rozs
 2. Jeśli zadanie duże — zaproponuj etapy.
 3. Wprowadź zmiany, pokaż co się zmieniło.
 4. **Bump `CACHE_NAME`** gdy zmiany w app.html/data.js/db.js/index.html.
-5. Commit + push (tylko na wyraźną prośbę użytkownika).
+5. Commit + push **od razu po zakończeniu i sprawdzeniu zmiany — bez pytania** (decyzja właściciela z 9.10.2026). Nadal bez `--amend` / `push --force` / `reset --hard` bez wyraźnej zgody.
 6. Wspomnij o potrzebie uruchomienia migracji SQL, jeśli ją dodałeś.
 
 ### Styl odpowiedzi
