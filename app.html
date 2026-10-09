@@ -30413,18 +30413,46 @@ ${bodyHtml}
     const idx=sorted.findIndex(x=>x.user_id===me);
     return { place: idx>=0?idx+1:null, val: idx>=0?(sorted[idx][k]||0):0 };
   }
-  // Grupuje wiersze RPC wg puli (klasa ucznia) i wybiera najliczniejszą.
-  // Przy rankingu międzyklasowym (#60) pula = klasa ucznia + klasy wybrane przez nauczyciela.
-  function srPickPool(rows){
+  // Widoki rankingu z wierszy RPC. Pula = klasa ucznia (+ klasy połączone przez
+  // nauczyciela, #60). Dla każdej puli: „🏫 Moja klasa" (tylko uczniowie tej klasy)
+  // oraz — gdy klasy są połączone — „🌐 Wszystkie klasy". Uczeń w kilku klasach
+  // dostaje widok dla każdej z nich. Wybór zapamiętany w localStorage.
+  const SR_VIEW_KEY='fiszki_sr_view';
+  let _srViews=[];
+  function srBuildViews(rows){
     const groups={};
     (rows||[]).forEach(r=>{ (groups[r.class_id]=groups[r.class_id]||{id:r.class_id,name:r.class_name,multi:false,members:[]}).members.push(r); if(r.multi_class) groups[r.class_id].multi=true; });
-    const cls=Object.values(groups).sort((a,b)=>b.members.length-a.members.length)[0]||null;
-    if(cls && cls.multi){
-      const names=[...new Set(cls.members.map(m=>m.member_class_name).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pl',{numeric:true}));
-      cls.title='Ranking klas: '+names.join(' · ');
-    } else if(cls){ cls.title='Ranking klasy '+(cls.name||''); }
-    return cls;
+    const pools=Object.values(groups).sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'pl',{numeric:true}));
+    const many=pools.length>1, views=[];
+    pools.forEach(p=>{
+      const own=p.multi ? p.members.filter(m=>m.member_class_name===p.name) : p.members;
+      views.push({ key:'mine:'+p.id, mode:'mine', label:'🏫 '+(many?'Klasa '+(p.name||''):'Moja klasa'), title:'Ranking klasy '+(p.name||''), multi:false, members:own });
+      if(p.multi){
+        const names=[...new Set(p.members.map(m=>m.member_class_name).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pl',{numeric:true}));
+        views.push({ key:'all:'+p.id, mode:'all', label:'🌐 '+(many?'Klasy z '+(p.name||''):'Wszystkie klasy'), title:'Ranking klas: '+names.join(' · '), multi:true, members:p.members });
+      }
+    });
+    return views;
   }
+  function srPickView(views){
+    if(!views.length) return null;
+    let saved=null; try{ saved=localStorage.getItem(SR_VIEW_KEY); }catch(e){}
+    return views.find(v=>v.key===saved)
+      || views.find(v=>saved && v.mode===saved.split(':')[0])
+      || views.find(v=>v.mode==='mine') || views[0];
+  }
+  // Zgodność wsteczna: zwraca aktualnie wybrany widok.
+  function srPickPool(rows){ _srViews=srBuildViews(rows); return srPickView(_srViews); }
+  function srViewSwitch(curKey, fnName, small){
+    if(_srViews.length<2) return '';
+    return '<div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:'+(small?'flex-start':'center')+';margin:'+(small?'6px 0 0':'0 0 10px')+'">'
+      + _srViews.map(v=>{ const on=v.key===curKey;
+        return '<button class="sf-btn '+(on?'':'sf-btn-ghost')+'" style="font-size:'+(small?'.66rem':'.74rem')+';padding:'+(small?'4px 9px':'7px 12px')+';'+(on?'background:var(--accent,#7c4dff);color:#fff':'')+'" data-srview="'+escTxt(v.key)+'" onclick="event.stopPropagation();'+fnName+'(this.dataset.srview)">'+escTxt(v.label)+'</button>'; }).join('')
+      + '</div>';
+  }
+  function srSaveView(key){ try{ localStorage.setItem(SR_VIEW_KEY, key); }catch(e){} }
+  window.__sfRankView=function(key){ srSaveView(key); window.__sfOpenStudentRank(true); };
+  window.__sfRankCardView=function(key){ srSaveView(key); renderStudentRank(); };
   // Unikalne kamienie za miejsca 1–5 (statyczne SVG — bez animacji, lekkie dla CPU).
   const SR_GEMS=[
     {n:'Diament', a:'#ffffff',b:'#9ee9ff',c:'#38bdf8',s:'#0e7490',bg:'rgba(255,209,102,.20)',bd:'rgba(255,209,102,.75)'},
@@ -30463,7 +30491,7 @@ ${bodyHtml}
       engageTop(); const card=$('sfRankCard'); if(!card) return;
       let rows=[]; try{ rows=await DB.loadMyClassRankings(); }catch(e){ return; }
       const cls=srPickPool(rows);
-      if(!cls || cls.members.length<2){ _srData=null; card.innerHTML=''; return; }
+      if(!cls || (cls.members.length<2 && _srViews.length<2)){ _srData=null; card.innerHTML=''; return; }
       _srData=cls;
       let chips='';
       SR_CATS.forEach(c=>{ const r=srMyRank(cls.members,c.k); if(r.place) chips+='<span style="display:inline-block;background:rgba(255,255,255,.10);border-radius:100px;padding:3px 9px;font-size:.66rem;font-weight:800;margin:2px">'+c.ic+' '+c.t+': #'+r.place+'</span>'; });
@@ -30478,6 +30506,7 @@ ${bodyHtml}
         +'<div style="flex:1;min-width:160px">'
         +'<div style="font-weight:800;color:var(--text);font-size:.9rem">'+escTxt(cls.title||'Ranking klasy')+'</div>'+award
         +'<div style="margin-top:3px">'+(chips||'<span style="font-size:.7rem;color:var(--muted)">Ucz się, aby wejść do rankingu!</span>')+'</div>'
+        +srViewSwitch(cls.key,'window.__sfRankCardView',true)
         +'</div>'
         +'<button class="sf-btn sf-btn-ghost" style="font-size:.78rem;padding:8px 12px" onclick="window.__sfOpenStudentRank&&window.__sfOpenStudentRank()">Pełny ranking</button>'
         +'</div></div>';
@@ -30486,12 +30515,19 @@ ${bodyHtml}
   // Otwiera pełny ranking klasy. Samodzielny — sam pobiera dane, więc działa
   // też z przycisku w statystykach (nawet gdy karta na sLang się nie pokazała,
   // np. mała klasa). Pokazuje przyjazny komunikat, gdy uczeń nie ma klasy.
-  window.__sfOpenStudentRank=async function(){
+  let _srRows=null, _srCat=0;
+  window.__sfOpenStudentRank=async function(keepData){
     const o=modal('sfRankModal'); const box=$('sfRankModal_box');
-    box.innerHTML='<button class="sf-x" data-close>✕</button><h2 class="sf-h">🏆 Ranking klasy</h2><p class="sf-sub">Ładowanie…</p>';
-    bindClose(box); o.classList.add('show');
-    let rows=[]; try{ rows=await DB.loadMyClassRankings(); }catch(e){}
-    try{ window.__srAvatars = DB.loadClassAvatars ? await DB.loadClassAvatars() : {}; }catch(e){ window.__srAvatars={}; }
+    let rows;
+    if(keepData===true && _srRows){ rows=_srRows; }
+    else {
+      _srCat=0;
+      box.innerHTML='<button class="sf-x" data-close>✕</button><h2 class="sf-h">🏆 Ranking klasy</h2><p class="sf-sub">Ładowanie…</p>';
+      bindClose(box); o.classList.add('show');
+      rows=[]; try{ rows=await DB.loadMyClassRankings(); }catch(e){}
+      _srRows=rows;
+      try{ window.__srAvatars = DB.loadClassAvatars ? await DB.loadClassAvatars() : {}; }catch(e){ window.__srAvatars={}; }
+    }
     const cls=srPickPool(rows);
     if(!cls || !cls.members || !cls.members.length){
       box.innerHTML='<button class="sf-x" data-close>✕</button><h2 class="sf-h">🏆 Ranking klasy</h2><p class="sf-sub">Nie należysz jeszcze do żadnej klasy (albo klasa jest pusta). Poproś nauczyciela o dodanie Cię do klasy — wtedy zobaczysz tu ranking kolegów.</p>';
@@ -30501,11 +30537,12 @@ ${bodyHtml}
     let tabs='<div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-bottom:12px">';
     SR_CATS.forEach((c,i)=>{ tabs+='<button id="srTab'+i+'" class="sf-btn sf-btn-ghost" style="font-size:.72rem;padding:7px 10px" onclick="window.__sfRankCat('+i+')">'+c.ic+' '+c.t+'</button>'; });
     tabs+='</div>';
-    box.innerHTML='<button class="sf-x" data-close>✕</button><h2 class="sf-h">🏆 '+escTxt(_srData.title||'Ranking klasy')+'</h2><p class="sf-sub">Top 10 · wg liczby przyswojonych słów (zakładki = inne kategorie)<br>Miejsca 1–5 zdobywają kamienie: 💎 Diament · Szafir · Rubin · Szmaragd · Ametyst · 1. miejsce — złota korona 👑</p>'+tabs+'<div id="srList"></div>';
-    bindClose(box); window.__sfRankCat(0);
+    box.innerHTML='<button class="sf-x" data-close>✕</button><h2 class="sf-h">🏆 '+escTxt(_srData.title||'Ranking klasy')+'</h2><p class="sf-sub">Top 10 · wg liczby przyswojonych słów (zakładki = inne kategorie)<br>Miejsca 1–5 zdobywają kamienie: 💎 Diament · Szafir · Rubin · Szmaragd · Ametyst · 1. miejsce — złota korona 👑</p>'+srViewSwitch(cls.key,'window.__sfRankView',false)+tabs+'<div id="srList"></div>';
+    bindClose(box); window.__sfRankCat(_srCat||0);
   };
   window.__sfRankCat=function(idx){
     const c=SR_CATS[idx]; if(!c||!_srData) return;
+    _srCat=idx;
     SR_CATS.forEach((_,i)=>{ const t=$('srTab'+i); if(t){ t.style.background=i===idx?'var(--accent,#7c4dff)':''; t.style.color=i===idx?'#fff':''; } });
     const me=uid(); const sorted=_srData.members.slice().sort((a,b)=>(b[c.k]||0)-(a[c.k]||0));
     let h='<div style="background:rgba(255,255,255,.04);border-radius:14px;padding:8px;max-height:50vh;overflow-y:auto">'; let shown=0;

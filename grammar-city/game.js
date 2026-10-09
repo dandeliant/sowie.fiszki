@@ -54,6 +54,17 @@ const freshSave = () => ({ done: {}, best: {}, money: 0, xp: 0 });
 let save = freshSave();
 try { const s = JSON.parse(localStorage.getItem(SAVE_KEY)); if (s && s.done) save = Object.assign(freshSave(), s); } catch (e) { /* storage unavailable */ }
 function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) { /* ignore */ } }
+// Garderoba i garaż są wspólne dla wszystkich trybów (gramatyka i słówka z każdego rozdziału);
+// pieniądze zostają w zapisie danego trybu.
+const WARDROBE_KEY = 'grammarCity.wardrobe.v1';
+const freshWardrobe = () => ({ owned: { outfit_classic: 1, hat_cap: 1, hat_none: 1, glasses_none: 1, hair_blond: 1 },
+  equip: { outfit: 'classic', hat: 'cap', glasses: 'none', hair: 'blond', vehicle: null }, talked: {} });
+let wardrobe = freshWardrobe();
+try {
+  const w = JSON.parse(localStorage.getItem(WARDROBE_KEY));
+  if (w && w.owned) { const f = freshWardrobe(); wardrobe = { owned: Object.assign(f.owned, w.owned), equip: Object.assign(f.equip, w.equip || {}), talked: w.talked || {} }; }
+} catch (e) { /* storage unavailable */ }
+function persistWardrobe() { try { localStorage.setItem(WARDROBE_KEY, JSON.stringify(wardrobe)); } catch (e) { /* ignore */ } }
 const doneCount = () => Object.keys(save.done).length;
 const isUnlocked = m => doneCount() >= TIERS[m.tier].need;
 const RANKS = [[0, 'Tourist'], [3, 'Newcomer'], [7, 'Local'], [10, 'Street Smart'], [15, 'City Boss'], [19, 'Grammar Legend']];
@@ -517,21 +528,105 @@ const PG = {
   // But: zaokrąglony, wydłużony do przodu.
   shoe: () => geo('shoe', () => new THREE.SphereGeometry(0.16, 12, 8).scale(0.6, 0.5, 1.2)),
 };
+// Dodatkowe części: twarz, fryzury, ubrania, nakrycia głowy, okulary.
+Object.assign(PG, {
+  upperArm: () => geo('upperArm', () => new THREE.CylinderGeometry(0.08, 0.068, 0.34, 12).translate(0, -0.17, 0)),
+  foreArm: () => geo('foreArm', () => new THREE.CylinderGeometry(0.066, 0.052, 0.34, 12).translate(0, -0.17, 0)),
+  thigh: () => geo('thigh', () => new THREE.CylinderGeometry(0.118, 0.092, 0.5, 12).translate(0, -0.25, 0)),
+  shin: () => geo('shin', () => new THREE.CylinderGeometry(0.09, 0.072, 0.5, 12).translate(0, -0.25, 0)),
+  sole: () => geo('sole', () => new THREE.BoxGeometry(0.17, 0.04, 0.34)),
+  eye: () => geo('eye', () => new THREE.SphereGeometry(0.034, 10, 8).scale(1.15, 1, 0.6)),
+  pupil: () => geo('pupil', () => new THREE.SphereGeometry(0.019, 8, 6).scale(1, 1, 0.5)),
+  brow: () => geo('brow', () => new THREE.BoxGeometry(0.07, 0.014, 0.02)),
+  ear: () => geo('ear', () => new THREE.SphereGeometry(0.045, 8, 6).scale(0.5, 1, 0.8)),
+  nose: () => geo('nose', () => new THREE.SphereGeometry(0.03, 8, 6).scale(0.9, 1.1, 1.3)),
+  mouth: () => geo('mouth', () => new THREE.BoxGeometry(0.07, 0.014, 0.02)),
+  belt: () => geo('belt', () => new THREE.CylinderGeometry(0.262, 0.262, 0.06, 16).scale(1.18, 1, 0.62)),
+  jacket: () => geo('jacket', () => new THREE.CylinderGeometry(0.325, 0.27, 0.72, 16).scale(1.18, 1, 0.66).translate(0, 0.36, 0)),
+  shirtFront: () => geo('shirtFront', () => new THREE.BoxGeometry(0.12, 0.6, 0.02)),
+  hairLong: () => geo('hairLong', () => new THREE.CylinderGeometry(0.2, 0.17, 0.5, 14, 1, false, Math.PI * 0.2, Math.PI * 1.6).scale(1, 1, 0.9)),
+  bun: () => geo('bun', () => new THREE.SphereGeometry(0.1, 10, 8)),
+  skirt: () => geo('skirt', () => new THREE.CylinderGeometry(0.27, 0.42, 0.5, 16).scale(1.12, 1, 0.8)),
+  beanie: () => geo('beanie', () => new THREE.SphereGeometry(0.225, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.55).scale(1, 1.15, 1.05)),
+  hatCrown: () => geo('hatCrown', () => new THREE.CylinderGeometry(0.17, 0.2, 0.2, 16)),
+  hatBrim: () => geo('hatBrim', () => new THREE.CylinderGeometry(0.34, 0.34, 0.025, 20)),
+  hatBand: () => geo('hatBand', () => new THREE.CylinderGeometry(0.202, 0.205, 0.05, 16)),
+  crownBase: () => geo('crownBase', () => new THREE.CylinderGeometry(0.2, 0.19, 0.12, 16, 1, true)),
+  crownSpike: () => geo('crownSpike', () => new THREE.ConeGeometry(0.035, 0.11, 6)),
+  lens: () => geo('lens', () => new THREE.BoxGeometry(0.13, 0.08, 0.02)),
+  bridge: () => geo('bridge', () => new THREE.BoxGeometry(0.06, 0.018, 0.02)),
+  pix: () => geo('pix', () => new THREE.BoxGeometry(0.024, 0.024, 0.03)),
+});
+// Pikselowe okulary „thug life" (Cash Glasses): X = czarny piksel, W = biały odblask.
+const CASH_GLASSES = [
+  'XXXXXXXXXXXXXXXXXXX',
+  'XWWXXXXX.XWWXXXXX..',
+  '.XXXXXX...XXXXXX...',
+  '..XXXX.....XXXX....',
+];
 function coloredGeo(key, parts) {
-  return geo(key, () => mergeColored(parts.map(([g, x, y, z, c]) => ({ g: g(), m: partMatrix(x, y, z), c: new THREE.Color(c) }))));
+  return geo(key, () => mergeColored(parts.map(([g, x, y, z, c, ry = 0, sx = 1, sy = 1, sz = 1]) => ({ g: g(), m: partMatrix(x, y, z, ry, sx, sy, sz), c: new THREE.Color(c) }))));
 }
+// o: { skin, hair, shirt, pants, shoes, hairStyle:'short'|'long'|'bun'|'bald', hat:'none'|'cap'|'beanie'|'fedora'|'crown',
+//      hatColor, glasses:'none'|'sun'|'cash', sleeves:'short'|'long', jacket:color|null, skirt:bool, shadow }
 function makePerson(o) {
   const g = new THREE.Group();
-  const body = [[PG.torso, 0, 0.98, 0, o.shirt], [PG.neck, 0, 1.7, 0, o.skin], [PG.head, 0, 1.98, 0, o.skin], [PG.hair, 0, 2.0, 0, o.hair]];
-  if (o.cap) body.push([PG.brim, 0, 2.03, 0.26, o.hair]);
+  g.rotation.order = 'YXZ';
+  const hs = o.hairStyle || 'short', hat = o.hat || (o.cap ? 'cap' : 'none'), hatC = o.hatColor != null ? o.hatColor : o.hair;
+  const shoes = o.shoes != null ? o.shoes : 0x1c1c1c;
+  const body = [[PG.torso, 0, 0.98, 0, o.shirt], [PG.neck, 0, 1.7, 0, o.skin], [PG.head, 0, 1.98, 0, o.skin], [PG.belt, 0, 0.99, 0, 0x2a2420]];
+  if (o.jacket != null) body.push([PG.jacket, 0, 0.98, 0, o.jacket], [PG.shirtFront, 0, 1.36, 0.205, o.shirt]);
+  if (o.skirt) body.push([PG.skirt, 0, 0.78, 0, o.pants]);
+  // twarz
+  for (const s of [-1, 1]) {
+    body.push([PG.eye, s * 0.072, 2.0, 0.165, 0xffffff], [PG.pupil, s * 0.072, 2.0, 0.186, 0x2b1d14],
+      [PG.brow, s * 0.075, 2.06, 0.18, o.hair], [PG.ear, s * 0.19, 1.98, 0, o.skin]);
+  }
+  body.push([PG.nose, 0, 1.955, 0.195, o.skin], [PG.mouth, 0, 1.895, 0.18, 0x8a3b3b]);
+  // włosy
+  if (hs !== 'bald' && hat !== 'beanie') body.push([PG.hair, 0, 2.0, 0, o.hair]);
+  if (hs === 'long') body.push([PG.hairLong, 0, 1.8, -0.02, o.hair]);
+  if (hs === 'bun') body.push([PG.bun, 0, 2.17, -0.14, o.hair]);
+  // nakrycie głowy
+  if (hat === 'cap') body.push([PG.hair, 0, 2.02, 0, hatC], [PG.brim, 0, 2.05, 0.26, hatC]);
+  else if (hat === 'beanie') body.push([PG.beanie, 0, 1.98, 0, hatC]);
+  else if (hat === 'fedora') body.push([PG.hatBrim, 0, 2.14, 0, hatC], [PG.hatCrown, 0, 2.25, 0, hatC], [PG.hatBand, 0, 2.18, 0, 0x1b1b1b]);
+  else if (hat === 'crown') {
+    body.push([PG.crownBase, 0, 2.2, 0, 0xf5c518]);
+    for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2; body.push([PG.crownSpike, Math.sin(a) * 0.19, 2.31, Math.cos(a) * 0.19, i % 2 ? 0xf5c518 : 0xe11d48]); }
+  }
+  // okulary
+  if (o.glasses === 'sun') body.push([PG.lens, -0.075, 2.0, 0.2, 0x111111], [PG.lens, 0.075, 2.0, 0.2, 0x111111], [PG.bridge, 0, 2.02, 0.205, 0x111111]);
+  else if (o.glasses === 'cash') {
+    const px = 0.024, w = CASH_GLASSES[0].length;
+    CASH_GLASSES.forEach((row, r) => [...row].forEach((ch, c) => {
+      if (ch === '.') return;
+      body.push([PG.pix, (c - (w - 1) / 2) * px, 2.025 - r * px, 0.215, ch === 'W' ? 0xffffff : 0x050505]);
+    }));
+  }
   const add = (geom, parent) => { const m = new THREE.Mesh(geom, vcMat); m.castShadow = !!o.shadow; parent.add(m); return m; };
-  add(coloredGeo(`pb${o.shirt}_${o.skin}_${o.hair}_${!!o.cap}`, body), g);
+  const key = [o.shirt, o.skin, o.hair, o.pants, hs, hat, hatC, o.glasses || 'none', o.jacket, !!o.skirt].join('_');
+  add(coloredGeo('pb' + key, body), g);
   const limb = (geom, px, py) => { const pivot = new THREE.Group(); pivot.position.set(px, py, 0); add(geom, pivot); g.add(pivot); return pivot; };
-  const armG = coloredGeo(`pa${o.shirt}_${o.skin}`, [[PG.arm, 0, 0, 0, o.shirt], [PG.hand, 0, -0.72, 0, o.skin]]);
-  const legG = coloredGeo(`pl${o.pants}`, [[PG.leg, 0, 0, 0, o.pants], [PG.shoe, 0, -0.93, 0.05, 0x1c1c1c]]);
+  const sleeve = o.jacket != null ? o.jacket : o.shirt;
+  const longSleeve = o.sleeves === 'long' || o.jacket != null;
+  const armG = coloredGeo(`pa${sleeve}_${o.skin}_${longSleeve}`, [[PG.upperArm, 0, 0, 0, sleeve], [PG.foreArm, 0, -0.33, 0, longSleeve ? sleeve : o.skin], [PG.hand, 0, -0.72, 0, o.skin]]);
+  const legTop = o.skirt ? o.skin : o.pants;
+  const legG = coloredGeo(`pl${legTop}_${o.skirt ? o.skin : o.pants}_${shoes}`, [[PG.thigh, 0, 0, 0, legTop], [PG.shin, 0, -0.48, 0, o.skirt ? o.skin : o.pants],
+    [PG.shoe, 0, -0.93, 0.05, shoes], [PG.sole, 0, -1.0, 0.05, 0xeeeeee]]);
   const la = limb(armG, -0.4, 1.68), ra = limb(armG, 0.4, 1.68);
   const ll = limb(legG, -0.16, 1.0), rl = limb(legG, 0.16, 1.0);
   return { g, la, ra, ll, rl, phase: Math.random() * 6 };
+}
+// Losowy wygląd przechodnia / NPC.
+function randomLook(r = Math.random) {
+  const pk = a => a[Math.floor(r() * a.length)];
+  const fem = r() < 0.5;
+  return { skin: pk(SKINS), hair: pk(HAIRS), shirt: pk(SHIRTS), pants: pk(PANTS),
+    hairStyle: fem ? pk(['long', 'long', 'bun', 'short']) : pk(['short', 'short', 'short', 'bald']),
+    skirt: fem && r() < 0.35, sleeves: r() < 0.5 ? 'short' : 'long', jacket: r() < 0.25 ? pk([0x2b2f3a, 0x5a3a1e, 0x1e3a5f, 0x3b3b3b, 0x7a1f2b]) : null,
+    hat: r() < 0.15 ? pk(['cap', 'beanie', 'fedora']) : 'none', hatColor: pk([0x1e3a5f, 0xb23a48, 0x2f2f2f, 0xd8c39a]),
+    glasses: r() < 0.12 ? 'sun' : 'none', shoes: pk([0x1c1c1c, 0x5a3a1e, 0xf2f2f2]) };
 }
 function animPerson(p, speed, dt, air) {
   if (speed > 0.1) p.phase += dt * (2.4 + speed * 1.2);
@@ -544,45 +639,179 @@ function animPerson(p, speed, dt, air) {
 // ---------------------------------------------------------------- vehicles
 const CAR_COLORS = [0xc0392b, 0x2e86de, 0xf1f2f6, 0x222f3e, 0x10ac84, 0xe67e22, 0x8e44ad, 0x7f8c8d, 0x1e3799, 0xb33939, 0x218c74];
 
+// Parametry jazdy per typ: przyspieszenie, prędkość maks., wsteczny, hamulec, skręt,
+// kolizja (2 okręgi: przesunięcie off, promień rad), ride = kierowca widoczny (motor/hulajnoga).
+const VSPEC = {
+  car:      { acc: 15, max: 36, rev: 10, brake: 32, steer: 0.62, off: 1.3, rad: 1.12, exit: 2.4 },
+  hatch:    { acc: 14, max: 33, rev: 10, brake: 32, steer: 0.7, off: 1.1, rad: 1.05, exit: 2.3 },
+  suv:      { acc: 13, max: 34, rev: 9, brake: 30, steer: 0.58, off: 1.4, rad: 1.2, exit: 2.6 },
+  van:      { acc: 11, max: 30, rev: 8, brake: 28, steer: 0.55, off: 1.45, rad: 1.2, exit: 2.6 },
+  sport:    { acc: 20, max: 44, rev: 10, brake: 36, steer: 0.66, off: 1.3, rad: 1.12, exit: 2.4 },
+  supercar: { acc: 25, max: 52, rev: 10, brake: 40, steer: 0.7, off: 1.35, rad: 1.15, exit: 2.4 },
+  moto:     { acc: 24, max: 48, rev: 3, brake: 38, steer: 1.0, off: 0.55, rad: 0.55, exit: 1.4, ride: 'moto', seatY: 0.92, seatZ: -0.2 },
+  scooter:  { acc: 8, max: 12.5, rev: 2, brake: 22, steer: 1.25, off: 0.35, rad: 0.45, exit: 1.2, ride: 'scooter', seatY: 0.2, seatZ: -0.1 },
+};
+const specOf = type => VSPEC[type] || VSPEC.car;
+const VNAME = { moto: 'motor', scooter: 'hulajnogę' };
+
+// Bryła z profilu bocznego (punkty [wzdłuż, wysokość]) wyciągnięta na szerokość auta.
+function profileGeo(pts, width, bevel = 0.05) {
+  const sh = new THREE.Shape();
+  sh.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) sh.lineTo(pts[i][0], pts[i][1]);
+  sh.closePath();
+  const depth = Math.max(0.01, width - 2 * bevel);
+  const g = new THREE.ExtrudeGeometry(sh, { depth, bevelEnabled: bevel > 0, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 2, curveSegments: 3 });
+  g.translate(0, 0, -depth / 2);
+  g.rotateY(-Math.PI / 2);        // oś „wzdłuż" kształtu → oś Z świata (przód auta = +Z)
+  return g;
+}
+// Profile aut: lower = karoseria do linii okien, glass = szklana kabina (węższa), roof = dach.
+const CAR_SHAPES = {
+  sedan: { len: 4.5, w: 2.0,
+    lower: [[-2.25, 0.32], [2.25, 0.32], [2.32, 0.58], [2.18, 0.9], [0.95, 1.0], [-1.55, 1.02], [-2.2, 0.93], [-2.32, 0.6]],
+    glass: [[0.95, 0.98], [0.2, 1.5], [-1.0, 1.52], [-1.68, 1.0]], roof: [0.15, -0.95, 1.5] },
+  hatch: { len: 3.9, w: 1.9,
+    lower: [[-1.95, 0.32], [1.95, 0.32], [2.0, 0.58], [1.85, 0.88], [0.85, 0.98], [-1.85, 1.0], [-2.0, 0.6]],
+    glass: [[0.85, 0.96], [0.15, 1.5], [-1.6, 1.52], [-1.88, 1.0]], roof: [0.1, -1.55, 1.5] },
+  suv: { len: 4.7, w: 2.1,
+    lower: [[-2.35, 0.45], [2.35, 0.45], [2.42, 0.75], [2.3, 1.15], [1.1, 1.25], [-2.25, 1.27], [-2.42, 0.78]],
+    glass: [[1.1, 1.22], [0.45, 1.85], [-2.05, 1.87], [-2.25, 1.25]], roof: [0.4, -2.0, 1.85] },
+  van: { len: 5.0, w: 2.1,
+    lower: [[-2.5, 0.4], [2.5, 0.4], [2.55, 0.75], [2.4, 1.15], [1.75, 1.3], [-2.5, 1.32], [-2.55, 0.75]],
+    glass: [[1.75, 1.28], [1.15, 2.15], [-2.45, 2.17], [-2.5, 1.3]], roof: [1.1, -2.4, 2.15] },
+  sport: { len: 4.4, w: 2.0,
+    lower: [[-2.2, 0.3], [2.2, 0.3], [2.3, 0.5], [2.15, 0.72], [0.7, 0.86], [-1.7, 0.9], [-2.2, 0.82], [-2.3, 0.55]],
+    glass: [[0.7, 0.84], [-0.05, 1.3], [-0.85, 1.32], [-1.75, 0.88]], roof: [-0.1, -0.8, 1.3] },
+  supercar: { len: 4.6, w: 2.1,
+    lower: [[-2.3, 0.26], [2.3, 0.26], [2.38, 0.42], [2.2, 0.6], [0.6, 0.78], [-1.9, 0.86], [-2.3, 0.82], [-2.38, 0.5]],
+    glass: [[0.6, 0.76], [-0.25, 1.18], [-1.0, 1.2], [-1.95, 0.84]], roof: [-0.3, -0.95, 1.18] },
+};
+const TYPE_SHAPE = { sedan: 'sedan', taxi: 'sedan', police: 'sedan', hatch: 'hatch', suv: 'suv', van: 'van', sport: 'sport', supercar: 'supercar' };
+const BOX = (w, h, d) => geo(`bx${w}_${h}_${d}`, () => new THREE.BoxGeometry(w, h, d));
+const CYLX = (r, w, seg = 16) => geo(`cx${r}_${w}_${seg}`, () => new THREE.CylinderGeometry(r, r, w, seg).rotateZ(Math.PI / 2));
+function carGeometry(type, color) {
+  const S = CAR_SHAPES[TYPE_SHAPE[type] || 'sedan'], L2 = S.len / 2, W = S.w;
+  const parts = [];
+  const push = (g, x, y, z, c, ry, sx, sy, sz) => parts.push({ g, m: partMatrix(x, y, z, ry || 0, sx || 1, sy || 1, sz || 1), c: new THREE.Color(c) });
+  push(geo(`pl_${type}`, () => profileGeo(S.lower, W, 0.08)), 0, 0, 0, color);
+  push(geo(`pg_${type}`, () => profileGeo(S.glass, W * 0.86, 0.04)), 0, 0, 0, 0x16202b);
+  const [rf, rb, ry] = S.roof;
+  push(BOX(W * 0.84, 0.07, rf - rb), 0, ry + 0.02, (rf + rb) / 2, color);                  // dach
+  push(BOX(W * 0.87, 0.5, 0.12), 0, (S.glass[0][1] + ry) / 2, (rf + rb) / 2 + 0.25, color); // słupek B
+  const groundY = S.lower[0][1];
+  // zderzaki, grill, tablice
+  push(BOX(W * 0.98, 0.2, 0.22), 0, groundY + 0.12, L2 + 0.04, 0x2a2d33);
+  push(BOX(W * 0.98, 0.2, 0.22), 0, groundY + 0.12, -L2 - 0.04, 0x2a2d33);
+  push(BOX(W * 0.42, 0.16, 0.06), 0, groundY + 0.34, L2 + 0.08, 0x111418);
+  push(BOX(0.52, 0.13, 0.03), 0, groundY + 0.13, L2 + 0.17, 0xf2f2f2);
+  push(BOX(0.52, 0.13, 0.03), 0, groundY + 0.3, -L2 - 0.1, 0xf5d000);
+  // światła
+  const ly = groundY + 0.36;
+  for (const s of [-1, 1]) {
+    push(BOX(0.42, 0.13, 0.06), s * W * 0.33, ly, L2 + 0.04, 0xfdf6d8);
+    push(BOX(0.4, 0.04, 0.06), s * W * 0.33, ly + 0.1, L2 + 0.03, 0xbfe6ff);
+    push(BOX(0.38, 0.13, 0.06), s * W * 0.34, ly + 0.08, -L2 - 0.03, 0xe0161b);
+    // lusterka
+    push(BOX(0.22, 0.12, 0.1), s * (W / 2 + 0.08), S.glass[0][1] + 0.05, S.glass[0][0] - 0.15, color);
+    push(BOX(0.04, 0.1, 0.09), s * (W / 2 + 0.19), S.glass[0][1] + 0.05, S.glass[0][0] - 0.15, 0x9fb3c8);
+    // klamki i linia drzwi
+    push(BOX(0.03, 0.04, 0.16), s * (W / 2 + 0.01), S.glass[0][1] - 0.18, 0.15, 0x9aa0a8);
+    push(BOX(0.02, 0.5, 0.02), s * (W / 2 + 0.005), (groundY + S.glass[0][1]) / 2 + 0.1, (rf + rb) / 2 + 0.25, 0x1b1e23);
+  }
+  // koła: opona + felga + piasta
+  const wr = type === 'suv' || type === 'van' ? 0.42 : 0.37, wz = L2 - (type === 'supercar' ? 0.75 : 0.85);
+  for (const [sx, sz] of [[-1, 1], [1, 1], [-1, -1], [1, -1]]) {
+    push(CYLX(wr, 0.28, 18), sx * (W / 2 - 0.12), wr, sz * wz, 0x141414);
+    push(CYLX(wr * 0.62, 0.3, 12), sx * (W / 2 - 0.12), wr, sz * wz, type === 'supercar' || type === 'sport' ? 0x2b2b2b : 0xc9ced6);
+    push(CYLX(wr * 0.2, 0.32, 8), sx * (W / 2 - 0.12), wr, sz * wz, 0x6b7280);
+  }
+  // dodatki wg typu
+  const top = ry + 0.06;
+  if (type === 'taxi') { push(BOX(0.8, 0.24, 0.3), 0, top + 0.14, (rf + rb) / 2, 0x222222); push(BOX(0.7, 0.16, 0.32), 0, top + 0.14, (rf + rb) / 2, 0xffe36b); }
+  if (type === 'police') {
+    push(BOX(0.5, 0.16, 0.28), -0.3, top + 0.1, (rf + rb) / 2, 0xff2030); push(BOX(0.5, 0.16, 0.28), 0.3, top + 0.1, (rf + rb) / 2, 0x2060ff);
+    for (const s of [-1, 1]) push(BOX(0.02, 0.18, S.len * 0.7), s * (W / 2 + 0.01), groundY + 0.48, 0, 0x1e3a8a);
+  }
+  if (type === 'suv') for (const s of [-1, 1]) push(BOX(0.06, 0.06, (rf - rb) * 0.9), s * W * 0.36, top + 0.05, (rf + rb) / 2, 0x2a2d33);
+  if (type === 'supercar' || type === 'sport') {
+    push(BOX(W * 0.9, 0.05, 0.32), 0, S.lower[6][1] + 0.22, -L2 + 0.25, 0x111111);           // spojler
+    for (const s of [-1, 1]) push(BOX(0.06, 0.2, 0.06), s * W * 0.32, S.lower[6][1] + 0.1, -L2 + 0.25, 0x111111);
+  }
+  return mergeColored(parts);
+}
+// Motor sportowy w stylu „ninja": owiewka, zbiornik, siedzenie, widelec, wydech.
+function motoGeometry(color) {
+  const parts = [];
+  const push = (g, x, y, z, c, rx = 0) => {
+    const m = new THREE.Matrix4().compose(_p.set(x, y, z), _q.setFromEuler(_e.set(rx, 0, 0)), _s.set(1, 1, 1));
+    parts.push({ g, m, c: new THREE.Color(c) });
+  };
+  for (const z of [0.78, -0.72]) {
+    push(CYLX(0.33, 0.17, 20), 0, 0.33, z, 0x121212);
+    push(CYLX(0.22, 0.19, 10), 0, 0.33, z, 0x2a2a2a);
+    push(CYLX(0.07, 0.21, 8), 0, 0.33, z, 0xb8bec7);
+  }
+  push(geo('moto_fair', () => profileGeo([[0.95, 0.55], [1.05, 0.85], [0.75, 1.2], [0.25, 1.05], [0.05, 0.6], [0.45, 0.45]], 0.46, 0.06)), 0, 0, 0, color);
+  push(geo('moto_tail', () => profileGeo([[-0.25, 0.8], [-1.05, 1.02], [-1.0, 0.92], [-0.3, 0.68]], 0.3, 0.05)), 0, 0, 0, color);
+  push(geo('moto_tank', () => new THREE.SphereGeometry(0.26, 14, 10).scale(0.75, 0.62, 1.25)), 0, 0.98, 0.15, color);
+  push(geo('moto_seat', () => new THREE.BoxGeometry(0.3, 0.09, 0.62)), 0, 0.93, -0.33, 0x151515);
+  push(geo('moto_frame', () => new THREE.BoxGeometry(0.16, 0.22, 1.1)), 0, 0.6, 0.0, 0x2b2b2b);
+  push(geo('moto_engine', () => new THREE.BoxGeometry(0.34, 0.32, 0.45)), 0, 0.52, 0.05, 0x3a3d42);
+  push(geo('moto_screen', () => new THREE.BoxGeometry(0.3, 0.2, 0.03)), 0, 1.22, 0.78, 0x8fb7d6, -0.55);
+  push(geo('moto_light', () => new THREE.BoxGeometry(0.26, 0.08, 0.05)), 0, 0.96, 1.05, 0xfdf6d8, -0.3);
+  push(geo('moto_fork', () => new THREE.CylinderGeometry(0.035, 0.035, 0.8, 8)), -0.1, 0.72, 0.68, 0xb8bec7, 0.38);
+  push(geo('moto_fork', () => new THREE.CylinderGeometry(0.035, 0.035, 0.8, 8)), 0.1, 0.72, 0.68, 0xb8bec7, 0.38);
+  push(geo('moto_bar', () => new THREE.CylinderGeometry(0.025, 0.025, 0.62, 8).rotateZ(Math.PI / 2)), 0, 1.08, 0.5, 0x1b1b1b);
+  push(geo('moto_exh', () => new THREE.CylinderGeometry(0.06, 0.07, 0.6, 10).rotateX(Math.PI / 2)), 0.2, 0.55, -0.55, 0xc0c4ca, -0.2);
+  push(geo('moto_tl', () => new THREE.BoxGeometry(0.16, 0.05, 0.04)), 0, 0.98, -1.05, 0xe0161b);
+  push(geo('moto_mirror', () => new THREE.BoxGeometry(0.12, 0.06, 0.03)), -0.3, 1.14, 0.55, 0x1b1b1b);
+  push(geo('moto_mirror', () => new THREE.BoxGeometry(0.12, 0.06, 0.03)), 0.3, 1.14, 0.55, 0x1b1b1b);
+  push(geo('moto_stripe', () => new THREE.BoxGeometry(0.47, 0.05, 0.4)), 0, 0.8, 0.62, 0x111111, -0.6);
+  return mergeColored(parts);
+}
+// Hulajnoga elektryczna: deska, kierownica, wyświetlacz, małe koła, pomarańczowe akcenty.
+function scooterGeometry(color) {
+  const parts = [];
+  const push = (g, x, y, z, c, rx = 0) => {
+    const m = new THREE.Matrix4().compose(_p.set(x, y, z), _q.setFromEuler(_e.set(rx, 0, 0)), _s.set(1, 1, 1));
+    parts.push({ g, m, c: new THREE.Color(c) });
+  };
+  for (const z of [0.55, -0.55]) { push(CYLX(0.2, 0.11, 18), 0, 0.2, z, 0x121212); push(CYLX(0.12, 0.12, 10), 0, 0.2, z, 0xff7a1a); }
+  push(geo('sc_deck', () => new THREE.BoxGeometry(0.24, 0.07, 1.0)), 0, 0.22, -0.02, color);
+  push(geo('sc_grip', () => new THREE.BoxGeometry(0.2, 0.01, 0.82)), 0, 0.26, -0.04, 0x0b0b0b);
+  push(geo('sc_stem', () => new THREE.CylinderGeometry(0.035, 0.04, 1.0, 10)), 0, 0.72, 0.6, 0x2b2b2b, 0.12);
+  push(geo('sc_bar', () => new THREE.CylinderGeometry(0.022, 0.022, 0.56, 8).rotateZ(Math.PI / 2)), 0, 1.2, 0.66, 0x1b1b1b);
+  push(geo('sc_hand', () => new THREE.CylinderGeometry(0.03, 0.03, 0.1, 8).rotateZ(Math.PI / 2)), -0.25, 1.2, 0.66, 0xff7a1a);
+  push(geo('sc_hand', () => new THREE.CylinderGeometry(0.03, 0.03, 0.1, 8).rotateZ(Math.PI / 2)), 0.25, 1.2, 0.66, 0xff7a1a);
+  push(geo('sc_disp', () => new THREE.BoxGeometry(0.1, 0.03, 0.08)), 0, 1.23, 0.66, 0x6ee7ff);
+  push(geo('sc_fend', () => new THREE.BoxGeometry(0.14, 0.03, 0.34)), 0, 0.42, -0.55, 0xff7a1a);
+  push(geo('sc_light', () => new THREE.BoxGeometry(0.08, 0.06, 0.04)), 0, 1.05, 0.66, 0xfdf6d8);
+  return mergeColored(parts);
+}
 function makeCarMesh(type, color) {
-  let bh = 0.72, len = 4.4, bw = 2.0, cabH = 0.62, cabLen = 2.2, cabZ = -0.25;
-  if (type === 'van') { bh = 1.15; len = 4.8; cabH = 0.95; cabLen = 3.3; cabZ = -0.55; }
-  if (type === 'sport') { bh = 0.58; cabH = 0.48; cabLen = 1.8; cabZ = -0.4; }
-  const mesh = new THREE.Mesh(geo(`car_${type}_${color}`, () => {
-    const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
-    const parts = [
-      [box(bw, bh, len), 0, 0.36 + bh / 2, 0, color],
-      [box(bw * 0.86, cabH, cabLen), 0, 0.36 + bh + cabH / 2, cabZ, 0x1d2835],
-      [box(bw * 0.88, 0.08, cabLen * 0.92), 0, 0.36 + bh + cabH, cabZ, color],
-    ];
-    const lightY = 0.36 + bh * 0.62;
-    for (const s of [-1, 1]) {
-      parts.push([box(0.46, 0.17, 0.05), s * 0.62, lightY, len / 2 + 0.02, 0xfff8e0]);
-      parts.push([box(0.46, 0.15, 0.05), s * 0.62, lightY, -len / 2 - 0.02, 0xff2d2d]);
-    }
-    const wg = new THREE.CylinderGeometry(0.38, 0.38, 0.3, 10).rotateZ(Math.PI / 2);
-    for (const [sx, sz] of [[-1, 1], [1, 1], [-1, -1], [1, -1]]) parts.push([wg, sx * (bw / 2 - 0.08), 0.38, sz * (len / 2 - 0.85), 0x151515]);
-    if (type === 'taxi') parts.push([box(0.8, 0.26, 0.32), 0, 0.36 + bh + cabH + 0.17, cabZ, 0x222222]);
-    if (type === 'police') {
-      parts.push([box(0.5, 0.18, 0.3), -0.3, 0.36 + bh + cabH + 0.12, cabZ, 0xff2030]);
-      parts.push([box(0.5, 0.18, 0.3), 0.3, 0.36 + bh + cabH + 0.12, cabZ, 0x2060ff]);
-    }
-    return mergeColored(parts.map(([g, x, y, z, c]) => ({ g, m: partMatrix(x, y, z), c: new THREE.Color(c) })));
-  }), vcMat);
+  const g = type === 'moto' ? geo(`moto_${color}`, () => motoGeometry(color))
+    : type === 'scooter' ? geo(`scooter_${color}`, () => scooterGeometry(color))
+    : geo(`car2_${type}_${color}`, () => carGeometry(type, color));
+  const mesh = new THREE.Mesh(g, vcMat);
   mesh.castShadow = true;
-  return { g: mesh, wheels: [], len };
+  mesh.rotation.order = 'YXZ';
+  return { g: mesh, wheels: [], len: (CAR_SHAPES[TYPE_SHAPE[type]] || { len: 2 }).len };
 }
 
 const vehicles = [];
 function spawnVehicle(type, color, x, z, heading, kind) {
   const c = makeCarMesh(type, color);
-  const v = { mesh: c.g, wheels: c.wheels, type, pos: new THREE.Vector3(x, 0, z), heading, speed: 0, steer: 0, kind, ai: null, honk: 0 };
+  const v = { mesh: c.g, wheels: c.wheels, type, spec: specOf(type), pos: new THREE.Vector3(x, 0, z), heading, speed: 0, steer: 0, kind, ai: null, honk: 0, lean: 0 };
   c.g.position.copy(v.pos); c.g.rotation.y = heading;
   scene.add(c.g);
   vehicles.push(v);
   return v;
 }
-function randomCarType() { const r = rand(); return r < 0.12 ? 'taxi' : r < 0.22 ? 'van' : r < 0.3 ? 'sport' : r < 0.35 ? 'police' : 'sedan'; }
+function randomCarType() {
+  const r = rand();
+  return r < 0.12 ? 'taxi' : r < 0.2 ? 'van' : r < 0.27 ? 'sport' : r < 0.32 ? 'police' : r < 0.47 ? 'suv' : r < 0.64 ? 'hatch' : 'sedan';
+}
 function carColor(type) { return type === 'taxi' ? 0xf5c518 : type === 'police' ? 0xf1f2f6 : pick(CAR_COLORS); }
 
 // traffic AI --------------------------------------------------------------
@@ -632,7 +861,7 @@ function spawnPeds(count) {
   const inset = 2.6, side = B - 2 * inset;
   for (let i = 0; i < count; i++) {
     const bx = Math.floor(rand() * N), bz = Math.floor(rand() * N);
-    const p = makePerson({ skin: pick(SKINS), hair: pick(HAIRS), shirt: pick(SHIRTS), pants: pick(PANTS) });
+    const p = makePerson(randomLook(rand));
     scene.add(p.g);
     peds.push({ p, x0: bx0(bx) + inset, z0: bx0(bz) + inset, side, s: rand() * side * 4, dir: rand() < 0.5 ? 1 : -1, speed: rr(1.2, 2.1),
       knock: 0, ox: 0, oz: 0, vx: 0, vz: 0, vy: 0, y: 0, pause: 0 });
@@ -724,8 +953,57 @@ function refreshMarkers() {
 }
 
 // ---------------------------------------------------------------- player
-const player = makePerson({ skin: 0xe8b98f, hair: 0xf2b632, shirt: 0x2b2f3a, pants: 0x3b5a8a, cap: true, shadow: true });
+// ---------------------------------------------------------------- sklep (katalog)
+// cat: outfit | hat | glasses | hair | vehicle. price 0 = darmowe / startowe.
+const SHOP = [
+  { id: 'outfit_classic', cat: 'outfit', name: 'Klasyk', desc: 'Granatowa koszulka i dżinsy', price: 0, look: { shirt: 0x2b2f3a, pants: 0x3b5a8a, sleeves: 'short' } },
+  { id: 'outfit_hoodie', cat: 'outfit', name: 'Bluza z kapturem', desc: 'Szara bluza, czarne spodnie', price: 250, look: { shirt: 0x8a8f99, pants: 0x222222, sleeves: 'long' } },
+  { id: 'outfit_sport', cat: 'outfit', name: 'Dres sportowy', desc: 'Czerwony dres z długimi rękawami', price: 350, look: { shirt: 0xc0392b, pants: 0xc0392b, sleeves: 'long', shoes: 0xf2f2f2 } },
+  { id: 'outfit_hawaii', cat: 'outfit', name: 'Hawajska koszula', desc: 'Na wakacje w mieście', price: 400, look: { shirt: 0x19b5a5, pants: 0xd8c39a, sleeves: 'short', shoes: 0x5a3a1e } },
+  { id: 'outfit_leather', cat: 'outfit', name: 'Skórzana kurtka', desc: 'Styl rockowy', price: 700, look: { shirt: 0xeeeeee, pants: 0x222222, jacket: 0x1b1b1b } },
+  { id: 'outfit_suit', cat: 'outfit', name: 'Garnitur', desc: 'Dla szefa miasta', price: 900, look: { shirt: 0xf5f5f5, pants: 0x1f2633, jacket: 0x1f2633, shoes: 0x111111 } },
+  { id: 'outfit_gold', cat: 'outfit', name: 'Złoty strój', desc: 'Grammar Legend', price: 3000, look: { shirt: 0x111111, pants: 0x111111, jacket: 0xd4a017, shoes: 0xd4a017 } },
+  { id: 'hat_none', cat: 'hat', name: 'Bez nakrycia', desc: 'Widać fryzurę', price: 0, hat: 'none' },
+  { id: 'hat_cap', cat: 'hat', name: 'Czapka z daszkiem', desc: 'Klasyka', price: 0, hat: 'cap', hatColor: 0xf2b632 },
+  { id: 'hat_beanie', cat: 'hat', name: 'Czapka zimowa', desc: 'Ciepła beanie', price: 150, hat: 'beanie', hatColor: 0x1e3a5f },
+  { id: 'hat_fedora', cat: 'hat', name: 'Kapelusz', desc: 'Jak detektyw', price: 450, hat: 'fedora', hatColor: 0x3a2f28 },
+  { id: 'hat_crown', cat: 'hat', name: 'Korona', desc: 'Król Grammar City', price: 5000, hat: 'crown' },
+  { id: 'glasses_none', cat: 'glasses', name: 'Bez okularów', desc: '', price: 0, glasses: 'none' },
+  { id: 'glasses_sun', cat: 'glasses', name: 'Okulary przeciwsłoneczne', desc: 'Tylko dla stylu', price: 200, glasses: 'sun' },
+  { id: 'glasses_cash', cat: 'glasses', name: 'Cash Glasses', desc: 'Pikselowe okulary. Podwajają pieniądze za misje!', price: 1500, glasses: 'cash', perk: true },
+  { id: 'hair_blond', cat: 'hair', name: 'Blond', desc: '', price: 0, hair: 0xf2b632, hairStyle: 'short' },
+  { id: 'hair_dark', cat: 'hair', name: 'Ciemne krótkie', desc: '', price: 0, hair: 0x2b1d14, hairStyle: 'short' },
+  { id: 'hair_long', cat: 'hair', name: 'Długie brązowe', desc: '', price: 100, hair: 0x5a3a1e, hairStyle: 'long' },
+  { id: 'hair_bun', cat: 'hair', name: 'Kok', desc: '', price: 100, hair: 0x111111, hairStyle: 'bun' },
+  { id: 'hair_red', cat: 'hair', name: 'Rude', desc: '', price: 150, hair: 0xb5501f, hairStyle: 'short' },
+  { id: 'hair_bald', cat: 'hair', name: 'Łysy', desc: '', price: 0, hair: 0x2b1d14, hairStyle: 'bald' },
+  { id: 'veh_scooter', cat: 'vehicle', name: 'Hulajnoga elektryczna Volt K-Pro', desc: 'Szybka e-hulajnoga, do ~45 km/h', price: 400, vtype: 'scooter', color: 0x2b2b2b },
+  { id: 'veh_hatch', cat: 'vehicle', name: 'Hatchback City', desc: 'Małe miejskie auto', price: 800, vtype: 'hatch', color: 0x2e86de },
+  { id: 'veh_suv', cat: 'vehicle', name: 'SUV Explorer', desc: 'Wysoki i stabilny', price: 1400, vtype: 'suv', color: 0x10ac84 },
+  { id: 'veh_moto', cat: 'vehicle', name: 'Motor sportowy Raptor 600', desc: 'Zielona strzała, do ~170 km/h', price: 2200, vtype: 'moto', color: 0x63c132 },
+  { id: 'veh_super', cat: 'vehicle', name: 'Supercar Fulmine', desc: 'Najszybsze auto w mieście', price: 4000, vtype: 'supercar', color: 0xe8410b },
+];
+const SHOP_CATS = [['outfit', '👕 Stroje'], ['hat', '🧢 Nakrycia głowy'], ['glasses', '🕶️ Okulary'], ['hair', '💇 Fryzury'], ['vehicle', '🏍️ Pojazdy']];
+const shopItem = id => SHOP.find(i => i.id === id);
+function playerLook() {
+  const e = wardrobe.equip;
+  const out = (shopItem('outfit_' + e.outfit) || SHOP[0]).look;
+  const h = shopItem('hat_' + e.hat) || shopItem('hat_cap');
+  const hair = shopItem('hair_' + e.hair) || shopItem('hair_blond');
+  return Object.assign({ skin: 0xe8b98f, shadow: true, hair: hair.hair, hairStyle: hair.hairStyle, hat: h.hat, hatColor: h.hatColor,
+    glasses: e.glasses || 'none', shoes: 0x1c1c1c }, out);
+}
+const hasCashGlasses = () => wardrobe.equip.glasses === 'cash';
+
+let player = makePerson(playerLook());
 scene.add(player.g);
+// Przebudowa postaci gracza po zmianie stroju (pozycja i widoczność bez zmian).
+function rebuildPlayer() {
+  const old = player, np = makePerson(playerLook());
+  np.g.position.copy(old.g.position); np.g.rotation.copy(old.g.rotation); np.g.visible = old.g.visible;
+  scene.remove(old.g); scene.add(np.g);
+  player = np;
+}
 const P = { pos: new THREE.Vector3(), vy: 0, facing: Math.PI, onGround: true, car: null, speed: 0 };
 
 // GPS arrow
@@ -771,7 +1049,10 @@ window.addEventListener('keydown', e => {
   if (e.code === 'KeyM') { e.preventDefault(); ui === 'map' ? closeMap() : !ui && openMap(); return; }
   if (e.code === 'KeyH') { ui === 'help' ? closeHelp() : !ui && openHelp(); return; }
   if (e.code === 'KeyN') { Sound.toggle(); toast(Sound.muted ? 'Dźwięk wyłączony' : 'Dźwięk włączony'); return; }
+  if (e.code === 'KeyB') { ui === 'shop' ? closeShop() : !ui && openShop(); return; }
   if (ui) return;
+  if (e.code === 'KeyV' && !e.repeat) { summonVehicle(); return; }
+  if (e.code === 'KeyT' && !e.repeat) { if (nearNPC && !P.car) openTalk(nearNPC); return; }
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
   if (e.code === 'KeyF' && !e.repeat) toggleCar();
   if (e.code === 'KeyE' && !e.repeat) tryStartMission();
@@ -858,7 +1139,7 @@ touchUI.querySelectorAll('[data-hold]').forEach(b => {
   b.addEventListener('pointerleave', e => { if (e.pointerType !== 'touch') up(); });
 });
 // Tap buttons fire an action once.
-const TAPS = { car: () => toggleCar(), mission: () => tryStartMission(), map: () => openMap() };
+const TAPS = { car: () => toggleCar(), mission: () => tryStartMission(), map: () => openMap(), shop: () => openShop(), call: () => summonVehicle() };
 touchUI.querySelectorAll('[data-tap]').forEach(b => {
   const fire = e => { e.preventDefault(); Sound.init(); TAPS[b.dataset.tap](); };
   if (HAS_TOUCH) b.addEventListener('touchstart', fire, { passive: false });
@@ -898,8 +1179,9 @@ function updateTouchUI() {
   if (!touchMode) return;
   const show = !ui;
   const carAvail = !!P.car || vehicles.some(v => Math.hypot(v.pos.x - P.pos.x, v.pos.z - P.pos.z) < 4.5);
-  const misAvail = !!nearMission && !P.car && isUnlocked(nearMission);
-  const st = `${show}|${carAvail}|${misAvail}|${!!P.car}`;
+  const talkAvail = !nearMission && !!nearNPC && !P.car;
+  const misAvail = (!!nearMission && !P.car && isUnlocked(nearMission)) || talkAvail;
+  const st = `${show}|${carAvail}|${misAvail}|${!!P.car}|${talkAvail}`;
   if (st === touchState) return;
   touchState = st;
   touchUI.hidden = !show;
@@ -907,6 +1189,7 @@ function updateTouchUI() {
   $('t-car').classList.toggle('off', !carAvail);
   $('t-car').textContent = P.car ? 'WYSIĄDŹ' : 'AUTO';
   $('t-mission').classList.toggle('off', !misAvail);
+  $('t-mission').textContent = talkAvail ? 'ROZMOWA' : 'MISJA';
   $('t-jump').textContent = P.car ? 'HAMULEC' : 'SKOK';
   $('t-sprint').classList.toggle('off', !!P.car);
 }
@@ -915,6 +1198,8 @@ function onEscape() {
   if (ui === 'map') closeMap();
   else if (ui === 'help') closeHelp();
   else if (ui === 'quiz') abortQuiz();
+  else if (ui === 'talk') closeTalk();
+  else if (ui === 'shop') closeShop();
 }
 
 // ---------------------------------------------------------------- sound
@@ -990,7 +1275,7 @@ function pushOut(p, r, list, feetY) {
   return moved;
 }
 const carFwd = v => ({ x: Math.sin(v.heading), z: Math.cos(v.heading) });
-function carCircles(v) { const f = carFwd(v); return [[v.pos.x + f.x * 1.3, v.pos.z + f.z * 1.3], [v.pos.x - f.x * 1.3, v.pos.z - f.z * 1.3]]; }
+function carCircles(v) { const f = carFwd(v), o = (v.spec || VSPEC.car).off; return [[v.pos.x + f.x * o, v.pos.z + f.z * o], [v.pos.x - f.x * o, v.pos.z - f.z * o]]; }
 
 // ---------------------------------------------------------------- player update
 const tmpV = new THREE.Vector3();
@@ -1023,9 +1308,10 @@ function updateOnFoot(dt) {
   pushOut(p, 0.45, nearCols, P.pos.y + 0.01);
   for (const v of vehicles) {
     if (Math.abs(v.pos.x - p.x) > 6 || Math.abs(v.pos.z - p.z) > 6) continue;
+    const lim = (v.spec || VSPEC.car).rad + 0.43;
     for (const [cx, cz] of carCircles(v)) {
       const dx = p.x - cx, dz = p.z - cz, d = Math.hypot(dx, dz);
-      if (d < 1.55 && d > 1e-4) { p.x = cx + dx / d * 1.55; p.z = cz + dz / d * 1.55; }
+      if (d < lim && d > 1e-4) { p.x = cx + dx / d * lim; p.z = cz + dz / d * lim; }
     }
   }
   P.pos.x = clamp(p.x, -BOUND, BOUND); P.pos.z = clamp(p.z, -BOUND, BOUND);
@@ -1040,27 +1326,29 @@ function updateCar(v, dt) {
   const up = !ui && key('KeyW', 'ArrowUp'), down = !ui && key('KeyS', 'ArrowDown');
   const left = !ui && key('KeyA', 'ArrowLeft'), right = !ui && key('KeyD', 'ArrowRight');
   const hb = !ui && key('Space');
-  if (up) { v.speed += (v.speed < -0.5 ? BRAKE : ACC * (1 - v.speed / MAXS)) * dt; }
-  else if (down) { v.speed -= (v.speed > 0.5 ? BRAKE : ACC * 0.7 * (1 + v.speed / MAXR)) * dt; }
+  const sp = v.spec || VSPEC.car;
+  if (up) { v.speed += (v.speed < -0.5 ? sp.brake : sp.acc * (1 - v.speed / sp.max)) * dt; }
+  else if (down) { v.speed -= (v.speed > 0.5 ? sp.brake : sp.acc * 0.7 * (1 + v.speed / sp.rev)) * dt; }
   else { v.speed *= 1 - Math.min(1, 0.55 * dt); if (Math.abs(v.speed) < 0.15) v.speed = 0; }
   if (hb) { v.speed *= 1 - Math.min(1, 2.2 * dt); }
   const steerIn = (left ? 1 : 0) - (right ? 1 : 0);
   v.steer = lerp(v.steer, steerIn, Math.min(1, dt * 6));
-  const maxSteer = 0.62 / (1 + Math.abs(v.speed) * 0.045);
+  const maxSteer = sp.steer / (1 + Math.abs(v.speed) * 0.045);
   v.heading += v.steer * maxSteer * v.speed / 3.0 * dt * (hb ? 1.7 : 1);
   const f = carFwd(v);
   v.pos.x += f.x * v.speed * dt; v.pos.z += f.z * v.speed * dt;
   // collisions: buildings & other vehicles
   let impact = 0;
-  for (const off of [1.3, -1.3]) {
+  for (const off of [sp.off, -sp.off]) {
     const p = { x: v.pos.x + f.x * off, z: v.pos.z + f.z * off }, ox = p.x, oz = p.z;
-    pushOut(p, 1.12, nearCols);
+    pushOut(p, sp.rad, nearCols);
     for (const o of vehicles) {
       if (o === v || Math.abs(o.pos.x - v.pos.x) > 8 || Math.abs(o.pos.z - v.pos.z) > 8) continue;
+      const hit = sp.rad + (o.spec || VSPEC.car).rad;
       for (const [qx, qz] of carCircles(o)) {
         const dx = p.x - qx, dz = p.z - qz, d = Math.hypot(dx, dz);
-        if (d < 2.2 && d > 1e-4) {
-          const k = (2.2 - d) / d;
+        if (d < hit && d > 1e-4) {
+          const k = (hit - d) / d;
           if (o.kind === 'parked') { p.x += dx * k * 0.5; p.z += dz * k * 0.5; o.pos.x -= dx * k * 0.5; o.pos.z -= dz * k * 0.5; o.mesh.position.copy(o.pos); }
           else { p.x += dx * k; p.z += dz * k; }
         }
@@ -1081,7 +1369,7 @@ function updateCar(v, dt) {
     if (q.knock > 0) continue;
     const qx = q.p.g.position.x, qz = q.p.g.position.z;
     for (const [cx, cz] of carCircles(v)) {
-      if (Math.hypot(qx - cx, qz - cz) < 1.6) {
+      if (Math.hypot(qx - cx, qz - cz) < sp.rad + 0.5) {
         q.knock = 3.2; q.vx = f.x * v.speed * 0.55 + (qx - cx) * 2; q.vz = f.z * v.speed * 0.55 + (qz - cz) * 2; q.vy = 5 + Math.abs(v.speed) * 0.1;
         v.speed *= 0.85; Sound.noise(0.18, 0.4, 400);
         if (performance.now() - pedWarnT > 2500) { pedWarnT = performance.now(); const fine = Math.min(save.money, 25); save.money -= fine; persist(); toast(`Uważaj na pieszych! −$${fine}`, 'bad'); }
@@ -1090,11 +1378,26 @@ function updateCar(v, dt) {
     }
   }
   poseCar(v, dt);
-  Sound.engine(true, v.speed, up);
+  if (sp.ride) posePlayerRider(v);
+  Sound.engine(true, v.speed * (sp.ride === 'scooter' ? 0.4 : 1), up && sp.ride !== 'scooter');
+}
+// Gracz na motorze (siedzi, pochylony) lub hulajnodze (stoi) — pozycja i poza kończyn.
+function posePlayerRider(v) {
+  const sp = v.spec, f = carFwd(v);
+  const lift = sp.ride === 'moto' ? sp.seatY - 1.0 : sp.seatY;
+  player.g.position.set(v.pos.x + f.x * sp.seatZ, v.pos.y + lift, v.pos.z + f.z * sp.seatZ);
+  player.g.rotation.set(sp.ride === 'moto' ? 0.32 : 0.06, v.heading, v.lean || 0);
+  if (sp.ride === 'moto') { player.ll.rotation.set(-1.15, 0, -0.18); player.rl.rotation.set(-1.15, 0, 0.18); player.la.rotation.set(-1.25, 0, 0.15); player.ra.rotation.set(-1.25, 0, -0.15); }
+  else { player.ll.rotation.set(0.12, 0, 0); player.rl.rotation.set(-0.15, 0, 0); player.la.rotation.set(-1.05, 0, 0.12); player.ra.rotation.set(-1.05, 0, -0.12); }
 }
 function poseCar(v, dt) {
   v.mesh.position.copy(v.pos);
   v.mesh.rotation.y = v.heading;
+  if (v.spec && v.spec.ride) {
+    const want = -(v.steer || 0) * Math.min(1, Math.abs(v.speed) / 14) * (v.spec.ride === 'moto' ? 0.42 : 0.22);
+    v.lean = lerp(v.lean || 0, want, Math.min(1, dt * 6));
+    v.mesh.rotation.z = v.lean;
+  }
   const spin = v.speed * dt / 0.38;
   v.wheels.forEach((w, i) => { w.rotation.x += spin; if (i < 2) w.rotation.y = (v.steer || 0) * 0.45; });
 }
@@ -1105,12 +1408,14 @@ function toggleCar() {
     if (Math.abs(v.speed) > 6) { toast('Zwolnij, żeby wysiąść!'); return; }
     const f = carFwd(v);
     for (const s of [1, -1]) {
-      const x = v.pos.x + f.z * 2.4 * s, z = v.pos.z - f.x * 2.4 * s;
+      const ex = (v.spec || VSPEC.car).exit, x = v.pos.x + f.z * ex * s, z = v.pos.z - f.x * ex * s;
       const p = { x, z };
       if (!pushOut(p, 0.45, nearCols, 0.2) || s === -1) { P.pos.set(p.x, groundAt(p.x, p.z), p.z); break; }
     }
-    v.kind = 'parked'; v.speed = 0; v.steer = 0;
+    v.kind = 'parked'; v.speed = 0; v.steer = 0; v.lean = 0; v.mesh.rotation.z = 0;
     P.car = null; player.g.visible = true; P.facing = v.heading; P.speed = 0;
+    player.g.rotation.set(0, P.facing, 0);
+    for (const l of [player.ll, player.rl, player.la, player.ra]) l.rotation.set(0, 0, 0);
     Sound.door(); Sound.engine(false, 0, false);
     $('speedo').hidden = true;
     return;
@@ -1119,7 +1424,7 @@ function toggleCar() {
   for (const v of vehicles) { const d = Math.hypot(v.pos.x - P.pos.x, v.pos.z - P.pos.z); if (d < bd) { bd = d; best = v; } }
   if (!best) return;
   if (best.ai) { best.ai = null; toast('Auto przejęte! Kierowca uciekł.', 'good'); }
-  best.kind = 'player'; best.speed = 0; P.car = best; player.g.visible = false;
+  best.kind = 'player'; best.speed = 0; P.car = best; player.g.visible = !!(best.spec && best.spec.ride);
   Sound.door();
   $('speedo').hidden = false;
 }
@@ -1519,13 +1824,16 @@ function checkMissionProximity() {
   } else if (P.car) {
     const close = markers.find(mk => Math.hypot(mk.m.mx - P.car.pos.x, mk.m.mz - P.car.pos.z) < 7 && mk.state !== 'locked');
     if (close) promptText = `<kbd>F</kbd> Wysiądź z auta i wejdź w znacznik: <b>${esc(close.m.place)}</b>`;
+  } else if (nearNPC) {
+    promptText = `<kbd>T</kbd> Porozmawiaj: <b>${esc(nearNPC.t.name)}</b> · ${esc(nearNPC.t.role)}${nearNPC.done ? ' ✓' : ` · <span style="color:var(--cash)">+${fmtMoney(TALK_REWARD)}</span>`}`;
   } else {
     const car = vehicles.find(v => Math.hypot(v.pos.x - P.pos.x, v.pos.z - P.pos.z) < 4.5);
-    if (car) promptText = `<kbd>F</kbd> ${car.ai ? 'Przejmij auto' : 'Wsiądź do auta'}`;
+    if (car) promptText = `<kbd>F</kbd> ${car.ai ? 'Przejmij auto' : VNAME[car.type] ? 'Wsiądź na ' + VNAME[car.type] : car.owned ? 'Wsiądź do swojego auta' : 'Wsiądź do auta'}`;
   }
   setPrompt(promptText);
 }
 function tryStartMission() {
+  if (!nearMission && nearNPC && !P.car) { openTalk(nearNPC); return; }
   if (!nearMission || P.car) return;
   if (!isUnlocked(nearMission)) { Sound.wrong(); return; }
   openBriefing(nearMission);
@@ -1729,6 +2037,7 @@ function finishQuiz() {
   const xp = quiz.correct * 10 * (m.tier + 1);
   if (pass) {
     money = wasDone ? Math.round(REWARD[m.tier] * 0.25) : REWARD[m.tier] + (pct === 100 ? Math.round(REWARD[m.tier] * 0.5) : 0);
+    if (hasCashGlasses()) money *= 2;
     save.done[m.id] = true;
   }
   save.best[m.id] = Math.max(save.best[m.id] || 0, pct);
@@ -1750,7 +2059,7 @@ function finishQuiz() {
       <div class="stats">
         <div class="stat"><b>${quiz.correct}/${total}</b><span>Poprawne</span></div>
         <div class="stat"><b>${pct}%</b><span>Wynik</span></div>
-        <div class="stat"><b style="color:var(--cash)">+${fmtMoney(money)}</b><span>Nagroda</span></div>
+        <div class="stat"><b style="color:var(--cash)">+${fmtMoney(money)}</b><span>Nagroda${hasCashGlasses() && money ? ' · Cash Glasses ×2' : ''}</span></div>
         <div class="stat"><b>+${xp}</b><span>XP</span></div>
         <div class="stat"><b>x${quiz.maxCombo}</b><span>Najlepsze combo</span></div>
       </div>
@@ -1787,6 +2096,256 @@ function abortQuiz() {
   quiz = null; ui = null; $('quiz-ov').hidden = true; canvas.focus();
 }
 
+// ---------------------------------------------------------------- NPC: mieszkańcy do rozmowy
+const TALKS = window.NPC_TALKS || [];
+const npcs = [];
+// Miejsca: chodniki w różnych kwartałach (z dala od znaczników misji).
+const NPC_SPOTS = [[1, 1], [4, 1], [6, 3], [2, 4], [5, 6], [0, 5], [7, 6], [3, 6], [4, 4], [1, 3], [6, 5], [2, 0], [5, 0], [7, 2], [3, 2], [0, 1]];
+function npcLabelTexture(name, done) {
+  const c = makeCanvas(512, 112), g = c.getContext('2d');
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillStyle = 'rgba(10,12,18,.78)'; g.beginPath();
+  if (g.roundRect) g.roundRect(56, 10, 400, 92, 46); else g.rect(56, 10, 400, 92);
+  g.fill();
+  g.lineWidth = 6; g.strokeStyle = done ? '#45d483' : '#4fb3ff'; g.stroke();
+  g.font = '700 46px "Barlow Condensed", sans-serif'; g.fillStyle = '#f3eee4';
+  g.fillText((done ? '✓ ' : '💬 ') + name, 256, 58);
+  return canvasTex(c, false);
+}
+function spawnNPCs() {
+  let si = 0;
+  for (const t of TALKS) {
+    let x, z, tries = 0;
+    do {
+      const [bx, bz] = NPC_SPOTS[si++ % NPC_SPOTS.length];
+      const side = (si + tries) % 4, X = bx0(bx), Z = bx0(bz), mid = B / 2 + ((si * 7) % 9 - 4);
+      if (side === 0) { x = X + mid; z = Z + 1.3; } else if (side === 1) { x = X + mid; z = Z + B - 1.3; }
+      else if (side === 2) { x = X + 1.3; z = Z + mid; } else { x = X + B - 1.3; z = Z + mid; }
+      tries++;
+    } while (nearMarker(x, z, 10) && tries < 8);
+    const look = Object.assign(randomLook(rand), t.look || {});
+    const p = makePerson(Object.assign(look, { shadow: false }));
+    p.g.position.set(x, SIDE_H, z);
+    scene.add(p.g);
+    const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: npcLabelTexture(t.name, !!wardrobe.talked[t.id]), transparent: true, depthWrite: false, fog: false }));
+    label.scale.set(4.6, 1.0, 1); label.position.set(x, SIDE_H + 2.95, z);
+    scene.add(label);
+    npcs.push({ t, p, x, z, label, face: Math.random() * 6, done: !!wardrobe.talked[t.id] });
+  }
+}
+function refreshNpcLabel(n) {
+  n.done = !!wardrobe.talked[n.t.id];
+  n.label.material.map && n.label.material.map.dispose();
+  n.label.material.map = npcLabelTexture(n.t.name, n.done); n.label.material.needsUpdate = true;
+}
+let nearNPC = null;
+function updateNPCs(dt) {
+  const cx = camera.position.x, cz = camera.position.z;
+  nearNPC = null;
+  for (const n of npcs) {
+    const far = Math.abs(n.x - cx) > 130 || Math.abs(n.z - cz) > 130;
+    n.p.g.visible = !far; n.label.visible = !far && Math.hypot(n.x - cx, n.z - cz) < 60;
+    if (far) continue;
+    const dP = Math.hypot(P.pos.x - n.x, P.pos.z - n.z);
+    if (!P.car && dP < 2.8 && !nearNPC) nearNPC = n;
+    // patrzy na gracza, gdy ten jest blisko; inaczej lekko się rozgląda
+    const want = dP < 9 && !P.car ? Math.atan2(P.pos.x - n.x, P.pos.z - n.z) : n.face + Math.sin(elapsed * 0.3 + n.x) * 0.6;
+    n.p.g.rotation.y += angDiff(n.p.g.rotation.y, want) * Math.min(1, dt * 4);
+    // oddech + gest dłonią przy rozmowie
+    const talking = ui === 'talk' && talk && talk.n === n;
+    n.p.ra.rotation.x = talking ? -0.9 + Math.sin(elapsed * 6) * 0.25 : Math.sin(elapsed * 1.6 + n.x) * 0.05;
+    n.p.la.rotation.x = -Math.sin(elapsed * 1.6 + n.x) * 0.05;
+    n.p.g.position.y = SIDE_H + Math.sin(elapsed * 2 + n.z) * 0.01;
+  }
+  // kolizja: gracz nie przenika przez rozmówcę
+  if (!P.car) for (const n of npcs) {
+    const dx = P.pos.x - n.x, dz = P.pos.z - n.z, d = Math.hypot(dx, dz);
+    if (d < 0.75 && d > 1e-4) { P.pos.x = n.x + dx / d * 0.75; P.pos.z = n.z + dz / d * 0.75; player.g.position.copy(P.pos); }
+  }
+}
+// Lektor (angielskie odpowiedzi NPC).
+function sayEN(text) {
+  if (Sound.muted || !window.speechSynthesis) return;
+  try {
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text); u.lang = 'en-GB'; u.rate = 0.95;
+    const vs = speechSynthesis.getVoices();
+    const v = vs.find(x => /en-GB/i.test(x.lang) && /Google/i.test(x.name)) || vs.find(x => /en-GB/i.test(x.lang)) || vs.find(x => /^en/i.test(x.lang));
+    if (v) u.voice = v;
+    speechSynthesis.speak(u);
+  } catch (e) { /* brak TTS */ }
+}
+
+// ---------------------------------------------------------------- rozmowa
+let talk = null;
+const TALK_REWARD = 60, TALK_REPEAT = 10;
+function openTalk(n) {
+  ui = 'talk'; keys.clear(); releaseLock(); setPrompt('');
+  talk = { n, i: 0, wrong: 0, perfect: 0 };
+  renderTalk();
+  $('quiz-ov').hidden = false;
+  Sound.click();
+}
+function renderTalk(state) {
+  const t = talk.n.t, s = t.steps[talk.i];
+  const segs = t.steps.map((_, k) => `<div class="seg ${k < talk.i ? 'ok' : k === talk.i ? 'cur' : ''}"></div>`).join('');
+  qCard.innerHTML = `
+    <div class="card-head">
+      <div class="eyebrow"><span class="chip" style="background:#4fb3ff">ROZMOWA</span>${esc(t.role)} · krok ${talk.i + 1}/${t.steps.length}</div>
+      <h2 class="place">${esc(t.name)}</h2>
+      <div class="segs">${segs}</div>
+    </div>
+    <div class="card-body">
+      <div class="npc">
+        <div class="npc-avatar" style="background:#4fb3ff">${esc(t.name[0])}</div>
+        <div>
+          <div class="npc-name">${esc(t.name)} pyta (po polsku):</div>
+          <p class="story talk-q">„${esc(s.pl)}”</p>
+          <div class="meta">Odpowiedz <b>po angielsku</b> — pełnym zdaniem.</div>
+        </div>
+      </div>
+      <form class="typebox" id="talk-form" autocomplete="off" style="margin-top:16px">
+        <input id="talk-in" type="text" spellcheck="false" autocapitalize="off" placeholder="Napisz po angielsku…" aria-label="Twoja odpowiedź po angielsku">
+        <button class="btn" type="submit" id="talk-send">Odpowiedz</button>
+      </form>
+      <div id="talk-fb"></div>
+      <div class="actions">
+        <button class="btn ghost" id="talk-hint" type="button">💡 Podpowiedź</button>
+        <button class="btn ghost" id="talk-close" type="button">Zakończ rozmowę</button>
+        <span class="meta">Enter — odpowiedz · Esc — wyjdź</span>
+      </div>
+    </div>`;
+  const inp = $('talk-in');
+  $('talk-form').onsubmit = e => { e.preventDefault(); if (talk.answered) nextTalk(); else if (inp.value.trim()) answerTalk(inp.value); };
+  $('talk-hint').onclick = () => { const fb = $('talk-fb'); fb.className = 'feedback'; fb.innerHTML = `💡 Zacznij tak: <b>${esc(s.hint)}</b>`; inp.focus(); };
+  $('talk-close').onclick = closeTalk;
+  setTimeout(() => inp.focus(), 30);
+}
+function answerTalk(val) {
+  const s = talk.n.t.steps[talk.i], fb = $('talk-fb'), inp = $('talk-in');
+  if (window.NPC_CHECK(s, val)) {
+    if (!talk.wrong) talk.perfect++;
+    talk.answered = true; inp.readOnly = true; inp.classList.add('correct');
+    fb.className = 'feedback ok';
+    fb.innerHTML = `<b>Świetnie!</b> ${esc(talk.n.t.name)}: „<i>${esc(s.en)}</i>” <span class="meta">(${esc(s.enPl)})</span>`;
+    $('talk-send').textContent = talk.i + 1 < talk.n.t.steps.length ? 'Dalej' : 'Zakończ';
+    Sound.correct(); sayEN(s.en);
+    return;
+  }
+  talk.wrong++;
+  Sound.wrong(); inp.classList.add('wrong'); setTimeout(() => inp.classList.remove('wrong'), 600);
+  fb.className = 'feedback no';
+  if (talk.wrong >= 2) {
+    fb.innerHTML = `Przykładowa odpowiedź: <b>${esc(s.ex)}</b><br>Przepisz ją lub napisz własną, podobną.`;
+  } else fb.innerHTML = `Spróbuj jeszcze raz — pełnym zdaniem po angielsku. Podpowiedź: <b>${esc(s.hint)}</b>`;
+}
+function nextTalk() {
+  talk.i++; talk.wrong = 0; talk.answered = false;
+  if (talk.i < talk.n.t.steps.length) { renderTalk(); return; }
+  // koniec rozmowy — nagroda
+  const n = talk.n, first = !wardrobe.talked[n.t.id];
+  const all = talk.perfect === n.t.steps.length;
+  const money = first ? TALK_REWARD : (all ? TALK_REPEAT : 0), xp = first ? 30 : 10;
+  wardrobe.talked[n.t.id] = (wardrobe.talked[n.t.id] || 0) + 1; persistWardrobe();
+  save.money += money; save.xp += xp; persist();
+  refreshNpcLabel(n);
+  Sound.passed();
+  qCard.innerHTML = `
+    <div class="card-head"><div class="eyebrow"><span class="chip" style="background:#4fb3ff">ROZMOWA</span>${esc(n.t.role)}</div>
+      <div class="result-title" style="color:var(--green)">GREAT TALK!</div>
+      <div class="meta">${esc(n.t.name)}: „See you around!” · Rozmowy ukończone: ${Object.keys(wardrobe.talked).length}/${TALKS.length}</div></div>
+    <div class="card-body">
+      <div class="stats">
+        <div class="stat"><b>${talk.perfect}/${n.t.steps.length}</b><span>Za pierwszym razem</span></div>
+        <div class="stat"><b style="color:var(--cash)">+${fmtMoney(money)}</b><span>Nagroda</span></div>
+        <div class="stat"><b>+${xp}</b><span>XP</span></div>
+      </div>
+      <p class="story-pl">${first ? 'Pierwsza rozmowa z tą osobą — pełna nagroda!' : all ? 'Powtórka bez błędów — mały bonus.' : 'Powtórka — nagroda tylko za rozmowę bez błędów.'}</p>
+      <div class="actions"><button class="btn" id="talk-end">Wróć do miasta</button></div>
+    </div>`;
+  $('talk-end').onclick = closeTalk;
+  setTimeout(() => $('talk-end') && $('talk-end').focus(), 30);
+}
+function closeTalk() {
+  talk = null; ui = null; $('quiz-ov').hidden = true; canvas.focus();
+  try { window.speechSynthesis && speechSynthesis.cancel(); } catch (e) { /* ignore */ }
+}
+
+// ---------------------------------------------------------------- sklep
+let shopCat = 'outfit';
+function openShop() {
+  ui = 'shop'; keys.clear(); releaseLock(); setPrompt('');
+  $('shop-ov').hidden = false; renderShop(); Sound.click();
+}
+function closeShop() { ui = null; $('shop-ov').hidden = true; canvas.focus(); }
+function equipKey(it) { return it.cat === 'vehicle' ? 'vehicle' : it.cat; }
+function equippedId(cat) { const e = wardrobe.equip; return cat === 'vehicle' ? e.vehicle : cat + '_' + e[cat]; }
+function renderShop() {
+  $('shop-money').textContent = fmtMoney(save.money);
+  $('shop-tabs').innerHTML = SHOP_CATS.map(([c, l]) => `<button class="xbtn ${c === shopCat ? 'on' : ''}" data-c="${c}">${l}</button>`).join('');
+  $('shop-tabs').querySelectorAll('button').forEach(b => b.onclick = () => { shopCat = b.dataset.c; renderShop(); Sound.click(); });
+  const items = SHOP.filter(i => i.cat === shopCat), eq = equippedId(shopCat);
+  $('shop-grid').innerHTML = items.map(it => {
+    const own = !!wardrobe.owned[it.id], on = eq === it.id;
+    const btn = !own ? `<button class="btn" data-buy="${it.id}" ${save.money < it.price ? 'disabled' : ''}>Kup · ${fmtMoney(it.price)}</button>`
+      : it.cat === 'vehicle' ? `<button class="btn" data-call="${it.id}">🚚 Przywołaj</button>`
+      : on ? '<span class="owned-on">✓ Założone</span>' : `<button class="btn ghost" data-eq="${it.id}">Załóż</button>`;
+    return `<div class="shop-item ${on ? 'on' : ''} ${it.perk ? 'perk' : ''}">
+      <div class="si-ico">${shopIcon(it)}</div>
+      <div class="si-nm">${esc(it.name)}</div>
+      <div class="si-ds">${esc(it.desc || '')}</div>
+      <div class="si-act">${btn}</div></div>`;
+  }).join('');
+  $('shop-grid').querySelectorAll('[data-buy]').forEach(b => b.onclick = () => buyItem(b.dataset.buy));
+  $('shop-grid').querySelectorAll('[data-eq]').forEach(b => b.onclick = () => equipItem(b.dataset.eq));
+  $('shop-grid').querySelectorAll('[data-call]').forEach(b => b.onclick = () => { equipItem(b.dataset.call); closeShop(); summonVehicle(); });
+  $('shop-perk').hidden = !hasCashGlasses();
+}
+function shopIcon(it) {
+  if (it.cat === 'vehicle') return { scooter: '🛴', moto: '🏍️', hatch: '🚗', suv: '🚙', supercar: '🏎️' }[it.vtype] || '🚗';
+  if (it.cat === 'glasses') return it.glasses === 'cash' ? '<span class="pixglass">▀█▀▀ ▀█▀▀</span>' : it.glasses === 'sun' ? '🕶️' : '🙂';
+  if (it.cat === 'hat') return { none: '💇', cap: '🧢', beanie: '🧶', fedora: '🎩', crown: '👑' }[it.hat];
+  if (it.cat === 'hair') return `<span class="swatch" style="background:#${it.hair.toString(16).padStart(6, '0')}"></span>`;
+  const l = it.look; return `<span class="swatch" style="background:#${(l.jacket != null ? l.jacket : l.shirt).toString(16).padStart(6, '0')}"></span><span class="swatch" style="background:#${l.pants.toString(16).padStart(6, '0')}"></span>`;
+}
+function buyItem(id) {
+  const it = shopItem(id); if (!it || wardrobe.owned[id]) return;
+  if (save.money < it.price) { Sound.wrong(); toast('Za mało pieniędzy — zrób misję albo porozmawiaj z mieszkańcami.', 'bad'); return; }
+  save.money -= it.price; persist();
+  wardrobe.owned[id] = 1; persistWardrobe();
+  Sound.passed();
+  toast(`Kupiono: ${it.name}${it.perk ? ' — od teraz misje dają podwójne pieniądze!' : ''}`, 'good', 4200);
+  equipItem(id);
+}
+function equipItem(id) {
+  const it = shopItem(id); if (!it || !wardrobe.owned[id]) return;
+  if (it.cat === 'vehicle') wardrobe.equip.vehicle = id;
+  else wardrobe.equip[it.cat] = id.slice(it.cat.length + 1);
+  persistWardrobe();
+  if (it.cat !== 'vehicle') rebuildPlayer();
+  renderShop();
+}
+// Przywołanie własnego pojazdu obok gracza (V lub przycisk w sklepie).
+let summoned = null;
+function summonVehicle() {
+  const id = wardrobe.equip.vehicle, it = id && shopItem(id);
+  if (!it) { toast('Nie masz jeszcze pojazdu — kup go w sklepie (<kbd>B</kbd>).'); return; }
+  if (P.car) { toast('Najpierw wysiądź z pojazdu.'); return; }
+  if (summoned && summoned !== P.car) { scene.remove(summoned.mesh); const k = vehicles.indexOf(summoned); if (k >= 0) vehicles.splice(k, 1); }
+  const fx = Math.sin(P.facing), fz = Math.cos(P.facing);
+  let best = null;
+  for (const [ox, oz] of [[fz * 2.6, -fx * 2.6], [-fz * 2.6, fx * 2.6], [fx * 3, fz * 3], [-fx * 3, -fz * 3]]) {
+    const p = { x: P.pos.x + ox, z: P.pos.z + oz };
+    if (!pushOut(p, it.vtype === 'scooter' || it.vtype === 'moto' ? 0.6 : 1.3, nearCols)) { best = p; break; }
+  }
+  if (!best) best = { x: P.pos.x + fz * 2.6, z: P.pos.z - fx * 2.6 };
+  summoned = spawnVehicle(it.vtype, it.color, best.x, best.z, P.facing, 'parked');
+  summoned.owned = true; summoned.pos.y = groundAt(best.x, best.z); summoned.mesh.position.copy(summoned.pos);
+  Sound.door();
+  toast(`Twój pojazd czeka obok: ${it.name}. Naciśnij <kbd>F</kbd>, aby ${it.vtype === 'scooter' || it.vtype === 'moto' ? 'wsiąść' : 'wsiąść'}.`, 'good', 4000);
+}
+$('shop-close').addEventListener('click', closeShop);
+
 // ---------------------------------------------------------------- start screen
 function refreshStartInfo() {
   const dc = doneCount();
@@ -1818,6 +2377,7 @@ function startGame() {
     showBanner('GRAMMAR CITY', 'Witaj w mieście!', '#f2b632', 2600);
     setTimeout(() => toast('Za Tobą ratusz — egzamin końcowy. Najpierw zdobądź doświadczenie w mieście.', '', 5500), 1500);
     setTimeout(() => toast('Obok stoi sportowe auto — podejdź i naciśnij <kbd>F</kbd>.', '', 5500), 4200);
+    setTimeout(() => toast('Mieszkańcy z dymkiem 💬 chętnie porozmawiają (<kbd>T</kbd>). Za pieniądze kupisz stroje i pojazdy w sklepie (<kbd>B</kbd>).', '', 6500), 7400);
     if (touchMode) setTimeout(() => toast('Lewy pad — ruch · przeciągnij palcem po ekranie — kamera · dotknij minimapy — mapa', '', 6500), 300);
   }
   if (first) setTimeout(() => setGPS({ kind: 'mission', m: first }), 900);
@@ -1839,6 +2399,7 @@ function frame() {
   for (const v of vehicles) if (v.kind === 'parked' && v.mesh.visible) v.pos.y = groundAt(v.pos.x, v.pos.z), v.mesh.position.copy(v.pos);
   updateTraffic(dt);
   updatePeds(dt);
+  updateNPCs(dt);
   updateCamera(dt);
   clockStr = updateSky(dt, ui === 'start' ? camera.position : focus);
   // markers
@@ -1919,6 +2480,7 @@ async function boot() {
   spawnParked(18);
   spawnTraffic(26);
   spawnPeds(40);
+  spawnNPCs();
   buildMapCanvas();
   refreshNear(P.pos.x, P.pos.z);
   resizeMinimap();

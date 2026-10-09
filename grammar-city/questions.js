@@ -7,7 +7,7 @@ window.MISSIONS = [
 /* ============================ A1 ============================ */
 {
   id: 'school', place: 'Westside School', short: 'SCH', topic: 'Czasownik "to be"', level: 'A1', tier: 0,
-  block: [2, 3], lot: [0, 0],
+  block: [5, 4], lot: [1, 1],
   npc: 'Mrs. Parker, nauczycielka',
   story: "Welcome to Grammar City! I'm Mrs. Parker. Before you explore the streets, show me you know the most important verb in English: to be. Answer my questions and you'll get your first pay.",
   storyPL: 'Witaj w Grammar City! Zanim ruszysz na miasto, pokaż, że znasz najważniejszy czasownik w angielskim: "to be".',
@@ -27,7 +27,7 @@ window.MISSIONS = [
 },
 {
   id: 'pizzeria', place: "Luigi's Pizzeria", short: 'PIZ', topic: 'Przedimki a / an / the', level: 'A1', tier: 0,
-  block: [3, 2], lot: [1, 0],
+  block: [5, 2], lot: [0, 0],
   npc: 'Luigi, właściciel pizzerii',
   story: "Mamma mia! My new waiter keeps mixing up 'a', 'an' and 'the' on the menu. The customers are confused! Help me fix the orders before dinner time.",
   storyPL: 'Nowy kelner myli "a", "an" i "the" w menu. Pomóż poprawić zamówienia przed kolacją.',
@@ -67,7 +67,7 @@ window.MISSIONS = [
 },
 {
   id: 'cafe', place: 'Sunrise Café', short: 'CAF', topic: 'Present Simple', level: 'A1', tier: 0,
-  block: [4, 3], lot: [0, 1],
+  block: [1, 5], lot: [1, 0],
   npc: 'Maya, baristka',
   story: "Good morning! I know all my regulars and their habits — who drinks what, who comes when. But I need someone to write it all down in proper English. Can you do it?",
   storyPL: 'Baristka zna nawyki stałych klientów. Pomóż opisać je poprawnie w Present Simple.',
@@ -87,7 +87,7 @@ window.MISSIONS = [
 },
 {
   id: 'post', place: 'Post Office', short: 'PST', topic: 'Zaimki i dzierżawczość', level: 'A1', tier: 0,
-  block: [3, 4], lot: [1, 1],
+  block: [3, 5], lot: [1, 1],
   npc: 'Mr. Green, listonosz',
   story: "Oh no, the parcels are all mixed up! Whose is this? Is it hers or his? I need a sharp mind to sort out who owns what. Let's deliver them to the right people!",
   storyPL: 'Paczki się pomieszały! Pomóż ustalić, czyje są — użyj właściwych zaimków.',
@@ -108,7 +108,7 @@ window.MISSIONS = [
 /* ============================ A2 ============================ */
 {
   id: 'hospital', place: 'St. Mary Hospital', short: 'HSP', topic: 'Present Continuous', level: 'A2', tier: 1,
-  block: [5, 1], lot: [0, 0],
+  block: [3, 0], lot: [1, 0],
   npc: 'Dr. Evans, lekarka',
   story: "Busy day in the ER! Everything is happening right now and I need live updates for the chief. Tell me what everybody is doing at this moment — quickly!",
   storyPL: 'Na izbie przyjęć wszystko dzieje się teraz. Opisz, co kto robi w tej chwili.',
@@ -128,7 +128,7 @@ window.MISSIONS = [
 },
 {
   id: 'police', place: 'Police Station', short: 'POL', topic: 'Past Simple', level: 'A2', tier: 1,
-  block: [1, 5], lot: [1, 0],
+  block: [0, 2], lot: [0, 1],
   npc: 'Detective Stone',
   story: "Someone robbed the jewellery store last night. I've got three witnesses and none of them can tell their story in the past tense! Help me take their statements properly.",
   storyPL: 'Wczoraj w nocy obrabowano jubilera. Pomóż spisać zeznania świadków w czasie przeszłym.',
@@ -148,7 +148,7 @@ window.MISSIONS = [
 },
 {
   id: 'mall', place: 'Mega Mall', short: 'MAL', topic: 'Stopniowanie przymiotników', level: 'A2', tier: 1,
-  block: [5, 5], lot: [1, 1],
+  block: [1, 0], lot: [1, 1],
   npc: 'Kim, stylistka',
   story: "Welcome to the Mega Mall! I'm shooting a fashion video and I need someone who can compare things like a pro. Cheaper, better, the most beautiful — let's go shopping!",
   storyPL: 'Stylistka nagrywa film modowy. Pomóż jej porównywać rzeczy: tańszy, lepszy, najpiękniejszy.',
@@ -168,7 +168,7 @@ window.MISSIONS = [
 },
 {
   id: 'market', place: 'FreshMart Supermarket', short: 'MKT', topic: 'Policzalne i niepoliczalne', level: 'A2', tier: 1,
-  block: [1, 1], lot: [0, 1],
+  block: [0, 4], lot: [0, 1],
   npc: 'Grandma Rose',
   story: "Dear, my eyes aren't what they used to be. Could you help me with my shopping list? How much flour? How many eggs? Some or any? I always get confused!",
   storyPL: 'Babcia potrzebuje pomocy z listą zakupów: how much czy how many? some czy any?',
@@ -188,7 +188,7 @@ window.MISSIONS = [
 },
 {
   id: 'airport', place: 'Skyport Terminal', short: 'AIR', topic: 'Przyszłość: will / going to', level: 'A2', tier: 1,
-  block: [7, 4], lot: [1, 0],
+  block: [6, 2], lot: [1, 1],
   npc: 'Captain Lee, pilotka',
   story: "Attention, passengers! I'm Captain Lee. Plans, predictions, promises — the future is full of them. Pass my briefing and you're cleared for take-off.",
   storyPL: 'Pilotka sprawdza, czy znasz sposoby mówienia o przyszłości.',
@@ -209,7 +209,7 @@ window.MISSIONS = [
 /* ============================ B1 ============================ */
 {
   id: 'hotel', place: 'Grand Royal Hotel', short: 'HTL', topic: 'Present Perfect', level: 'B1', tier: 2,
-  block: [6, 6], lot: [0, 0],
+  block: [1, 7], lot: [1, 0],
   npc: 'Mr. Blake, recepcjonista',
   story: "Welcome to the Grand Royal. Our guests have travelled everywhere — or have they? I need someone who knows the difference between 'I've been' and 'I went'. Interested?",
   storyPL: 'Recepcjonista hotelu potrzebuje kogoś, kto rozróżnia Present Perfect i Past Simple.',
@@ -229,7 +229,7 @@ window.MISSIONS = [
 },
 {
   id: 'gym', place: 'Iron Gym', short: 'GYM', topic: 'Czasowniki modalne', level: 'B1', tier: 2,
-  block: [0, 3], lot: [1, 1],
+  block: [3, 7], lot: [1, 1],
   npc: 'Coach Rocky',
   story: "Listen up, rookie! In my gym there are rules. Things you must do, things you mustn't do, and things you don't have to do. Get them right or give me twenty push-ups!",
   storyPL: 'Trener pilnuje zasad siłowni: co musisz, czego nie wolno, a czego nie musisz.',
@@ -249,7 +249,7 @@ window.MISSIONS = [
 },
 {
   id: 'station', place: 'Union Train Station', short: 'TRN', topic: 'Przyimki czasu i miejsca', level: 'B1', tier: 2,
-  block: [4, 0], lot: [0, 0],
+  block: [6, 0], lot: [0, 1],
   npc: 'Conductor Ben',
   story: "All aboard! Well, almost. Our timetable announcements are full of mistakes: in, on, at — all wrong! Fix them before the 5 o'clock express leaves.",
   storyPL: 'Konduktor ma zapowiedzi pełne błędów w przyimkach. Popraw je przed odjazdem ekspresu.',
@@ -269,7 +269,7 @@ window.MISSIONS = [
 },
 {
   id: 'cinema', place: 'Starlight Cinema', short: 'CIN', topic: 'Gerund czy bezokolicznik', level: 'B1', tier: 2,
-  block: [2, 6], lot: [1, 1],
+  block: [6, 6], lot: [0, 1],
   npc: 'Vince, reżyser',
   story: "Cut! Cut! Cut! My actors keep saying 'I enjoy to watch' and 'I decided going'. It's a disaster! You're the new script doctor — fix the dialogue.",
   storyPL: 'Aktorzy mylą formę -ing z "to". Popraw dialogi w scenariuszu.',
@@ -290,7 +290,7 @@ window.MISSIONS = [
 /* ============================ B2 ============================ */
 {
   id: 'casino', place: 'Lucky Seven Casino', short: 'CAS', topic: 'Tryby warunkowe 0, 1, 2', level: 'B2', tier: 3,
-  block: [7, 7], lot: [1, 1],
+  block: [7, 4], lot: [1, 1],
   npc: 'Mr. Diamond, właściciel kasyna',
   story: "If you play by my rules, you'll win. If you knew my secrets, you would be rich. Conditionals are my game, kid. Let's see if you can beat the house.",
   storyPL: 'Właściciel kasyna gra w tryby warunkowe. Pokonaj go!',
@@ -310,7 +310,7 @@ window.MISSIONS = [
 },
 {
   id: 'museum', place: 'City Museum of Art', short: 'MUS', topic: 'Strona bierna', level: 'B2', tier: 3,
-  block: [0, 0], lot: [0, 0],
+  block: [0, 0], lot: [0, 1],
   npc: 'Dr. Whitmore, kuratorka',
   story: "The museum's audio guide was recorded by someone who never uses the passive voice. 'Leonardo painted it, someone built it, somebody stole it'... Help me rewrite it professionally.",
   storyPL: 'Audioprzewodnik muzeum wymaga poprawienia — użyj strony biernej.',
@@ -330,7 +330,7 @@ window.MISSIONS = [
 },
 {
   id: 'news', place: 'Daily Herald', short: 'NEWS', topic: 'Mowa zależna', level: 'B2', tier: 3,
-  block: [7, 0], lot: [1, 0],
+  block: [0, 6], lot: [0, 0],
   npc: 'Chief Editor Harris',
   story: "Stop the press! Our reporter wrote down every quote word for word, but the paper needs reported speech. 'She said she was…', not 'She said I am…'. Deadline is in ten minutes!",
   storyPL: 'Redaktor potrzebuje cytatów przepisanych na mowę zależną. Termin za 10 minut!',
@@ -350,7 +350,7 @@ window.MISSIONS = [
 },
 {
   id: 'detective', place: 'Noir Detective Agency', short: 'DET', topic: 'Zdania względne', level: 'B2', tier: 3,
-  block: [0, 7], lot: [0, 1],
+  block: [7, 1], lot: [1, 0],
   npc: 'Sam Noir, prywatny detektyw',
   story: "The rain never stops in this part of town, kid. I've got a case: a man who wore a grey coat, a car which vanished, a place where it all began. Connect the clues — with the right words.",
   storyPL: 'Detektyw łączy wskazówki — użyj właściwych zaimków względnych.',
