@@ -299,6 +299,7 @@ Krzyżówka · Wordsearch · Memory · Snake (Wąż wyrazowy) · Hangman · Rozs
 - System wiadomości user ↔ admin (`conversations` / `conversation_messages`) + sMessages + modal wątku
 - Rola Rodzic/Opiekun: panel, dodaj dziecko po loginie, przydzielanie podręczników (Premium)
 - **🆕 Przykładowe zdania PL/EN dla wszystkich podręczników** (~5000 zdań w `word_sentences` po uruchomieniu SQL `fix-sentences-*.sql`). Tiger 1/2/3, Brainy 6/7, Bugs Team 2/3, Be Happy 2, Kids Can 1, English Class A1, Steps Plus 4, Together 4/5/6, Link 7/8, Klasa 1-8, New Password A2+/B1, Impuls 3. Klasa 1-8 + stepsplus5 Unit 7 ma zdania inline w data.js (4-elem format), reszta w DB (z fallbackiem inline po sync).
+- **🆕 Repetytorium dla szkoły podstawowej A2+/B1 (Pearson)** — `repetytoriumSP7` (kl. 7) i `repetytoriumSP8` (kl. 8) w data.js: identyczna treść (14 unitów, 2419 słówek, komentarze sekcji), osobne id → osobne postępy w każdej klasie. Przy poprawkach treści edytuj OBA bloki. Alias `RSP A2+/B1`, wydawca Pearson (SW v1.173).
 - **🆕 Disambiguacja nawiasem w word_pl** dla par różnych znaczeń: `miasto (duże)`/`miasto (małe)`, `skakać (krótko)`/`skakać (wysoko)`, `godzina (zegar)`/`godzina (jednostka)`, `przed (miejsce)`/`przed (czas)`, `uroczy (przyjemny)`/`uroczy (słodki)`. Konwencja słownikowa — różne od „luźnych nawiasów" usuniętych w Tiger 1 (commit `5a7f0c0`).
 - **Premium features:**
   - 30-dniowy trial automatyczny (raz w życiu konta) + cennik (klik → prośba do admina)
