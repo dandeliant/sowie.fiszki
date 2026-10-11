@@ -386,6 +386,9 @@ header{width:100%;display:flex;align-items:flex-start;justify-content:space-betw
 /* Premium lock */
 .mode-btn.locked{opacity:.45;position:relative;}
 .mode-btn.locked::after{content:'🔒';position:absolute;right:2px;top:1px;font-size:.55rem;}
+/* Blokada gier do czasu nauczenia się 5 słówek dziennie */
+#gamesModeRow.games-locked .mode-btn{opacity:.42;position:relative;filter:grayscale(.6);}
+#gamesModeRow.games-locked .mode-btn::after{content:'🔒';position:absolute;right:2px;top:1px;font-size:.55rem;}
 /* Speak mode */
 #speakMicBtn.listening{border-color:var(--danger);background:rgba(255,118,117,.12);animation:speakPulse 1s ease-in-out infinite;}
 @keyframes speakPulse{0%,100%{box-shadow:0 0 0 0 rgba(255,118,117,.3)}50%{box-shadow:0 0 0 14px rgba(255,118,117,0)}}
@@ -3011,9 +3014,9 @@ szkoła	school"></textarea>
       <button class="mode-btn" onclick="setMode('speak')" id="mSpeak">🎤 Mów</button>
       <button class="mode-btn" onclick="setMode('speakSent')" id="mSpeakSent">🎤 Mów (zdania)</button>
     </div>
-    <!-- Gry -->
-    <div style="width:100%;font-size:.55rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;padding:3px 8px">🎮 Gry</div>
-    <div style="display:flex;flex-wrap:wrap;gap:3px;width:100%">
+    <!-- Gry (blokada dzienna: najpierw 5 słówek przez Wpisz / Fiszki / Quiz) -->
+    <div id="gamesModeHdr" style="width:100%;font-size:.55rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;padding:3px 8px">🎮 Gry</div>
+    <div id="gamesModeRow" style="display:flex;flex-wrap:wrap;gap:3px;width:100%">
       <button class="mode-btn" onclick="setMode('jump')" id="mJump">🏝️ Skoczek</button>
       <button class="mode-btn" onclick="setMode('bridge')" id="mBridge">🌉 Przejdź przez most</button>
       <button class="mode-btn" onclick="setMode('butterfly')" id="mButterfly">🦋 Motyle</button>
@@ -9489,6 +9492,7 @@ function _typedDayCheckCredit(o) {
   if (met) {
     o.credited = true; _typedDaySave(o);
     _markTypedDay();                     // ZALICZ dzień do oceny tygodniowej
+    _gateMarkTyped();                    // zaliczony dzień Wpisz odblokowuje też gry
     _showDailyDoneMsg(distinct);
     return true;
   }
@@ -9839,6 +9843,7 @@ function trackMissed() {
 function rate(r, noAdvance) {
   if (curIdx === null) return;
   clearInterval(studySpeedTimer); // zatrzymaj timer speed jeśli aktywny
+  _gateTrack(r);                  // blokada gier: licznik słówek dnia (Wpisz / Fiszki / Quiz)
 
   const _wasKnown = !!(ws[curIdx] && ws[curIdx].known);
   ws[curIdx] = sm2Update(ws[curIdx], r);
@@ -11444,7 +11449,84 @@ function closePremiumModal() {
   document.getElementById('premiumModal').style.display = 'none';
 }
 
+// ══════════════════════════════════════════════
+//  BLOKADA GIER — najpierw nauka. Gry (rząd „🎮 Gry" w trybach) odblokowują się
+//  na dany dzień, gdy uczeń poprawnie przerobi 5 różnych słówek w trybie
+//  Wpisz / Wpisz zd. / Fiszki / Quiz (albo zaliczy dzień w trybie Wpisz).
+//  Nie dotyczy nauczyciela, admina i opiekuna. Licznik per użytkownik i dzień.
+// ══════════════════════════════════════════════
+const GAME_GATE_WORDS = 5;
+const GAME_GATE_MODES = ['card', 'quiz', 'type', 'typeSent'];
+const GAME_GATE_MSG = 'Wszystkie gry są dostępne tylko po nauczeniu się 5 słówek przez Wpisz, Fiszki, Quiz. Miłej nauki!';
+function _gateKey() { return 'fiszki_games_gate_' + (currentUser || 'guest'); }
+function _gateStore() {
+  const d = _localDay();
+  let o = {};
+  try { o = JSON.parse(localStorage.getItem(_gateKey()) || '{}') || {}; } catch(e) {}
+  if (o.day !== d) o = { day: d, words: {}, typed: false };
+  if (!o.words) o.words = {};
+  return o;
+}
+function _gateSave(o) { try { localStorage.setItem(_gateKey(), JSON.stringify(o)); } catch(e) {} }
+function gamesGateExempt() {
+  if (isGuest) return false;
+  return isCurrentUserAdmin() || isCurrentUserTeacher() || isCurrentUserParent();
+}
+function _gateCount(o) { return Object.keys((o || _gateStore()).words).length; }
+function gamesUnlocked() {
+  if (gamesGateExempt()) return true;
+  const o = _gateStore();
+  return !!o.typed || _gateCount(o) >= GAME_GATE_WORDS;
+}
+// Wołane w rate(): poprawna odpowiedź (łatwe / dobrze / średnie) w trybach Wpisz, Fiszki, Quiz.
+function _gateTrack(r) {
+  if (!GAME_GATE_MODES.includes(mode) || !(r === 'easy' || r === 'good' || r === 'medium')) return;
+  if (curIdx === null || !activeWords[curIdx] || gamesGateExempt()) return;
+  const o = _gateStore();
+  if (o.typed || _gateCount(o) >= GAME_GATE_WORDS) return;
+  const key = currentBookId + '|' + currentUnitKey + '|' + activeWords[curIdx][0];
+  if (o.words[key]) return;
+  o.words[key] = 1; _gateSave(o);
+  const n = _gateCount(o);
+  if (n >= GAME_GATE_WORDS) setTimeout(() => toast('🎮 Gry odblokowane na dziś! Brawo, ' + GAME_GATE_WORDS + ' słówek zaliczonych!', 3800), 900);
+  else setTimeout(() => toast('🎮 Do odblokowania gier: ' + n + '/' + GAME_GATE_WORDS + ' słówek', 2200), 900);
+  updateGamesGate();
+}
+function _gateMarkTyped() {
+  const o = _gateStore();
+  if (o.typed) return;
+  o.typed = true; _gateSave(o);
+  updateGamesGate();
+}
+function updateGamesGate() {
+  const row = document.getElementById('gamesModeRow'), hdr = document.getElementById('gamesModeHdr');
+  if (!row || !hdr) return;
+  const open = gamesUnlocked();
+  row.classList.toggle('games-locked', !open);
+  hdr.innerHTML = open ? '🎮 Gry'
+    : '🎮 Gry <span style="color:var(--accent);text-transform:none;letter-spacing:0">🔒 najpierw 5 słówek (Wpisz / Fiszki / Quiz): ' + _gateCount() + '/' + GAME_GATE_WORDS + '</span>';
+}
+function showGamesGateMsg() {
+  const n = _gateCount();
+  const go = (m, label) => '<button class="btn-sm accent" style="font-size:.8rem;padding:8px 14px" onclick="closeGenericModal&&closeGenericModal();setMode(\'' + m + '\')">' + label + '</button>';
+  openGenericModal('🔒 Najpierw nauka, potem gry',
+    '<div style="text-align:center;line-height:1.6">'
+    + '<div style="font-size:2.4rem">🦉</div>'
+    + '<div style="font-size:1rem;font-weight:800;color:var(--text);margin:6px 0 10px">' + GAME_GATE_MSG + '</div>'
+    + '<div style="height:10px;background:var(--surface2);border-radius:100px;overflow:hidden;margin:6px auto 4px;max-width:280px"><div style="height:100%;width:' + Math.round(n / GAME_GATE_WORDS * 100) + '%;background:linear-gradient(90deg,var(--accent2),var(--accent))"></div></div>'
+    + '<div style="font-size:.8rem;color:var(--muted);font-weight:700;margin-bottom:14px">Dziś: ' + n + ' / ' + GAME_GATE_WORDS + ' słówek</div>'
+    + '<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">' + go('type', '✏️ Wpisz') + go('card', '🃏 Fiszki') + go('quiz', '🎯 Quiz') + '</div></div>');
+}
+// Klik w zablokowaną grę — przechwytywany zanim zadziała onclick przycisku.
+document.addEventListener('click', e => {
+  const row = e.target && e.target.closest && e.target.closest('#gamesModeRow');
+  if (!row || gamesUnlocked()) return;
+  e.preventDefault(); e.stopPropagation();
+  showGamesGateMsg();
+}, true);
+
 function updateModeLocks() {
+  updateGamesGate();
   const plan = isGuest ? 'premium' : DB.getUserPlan();
   document.querySelectorAll('.mode-btn').forEach(btn => {
     const onclick = btn.getAttribute('onclick') || '';
