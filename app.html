@@ -2183,8 +2183,8 @@ body.guest-mode .progress-wrap{opacity:.4;}
 <!-- ══ Modal: Wybór typu gry Live ══ -->
 <div class="modal-overlay" id="liveGameTypeModal" style="display:none" onclick="if(event.target===this)closeLiveGameTypeModal()">
   <div class="modal-box" style="max-width:520px">
-    <div style="font-family:'Playfair Display',serif;font-size:1.25rem;color:var(--accent);margin-bottom:4px">🎮 Wybierz grę</div>
-    <div style="font-size:.74rem;color:var(--muted);margin-bottom:14px;font-weight:600">Jaką grą zagrasz z klasą?</div>
+    <div id="liveGameTypeTitle" style="font-family:'Playfair Display',serif;font-size:1.25rem;color:var(--accent);margin-bottom:4px">🎮 Wybierz grę</div>
+    <div id="liveGameTypeSub" style="font-size:.74rem;color:var(--muted);margin-bottom:14px;font-weight:600">Jaką grą zagrasz z klasą?</div>
 
     <div id="liveGameTypeList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
       <label class="lqt-opt" data-value="quiz" style="display:flex;align-items:center;gap:12px;padding:14px;border:2px solid var(--accent);border-radius:12px;cursor:pointer;background:rgba(255,209,102,.08)">
@@ -2381,7 +2381,17 @@ body.guest-mode .progress-wrap{opacity:.4;}
       <div style="font-family:'Playfair Display',serif;font-size:2rem;color:var(--accent);margin-bottom:6px">🏆 Koniec gry!</div>
       <div style="font-size:.82rem;color:var(--muted);font-weight:600;margin-bottom:14px">Oto finalny ranking:</div>
       <div id="lqFinalLeaderboard" style="text-align:left;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:14px"></div>
-      <button class="btn-sm accent" onclick="exitLiveLobby()" style="font-size:.92rem;padding:10px 22px">Zakończ i wyjdź</button>
+      <!-- Host: nowa runda z tymi samymi graczami (ten sam PIN/QR) albo koniec -->
+      <div id="lqFinalHostBtns" style="display:none;flex-direction:column;align-items:center;gap:8px">
+        <button class="btn-sm accent" onclick="liveRematchOpen()" style="font-size:.95rem;padding:11px 24px">🔁 Zagraj ponownie — ci sami gracze</button>
+        <div style="font-size:.7rem;color:var(--muted);font-weight:600;max-width:420px;line-height:1.45">Ten sam kod PIN i QR — gracze wrócą do lobby automatycznie, a nowe osoby mogą dołączyć. Możesz też wybrać inną grę.</div>
+        <button class="btn-sm" onclick="exitLiveLobby()" style="font-size:.85rem;padding:8px 18px;margin-top:4px">Zakończ i wyjdź</button>
+      </div>
+      <!-- Gracz: czeka na ewentualną kolejną rundę -->
+      <div id="lqFinalPlayerBox" style="display:none">
+        <div style="font-size:.8rem;color:var(--muted);font-weight:700;margin-bottom:10px;line-height:1.45">⏳ Zostań na tym ekranie — nauczyciel może rozpocząć kolejną rundę.</div>
+        <button class="btn-sm" onclick="exitLiveLobby()" style="font-size:.85rem;padding:8px 18px">Wyjdź z gry</button>
+      </div>
     </div>
   </div>
 </div>
@@ -23565,28 +23575,57 @@ if ('serviceWorker' in navigator) {
     }
     if (!currentBookId || !unitKey) { if (typeof toast==='function') toast('⚠️ Brak wybranego podręcznika/unitu'); return; }
     _liveStartUnitKey = unitKey;
-    // Reset modala
-    document.querySelectorAll('input[name="liveGameType"]').forEach((r,i) => { r.checked = (i === 0); });
-    document.querySelectorAll('input[name="liveTimeLimit"]').forEach((r,i) => { r.checked = (i === 0); });
+    _liveOpenTypeModal(false, 'quiz', 180);
+  };
+
+  // Modal wyboru gry — wspólny dla nowej gry i „Zagraj ponownie".
+  let _liveRematch = false;
+  function _liveOpenTypeModal(rematch, gameType, timeLimit) {
+    _liveRematch = !!rematch;
+    document.getElementById('liveGameTypeTitle').textContent = rematch ? '🔁 Zagraj ponownie' : '🎮 Wybierz grę';
+    document.getElementById('liveGameTypeSub').textContent = rematch
+      ? 'Ci sami gracze, ten sam kod PIN i QR. Zostań przy tej grze albo wybierz inną.'
+      : 'Jaką grą zagrasz z klasą?';
+    document.getElementById('liveGameTypeStartBtn').textContent = rematch ? '🔁 Nowa runda' : '▶️ Utwórz grę';
+    const types = Array.from(document.querySelectorAll('input[name="liveGameType"]'));
+    const tSel = types.find(r => r.value === gameType) || types[0];
+    types.forEach(r => { r.checked = (r === tSel); });
+    const limits = Array.from(document.querySelectorAll('input[name="liveTimeLimit"]'));
+    const lSel = limits.find(r => r.value === String(timeLimit || 0)) || limits[0];
+    limits.forEach(r => { r.checked = (r === lSel); });
     document.getElementById('liveGameTypeMsg').textContent = '';
-    // Reset border na opcjach
-    document.querySelectorAll('#liveGameTypeList .lqt-opt').forEach((el,i) => {
-      el.style.borderColor = i === 0 ? 'var(--accent)' : 'var(--border)';
-      el.style.background = i === 0 ? 'rgba(255,209,102,.08)' : '';
+    const opts = document.querySelectorAll('#liveGameTypeList .lqt-opt');
+    const mark = (el) => {
+      opts.forEach(o => { o.style.borderColor = 'var(--border)'; o.style.background = ''; });
+      el.style.borderColor = 'var(--accent)';
+      el.style.background = 'rgba(255,209,102,.08)';
+    };
+    opts.forEach(el => {
+      if (el.dataset.value === tSel.value) mark(el);
+      // Click na całym labelu zaznacza radio
+      el.onclick = () => mark(el);
     });
     document.getElementById('liveGameTypeModal').style.display = 'flex';
-    // Click na całym labelu zaznacza radio
-    document.querySelectorAll('#liveGameTypeList .lqt-opt').forEach(el => {
-      el.onclick = () => {
-        document.querySelectorAll('#liveGameTypeList .lqt-opt').forEach(o => {
-          o.style.borderColor = 'var(--border)';
-          o.style.background = '';
-        });
-        el.style.borderColor = 'var(--accent)';
-        el.style.background = 'rgba(255,209,102,.08)';
-      };
-    });
+  }
+
+  // Host (ekran wyników): nowa runda z tymi samymi graczami
+  window.liveRematchOpen = function() {
+    if (!_liveIsHost || !_liveGame) return;
+    _liveStartUnitKey = _liveGame.unitKey;
+    _liveOpenTypeModal(true, _liveGame.gameType || 'quiz', _liveGame.timeLimitSeconds || 0);
   };
+
+  // Czyści stan poprzedniej rundy (timery, pytania, widok wyników)
+  function _liveResetRoundState() {
+    try { if (_lqTimerInterval) { clearInterval(_lqTimerInterval); _lqTimerInterval = null; } } catch(e) {}
+    try { if (_lqAutoNextTimer) { clearTimeout(_lqAutoNextTimer); _lqAutoNextTimer = null; } } catch(e) {}
+    try { if (_lrPollTimer) { clearInterval(_lrPollTimer); _lrPollTimer = null; } } catch(e) {}
+    try { if (_lrTimerInterval) { clearInterval(_lrTimerInterval); _lrTimerInterval = null; } } catch(e) {}
+    _lqWords = []; _lqOrder = []; _lqMyAnswer = null; _lqRevealActive = false;
+    _lqLastLeaderboard = []; _lqMyCorrectAnswer = null;
+    const fv = document.getElementById('lqFinalView');
+    if (fv) fv.style.display = 'none';
+  }
 
   window.closeLiveGameTypeModal = function() {
     document.getElementById('liveGameTypeModal').style.display = 'none';
@@ -23600,7 +23639,42 @@ if ('serviceWorker' in navigator) {
     const msg = document.getElementById('liveGameTypeMsg');
     btn.disabled = true;
     msg.style.color = 'var(--muted)';
-    msg.textContent = '⏳ Tworzenie gry…';
+    msg.textContent = _liveRematch ? '⏳ Przygotowuję nową rundę…' : '⏳ Tworzenie gry…';
+    if (_liveRematch && _liveIsHost && _liveGame) {
+      try {
+        try {
+          await DB.liveGameRematch(_liveGame.id, gameType, timeLimit);
+          Object.assign(_liveGame, {
+            status: 'waiting', gameType: gameType,
+            timeLimitSeconds: timeLimit > 0 ? timeLimit : null,
+            currentQuestion: 0, questionOrder: null, questionStartedAt: null
+          });
+          if (typeof toast === 'function') toast('🔁 Nowa runda! Gracze wracają do lobby — nowi mogą dołączyć z QR.', 3800);
+        } catch(e) {
+          // Brak migracji #65 albo PIN zajęty — nowa gra z nowym kodem
+          console.warn('[liveGameRematch] fallback do nowej gry:', e && e.message);
+          const old = _liveGame;
+          try { await DB.updateLiveGameStatus(old.id, 'finished', { expires_at: new Date().toISOString() }); } catch(_) {}
+          const game = await DB.createLiveGame(old.bookId, old.unitKey, gameType, timeLimit > 0 ? timeLimit : null);
+          _liveGame = {
+            id: game.id, pin: game.pin, bookId: old.bookId, unitKey: old.unitKey,
+            gameType: gameType, status: 'waiting', timeLimitSeconds: timeLimit > 0 ? timeLimit : null
+          };
+          if (typeof toast === 'function') toast('🆕 Nowa gra z nowym kodem — uczniowie dołączają ponownie (PIN lub QR).', 5500);
+        }
+        _liveRematch = false;
+        _liveResetRoundState();
+        closeLiveGameTypeModal();
+        await _enterLiveLobby();
+      } catch(e) {
+        console.error('[rematch]', e);
+        msg.style.color = 'var(--danger)';
+        msg.textContent = '❌ ' + e.message;
+      } finally {
+        btn.disabled = false;
+      }
+      return;
+    }
     try {
       const game = await DB.createLiveGame(currentBookId, _liveStartUnitKey, gameType, timeLimit > 0 ? timeLimit : null);
       _liveGame = {
@@ -23696,87 +23770,20 @@ if ('serviceWorker' in navigator) {
       _renderLivePlayers();
     } catch(e) { console.warn('[lobby getPlayers]', e); }
 
-    // Safety-net polling co 3s — gwarantuje że lista graczy się odświeża
-    // nawet gdy Realtime nie jest włączony w Supabase Database → Replication
-    // dla tabel live_games + live_game_players. Tani query (max 50 wierszy).
-    if (_livePollTimer) { clearInterval(_livePollTimer); _livePollTimer = null; }
-    _livePollTimer = setInterval(async () => {
-      if (!_liveGame) { clearInterval(_livePollTimer); _livePollTimer = null; return; }
-      try {
-        // 1) Lista graczy — odświeżaj tylko w lobby (status='waiting')
-        if (_liveGame.status === 'waiting') {
-          const fresh = await DB.getLiveGamePlayers(_liveGame.id);
-          // Gracz: jesli nie ma juz mnie na liscie — host mnie wyrzucil
-          if (!_liveIsHost && _livePlayer && !fresh.some(p => p.id === _livePlayer.id)) {
-            _handleKickedFromLive();
-            return;
-          }
-          if (fresh.length !== _livePlayers.length || fresh.some((p,i) => !_livePlayers[i] || _livePlayers[i].id !== p.id)) {
-            _livePlayers = fresh;
-            _renderLivePlayers();
-          }
-        }
-        // 2) Pełen stan gry (status, current_question, question_started_at)
-        const g = await DB.getLiveGame(_liveGame.id);
-        if (!g) return;
-        const prevStatus = _liveGame.status;
-        const prevQ = _liveGame.currentQuestion;
-        _liveGame.status = g.status;
-        _liveGame.currentQuestion = g.current_question;
-        _liveGame.questionOrder = g.question_order;
-        _liveGame.timePerQuestion = g.time_per_question;
-        _liveGame.questionStartedAt = g.question_started_at ? new Date(g.question_started_at).getTime() : null;
+    _startLivePolling();
+  }
 
-        // Status finished → wszyscy widzą finalny leaderboard
-        if (g.status === 'finished') {
-          if (prevStatus !== 'finished') {
-            if (_liveIsHost) _showFinalLeaderboard();
-            else { if (typeof toast === 'function') toast('🏁 Koniec gry — zobacz wyniki!', 2400); _showFinalLeaderboard(); }
-          }
-          return;
-        }
-        // Lobby → playing przejście (gracz)
-        if (g.status === 'playing' && prevStatus === 'waiting') {
-          // Mini-gry samodzielne (osobne pliki HTML) — host idzie do rankingu, gracz redirect
-          if (_liveGame.gameType && _liveGame.gameType !== 'quiz') {
-            _liveGame.timeLimitSeconds = g.time_limit_seconds || null;
-            if (!_liveIsHost) {
-              _redirectPlayerToMiniGame(_liveGame.gameType);
-            } else {
-              _enterLiveRanking();
-            }
-          } else {
-            // Quiz (default — w app.html)
-            _enterLiveQuiz();
-          }
-          return;
-        }
-        // Nowe pytanie (current_question się zmienił) — odśwież widok
-        if (g.status === 'playing' && prevQ !== g.current_question) {
-          _renderLiveQuestion();
-          return;
-        }
-        // Host: aktualizuj statystyki bieżącego pytania
-        if (g.status === 'playing' && _liveIsHost) {
-          _lqRefreshHostStats();
-        }
-        // Gracz: jeśli wszyscy odpowiedzieli — pokaż reveal lokalnie
-        if (g.status === 'playing' && !_liveIsHost && !_lqRevealActive) {
-          try {
-            const ans = await DB.getLiveAnswersForQuestion(_liveGame.id, _liveGame.currentQuestion || 0);
-            const players = await DB.getLiveGamePlayers(_liveGame.id);
-            // Czy host mnie wykluczyl w trakcie quizu?
-            if (_livePlayer && !players.some(p => p.id === _livePlayer.id)) {
-              _handleKickedFromLive();
-              return;
-            }
-            if (players.length > 0 && ans.length >= players.length) {
-              _lqPlayerReveal();
-            }
-          } catch(e) {}
-        }
-      } catch(e) { console.warn('[live poll]', e); }
-    }, 3000);
+  // Polling (co 3 s) + Realtime — wspólne dla lobby, quizu, rankingu i ekranu
+  // wyników (gracz czeka tam na ewentualną kolejną rundę).
+  // Safety-net polling gwarantuje odświeżanie nawet gdy Realtime nie jest
+  // włączony w Supabase Database → Replication dla live_games/live_game_players.
+  function _startLivePolling() {
+    if (_livePollTimer) { clearInterval(_livePollTimer); _livePollTimer = null; }
+    try { if (_liveSubGame) DB.unsubscribeLive(_liveSubGame); } catch(e) {}
+    try { if (_liveSubPlayers) DB.unsubscribeLive(_liveSubPlayers); } catch(e) {}
+    _liveSubGame = null; _liveSubPlayers = null;
+    if (!_liveGame) return;
+    _livePollTimer = setInterval(_livePollTick, 3000);
 
     // Subscribe Realtime — szybsze niż polling gdy zadziała
     _liveSubPlayers = DB.subscribeLiveGamePlayers(_liveGame.id, async (payload) => {
@@ -23796,16 +23803,131 @@ if ('serviceWorker' in navigator) {
         _renderLivePlayers();
       } catch(e) {}
     });
-    _liveSubGame = DB.subscribeLiveGame(_liveGame.id, (payload) => {
-      const g = payload.new;
-      if (!g) return;
-      _liveGame = Object.assign({}, _liveGame, { status: g.status, currentQuestion: g.current_question });
-      // Faza 2 będzie reagować na status='playing'. Na razie tylko log.
-      if (g.status === 'finished') {
-        if (typeof toast === 'function') toast('Gra zakończona przez gospodarza.', 3000);
-        exitLiveLobby();
+    // Zmiana gry (status/pytanie) — od razu jeden tick pollingu (ta sama logika przejść)
+    _liveSubGame = DB.subscribeLiveGame(_liveGame.id, () => { _livePollTick(); });
+  }
+
+  let _livePollBusy = false;
+  async function _livePollTick() {
+    if (!_liveGame) { if (_livePollTimer) { clearInterval(_livePollTimer); _livePollTimer = null; } return; }
+    if (_livePollBusy) return;
+    _livePollBusy = true;
+    try { await _livePollTickInner(); }
+    catch(e) { console.warn('[live poll]', e); }
+    finally { _livePollBusy = false; }
+  }
+
+  async function _livePollTickInner() {
+    if (!_liveGame) return;
+    // 1) Lista graczy — odświeżaj tylko w lobby (status='waiting')
+    if (_liveGame.status === 'waiting') {
+      const fresh = await DB.getLiveGamePlayers(_liveGame.id);
+      // Gracz: jesli nie ma juz mnie na liscie — host mnie wyrzucil
+      if (!_liveIsHost && _livePlayer && !fresh.some(p => p.id === _livePlayer.id)) {
+        _handleKickedFromLive();
+        return;
       }
-    });
+      if (fresh.length !== _livePlayers.length || fresh.some((p,i) => !_livePlayers[i] || _livePlayers[i].id !== p.id)) {
+        _livePlayers = fresh;
+        _renderLivePlayers();
+      }
+    }
+    // 2) Pełen stan gry (status, current_question, question_started_at)
+    const g = await DB.getLiveGame(_liveGame.id);
+    // Gra skasowana albo zamknięta przez gospodarza (wygaszona)
+    if (!g || (g.status === 'finished' && g.expires_at && new Date(g.expires_at).getTime() < Date.now())) {
+      if (!_liveIsHost) _handleLiveClosed();
+      return;
+    }
+    const prevStatus = _liveGame.status;
+    if (g.game_type) _liveGame.gameType = g.game_type;
+    const prevQ = _liveGame.currentQuestion;
+    _liveGame.status = g.status;
+    _liveGame.currentQuestion = g.current_question;
+    _liveGame.questionOrder = g.question_order;
+    _liveGame.timePerQuestion = g.time_per_question;
+    _liveGame.questionStartedAt = g.question_started_at ? new Date(g.question_started_at).getTime() : null;
+
+    // Gospodarz wznowił grę (Zagraj ponownie) — gracz wraca do lobby
+    if (g.status === 'waiting' && prevStatus && prevStatus !== 'waiting') {
+      if (!_liveIsHost) _liveOnRematch(g);
+      return;
+    }
+    // Status finished → wszyscy widzą finalny leaderboard
+    if (g.status === 'finished') {
+      if (prevStatus !== 'finished') {
+        if (_liveIsHost) _showFinalLeaderboard();
+        else { if (typeof toast === 'function') toast('🏁 Koniec gry — zobacz wyniki!', 2400); _showFinalLeaderboard(); }
+      }
+      return;
+    }
+    // Lobby → playing przejście (gracz)
+    if (g.status === 'playing' && prevStatus === 'waiting') {
+      // Mini-gry samodzielne (osobne pliki HTML) — host idzie do rankingu, gracz redirect
+      if (_liveGame.gameType && _liveGame.gameType !== 'quiz') {
+        _liveGame.timeLimitSeconds = g.time_limit_seconds || null;
+        if (!_liveIsHost) {
+          _redirectPlayerToMiniGame(_liveGame.gameType);
+        } else {
+          _enterLiveRanking();
+        }
+      } else {
+        // Quiz (default — w app.html)
+        _enterLiveQuiz();
+      }
+      return;
+    }
+    // Nowe pytanie (current_question się zmienił) — odśwież widok
+    if (g.status === 'playing' && prevQ !== g.current_question) {
+      _renderLiveQuestion();
+      return;
+    }
+    // Host: aktualizuj statystyki bieżącego pytania
+    if (g.status === 'playing' && _liveIsHost) {
+      _lqRefreshHostStats();
+    }
+    // Gracz: jeśli wszyscy odpowiedzieli — pokaż reveal lokalnie
+    if (g.status === 'playing' && !_liveIsHost && !_lqRevealActive) {
+      try {
+        const ans = await DB.getLiveAnswersForQuestion(_liveGame.id, _liveGame.currentQuestion || 0);
+        const players = await DB.getLiveGamePlayers(_liveGame.id);
+        // Czy host mnie wykluczyl w trakcie quizu?
+        if (_livePlayer && !players.some(p => p.id === _livePlayer.id)) {
+          _handleKickedFromLive();
+          return;
+        }
+        if (players.length > 0 && ans.length >= players.length) {
+          _lqPlayerReveal();
+        }
+      } catch(e) {}
+    }
+  }
+
+  // Gracz: gospodarz rozpoczął kolejną rundę z tymi samymi graczami
+  function _liveOnRematch(g) {
+    _liveResetRoundState();
+    _liveGame.status = 'waiting';
+    _liveGame.currentQuestion = 0;
+    _liveGame.questionOrder = null;
+    _liveGame.questionStartedAt = null;
+    _liveGame.timeLimitSeconds = g.time_limit_seconds || null;
+    try { sessionStorage.setItem('fiszki_live', JSON.stringify({ game: _liveGame, player: _livePlayer })); } catch(e) {}
+    if (typeof toast === 'function') toast('🔁 Nowa runda! Czekamy na start…', 3000);
+    _enterLiveLobby();
+  }
+
+  // Gracz: gospodarz zakończył grę na dobre
+  function _handleLiveClosed() {
+    if (_liveIsHost) return;
+    try { if (_livePollTimer) { clearInterval(_livePollTimer); _livePollTimer = null; } } catch(e) {}
+    _liveResetRoundState();
+    try { if (_liveSubGame) DB.unsubscribeLive(_liveSubGame); } catch(e) {}
+    try { if (_liveSubPlayers) DB.unsubscribeLive(_liveSubPlayers); } catch(e) {}
+    _liveSubGame = null; _liveSubPlayers = null;
+    _liveGame = null; _livePlayer = null; _livePlayers = [];
+    try { sessionStorage.removeItem('fiszki_live'); } catch(e) {}
+    if (typeof toast === 'function') toast('🏁 Nauczyciel zakończył grę. Dzięki za udział!', 4000);
+    if (typeof showScreen === 'function') showScreen('sLang');
   }
 
   function _renderLivePlayers() {
@@ -24094,10 +24216,21 @@ if ('serviceWorker' in navigator) {
       }
     }
     if (typeof showScreen === 'function') showScreen('sLiveQuiz');
+    _lqChrome(true);
     document.getElementById('lqPlayerView').style.display = _liveIsHost ? 'none' : '';
     document.getElementById('lqHostView').style.display   = _liveIsHost ? '' : 'none';
     document.getElementById('lqFinalView').style.display  = 'none';
     _renderLiveQuestion();
+  }
+
+  // Pasek pytania, timer i karta pytania — ukryte na ekranie wyników
+  function _lqChrome(show) {
+    const els = [
+      document.getElementById('lqQuestionNum'),
+      document.getElementById('lqTimerBar'),
+      document.getElementById('lqQuestionPl')
+    ].map(el => el && el.closest('#sLiveQuiz > div > div'));
+    els.forEach(el => { if (el) el.style.display = show ? '' : 'none'; });
   }
 
   // Renderuje aktualne pytanie (na podstawie _liveGame.currentQuestion + _liveGame.questionOrder)
@@ -24403,13 +24536,26 @@ if ('serviceWorker' in navigator) {
   }
 
   async function _showFinalLeaderboard() {
+    if (!_liveGame) return;
+    // Mini-gry: host był na sLiveRanking — wyniki pokazujemy na ekranie quizu
+    if (typeof showScreen === 'function') showScreen('sLiveQuiz');
+    _lqChrome(false);
     document.getElementById('lqPlayerView').style.display = 'none';
     document.getElementById('lqHostView').style.display = 'none';
     document.getElementById('lqFinalView').style.display = '';
+    document.getElementById('lqFinalHostBtns').style.display = _liveIsHost ? 'flex' : 'none';
+    document.getElementById('lqFinalPlayerBox').style.display = _liveIsHost ? 'none' : '';
     if (_lqTimerInterval) { clearInterval(_lqTimerInterval); _lqTimerInterval = null; }
     if (_lqAutoNextTimer) { clearTimeout(_lqAutoNextTimer); _lqAutoNextTimer = null; }
+    if (_lrPollTimer) { clearInterval(_lrPollTimer); _lrPollTimer = null; }
+    if (_lrTimerInterval) { clearInterval(_lrTimerInterval); _lrTimerInterval = null; }
     try {
-      const lb = await DB.getLiveLeaderboard(_liveGame.id);
+      // Quiz: punkty z odpowiedzi; mini-gry: wynik wysyłany przez gracza (score)
+      const lb = (_liveGame.gameType && _liveGame.gameType !== 'quiz')
+        ? (await DB.getLiveGamePlayers(_liveGame.id))
+            .map(p => ({ id: p.id, nickname: p.nickname, score: p.score || 0 }))
+            .sort((x, y) => y.score - x.score)
+        : await DB.getLiveLeaderboard(_liveGame.id);
       const container = document.getElementById('lqFinalLeaderboard');
       if (!lb.length) { container.innerHTML = '<div style="color:var(--muted);text-align:center;padding:14px">Brak graczy</div>'; return; }
       const top3 = lb.slice(0, 3);
@@ -24494,6 +24640,10 @@ if ('serviceWorker' in navigator) {
     _liveSubGame = null; _liveSubPlayers = null;
     if (_liveIsHost && _liveGame && _liveGame.status === 'waiting') {
       try { await DB.deleteLiveGame(_liveGame.id); } catch(e) {}
+    } else if (_liveIsHost && _liveGame) {
+      // Gra trwała / skończona — wygaszamy ją, żeby gracze czekający na
+      // kolejną rundę dostali komunikat „Nauczyciel zakończył grę".
+      try { await DB.updateLiveGameStatus(_liveGame.id, 'finished', { expires_at: new Date().toISOString() }); } catch(e) {}
     }
     _liveGame = null; _liveIsHost = false; _livePlayer = null; _livePlayers = [];
     try { sessionStorage.removeItem('fiszki_live'); } catch(e) {}
@@ -24510,9 +24660,45 @@ if ('serviceWorker' in navigator) {
         if (typeof openLiveJoinScreen === 'function') openLiveJoinScreen(pin);
         return true;
       }
+      _liveTryRestore();
     } catch(e) {}
     return false;
   };
+
+  // Gracz wraca do app.html z mini-gry (albo odświeżył stronę) — sessionStorage
+  // 'fiszki_live' (ta sama karta) przywraca go do gry: lobby / quiz / wyniki,
+  // żeby mógł zagrać kolejną rundę z tymi samymi graczami.
+  async function _liveTryRestore() {
+    let saved = null;
+    try { saved = JSON.parse(sessionStorage.getItem('fiszki_live') || 'null'); } catch(e) {}
+    if (!saved || !saved.game || !saved.player || _liveGame) return false;
+    const drop = () => { try { sessionStorage.removeItem('fiszki_live'); } catch(e) {} };
+    try {
+      const g = await DB.getLiveGame(saved.game.id);
+      if (!g || !g.expires_at || new Date(g.expires_at).getTime() < Date.now()) { drop(); return false; }
+      const players = await DB.getLiveGamePlayers(g.id);
+      if (!players.some(p => p.id === saved.player.id)) { drop(); return false; }
+      const gameType = g.game_type || saved.game.gameType || 'quiz';
+      // Uczeń sam wyszedł z trwającej mini-gry — nie wciągamy go z powrotem
+      if (g.status === 'playing' && gameType !== 'quiz') return false;
+      if (_liveGame) return false;
+      _liveGame = {
+        id: g.id, pin: g.pin, bookId: g.book_id, unitKey: g.unit_key,
+        gameType: gameType, status: g.status,
+        currentQuestion: g.current_question, questionOrder: g.question_order,
+        timePerQuestion: g.time_per_question,
+        questionStartedAt: g.question_started_at ? new Date(g.question_started_at).getTime() : null,
+        timeLimitSeconds: g.time_limit_seconds || null
+      };
+      _livePlayer = saved.player;
+      _liveIsHost = false;
+      _livePlayers = players;
+      if (g.status === 'waiting') await _enterLiveLobby();
+      else if (g.status === 'finished') { _startLivePolling(); _showFinalLeaderboard(); }
+      else { _startLivePolling(); _enterLiveQuiz(); }
+      return true;
+    } catch(e) { console.warn('[live restore]', e); return false; }
+  }
 
   // ═══════════════════════════════════════════════════════════════
   //  BULK ACTIONS — wspólne dla widoków Klasy (sClassDetail) i

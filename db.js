@@ -1706,6 +1706,18 @@ const DB = (() => {
     if (error) throw new Error(error.message);
   }
 
+  // Host: zagraj ponownie z tymi samymi graczami (migracja #65).
+  // Ten sam PIN/QR; kasuje odpowiedzi, zeruje wyniki, wraca do lobby.
+  // timeLimitSeconds: 0 = bez limitu, >0 = sekundy.
+  async function liveGameRematch(gameId, gameType, timeLimitSeconds) {
+    const { error } = await supabase.rpc('live_game_rematch', {
+      p_game_id: gameId,
+      p_game_type: gameType || null,
+      p_time_limit: Math.max(0, parseInt(timeLimitSeconds, 10) || 0)
+    });
+    if (error) throw new Error(error.message);
+  }
+
   // Pobierz dowolny profil po ID (uzywane przez opiekuna do widoku
   // postepu dziecka — RLS pozwala dzieki polityce prof_select_parent_child).
   async function fetchProfileById(userId) {
@@ -4500,6 +4512,7 @@ const DB = (() => {
     startLiveGameRound,
     nextLiveQuestion,
     finishLiveGame,
+    liveGameRematch,
     // Live games — Faza 3 (mini-gry Live)
     updateLivePlayerScore,
     getFreeLimits,
