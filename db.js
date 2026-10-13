@@ -2291,6 +2291,67 @@ const DB = (() => {
     return map;
   }
   // „Ostatnie wejście" — podstawa automatycznego usuwania zdjęć po 2 mies. nieaktywności.
+  // ═══ SESJE GIER (#66) ═══════════════════════════════════════════
+  // game-stats.js zapisuje sesje gier w localStorage['fiszki_game_sessions'];
+  // tu wysyłamy je upsertem (sesja może być aktualizowana, dopóki trwa).
+  // Wysłane i zakończone (albo starsze niż 6 h) usuwamy z kolejki.
+  let _gsMissing = false, _gsFlushing = false;
+  async function flushGameSessions(login) {
+    if (!_userId || _gsMissing || _gsFlushing || !window.SF_STATS) return 0;
+    const all = window.SF_STATS.readQueue();
+    const now = Date.now();
+    const mine = all.filter(e => e && e.id && e.user === login);
+    if (!mine.length) return 0;
+    _gsFlushing = true;
+    try {
+      const rows = mine.map(e => ({
+        id: e.id, game: String(e.game).slice(0, 40),
+        book_id: e.book_id || null, unit_key: e.unit_key || null,
+        score: Math.max(0, Math.min(1000000, e.score | 0)),
+        correct: (e.correct === null || e.correct === undefined) ? null : Math.max(0, e.correct | 0),
+        duration_sec: Math.max(0, Math.min(43200, e.duration_sec | 0)),
+        started_at: e.started_at, day: e.day, updated_at: new Date().toISOString()
+      }));
+      const { error } = await supabase.from('game_sessions').upsert(rows, { onConflict: 'id' });
+      if (error) {
+        if (/game_sessions|relation|does not exist|schema cache/i.test(error.message)) _gsMissing = true;
+        console.warn('[flushGameSessions]', error.message);
+        return 0;
+      }
+      const sent = new Set(mine.filter(e => e.done || now - (e.ts || 0) > 6 * 3600 * 1000).map(e => e.id));
+      // Kolejka mogła się zmienić w trakcie wysyłki — czytamy ją ponownie.
+      const left = window.SF_STATS.readQueue().filter(e => !sent.has(e.id)
+        && now - (e.ts || 0) < 30 * 86400 * 1000);
+      window.SF_STATS.writeQueue(left);
+      return rows.length;
+    } catch (e) {
+      console.warn('[flushGameSessions]', e.message || e);
+      return 0;
+    } finally { _gsFlushing = false; }
+  }
+
+  // Sesje gier ucznia z ostatnich N dni (najnowsze pierwsze).
+  // null = brak tabeli (migracja #66 nieuruchomiona).
+  async function loadGameSessions(userId, days) {
+    const uid = userId || _userId;
+    if (!uid) return [];
+    const since = new Date(Date.now() - ((days || 30) - 1) * 86400000);
+    const sinceDay = since.getFullYear() + '-' + String(since.getMonth() + 1).padStart(2, '0') + '-' + String(since.getDate()).padStart(2, '0');
+    const { data, error } = await supabase
+      .from('game_sessions')
+      .select('id, game, book_id, unit_key, score, correct, duration_sec, started_at, day')
+      .eq('user_id', uid)
+      .gte('day', sinceDay)
+      .order('started_at', { ascending: false })
+      .limit(1000);
+    if (error) {
+      if (/game_sessions|relation|does not exist|schema cache/i.test(error.message)) return null;
+      console.warn('[loadGameSessions]', error.message);
+      return [];
+    }
+    return data || [];
+  }
+
   async function touchLastSeen() {
     if (!_userId) return;
     try { await supabase.rpc('touch_last_seen'); } catch(e) {}
@@ -4551,6 +4612,8 @@ const DB = (() => {
     clearUserAvatar,
     loadClassAvatars,
     touchLastSeen,
+    flushGameSessions,
+    loadGameSessions,
     purgeAvatars,
     setMyNickname,
     clearUserNickname,

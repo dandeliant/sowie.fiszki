@@ -54,6 +54,8 @@ const freshSave = () => ({ done: {}, best: {}, money: 0, xp: 0 });
 let save = freshSave();
 try { const s = JSON.parse(localStorage.getItem(SAVE_KEY)); if (s && s.done) save = Object.assign(freshSave(), s); } catch (e) { /* storage unavailable */ }
 function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) { /* ignore */ } }
+// Statystyki gier Sowie Fiszki (../game-stats.js): XP z misji i rozmów jako punkty gry.
+window.GC_STATS_XP = () => save.xp;
 // Garderoba i garaż są wspólne dla wszystkich trybów (gramatyka i słówka z każdego rozdziału);
 // pieniądze zostają w zapisie danego trybu.
 const WARDROBE_KEY = 'grammarCity.wardrobe.v1';
