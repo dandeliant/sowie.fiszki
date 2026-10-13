@@ -2352,6 +2352,20 @@ const DB = (() => {
     return data || [];
   }
 
+  // Topka wszystkich użytkowników (#67). metric: 'words' | 'xp' | 'games',
+  // period: 'week' | 'all'. null = brak migracji #67.
+  async function loadGlobalLeaderboard(metric, period, limit) {
+    if (!_userId) return [];
+    const { data, error } = await supabase.rpc('global_leaderboard', {
+      p_metric: metric || 'words', p_period: period || 'week', p_limit: limit || 50
+    });
+    if (error) {
+      if (/global_leaderboard|function|schema cache|does not exist/i.test(error.message)) return null;
+      throw new Error(error.message);
+    }
+    return data || [];
+  }
+
   async function touchLastSeen() {
     if (!_userId) return;
     try { await supabase.rpc('touch_last_seen'); } catch(e) {}
@@ -4613,6 +4627,7 @@ const DB = (() => {
     loadClassAvatars,
     touchLastSeen,
     flushGameSessions,
+    loadGlobalLeaderboard,
     loadGameSessions,
     purgeAvatars,
     setMyNickname,

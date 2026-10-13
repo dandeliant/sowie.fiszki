@@ -3520,6 +3520,9 @@ szkoła	school"></textarea>
   <div id="classRankBtnWrap" style="margin:6px 0 10px">
     <button onclick="window.__sfOpenStudentRank && window.__sfOpenStudentRank()" style="width:100%;background:linear-gradient(135deg,#7c4dff,#ffd166);color:#1a1440;border:none;border-radius:12px;padding:12px 16px;font-weight:800;font-size:.95rem;cursor:pointer;font-family:inherit;box-shadow:0 4px 14px rgba(124,77,255,.35)">🏆 Ranking klasy — zobacz swoją pozycję</button>
   </div>
+  <div style="margin:0 0 10px">
+    <button onclick="openGlobalTop()" style="width:100%;background:linear-gradient(135deg,#06d6a0,#4d96ff);color:#0b1a33;border:none;border-radius:12px;padding:12px 16px;font-weight:800;font-size:.95rem;cursor:pointer;font-family:inherit;box-shadow:0 4px 14px rgba(77,150,255,.35)">🌍 Topka wszystkich użytkowników</button>
+  </div>
   <div class="stats-tabs">
     <button class="stats-tab active" data-stab="stats" onclick="setStatsTab('stats')">📊 Statystyki</button>
     <button class="stats-tab" data-stab="badges" onclick="setStatsTab('badges')">🏅 Odznaki i karty</button>
@@ -5104,6 +5107,99 @@ const SCREEN_TO_ACTIVITY = {
   'sDuel':        'duel',
   'sSpeed':       'speed_round'
 };
+
+// ══════════════════════════════════════════════
+//  TOPKA WSZYSTKICH UŻYTKOWNIKÓW (#67) — ranking całej platformy:
+//  📚 Słówka / ⭐ XP / 🎮 Punkty z gier × Ten tydzień / Od początku.
+//  Inni widoczni tylko po ksywce albo zamaskowanym loginie (RPC).
+// ══════════════════════════════════════════════
+const GTOP_METRICS = [
+  { k: 'words', l: '📚 Słówka', unit: 'słówek',
+    week: 'Słówka nauczone w tym tygodniu', all: 'Słówka opanowane bardzo dobrze' },
+  { k: 'xp',    l: '⭐ XP',      unit: 'XP',
+    week: 'XP zdobyte w tym tygodniu', all: 'XP od początku nauki' },
+  { k: 'games', l: '🎮 Gry',     unit: 'pkt',
+    week: 'Punkty z gier w tym tygodniu', all: 'Punkty z gier od początku' }
+];
+let _gtop = { metric: 'words', period: 'week', seq: 0 };
+
+function openGlobalTop() {
+  if (isGuest) {
+    if (typeof openPremiumLockModal === 'function') openPremiumLockModal({ title: '🌍 Topka wszystkich użytkowników', text: 'Załóż konto, aby zobaczyć ranking i swoje miejsce w Sowich Fiszkach.', showMessageBtn: false });
+    return;
+  }
+  let ov = document.getElementById('gtopModal');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'gtopModal';
+    ov.className = 'modal-overlay';
+    ov.style.cssText = 'display:flex;z-index:9998';
+    ov.onclick = (e) => { if (e.target === ov) ov.style.display = 'none'; };
+    ov.innerHTML = '<div class="modal-box" style="max-width:520px;width:100%;max-height:90vh;overflow:auto">'
+      + '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px">'
+      + '<div style="font-family:\'Playfair Display\',serif;font-size:1.25rem;color:var(--accent)">🌍 Topka Sowich Fiszek</div>'
+      + '<button class="btn-sm" onclick="document.getElementById(\'gtopModal\').style.display=\'none\'">✕</button></div>'
+      + '<div id="gtopPeriod" style="display:flex;gap:6px;margin-bottom:8px"></div>'
+      + '<div id="gtopMetric" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px"></div>'
+      + '<div id="gtopSub" style="font-size:.72rem;color:var(--muted);font-weight:700;margin-bottom:10px"></div>'
+      + '<div id="gtopList"></div>'
+      + '<div style="font-size:.66rem;color:var(--muted);font-weight:600;margin-top:10px;line-height:1.45">Inni widzą Cię pod <b>ksywką</b> (ustawisz ją w 👤 Moje konto) — bez ksywki pokazujemy tylko początek loginu. Topka tygodniowa liczy się od poniedziałku. Konta nauczycieli i administratora nie biorą udziału.</div>'
+      + '</div>';
+    document.body.appendChild(ov);
+  }
+  ov.style.display = 'flex';
+  _gtopRender();
+}
+
+function gtopSet(kind, val) { _gtop[kind] = val; _gtopRender(); }
+
+async function _gtopRender() {
+  const seg = (sel) => 'flex:1;border-radius:10px;padding:8px 10px;font-weight:800;font-size:.8rem;cursor:pointer;font-family:inherit;border:1.5px solid ' + (sel ? 'var(--accent)' : 'var(--border)') + ';background:' + (sel ? 'rgba(255,209,102,.16)' : 'var(--surface)') + ';color:' + (sel ? 'var(--accent)' : 'var(--text)');
+  document.getElementById('gtopPeriod').innerHTML =
+    '<button style="' + seg(_gtop.period === 'week') + '" onclick="gtopSet(\'period\',\'week\')">📅 Ten tydzień</button>'
+    + '<button style="' + seg(_gtop.period === 'all') + '" onclick="gtopSet(\'period\',\'all\')">🏛️ Od początku</button>';
+  document.getElementById('gtopMetric').innerHTML = GTOP_METRICS.map(m =>
+    '<button style="' + seg(_gtop.metric === m.k) + '" onclick="gtopSet(\'metric\',\'' + m.k + '\')">' + m.l + '</button>').join('');
+  const M = GTOP_METRICS.find(m => m.k === _gtop.metric) || GTOP_METRICS[0];
+  document.getElementById('gtopSub').textContent = M[_gtop.period];
+  const list = document.getElementById('gtopList');
+  list.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:.8rem;font-weight:600;padding:24px">⏳ Ładuję ranking…</div>';
+  const seq = ++_gtop.seq;
+  if (_gtop.metric === 'games') { try { await DB.flushGameSessions(currentUser); } catch(e) {} }
+  let rows;
+  try { rows = await DB.loadGlobalLeaderboard(_gtop.metric, _gtop.period, 50); }
+  catch(e) { if (seq !== _gtop.seq) return; list.innerHTML = '<div style="color:var(--danger);font-size:.8rem;padding:14px;text-align:center">❌ ' + escHtml(e.message || String(e)) + '</div>'; return; }
+  if (seq !== _gtop.seq) return;
+  if (rows === null) { list.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:.8rem;font-weight:600;padding:24px">🌍 Topka pojawi się po aktualizacji bazy danych.</div>'; return; }
+  if (!rows.length) { list.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:.8rem;font-weight:600;padding:24px">Jeszcze nikt nie ma wyniku w tej kategorii' + (_gtop.period === 'week' ? ' w tym tygodniu' : '') + '. Zdobądź pierwsze miejsce! 🦉</div>'; return; }
+  const total = rows[0].total_users || rows.length;
+  const me = rows.find(r => r.is_me);
+  let h = '';
+  if (me) {
+    h += '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;background:linear-gradient(135deg,rgba(6,214,160,.14),rgba(77,150,255,.14));border:1.5px solid rgba(77,150,255,.5);border-radius:12px;padding:10px 12px;margin-bottom:10px">'
+      + '<div style="font-size:.82rem;font-weight:800;color:var(--text)">Twoje miejsce: <span style="color:var(--accent);font-size:1.05rem">#' + me.place + '</span> <span style="color:var(--muted);font-weight:600">z ' + total + '</span></div>'
+      + '<div style="font-weight:900;color:var(--accent2)">' + Number(me.value).toLocaleString('pl-PL') + ' ' + M.unit + '</div></div>';
+  } else {
+    h += '<div style="font-size:.74rem;color:var(--muted);font-weight:700;margin-bottom:10px;text-align:center">Nie masz jeszcze wyniku w tej kategorii — ucz się i graj, żeby wskoczyć do topki!</div>';
+  }
+  let prev = 0;
+  rows.forEach(r => {
+    if (prev && r.place > prev + 1) h += '<div style="text-align:center;color:var(--muted);font-weight:800;letter-spacing:.2em;padding:2px">⋯</div>';
+    prev = r.place;
+    const medal = r.place === 1 ? '🥇' : r.place === 2 ? '🥈' : r.place === 3 ? '🥉' : '';
+    const bg = r.is_me ? 'rgba(77,150,255,.18)' : r.place === 1 ? 'rgba(255,209,102,.16)' : r.place === 2 ? 'rgba(189,189,189,.13)' : r.place === 3 ? 'rgba(205,127,50,.13)' : 'var(--surface)';
+    const av = r.avatar_url
+      ? '<img src="' + escHtml(r.avatar_url) + '" alt="" style="width:30px;height:30px;border-radius:50%;object-fit:cover;flex-shrink:0">'
+      : '<span style="width:30px;height:30px;border-radius:50%;background:var(--surface2);display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">🦉</span>';
+    h += '<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;background:' + bg + ';margin-bottom:4px;' + (r.is_me ? 'border:1.5px solid rgba(77,150,255,.6)' : 'border:1px solid var(--border)') + '">'
+      + '<div style="width:34px;text-align:center;font-weight:900;color:var(--muted);font-size:' + (medal ? '1.2rem' : '.85rem') + '">' + (medal || r.place + '.') + '</div>'
+      + av
+      + '<div style="flex:1;min-width:0"><div style="font-weight:800;color:var(--text);font-size:.86rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escHtml(r.display_name || '—') + (r.is_me ? ' <span style="color:var(--accent2);font-size:.72rem">(Ty)</span>' : '') + '</div>'
+      + '<div style="font-size:.64rem;color:var(--muted);font-weight:700">⭐ poziom ' + (r.level || 1) + '</div></div>'
+      + '<div style="font-weight:900;color:var(--accent);font-variant-numeric:tabular-nums;white-space:nowrap">' + Number(r.value).toLocaleString('pl-PL') + ' <span style="font-size:.66rem;color:var(--muted);font-weight:700">' + M.unit + '</span></div></div>';
+  });
+  list.innerHTML = h;
+}
 
 // ══════════════════════════════════════════════
 //  STATYSTYKI GIER (#66) — czas gry, punkty, poprawne odpowiedzi.
