@@ -653,7 +653,8 @@ const VSPEC = {
   moto:     { acc: 24, max: 48, rev: 3, brake: 38, steer: 1.0, off: 0.55, rad: 0.55, exit: 1.4, ride: 'moto', seatY: 0.92, seatZ: -0.2 },
   scooter:  { acc: 8, max: 12.5, rev: 2, brake: 22, steer: 1.25, off: 0.35, rad: 0.45, exit: 1.2, ride: 'scooter', seatY: 0.2, seatZ: -0.1 },
   // Startowa hulajnoga z modelu 3D (models/e-scooter.glb)
-  kscooter: { acc: 9, max: 13.5, rev: 2, brake: 22, steer: 1.25, off: 0.4, rad: 0.45, exit: 1.2, ride: 'scooter', seatY: 0.2, seatZ: -0.12 },
+  // seatY = wysokość deski, seatZ = miejsce stóp na desce (ręce sięgają kierownicy)
+  kscooter: { acc: 9, max: 13.5, rev: 2, brake: 22, steer: 1.2, off: 0.5, rad: 0.48, exit: 1.3, ride: 'scooter', seatY: 0.33, seatZ: 0.06 },
 };
 const specOf = type => VSPEC[type] || VSPEC.car;
 const VNAME = { moto: 'motor', scooter: 'hulajnogę', kscooter: 'hulajnogę' };
@@ -797,8 +798,10 @@ function scooterGeometry(color) {
 // Hulajnoga startowa z pliku GLB (model Blockbench). Ładowana raz, klonowana dla
 // każdego egzemplarza. Dopóki plik się nie wczyta (albo gdy się nie uda), jedzie
 // zastępcza hulajnoga proceduralna — podmieniana automatycznie po załadowaniu.
-const KSCOOTER_LEN = 1.5;                 // długość w metrach (jak hulajnoga proceduralna)
-let kscooterSrc = null, kscooterLoading = false, kscooterDeckY = 0.2;
+// Długość dobrana do postaci gracza: kierownica ~1,65 m, deska ~0,33 m nad ziemią,
+// więc ręce kierowcy (barki 1,68 m nad stopami, ramię 0,66 m) sięgają kierownicy.
+const KSCOOTER_LEN = 2.0;
+let kscooterSrc = null, kscooterLoading = false;
 const kscooterWaiting = [];
 function loadKScooter() {
   if (kscooterSrc || kscooterLoading || !THREE.GLTFLoader) return;
