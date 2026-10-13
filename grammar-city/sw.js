@@ -1,5 +1,5 @@
 // Grammar City service worker: offline play after the first visit.
-const VERSION = 'grammar-city-v6';
+const VERSION = 'grammar-city-v7';
 const SHELL = [
   './',
   './index.html',
@@ -7,11 +7,13 @@ const SHELL = [
   './questions.js',
   './vocab-missions.js',
   './npc-talks.js',
+  './models/e-scooter.glb',
   '../game-stats.js',
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png',
   'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js',
+  'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js',
 ];
 
 self.addEventListener('install', e => {

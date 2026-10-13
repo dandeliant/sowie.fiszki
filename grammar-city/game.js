@@ -59,8 +59,8 @@ window.GC_STATS_XP = () => save.xp;
 // Garderoba i garaż są wspólne dla wszystkich trybów (gramatyka i słówka z każdego rozdziału);
 // pieniądze zostają w zapisie danego trybu.
 const WARDROBE_KEY = 'grammarCity.wardrobe.v1';
-const freshWardrobe = () => ({ owned: { outfit_classic: 1, hat_cap: 1, hat_none: 1, glasses_none: 1, hair_blond: 1 },
-  equip: { outfit: 'classic', hat: 'cap', glasses: 'none', hair: 'blond', vehicle: null }, talked: {} });
+const freshWardrobe = () => ({ owned: { outfit_classic: 1, hat_cap: 1, hat_none: 1, glasses_none: 1, hair_blond: 1, veh_kscooter: 1 },
+  equip: { outfit: 'classic', hat: 'cap', glasses: 'none', hair: 'blond', vehicle: 'veh_kscooter' }, talked: {} });
 let wardrobe = freshWardrobe();
 try {
   const w = JSON.parse(localStorage.getItem(WARDROBE_KEY));
@@ -652,9 +652,12 @@ const VSPEC = {
   supercar: { acc: 25, max: 52, rev: 10, brake: 40, steer: 0.7, off: 1.35, rad: 1.15, exit: 2.4 },
   moto:     { acc: 24, max: 48, rev: 3, brake: 38, steer: 1.0, off: 0.55, rad: 0.55, exit: 1.4, ride: 'moto', seatY: 0.92, seatZ: -0.2 },
   scooter:  { acc: 8, max: 12.5, rev: 2, brake: 22, steer: 1.25, off: 0.35, rad: 0.45, exit: 1.2, ride: 'scooter', seatY: 0.2, seatZ: -0.1 },
+  // Startowa hulajnoga z modelu 3D (models/e-scooter.glb)
+  kscooter: { acc: 9, max: 13.5, rev: 2, brake: 22, steer: 1.25, off: 0.4, rad: 0.45, exit: 1.2, ride: 'scooter', seatY: 0.2, seatZ: -0.12 },
 };
 const specOf = type => VSPEC[type] || VSPEC.car;
-const VNAME = { moto: 'motor', scooter: 'hulajnogę' };
+const VNAME = { moto: 'motor', scooter: 'hulajnogę', kscooter: 'hulajnogę' };
+const isTwoWheel = type => !!specOf(type).ride;
 
 // Bryła z profilu bocznego (punkty [wzdłuż, wysokość]) wyciągnięta na szerokość auta.
 function profileGeo(pts, width, bevel = 0.05) {
@@ -791,7 +794,47 @@ function scooterGeometry(color) {
   push(geo('sc_light', () => new THREE.BoxGeometry(0.08, 0.06, 0.04)), 0, 1.05, 0.66, 0xfdf6d8);
   return mergeColored(parts);
 }
+// Hulajnoga startowa z pliku GLB (model Blockbench). Ładowana raz, klonowana dla
+// każdego egzemplarza. Dopóki plik się nie wczyta (albo gdy się nie uda), jedzie
+// zastępcza hulajnoga proceduralna — podmieniana automatycznie po załadowaniu.
+const KSCOOTER_LEN = 1.5;                 // długość w metrach (jak hulajnoga proceduralna)
+let kscooterSrc = null, kscooterLoading = false, kscooterDeckY = 0.2;
+const kscooterWaiting = [];
+function loadKScooter() {
+  if (kscooterSrc || kscooterLoading || !THREE.GLTFLoader) return;
+  kscooterLoading = true;
+  new THREE.GLTFLoader().load('models/e-scooter.glb', gltf => {
+    const root = gltf.scene;
+    root.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    root.updateMatrixWorld(true);
+    const size = new THREE.Box3().setFromObject(root).getSize(new THREE.Vector3());
+    root.scale.setScalar(KSCOOTER_LEN / Math.max(size.z, 0.001));
+    root.rotation.y = Math.PI;            // model patrzy w −Z, pojazdy w grze jadą w +Z
+    root.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(root), c = box.getCenter(new THREE.Vector3());
+    root.position.set(-c.x, -box.min.y, -c.z);   // koła na ziemi, środek w (0, 0)
+    const wrap = new THREE.Group();
+    wrap.add(root);
+    kscooterSrc = wrap;
+    kscooterWaiting.splice(0).forEach(fn => fn());
+  }, undefined, err => { kscooterLoading = false; console.warn('[Grammar City] models/e-scooter.glb', err); });
+}
+function makeKScooterMesh() {
+  const holder = new THREE.Group();
+  holder.rotation.order = 'YXZ';
+  const attach = () => holder.add(kscooterSrc.clone(true));
+  if (kscooterSrc) attach();
+  else {
+    const fb = new THREE.Mesh(geo('scooter_kfallback', () => scooterGeometry(0x2b2b2b)), vcMat);
+    fb.castShadow = true;
+    holder.add(fb);
+    kscooterWaiting.push(() => { holder.remove(fb); attach(); });
+    loadKScooter();
+  }
+  return { g: holder, wheels: [], len: KSCOOTER_LEN };
+}
 function makeCarMesh(type, color) {
+  if (type === 'kscooter') return makeKScooterMesh();
   const g = type === 'moto' ? geo(`moto_${color}`, () => motoGeometry(color))
     : type === 'scooter' ? geo(`scooter_${color}`, () => scooterGeometry(color))
     : geo(`car2_${type}_${color}`, () => carGeometry(type, color));
@@ -979,6 +1022,7 @@ const SHOP = [
   { id: 'hair_bun', cat: 'hair', name: 'Kok', desc: '', price: 100, hair: 0x111111, hairStyle: 'bun' },
   { id: 'hair_red', cat: 'hair', name: 'Rude', desc: '', price: 150, hair: 0xb5501f, hairStyle: 'short' },
   { id: 'hair_bald', cat: 'hair', name: 'Łysy', desc: '', price: 0, hair: 0x2b1d14, hairStyle: 'bald' },
+  { id: 'veh_kscooter', cat: 'vehicle', name: 'Hulajnoga Pixel Rider', desc: 'Startowa e-hulajnoga — dostępna od początku', price: 0, vtype: 'kscooter', color: 0x2b2b2b },
   { id: 'veh_scooter', cat: 'vehicle', name: 'Hulajnoga elektryczna Volt K-Pro', desc: 'Szybka e-hulajnoga, do ~45 km/h', price: 400, vtype: 'scooter', color: 0x2b2b2b },
   { id: 'veh_hatch', cat: 'vehicle', name: 'Hatchback City', desc: 'Małe miejskie auto', price: 800, vtype: 'hatch', color: 0x2e86de },
   { id: 'veh_suv', cat: 'vehicle', name: 'SUV Explorer', desc: 'Wysoki i stabilny', price: 1400, vtype: 'suv', color: 0x10ac84 },
@@ -2304,7 +2348,7 @@ function renderShop() {
   $('shop-perk').hidden = !hasCashGlasses();
 }
 function shopIcon(it) {
-  if (it.cat === 'vehicle') return { scooter: '🛴', moto: '🏍️', hatch: '🚗', suv: '🚙', supercar: '🏎️' }[it.vtype] || '🚗';
+  if (it.cat === 'vehicle') return { scooter: '🛴', kscooter: '🛴', moto: '🏍️', hatch: '🚗', suv: '🚙', supercar: '🏎️' }[it.vtype] || '🚗';
   if (it.cat === 'glasses') return it.glasses === 'cash' ? '<span class="pixglass">▀█▀▀ ▀█▀▀</span>' : it.glasses === 'sun' ? '🕶️' : '🙂';
   if (it.cat === 'hat') return { none: '💇', cap: '🧢', beanie: '🧶', fedora: '🎩', crown: '👑' }[it.hat];
   if (it.cat === 'hair') return `<span class="swatch" style="background:#${it.hair.toString(16).padStart(6, '0')}"></span>`;
@@ -2329,8 +2373,9 @@ function equipItem(id) {
 }
 // Przywołanie własnego pojazdu obok gracza (V lub przycisk w sklepie).
 let summoned = null;
-function summonVehicle() {
-  const id = wardrobe.equip.vehicle, it = id && shopItem(id);
+function summonVehicle(quiet) {
+  const id = (wardrobe.equip.vehicle && wardrobe.owned[wardrobe.equip.vehicle]) ? wardrobe.equip.vehicle : 'veh_kscooter';
+  const it = shopItem(id);
   if (!it) { toast('Nie masz jeszcze pojazdu — kup go w sklepie (<kbd>B</kbd>).'); return; }
   if (P.car) { toast('Najpierw wysiądź z pojazdu.'); return; }
   if (summoned && summoned !== P.car) { scene.remove(summoned.mesh); const k = vehicles.indexOf(summoned); if (k >= 0) vehicles.splice(k, 1); }
@@ -2338,13 +2383,14 @@ function summonVehicle() {
   let best = null;
   for (const [ox, oz] of [[fz * 2.6, -fx * 2.6], [-fz * 2.6, fx * 2.6], [fx * 3, fz * 3], [-fx * 3, -fz * 3]]) {
     const p = { x: P.pos.x + ox, z: P.pos.z + oz };
-    if (!pushOut(p, it.vtype === 'scooter' || it.vtype === 'moto' ? 0.6 : 1.3, nearCols)) { best = p; break; }
+    if (!pushOut(p, isTwoWheel(it.vtype) ? 0.6 : 1.3, nearCols)) { best = p; break; }
   }
   if (!best) best = { x: P.pos.x + fz * 2.6, z: P.pos.z - fx * 2.6 };
   summoned = spawnVehicle(it.vtype, it.color, best.x, best.z, P.facing, 'parked');
   summoned.owned = true; summoned.pos.y = groundAt(best.x, best.z); summoned.mesh.position.copy(summoned.pos);
+  if (quiet) return;
   Sound.door();
-  toast(`Twój pojazd czeka obok: ${it.name}. Naciśnij <kbd>F</kbd>, aby ${it.vtype === 'scooter' || it.vtype === 'moto' ? 'wsiąść' : 'wsiąść'}.`, 'good', 4000);
+  toast(`Twój pojazd czeka obok: ${it.name}. Naciśnij <kbd>F</kbd>, aby ${isTwoWheel(it.vtype) ? 'wskoczyć' : 'wsiąść'}.`, 'good', 4000);
 }
 $('shop-close').addEventListener('click', closeShop);
 
@@ -2378,7 +2424,7 @@ function startGame() {
   if (doneCount() === 0) {
     showBanner('GRAMMAR CITY', 'Witaj w mieście!', '#f2b632', 2600);
     setTimeout(() => toast('Za Tobą ratusz — egzamin końcowy. Najpierw zdobądź doświadczenie w mieście.', '', 5500), 1500);
-    setTimeout(() => toast('Obok stoi sportowe auto — podejdź i naciśnij <kbd>F</kbd>.', '', 5500), 4200);
+    setTimeout(() => toast('Obok czeka Twoja hulajnoga 🛴, a dalej sportowe auto — podejdź i naciśnij <kbd>F</kbd>. Hulajnogę przywołasz zawsze klawiszem <kbd>V</kbd>.', '', 6500), 4200);
     setTimeout(() => toast('Mieszkańcy z dymkiem 💬 chętnie porozmawiają (<kbd>T</kbd>). Za pieniądze kupisz stroje i pojazdy w sklepie (<kbd>B</kbd>).', '', 6500), 7400);
     if (touchMode) setTimeout(() => toast('Lewy pad — ruch · przeciągnij palcem po ekranie — kamera · dotknij minimapy — mapa', '', 6500), 300);
   }
@@ -2479,12 +2525,14 @@ async function boot() {
   P.pos.set(sx - 6, SIDE_H, sz);
   player.g.position.copy(P.pos); player.g.rotation.y = P.facing;
   spawnVehicle('sport', 0xf2b632, sx + 4, rc(4) - 6.2, Math.PI / 2, 'parked');
+  loadKScooter();
   spawnParked(18);
   spawnTraffic(26);
   spawnPeds(40);
   spawnNPCs();
   buildMapCanvas();
   refreshNear(P.pos.x, P.pos.z);
+  summonVehicle(true);   // własny pojazd (na start: hulajnoga Pixel Rider) stoi obok gracza
   resizeMinimap();
   refreshStartInfo();
   btn.disabled = false; btn.textContent = doneCount() ? 'Kontynuuj grę' : 'Wejdź do miasta';
