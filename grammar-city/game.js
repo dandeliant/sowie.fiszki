@@ -354,7 +354,7 @@ function buildWarsaw() {
   scene.fog.near = 200; scene.fog.far = 820;
   // ziemia: trawa dookoła, w obrębie mapy płyty chodnikowe
   const grass = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000), new THREE.MeshLambertMaterial({ map: grassTex }));
-  grass.rotation.x = -Math.PI / 2; grass.position.y = -0.06; grass.receiveShadow = true; scene.add(grass);
+  grass.rotation.x = -Math.PI / 2; grass.position.y = -0.6; grass.receiveShadow = true; scene.add(grass);   // nisko: bez migotania z płytami z daleka
   const pave = new THREE.Mesh(new THREE.PlaneGeometry(2 * W_EXT, 2 * W_EXT), new THREE.MeshLambertMaterial({ map: texClone(sidewalkTex, 2 * W_EXT / 5) }));
   pave.rotation.x = -Math.PI / 2; pave.position.y = -0.02; pave.receiveShadow = true; scene.add(pave);
   const off = (m, f) => Object.assign(m, { polygonOffset: true, polygonOffsetFactor: f, polygonOffsetUnits: f, side: THREE.DoubleSide });
@@ -378,6 +378,9 @@ function buildWarsaw() {
       const i0 = f[t] * 3, i1 = f[t + 2] * 3, i2 = f[t + 1] * 3;
       a.set(v[i0], v[i0 + 1], v[i0 + 2]); b.set(v[i1], v[i1 + 1], v[i1 + 2]); c.set(v[i2], v[i2 + 1], v[i2 + 2]);
       nrm.crossVectors(e1.subVectors(b, a), e2.subVectors(c, a)); const len = nrm.length(); if (len < 1e-6) continue; nrm.divideScalar(len);
+      // ściana skierowana do środka obrysu → odwróć (dane mają mieszaną kolejność wierzchołków)
+      if (Math.abs(nrm.y) <= 0.7 && polyInside((a.x + b.x + c.x) / 3 + nrm.x * 0.6, (a.z + b.z + c.z) / 3 + nrm.z * 0.6, bd.r)) { nrm.negate(); const tmp = b.clone(); b.copy(c); c.copy(tmp); }
+      else if (nrm.y < -0.7) { nrm.negate(); const tmp = b.clone(); b.copy(c); c.copy(tmp); }   // dach: normalna w górę
       if (Math.abs(nrm.y) > 0.7) {
         for (const p of [a, b, c]) { Rf.p.push(p.x, p.y, p.z); Rf.n.push(nrm.x, nrm.y, nrm.z); Rf.u.push(p.x / 8, p.z / 8); }
       } else {
@@ -398,7 +401,11 @@ function buildWarsaw() {
     geom.computeBoundingSphere();
     const m = new THREE.Mesh(geom, material); m.castShadow = m.receiveShadow = true; scene.add(m);
   };
-  for (const wi in W) meshOf(W[wi], wallPool[wi]);
+  // Siatki z danych mają różną kolejność wierzchołków (część ścian „patrzy” do środka) —
+  // ściany i dachy rysujemy dwustronnie; Lambert oświetla tył odwróconą normalną, więc
+  // fasada widziana z zewnątrz jest zawsze widoczna i poprawnie oświetlona.
+  for (const wi in W) { wallPool[wi].side = THREE.DoubleSide; meshOf(W[wi], wallPool[wi]); }
+  roofMat.side = THREE.DoubleSide;
   meshOf(Rf, roofMat);
   // drzewa z danych + latarnie wzdłuż chodników
   for (let i = 0; i < D.trees.length; i += 3) treeSpots.push([D.trees[i], D.trees[i + 1], D.trees[i + 2]]);
