@@ -1334,6 +1334,7 @@ const SHOP = [
   { id: 'hair_bald', cat: 'hair', name: 'Łysy', desc: '', price: 0, hair: 0x2b1d14, hairStyle: 'bald' },
   { id: 'nitro', cat: 'extra', name: 'Nitro', desc: 'W pojeździe przytrzymaj Shift (na telefonie NITRO) — przyspieszenie do 300 km/h i płomienie z wydechu. Ładunek ~6 s, sam się odnawia.', price: 3000, perk: true },
   { id: 'wheelie', cat: 'extra', name: 'Willibary (jazda na jednym kole)', desc: 'Na hulajnodze i motorze przytrzymaj Q (na telefonie WHEELIE) — przednie koło w górę! Co 3 s na jednym kole +$5.', price: 1200, perk: true },
+  { id: 'gem_sell', cat: 'extra', name: 'Wymiana diamentów', desc: 'Diamenty znajdziesz w domach (🚪) i opuszczonych budynkach (🏚️). Każdy wymienisz tutaj na $500.', price: 0, gemSell: true },
   { id: 'fuel', cat: 'extra', name: 'Pełny bak', desc: 'Tankowanie do pełna. Paliwo ubywa podczas jazdy (z nitro 4× szybciej).', price: 500, consumable: true },
   { id: 'veh_kscooter', cat: 'vehicle', name: 'Hulajnoga Pixel Rider', desc: 'Startowa e-hulajnoga — dostępna od początku', price: 0, vtype: 'kscooter', color: 0x2b2b2b },
   { id: 'veh_scooter', cat: 'vehicle', name: 'Hulajnoga elektryczna Volt K-Pro', desc: 'Szybka e-hulajnoga, do ~45 km/h', price: 400, vtype: 'scooter', color: 0x2b2b2b },
@@ -1343,7 +1344,7 @@ const SHOP = [
   { id: 'veh_lux', cat: 'vehicle', name: 'Limuzyna Executive E', desc: 'Elegancki sedan klasy biznes — komfort, cisza i moc (do ~150 km/h)', price: 2800, vtype: 'lux', color: 0x1d2027 },
   { id: 'veh_super', cat: 'vehicle', name: 'Supercar Fulmine', desc: 'Najszybsze auto w mieście', price: 4000, vtype: 'supercar', color: 0xe8410b },
 ];
-const SHOP_CATS = [['outfit', '👕 Stroje'], ['hat', '🧢 Nakrycia głowy'], ['glasses', '🕶️ Okulary'], ['hair', '💇 Fryzury'], ['vehicle', '🏍️ Pojazdy'], ['extra', '🔥 Nitro i paliwo'], ['settings', '⚙️ Ustawienia']];
+const SHOP_CATS = [['outfit', '👕 Stroje'], ['hat', '🧢 Nakrycia głowy'], ['glasses', '🕶️ Okulary'], ['hair', '💇 Fryzury'], ['vehicle', '🏍️ Pojazdy'], ['extra', '🔥 Nitro, paliwo, 💎'], ['settings', '⚙️ Ustawienia']];
 const shopItem = id => SHOP.find(i => i.id === id);
 function playerLook() {
   const e = wardrobe.equip;
@@ -1412,7 +1413,8 @@ window.addEventListener('keydown', e => {
   if (e.code === 'KeyN') { Sound.toggle(); toast(Sound.muted ? 'Dźwięk wyłączony' : 'Dźwięk włączony'); return; }
   if (e.code === 'KeyB') { ui === 'shop' ? closeShop() : !ui && openShop(); return; }
   if (ui) return;
-  if (e.code === 'KeyV' && !e.repeat) { summonVehicle(); return; }
+  if (e.code === 'KeyV' && !e.repeat) { if (indoor) toast('Najpierw wyjdź z domu.'); else summonVehicle(); return; }
+  if (e.code === 'KeyU' && !e.repeat) { toggleUrbex(); return; }
   if (e.code === 'KeyT' && !e.repeat) { if (nearPet && !P.car && !nearMission) petAnimal(nearPet); else if (nearNPC && !P.car) openTalk(nearNPC); return; }
   if (e.code === 'KeyR' && !e.repeat) { if (nearFish && !P.car) openFishing(nearFish); return; }
   if (e.code === 'KeyG' && !e.repeat) { if (P.car && isScooterType(P.car.type)) cycleScooterMode(); else toast('Tryby Eco / S / R działają na hulajnodze — wsiądź na nią (V, potem F).'); return; }
@@ -1542,12 +1544,13 @@ function updateTouchUI() {
   if (!touchMode) return;
   const show = !ui;
   const carAvail = !!P.car || vehicles.some(v => Math.hypot(v.pos.x - P.pos.x, v.pos.z - P.pos.z) < 4.5);
-  const petAvail = !nearMission && !!nearPet && !P.car;
-  const fishAvail = !nearMission && !petAvail && !!nearFish && !P.car;
-  const talkAvail = !nearMission && !fishAvail && !petAvail && !!nearNPC && !P.car;
-  const misAvail = (!!nearMission && !P.car && isUnlocked(nearMission)) || talkAvail || fishAvail || petAvail;
+  const doorAvail = !nearMission && !!(nearDoor || nearPhoto) && !P.car;
+  const petAvail = !nearMission && !doorAvail && !!nearPet && !P.car;
+  const fishAvail = !nearMission && !petAvail && !doorAvail && !!nearFish && !P.car;
+  const talkAvail = !nearMission && !fishAvail && !petAvail && !doorAvail && !!nearNPC && !P.car;
+  const misAvail = (!!nearMission && !P.car && isUnlocked(nearMission)) || talkAvail || fishAvail || petAvail || doorAvail;
   const scoot = !!P.car && isScooterType(P.car.type), wh = !!P.car && isTwoWheel(P.car.type) && hasWheelie();
-  const st = `${show}|${carAvail}|${misAvail}|${!!P.car}|${talkAvail}|${fishAvail}|${petAvail}|${hasNitro()}|${scoot}|${wh}`;
+  const st = `${show}|${carAvail}|${misAvail}|${!!P.car}|${talkAvail}|${fishAvail}|${petAvail}|${doorAvail}|${!!indoor}|${hasNitro()}|${scoot}|${wh}`;
   if (st === touchState) return;
   touchState = st;
   touchUI.hidden = !show;
@@ -1555,7 +1558,7 @@ function updateTouchUI() {
   $('t-car').classList.toggle('off', !carAvail);
   $('t-car').textContent = P.car ? 'WYSIĄDŹ' : 'AUTO';
   $('t-mission').classList.toggle('off', !misAvail);
-  $('t-mission').textContent = petAvail ? 'GŁASKAJ' : fishAvail ? 'RYBY' : talkAvail ? 'ROZMOWA' : 'MISJA';
+  $('t-mission').textContent = doorAvail ? (nearPhoto ? 'ZDJĘCIE' : indoor ? 'WYJDŹ' : 'WEJDŹ') : petAvail ? 'GŁASKAJ' : fishAvail ? 'RYBY' : talkAvail ? 'ROZMOWA' : 'MISJA';
   $('t-mode').classList.toggle('off', !scoot);
   $('t-wheelie').classList.toggle('off', !wh);
   $('t-jump').textContent = P.car ? 'HAMULEC' : 'SKOK';
@@ -1711,7 +1714,8 @@ function updateOnFoot(dt) {
       if (d < lim && d > 1e-4) { p.x = cx + dx / d * lim; p.z = cz + dz / d * lim; }
     }
   }
-  P.pos.x = clamp(p.x, -BOUND, BOUND); P.pos.z = clamp(p.z, -BOUND, BOUND);
+  if (indoor) { P.pos.x = clamp(p.x, indoor.room.x - ROOM_W / 2 + 0.4, indoor.room.x + ROOM_W / 2 - 0.4); P.pos.z = clamp(p.z, indoor.room.z - ROOM_D / 2 + 0.4, indoor.room.z + ROOM_D / 2 - 0.4); }
+  else { P.pos.x = clamp(p.x, -BOUND, BOUND); P.pos.z = clamp(p.z, -BOUND, BOUND); }
   player.g.position.copy(P.pos);
   player.g.rotation.y = P.facing;
   animPerson(player, P.speed, dt, !P.onGround);
@@ -2194,6 +2198,7 @@ function updateCamera(dt) {
   }
   camera.position.set(t.x + dx * d, Math.max(t.y + dy * d, 0.6), t.z + dz * d);
   if (shake > 0) { camera.position.x += (Math.random() - 0.5) * shake; camera.position.y += (Math.random() - 0.5) * shake; shake = Math.max(0, shake - dt * 1.5); }
+  if (indoor) camera.position.y = Math.min(camera.position.y, ROOM_H - 0.35);
   camera.lookAt(t);
   const fovT = v ? 62 + Math.min(14, Math.abs(v.speed) * 0.35) : 62;
   if (Math.abs(camera.fov - fovT) > 0.05) { camera.fov = lerp(camera.fov, fovT, Math.min(1, dt * 3)); camera.updateProjectionMatrix(); }
@@ -2319,13 +2324,16 @@ function applySeason(announce) {
   }
   if (W) buildXmasLights();
   if (xmas) xmas.visible = W;
-  if (snowPts) snowPts.visible = W;
+  if (snowPts) snowPts.visible = W && !indoor;
   for (const mu of mushrooms) mu.g.visible = s === 'autumn' && mu.alive;
   if (announce) { const se = SEASONS[seasonIdx]; showBanner(`${se.ico} ${se.name.toUpperCase()}`, se.sub, W ? '#bfe6ff' : s === 'autumn' ? '#f0a43a' : s === 'spring' ? '#f48fb1' : '#45d483', 4200); }
 }
 function updateSeason(dt) {
   seasonT += dt;
-  if (seasonT >= SEASON_LEN) { seasonT -= SEASON_LEN; seasonIdx = (seasonIdx + 1) % 4; applySeason(true); }
+  if (seasonT >= SEASON_LEN) {
+    seasonT -= SEASON_LEN; seasonIdx = (seasonIdx + 1) % 4; applySeason(true);
+    respawnGems(); setTimeout(() => toast('💎 Nowe diamenty ukryły się w domach i opuszczonych budynkach!', 'good', 4500), 2500);
+  }
 }
 const seasonDay = () => Math.min(SEASON_DAYS, Math.floor(seasonT / DAY_LEN) + 1);
 
@@ -3022,6 +3030,356 @@ function graphRoute(from, t) {
   return pts;
 }
 
+// ---------------------------------------------------------------- domy z wnętrzami, diamenty, urbex
+// Domy: ~14 budynków z drzwiami 🚪 (E = wejdź). Wnętrze (salon / sypialnia / kuchnia) to osobny pokój poza mapą;
+// meble podpisane po angielsku, w każdym domu ukryty diament 💎. Urbex: 3 opuszczone budynki (ruiny) z graffiti
+// i gruzem — 2 diamenty w każdym, 📸 zdjęcie przy pierwszej wizycie; tryb urbex (U) = latarka + GPS do ruin.
+// Diament = $500 w sklepie (wymiana). Diamenty pojawiają się na nowo przy każdej zmianie pory roku.
+// Wybór domów i ruin z ziarna mapy — te same miejsca przy każdym uruchomieniu (zapis znalezionych w save).
+const GEM_PRICE = 500, ROOM_W = 11, ROOM_D = 9, ROOM_H = 3.3, ROOM_BASE = 2400;
+const homes = [], ruins = [], gems = [];
+let indoor = null, nearDoor = null, nearPhoto = null, nearLabel = null, urbexMode = false;
+const roomLight = new THREE.PointLight(0xfff1d6, 0, 18, 1.4); scene.add(roomLight);
+const flashlight = new THREE.SpotLight(0xfff4d8, 0, 45, 0.45, 0.5, 1.2); scene.add(flashlight, flashlight.target);
+const gemGeo = new THREE.OctahedronGeometry(0.17, 0).scale(1, 1.45, 1);
+const gemMat = new THREE.MeshLambertMaterial({ color: 0x8ff0ff, emissive: 0x1d7a99 });
+const glintMat = new THREE.SpriteMaterial({ map: flakeTex, color: 0x9ff4ff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
+function addGem(id, x, y, z) {
+  const m = new THREE.Mesh(gemGeo, gemMat); m.position.set(x, y, z);
+  const s = new THREE.Sprite(glintMat); s.scale.set(0.8, 0.8, 1); m.add(s);
+  scene.add(m);
+  const gm = { id, x, y, z, m, found: !!(save.gemsFound && save.gemsFound[id]) };
+  m.visible = !gm.found;
+  gems.push(gm);
+  return gm;
+}
+function iconSprite(emoji, size) {
+  const c = makeCanvas(128, 128), x = c.getContext('2d');
+  x.fillStyle = 'rgba(10,12,18,.78)'; x.beginPath(); x.arc(64, 64, 56, 0, Math.PI * 2); x.fill();
+  x.lineWidth = 6; x.strokeStyle = '#f2b632'; x.stroke();
+  x.font = '64px "Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(emoji, 64, 68);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: canvasTex(c, false) })); sp.scale.set(size, size, 1);
+  return sp;
+}
+// prostokąt wolny od budynków, drzew, wody i (na mapach z danych) dróg
+function areaFree(x, z, r) {
+  if (Math.abs(x) > BOUND - r - 5 || Math.abs(z) > BOUND - r - 5) return false;
+  for (const c of colliders) if (c.x1 > x - r && c.x0 < x + r && c.z1 > z - r && c.z0 < z + r) return false;
+  for (const [tx, tz] of treeSpots) if (Math.abs(tx - x) < r + 1 && Math.abs(tz - z) < r + 1) return false;
+  if (Math.hypot(x - SPAWN.x, z - SPAWN.z) < r + 50) return false;
+  if (MISSIONS.some(m => Math.hypot(m.mx - x, m.mz - z) < r + 25)) return false;
+  if (fishSpots.some(s => Math.hypot(s.x - x, s.z - z) < r + 20)) return false;
+  if (!REALMAP) return !onBlock(x, z) && !(Math.abs(x) < HALF + r && Math.abs(z) < HALF + r) && Math.hypot(x - LAKE.x, z - LAKE.z) > LAKE.r + r + 8;
+  if (roadGraph) { const q = nearestOnRoad(x, z); if (q && q.d < r + 3) return false; }
+  for (const L of [WD.water, WD.roads]) {
+    for (let t = 0; t < L.f.length; t += 3) {
+      const a = L.f[t] * 2, b = L.f[t + 1] * 2, c = L.f[t + 2] * 2;
+      const minx = Math.min(L.v[a], L.v[b], L.v[c]), maxx = Math.max(L.v[a], L.v[b], L.v[c]), minz = Math.min(L.v[a + 1], L.v[b + 1], L.v[c + 1]), maxz = Math.max(L.v[a + 1], L.v[b + 1], L.v[c + 1]);
+      if (maxx > x - r && minx < x + r && maxz > z - r && minz < z + r) return false;
+    }
+  }
+  return true;
+}
+const HOME_COLORS = [0xf2e3c6, 0xdfe9f2, 0xf4d9d0, 0xe2ecd8, 0xece2f2, 0xf6edd0];
+const ROOM_KINDS = [
+  { id: 'living', en: 'a living room', pl: 'salon' },
+  { id: 'bed', en: 'a bedroom', pl: 'sypialnia' },
+  { id: 'kitchen', en: 'a kitchen', pl: 'kuchnia' },
+];
+function buildRoom(h, i) {
+  const rx = ROOM_BASE + (i % 5) * 40, rz = ROOM_BASE + Math.floor(i / 5) * 40, W2 = ROOM_W / 2, D2 = ROOM_D / 2;
+  const parts = [], labels = [];
+  const F = (w, hh, d, x, y, z, c, ry = 0) => parts.push({ g: BOX(w, hh, d), m: partMatrix(rx + x, y, rz + z, ry), c: new THREE.Color(c) });
+  const C = (x0, x1, z0, z1, hh) => addCol(rx + x0, rx + x1, rz + z0, rz + z1, hh);
+  const LB = (x, z, ico, en, pl) => labels.push({ x: rx + x, z: rz + z, ico, en, pl });
+  const wall = HOME_COLORS[i % HOME_COLORS.length];
+  // podłoga z desek, ściany, sufit, okna
+  F(ROOM_W, 0.1, ROOM_D, 0, -0.05, 0, 0xa0754a);
+  for (let k = -W2 + 0.5; k < W2; k += 1) F(0.02, 0.005, ROOM_D, k, 0.002, 0, 0x7a5636);
+  F(ROOM_W + 0.4, ROOM_H, 0.2, 0, ROOM_H / 2, -D2 - 0.1, wall); F(ROOM_W + 0.4, ROOM_H, 0.2, 0, ROOM_H / 2, D2 + 0.1, wall);
+  F(0.2, ROOM_H, ROOM_D, -W2 - 0.1, ROOM_H / 2, 0, wall); F(0.2, ROOM_H, ROOM_D, W2 + 0.1, ROOM_H / 2, 0, wall);
+  F(ROOM_W, 0.1, ROOM_D, 0, ROOM_H + 0.05, 0, 0xf3efe6);
+  F(ROOM_W, 0.12, 0.04, 0, 0.06, -D2 + 0.02, 0xffffff); F(ROOM_W, 0.12, 0.04, 0, 0.06, D2 - 0.02, 0xffffff);
+  for (const sx of [-1, 1]) F(0.04, 1.2, 1.8, sx * (W2 - 0.01), 1.7, 1.2, 0xbfe6ff);
+  F(1.8, 1.2, 0.04, 2.5, 1.7, -D2 + 0.01, 0xbfe6ff);
+  // drzwi wyjściowe (ściana południowa)
+  F(1.25, 2.25, 0.06, 0, 1.12, D2 - 0.03, 0x6b3f22); F(0.08, 0.08, 0.08, 0.45, 1.05, D2 - 0.08, 0xd4a017);
+  for (const [x0, x1, z0, z1] of [[-W2 - 1, W2 + 1, -D2 - 1, -D2], [-W2 - 1, W2 + 1, D2, D2 + 1], [-W2 - 1, -W2, -D2 - 1, D2 + 1], [W2, W2 + 1, -D2 - 1, D2 + 1]]) C(x0, x1, z0, z1, 60);
+  const spots = [];
+  if (h.kind.id === 'living') {
+    F(4, 0.02, 3, 0, 0.01, -0.8, 0xb0473a);
+    F(3, 0.45, 0.95, 0, 0.22, -3.85, 0x3d5a80); F(3, 0.6, 0.25, 0, 0.75, -4.25, 0x34506f);
+    for (const sx of [-1, 1]) F(0.25, 0.6, 0.95, sx * 1.5, 0.4, -3.85, 0x34506f);
+    F(1.3, 0.12, 0.7, -0.68, 0.5, -3.75, 0x4a6b94); F(1.3, 0.12, 0.7, 0.68, 0.5, -3.75, 0x4a6b94);
+    C(-1.65, 1.65, -4.4, -3.35, 0.9); LB(0, -3.3, '🛋️', 'a sofa', 'kanapa');
+    F(1.4, 0.08, 0.7, 0, 0.42, -1.9, 0x8a5a33); for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) F(0.06, 0.4, 0.06, sx * 0.62, 0.2, -1.9 + sz * 0.28, 0x6b4a2f);
+    C(-0.75, 0.75, -2.3, -1.5, 0.5); LB(0, -1.9, '☕', 'a coffee table', 'stolik kawowy');
+    F(0.5, 0.5, 2, 5.15, 0.25, -0.5, 0x2b2b2b); F(0.08, 0.8, 1.5, 5.2, 1.0, -0.5, 0x111111); F(0.02, 0.68, 1.38, 5.15, 1.0, -0.5, 0x2a4a6a);
+    C(4.9, 5.5, -1.5, 0.5, 1.4); LB(4.6, -0.5, '📺', 'a television', 'telewizor');
+    F(0.4, 2.0, 1.8, -5.25, 1.0, 0.5, 0x6b4a2f);
+    for (let s = 0; s < 4; s++) for (let b = 0; b < 6; b++) F(0.28, 0.32, 0.12, -5.2, 0.25 + s * 0.48, -0.2 + b * 0.27, [0xc0392b, 0x2e86de, 0xf2b632, 0x10ac84, 0x8e44ad][(s + b) % 5]);
+    C(-5.5, -5.0, -0.45, 1.45, 2.0); LB(-4.7, 0.5, '📚', 'a bookcase', 'regał na książki');
+    F(0.45, 0.5, 0.45, -4.8, 0.25, -3.9, 0xb5651d); F(0.85, 0.9, 0.85, -4.8, 0.95, -3.9, 0x3f7a32);
+    C(-5.1, -4.5, -4.2, -3.6, 1.2); LB(-4.4, -3.5, '🪴', 'a plant', 'roślina');
+    F(0.9, 0.45, 0.9, 3.4, 0.22, -3.3, 0x7a3b3b); F(0.9, 0.55, 0.2, 3.4, 0.72, -3.7, 0x6a2f2f);
+    C(2.9, 3.9, -3.8, -2.8, 0.9); LB(3.4, -2.7, '🪑', 'an armchair', 'fotel');
+    F(0.06, 1.6, 0.06, -3.2, 0.8, -4.1, 0x2b2b2b); F(0.5, 0.35, 0.5, -3.2, 1.65, -4.1, 0xf5e6c4); LB(-3.2, -3.8, '💡', 'a lamp', 'lampa');
+    spots.push([-5.25, 2.15, 0.5], [0, 0.14, -1.9], [-4.8, 1.55, -3.9], [3.95, 0.14, -4.05]);
+  } else if (h.kind.id === 'bed') {
+    F(1.8, 0.4, 2.2, -3.8, 0.2, -3.2, 0x8a5a33); F(1.7, 0.2, 2.1, -3.8, 0.5, -3.2, 0xf2f2f2); F(1.72, 0.06, 1.4, -3.8, 0.62, -2.85, 0x3b7dd8);
+    F(1.2, 0.15, 0.4, -3.8, 0.67, -4.0, 0xffffff); F(1.8, 1.0, 0.1, -3.8, 0.6, -4.35, 0x6b4a2f);
+    C(-4.75, -2.85, -4.4, -2.05, 0.7); LB(-3.8, -1.9, '🛏️', 'a bed', 'łóżko');
+    F(0.5, 0.5, 0.5, -2.45, 0.25, -4.1, 0x8a5a33); F(0.25, 0.3, 0.25, -2.45, 0.65, -4.1, 0xf5e6c4);
+    C(-2.7, -2.2, -4.35, -3.85, 0.6); LB(-2.2, -3.6, '🌙', 'a bedside table', 'szafka nocna');
+    F(0.6, 2.2, 1.8, 5.15, 1.1, -2.5, 0xc9a77a); F(0.02, 2.0, 0.02, 4.84, 1.1, -2.5, 0x6b4a2f);
+    C(4.85, 5.5, -3.4, -1.6, 2.2); LB(4.5, -2.5, '👕', 'a wardrobe', 'szafa');
+    F(1.4, 0.08, 0.7, 4.2, 0.75, 2.0, 0xa0754a); for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) F(0.06, 0.72, 0.06, 4.2 + sx * 0.62, 0.36, 2.0 + sz * 0.28, 0x6b4a2f);
+    F(0.5, 0.03, 0.35, 4.2, 0.8, 2.0, 0x333333); F(0.5, 0.32, 0.03, 4.2, 0.96, 1.83, 0x222831);
+    C(3.45, 4.95, 1.6, 2.4, 0.8); LB(4.2, 1.4, '🖥️', 'a desk', 'biurko');
+    F(0.45, 0.45, 0.45, 4.2, 0.45, 1.2, 0x2e86de); F(0.45, 0.5, 0.06, 4.2, 0.9, 0.98, 0x2e86de);
+    F(2.4, 0.02, 1.6, -0.5, 0.01, -1.0, 0x7a4fc9);
+    F(0.6, 0.6, 0.6, 0.8, 0.3, -4.0, 0xe07a3f); LB(0.8, -3.5, '🧸', 'a toy box', 'skrzynia z zabawkami'); C(0.5, 1.1, -4.3, -3.7, 0.6);
+    spots.push([-3.0, 0.12, -2.0], [5.15, 2.35, -2.5], [4.2, 0.12, 2.0], [0.8, 0.75, -4.0]);
+  } else {
+    F(6, 0.9, 0.65, -1.5, 0.45, -4.1, 0xeeeeee); F(6, 0.05, 0.7, -1.5, 0.92, -4.1, 0x6b6b6b);
+    F(0.8, 0.05, 0.5, -2.5, 0.95, -4.1, 0x9aa0a8); F(0.8, 0.04, 0.6, 0.3, 0.96, -4.1, 0x222222);
+    F(6, 0.7, 0.35, -1.5, 2.2, -4.3, 0xeeeeee);
+    C(-4.5, 1.5, -4.5, -3.75, 1.0); LB(-2.5, -3.5, '🚰', 'a sink', 'zlewozmywak'); LB(0.3, -3.5, '🍳', 'a cooker', 'kuchenka');
+    F(0.8, 1.9, 0.75, 4.9, 0.95, -4.0, 0xdfe6ec); F(0.03, 0.5, 0.03, 4.48, 1.3, -3.7, 0x9aa0a8);
+    C(4.5, 5.5, -4.5, -3.6, 1.9); LB(4.4, -3.4, '🧊', 'a fridge', 'lodówka');
+    F(1.6, 0.08, 1.0, 0, 0.75, 0.2, 0x8a5a33); for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) F(0.07, 0.72, 0.07, sx * 0.7, 0.36, 0.2 + sz * 0.42, 0x6b4a2f);
+    for (const [cx, cz] of [[-1.15, 0.2], [1.15, 0.2], [0, -0.65], [0, 1.05]]) { const dx = cx, dz = cz - 0.2, l = Math.hypot(dx, dz); F(0.45, 0.06, 0.45, cx, 0.45, cz, 0xa0754a); F(0.45, 0.5, 0.05, cx + dx / l * 0.2, 0.72, cz + dz / l * 0.2, 0xa0754a, Math.atan2(dx, dz)); }
+    C(-0.85, 0.85, -0.35, 0.75, 0.8); LB(0, 0.2, '🍽️', 'a table', 'stół');
+    F(0.5, 1.2, 1.4, -5.2, 0.6, 1.0, 0xc9a77a); C(-5.5, -4.95, 0.3, 1.7, 1.2); LB(-4.7, 1.0, '🗄️', 'a cupboard', 'kredens');
+    F(0.3, 0.3, 0.3, -1.0, 1.1, -4.1, 0xc0392b); LB(-1.0, -3.5, '🫖', 'a kettle', 'czajnik');
+    spots.push([4.9, 2.03, -4.0], [0, 0.12, 0.2], [-4.0, 2.68, -4.3], [-5.2, 0.12, 2.1]);
+  }
+  const mesh = new THREE.Mesh(mergeColored(parts), vcMat); mesh.receiveShadow = true; mesh.frustumCulled = false; scene.add(mesh);
+  h.room = { x: rx, z: rz, labels };
+  const sp = spots[Math.floor(h.rng() * spots.length)];
+  h.gem = addGem(h.id, rx + sp[0], sp[1], rz + sp[2]);
+}
+function buildHomes() {
+  const rng = mulberry(9001 + MAP_ID.length * 131 + (MAP_ID.charCodeAt(0) || 0));
+  const cands = [];
+  for (const c of colliders) {
+    if (c.rings) {
+      if (c.h < 3 || c.h > 40) continue;
+      const r = c.rings[0];
+      let best = null;
+      for (let k = 0; k < r.length; k += 2) {
+        const k2 = (k + 2) % r.length, L = Math.hypot(r[k2] - r[k], r[k2 + 1] - r[k + 1]); if (L < 3.5 || (best && L < best.L)) continue;
+        const mx = (r[k] + r[k2]) / 2, mz = (r[k + 1] + r[k2 + 1]) / 2;
+        let nx = (r[k2 + 1] - r[k + 1]) / L, nz = -(r[k2] - r[k]) / L;
+        if (polyInside(mx + nx * 0.5, mz + nz * 0.5, c.rings)) { nx = -nx; nz = -nz; }
+        if (blockedAt(mx + nx * 1.8, mz + nz * 1.8, 0.6)) continue;
+        best = { L, x: mx, z: mz, nx, nz };
+      }
+      if (best) cands.push(best);
+    } else if (c.x1 - c.x0 > 5 && c.z1 - c.z0 > 5 && c.h >= 6 && c.h <= 70) {
+      const cx = (c.x0 + c.x1) / 2, cz = (c.z0 + c.z1) / 2;
+      for (const [x, z, nx, nz] of [[cx, c.z1, 0, 1], [cx, c.z0, 0, -1], [c.x1, cz, 1, 0], [c.x0, cz, -1, 0]]) {
+        if (blockedAt(x + nx * 1.8, z + nz * 1.8, 0.6)) continue;
+        cands.push({ x, z, nx, nz }); break;
+      }
+    }
+  }
+  const pool = cands.filter(d => Math.hypot(d.x - SPAWN.x, d.z - SPAWN.z) > 20 && !MISSIONS.some(m => Math.hypot(m.mx - d.x, m.mz - d.z) < 16));
+  for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+  const tex = iconSprite('🚪', 1.1).material;
+  for (const d of pool) {
+    if (homes.length >= 14) break;
+    if (homes.some(o => Math.hypot(o.door.x - d.x, o.door.z - d.z) < 45)) continue;
+    const i = homes.length, a = Math.atan2(d.nx, d.nz), y = groundAt(d.x + d.nx * 1.5, d.z + d.nz * 1.5);
+    const h = { id: `${MAP_ID}:home${i}`, door: { x: d.x + d.nx * 0.05, z: d.z + d.nz * 0.05, ax: d.x + d.nx * 1.6, az: d.z + d.nz * 1.6, a }, kind: ROOM_KINDS[i % 3], rng };
+    addStatic(new THREE.BoxGeometry(1.5, 2.5, 0.12), 0xf2efe8, h.door.x, y + 1.25, h.door.z, a);
+    addStatic(new THREE.BoxGeometry(1.25, 2.3, 0.16), 0x6b3f22, h.door.x, y + 1.15, h.door.z, a);
+    addStatic(new THREE.BoxGeometry(0.08, 0.08, 0.2), 0xd4a017, h.door.x + Math.cos(a) * 0.42, y + 1.1, h.door.z - Math.sin(a) * 0.42, a);
+    addStatic(new THREE.BoxGeometry(1.8, 0.12, 0.8), 0x9a9a9a, h.door.x + d.nx * 0.45, y + 0.06, h.door.z + d.nz * 0.45, a);
+    const sp = new THREE.Sprite(tex); sp.scale.set(1.1, 1.1, 1); sp.position.set(h.door.x + d.nx * 0.6, y + 3.2, h.door.z + d.nz * 0.6); scene.add(sp);
+    h.sprite = sp;
+    buildRoom(h, i);
+    homes.push(h);
+  }
+  const st = staticParts.length ? new THREE.Mesh(mergeColored(staticParts), vcMat) : null;
+  if (st) { st.castShadow = st.receiveShadow = true; st.frustumCulled = false; scene.add(st); staticParts.length = 0; }
+}
+const URBEX_NAMES = [['🏭', 'Stara fabryka', 'an old factory'], ['🏥', 'Opuszczony szpital', 'an abandoned hospital'], ['🚉', 'Stary dworzec', 'an old railway station'], ['🏫', 'Zrujnowana szkoła', 'a ruined school']];
+function graffitiTex(rng) {
+  const c = makeCanvas(256, 128), x = c.getContext('2d');
+  const words = ['URBEX', 'GRAMMAR!', 'HELLO', 'BE COOL', 'NO ENTRY', 'STAY SAFE', 'KEEP OUT', 'WOW'];
+  const cols = ['#ff4fa3', '#45d483', '#4fb3ff', '#f2b632', '#c77dff', '#ff7a1a'];
+  x.lineJoin = 'round'; x.font = 'bold 52px Impact, "Arial Black", sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
+  const w = words[Math.floor(rng() * words.length)], col = cols[Math.floor(rng() * cols.length)];
+  x.save(); x.translate(128, 64); x.rotate((rng() - 0.5) * 0.3);
+  x.lineWidth = 10; x.strokeStyle = '#111'; x.strokeText(w, 0, 0); x.fillStyle = col; x.fillText(w, 0, 0); x.restore();
+  for (let i = 0; i < 6; i++) { x.fillStyle = col; x.globalAlpha = 0.6; x.fillRect(30 + rng() * 200, 90 + rng() * 25, 3, 8 + rng() * 20); }
+  return canvasTex(c, false);
+}
+function buildRuin(x, z, idx, rng) {
+  const W = 18, D = 13, T = 0.5, parts = [];
+  const F = (w, h, d, px, py, pz, c, ry = 0) => parts.push({ g: new THREE.BoxGeometry(w, h, d), m: partMatrix(x + px, py, z + pz, ry), c: new THREE.Color(c) });
+  const shade = () => { const k = 0.8 + rng() * 0.3; return new THREE.Color(0x8a8a85).multiplyScalar(k).getHex(); };
+  F(W, 0.08, D, 0, 0.04, 0, 0x6e6a62);
+  // ściany z segmentów: brakujące kawałki, otwory okienne, poszarpana góra
+  const side = (ax, az, bx, bz, nseg, door) => {
+    const L = Math.hypot(bx - ax, bz - az), sl = L / nseg, horiz = Math.abs(bz - az) < 1e-6;
+    for (let s = 0; s < nseg; s++) {
+      if (door && (s === Math.floor(nseg / 2) || s === Math.floor(nseg / 2) - 1)) continue;
+      if (rng() < 0.12) continue;
+      const t = (s + 0.5) / nseg, cx = ax + (bx - ax) * t, cz = az + (bz - az) * t, h = 2.2 + rng() * 3.6;
+      const w = horiz ? sl + 0.02 : T, d = horiz ? T : sl + 0.02;
+      if (rng() < 0.3 && h > 2.8) { F(w, 1.0, d, cx, 0.5, cz, shade()); F(w, h - 2.2, d, cx, 2.2 + (h - 2.2) / 2, cz, shade()); }
+      else F(w, h, d, cx, h / 2, cz, shade());
+      if (rng() < 0.3) F(horiz ? sl * 0.6 : T + 0.04, 0.12, horiz ? T + 0.04 : sl * 0.6, cx, h + 0.06, cz, 0x5d7a3a);   // mech
+      addCol(x + cx - w / 2, x + cx + w / 2, z + cz - d / 2, z + cz + d / 2, h);
+    }
+  };
+  side(-W / 2, -D / 2, W / 2, -D / 2, 9, false); side(-W / 2, D / 2, W / 2, D / 2, 9, true);
+  side(-W / 2, -D / 2, -W / 2, D / 2, 6, false); side(W / 2, -D / 2, W / 2, D / 2, 6, false);
+  // filary i fragment stropu
+  for (const px of [-4, 4]) { F(0.5, 4.6, 0.5, px, 2.3, 0, 0x7a7a74); addCol(x + px - 0.25, x + px + 0.25, z - 0.25, z + 0.25, 4.6); }
+  F(8, 0.25, 7, -4.5, 4.6, -2.5, 0x6f6f69); F(5, 0.25, 4, 5, 4.6, 3.5, 0x6f6f69, 0.05);
+  // gruz, belki, beczki, stary materac
+  for (let k = 0; k < 7; k++) {
+    const px = (rng() - 0.5) * (W - 4), pz = (rng() - 0.5) * (D - 4);
+    for (let j = 0; j < 4; j++) F(0.4 + rng() * 0.9, 0.2 + rng() * 0.5, 0.4 + rng() * 0.9, px + (rng() - 0.5) * 1.2, 0.2, pz + (rng() - 0.5) * 1.2, rng() < 0.5 ? 0x7d776c : 0x5e4a3a, rng() * 3);
+  }
+  for (let k = 0; k < 3; k++) F(0.25, 0.25, 4 + rng() * 2, (rng() - 0.5) * 10, 0.6 + rng() * 0.6, (rng() - 0.5) * 6, 0x5a3a1e, rng() * 3);
+  for (let k = 0; k < 3; k++) { const px = -W / 2 + 1.2 + k * 0.8, pz = D / 2 - 1.5; parts.push({ g: new THREE.CylinderGeometry(0.32, 0.32, 0.9, 10), m: partMatrix(x + px, 0.45, z + pz), c: new THREE.Color(k === 1 ? 0x2f5d8a : 0x8a4b24) }); addCol(x + px - 0.32, x + px + 0.32, z + pz - 0.32, z + pz + 0.32, 0.9); }
+  F(1.9, 0.2, 0.9, 6, 0.1, -4.6, 0x9a8f6a, 0.2);
+  const mesh = new THREE.Mesh(mergeColored(parts), vcMat); mesh.castShadow = mesh.receiveShadow = true; mesh.frustumCulled = false; scene.add(mesh);
+  // graffiti na wewnętrznych ścianach
+  for (const [px, pz, ry] of [[-3, -D / 2 + T / 2 + 0.02, 0], [W / 2 - T / 2 - 0.02, 1.5, -Math.PI / 2], [-W / 2 + T / 2 + 0.02, -2, Math.PI / 2]]) {
+    const gm = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 1.7), new THREE.MeshLambertMaterial({ map: graffitiTex(rng), transparent: true, alphaTest: 0.1, polygonOffset: true, polygonOffsetFactor: -2 }));
+    gm.position.set(x + px, 1.35, z + pz); gm.rotation.y = ry; scene.add(gm);
+  }
+  const [ico, pl, en] = URBEX_NAMES[idx % URBEX_NAMES.length];
+  const sp = iconSprite('🏚️', 2.2); sp.position.set(x, 8, z); scene.add(sp);
+  const cam = iconSprite('📸', 0.9); cam.position.set(x, 1.6, z + 1.5); scene.add(cam);
+  const id = `${MAP_ID}:urbex${idx}`;
+  const r = { id, x, z, ico, pl, en, sprite: sp, cam, photo: { x, z: z + 1.5 } };
+  r.gems = [[-W / 2 + 1.0, 0.15, -D / 2 + 1.0], [W / 2 - 1.0, 0.15, D / 2 - 1.2]].map((p, k) => addGem(`${id}:g${k}`, x + p[0], p[1], z + p[2]));
+  ruins.push(r);
+}
+function buildRuins() {
+  const rng = mulberry(4242 + MAP_ID.length * 97 + (MAP_ID.charCodeAt(0) || 0));
+  if (REALMAP && !roadGraph) buildRoadGraph();
+  const placed = [];
+  for (let t = 0; t < 900 && placed.length < 3; t++) {
+    let x, z;
+    if (!REALMAP) { const a = rng() * Math.PI * 2, d = HALF + 25 + rng() * 40; x = Math.cos(a) * d; z = Math.sin(a) * d; }
+    else { x = (rng() * 2 - 1) * (BOUND - 20); z = (rng() * 2 - 1) * (BOUND - 20); }
+    if (placed.some(p => Math.hypot(p[0] - x, p[1] - z) < 160)) continue;
+    if (!areaFree(x, z, 12)) continue;
+    if (homes.some(h => Math.hypot(h.door.x - x, h.door.z - z) < 25)) continue;
+    placed.push([x, z]);
+  }
+  placed.forEach(([x, z], i) => buildRuin(x, z, i, rng));
+}
+function checkHomes() {
+  nearDoor = null; nearPhoto = null; nearLabel = null;
+  if (P.car) return;
+  if (indoor) {
+    const h = indoor, ex = h.room.x, ez = h.room.z + ROOM_D / 2 - 0.5;
+    if (Math.hypot(P.pos.x - ex, P.pos.z - ez) < 1.7) { nearDoor = h; return; }
+    let bd = 1.7;
+    for (const l of h.room.labels) { const d = Math.hypot(P.pos.x - l.x, P.pos.z - l.z); if (d < bd) { bd = d; nearLabel = l; } }
+    return;
+  }
+  for (const h of homes) if (Math.abs(P.pos.x - h.door.ax) < 3 && Math.abs(P.pos.z - h.door.az) < 3 && Math.hypot(P.pos.x - h.door.ax, P.pos.z - h.door.az) < 2.2) { nearDoor = h; return; }
+  for (const r of ruins) if (Math.hypot(P.pos.x - r.photo.x, P.pos.z - r.photo.z) < 2) { nearPhoto = r; return; }
+}
+function enterHome(h) {
+  indoor = h;
+  if (chase) { endChase(); toast('🚓 Ukryłeś się przed policją w domu!', 'good', 3000); }
+  P.pos.set(h.room.x, 0, h.room.z + ROOM_D / 2 - 3.6); P.facing = Math.PI; P.speed = 0; P.vy = 0;
+  player.g.position.copy(P.pos); player.g.rotation.set(0, P.facing, 0);
+  camYaw = 0; camPitch = 0.55; camDist = 3;
+  refreshNear(P.pos.x, P.pos.z);
+  roomLight.position.set(h.room.x, ROOM_H - 0.5, h.room.z); roomLight.intensity = 1.1;
+  if (snowPts) snowPts.visible = false;
+  $('minimap-wrap').style.visibility = 'hidden';
+  Sound.door();
+  toast(`🏠 To jest <b>${h.kind.en}</b> — ${h.kind.pl}. ${h.gem.found ? 'Diament z tego domu już masz.' : 'Gdzieś tu jest ukryty diament 💎!'}`, '', 4500);
+  sayEN(h.kind.en);
+}
+function exitHome() {
+  const h = indoor; if (!h) return;
+  indoor = null;
+  P.pos.set(h.door.ax, groundAt(h.door.ax, h.door.az), h.door.az); P.facing = h.door.a; P.speed = 0;
+  player.g.position.copy(P.pos); player.g.rotation.set(0, P.facing, 0);
+  camYaw = P.facing + Math.PI; camDist = 6;
+  refreshNear(P.pos.x, P.pos.z);
+  roomLight.intensity = 0;
+  if (snowPts) snowPts.visible = season() === 'winter';
+  $('minimap-wrap').style.visibility = '';
+  Sound.door();
+}
+function collectGems(dt) {
+  for (const gm of gems) {
+    if (gm.found) continue;
+    const dx = gm.x - P.pos.x, dz = gm.z - P.pos.z;
+    if (Math.abs(dx) > 60 || Math.abs(dz) > 60) continue;
+    gm.m.rotation.y += dt * 2; gm.m.position.y = gm.y + Math.sin(elapsed * 3 + gm.x) * 0.04;
+    gm.m.children[0].material.opacity = 0.55 + 0.45 * Math.sin(elapsed * 5 + gm.z);
+    if (!P.car && Math.hypot(dx, dz) < 1.3) {
+      gm.found = true; gm.m.visible = false;
+      save.gemsFound = save.gemsFound || {}; save.gemsFound[gm.id] = 1; save.gems = (save.gems || 0) + 1; save.xp += 10; persist();
+      Sound.passed();
+      toast(`💎 Diament — <b>a diamond</b>! Masz: ${save.gems}. Wymienisz go w sklepie (B) na ${fmtMoney(GEM_PRICE)}.`, 'good', 4200);
+      sayEN('a diamond');
+    }
+  }
+}
+function respawnGems() {
+  save.gemsFound = {}; persist();
+  for (const gm of gems) { gm.found = false; gm.m.visible = true; }
+}
+function sellGems(all) {
+  const n = all ? (save.gems || 0) : Math.min(1, save.gems || 0);
+  if (!n) { Sound.wrong(); toast('Nie masz diamentów — szukaj ich w domach (🚪) i opuszczonych budynkach (🏚️).', 'bad'); return; }
+  save.gems -= n; save.money += n * GEM_PRICE; persist();
+  Sound.passed(); toast(`💎 Wymieniono ${n} × diament → +${fmtMoney(n * GEM_PRICE)}`, 'good', 3200);
+  renderShop();
+}
+let flashEl = null;
+function takePhoto(r) {
+  if (!flashEl) { flashEl = document.createElement('div'); flashEl.style.cssText = 'position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:40;transition:opacity .6s'; document.body.appendChild(flashEl); }
+  flashEl.style.transition = 'none'; flashEl.style.opacity = '0.9';
+  requestAnimationFrame(() => { flashEl.style.transition = 'opacity .7s'; flashEl.style.opacity = '0'; });
+  Sound.tone(1500, 0.06, 'square', 0.08); Sound.noise(0.12, 0.25, 2500);
+  save.urbex = save.urbex || {};
+  if (!save.urbex[r.id]) {
+    save.urbex[r.id] = 1; save.money += 100; save.xp += 20; persist();
+    toast(`📸 ${r.ico} <b>${r.en}</b> — ${r.pl}. Urbex zaliczony: +$100 · ${Object.keys(save.urbex).length}/${ruins.length}`, 'good', 4500);
+    sayEN(r.en);
+    if (urbexMode) { const nx = nextRuin(); if (nx) setGPS({ kind: 'point', x: nx.x, z: nx.z }, true); }
+  } else toast(`📸 Ładne zdjęcie: ${r.en} (${r.pl}).`, '', 2500);
+}
+function nextRuin() {
+  const from = P.car ? P.car.pos : P.pos, left = ruins.filter(r => !(save.urbex && save.urbex[r.id]));
+  const list = left.length ? left : ruins;
+  return list.slice().sort((a, b) => Math.hypot(a.x - from.x, a.z - from.z) - Math.hypot(b.x - from.x, b.z - from.z))[0] || null;
+}
+function toggleUrbex(force) {
+  urbexMode = force != null ? force : !urbexMode;
+  if (!ruins.length) { urbexMode = false; toast('Na tej mapie nie ma opuszczonych budynków.'); return; }
+  if (urbexMode) {
+    const r = nextRuin(); if (r) setGPS({ kind: 'point', x: r.x, z: r.z }, true);
+    toast(`🔦 Tryb urbex: latarka włączona. GPS prowadzi do: ${r.pl}. Szukaj 📸 w środku i diamentów w gruzach! (U — wyłącz)`, 'good', 5000);
+  } else { flashlight.intensity = 0; toast('🔦 Tryb urbex wyłączony.'); }
+  if (ui === 'shop') renderShop();
+}
+function updateFlashlight() {
+  if (!urbexMode || P.car) { flashlight.intensity = 0; return; }
+  const night = 1 - smooth(-0.14, 0.28, Math.sin((tod - 0.25) * Math.PI * 2));
+  flashlight.intensity = 0.6 + 1.6 * night;
+  const fx = Math.sin(P.facing), fz = Math.cos(P.facing);
+  flashlight.position.set(P.pos.x + fx * 0.3, P.pos.y + 1.6, P.pos.z + fz * 0.3);
+  flashlight.target.position.set(P.pos.x + fx * 8, P.pos.y + 0.3, P.pos.z + fz * 8);
+}
+
 // ---------------------------------------------------------------- limit czasu na dojazd do misji
 // 4 minuty od ustawienia GPS na misję; nie zdążysz → wracasz na start (postęp, pieniądze i zakupy zostają).
 const MISSION_TIME = 240;
@@ -3178,6 +3536,7 @@ function drawMinimap(dt) {
   }
   if (gps && gps.kind === 'point') blip(gps.x, gps.z, '#c77dff', '•', true, true);
   for (const s of fishSpots) blip(s.x, s.z, '#4fb3ff', '≈', false);
+  for (const r of ruins) blip(r.x, r.z, save.urbex && save.urbex[r.id] ? '#45d483' : '#c9a0ff', 'U', urbexMode);
   if (season() === 'autumn') for (const mu of mushrooms) if (mu.alive && Math.hypot(mu.x - focus.x, mu.z - focus.z) < 70) { const [sx, sy] = toScreen(mu.x, mu.z); g.beginPath(); g.arc(c + sx, c + sy, 3, 0, Math.PI * 2); g.fillStyle = '#f0a43a'; g.fill(); }
   if (chase) blip(chase.v.pos.x, chase.v.pos.z, Math.floor(elapsed * 6) % 2 ? '#ff3b3b' : '#4f7bff', 'P', true);
   // north
@@ -3302,6 +3661,8 @@ function updateHUD(dt, clock) {
   shownMoney = lerp(shownMoney, save.money, Math.min(1, dt * 4));
   if (Math.abs(shownMoney - save.money) < 1) shownMoney = save.money;
   $('money').textContent = fmtMoney(shownMoney);
+  const gn = save.gems || 0, ge = $('gems'); ge.hidden = !gn; if (gn) ge.textContent = `💎 ${gn}`;
+  const ub = $('urbex-tag'); ub.hidden = !urbexMode;
   const dc = doneCount();
   let ri = 0; for (let i = 0; i < RANKS.length; i++) if (dc >= RANKS[i][0]) ri = i;
   $('rank').textContent = `${RANKS[ri][1]} · ${save.xp.toLocaleString('en-US')} XP`;
@@ -3346,6 +3707,12 @@ function checkMissionProximity() {
   } else if (P.car) {
     const close = markers.find(mk => Math.hypot(mk.m.mx - P.car.pos.x, mk.m.mz - P.car.pos.z) < 7 && mk.state !== 'locked');
     if (close) promptText = `<kbd>F</kbd> Wysiądź z auta i wejdź w znacznik: <b>${esc(close.m.place)}</b>`;
+  } else if (indoor) {
+    promptText = nearDoor ? '<kbd>E</kbd> Wyjdź na zewnątrz 🚪' : nearLabel ? `${nearLabel.ico} <b>${nearLabel.en}</b> — ${nearLabel.pl}` : '';
+  } else if (nearDoor) {
+    promptText = `<kbd>E</kbd> Wejdź do domu 🚪${nearDoor.gem.found ? '' : ' · 💎?'}`;
+  } else if (nearPhoto) {
+    promptText = `<kbd>E</kbd> Zrób zdjęcie 📸 · ${nearPhoto.pl}${save.urbex && save.urbex[nearPhoto.id] ? ' ✓' : ' · <span style="color:var(--cash)">+$100</span>'}`;
   } else if (nearPet) {
     promptText = `<kbd>T</kbd> Pogłaszcz: ${nearPet.s.ico} ${nearPet.s.pl} (<i>${nearPet.s.en}</i>)`;
   } else if (nearFish) {
@@ -3359,6 +3726,9 @@ function checkMissionProximity() {
   setPrompt(promptText);
 }
 function tryStartMission() {
+  if (indoor) { if (nearDoor) exitHome(); return; }
+  if (!nearMission && nearDoor && !P.car) { enterHome(nearDoor); return; }
+  if (!nearMission && nearPhoto && !P.car) { takePhoto(nearPhoto); return; }
   if (!nearMission && nearPet && !P.car) { petAnimal(nearPet); return; }
   if (!nearMission && nearFish && !P.car) { openFishing(nearFish); return; }
   if (!nearMission && nearNPC && !P.car) { openTalk(nearNPC); return; }
@@ -3828,6 +4198,14 @@ function renderShop() {
   const items = SHOP.filter(i => i.cat === shopCat), eq = equippedId(shopCat);
   $('shop-grid').innerHTML = items.map(it => {
     const own = !!wardrobe.owned[it.id], on = eq === it.id;
+    if (it.gemSell) {
+      const n = save.gems || 0;
+      return `<div class="shop-item perk">
+      <div class="si-ico">💎</div>
+      <div class="si-nm">${esc(it.name)} · masz ${n}</div>
+      <div class="si-ds">${esc(it.desc)}</div>
+      <div class="si-act"><button class="btn" data-gem="1" ${n ? '' : 'disabled'}>Wymień 1 · +${fmtMoney(GEM_PRICE)}</button>${n > 1 ? `<button class="btn ghost" data-gem="all">Wszystkie · +${fmtMoney(n * GEM_PRICE)}</button>` : ''}</div></div>`;
+    }
     if (it.consumable) {
       const full = wardrobe.fuel >= 0.995, pct = Math.round(wardrobe.fuel * 100);
       return `<div class="shop-item">
@@ -3850,10 +4228,11 @@ function renderShop() {
   $('shop-grid').querySelectorAll('[data-eq]').forEach(b => b.onclick = () => equipItem(b.dataset.eq));
   $('shop-grid').querySelectorAll('[data-call]').forEach(b => b.onclick = () => { equipItem(b.dataset.call); closeShop(); summonVehicle(); });
   $('shop-grid').querySelectorAll('[data-fuel]').forEach(b => b.onclick = buyFuel);
+  $('shop-grid').querySelectorAll('[data-gem]').forEach(b => b.onclick = () => sellGems(b.dataset.gem === 'all'));
   $('shop-perk').hidden = !hasCashGlasses();
 }
 function shopIcon(it) {
-  if (it.cat === 'extra') return it.id === 'nitro' ? '🔥' : it.id === 'wheelie' ? '🤸' : '⛽';
+  if (it.cat === 'extra') return it.id === 'nitro' ? '🔥' : it.id === 'wheelie' ? '🤸' : it.id === 'gem_sell' ? '💎' : '⛽';
   if (it.cat === 'vehicle') return { scooter: '🛴', kscooter: '🛴', moto: '🏍️', hatch: '🚗', suv: '🚙', supercar: '🏎️', lux: '🚘' }[it.vtype] || '🚗';
   if (it.cat === 'glasses') return it.glasses === 'cash' ? '<span class="pixglass">▀█▀▀ ▀█▀▀</span>' : it.glasses === 'sun' ? '🕶️' : '🙂';
   if (it.cat === 'hat') return { none: '💇', cap: '🧢', beanie: '🧶', fedora: '🎩', crown: '👑' }[it.hat];
@@ -3930,9 +4309,11 @@ function renderSettings() {
     <div class="shop-item set-wide"><div class="si-nm">🎨 Kolor pojazdu</div><div class="si-ds">Wybierz kolor dla każdego swojego pojazdu. Zmiana działa od razu — także w trakcie jazdy.</div></div>
     ${rows}
     <div class="shop-item set-wide"><div class="si-nm">🛴 Tryb hulajnogi</div><div class="si-ds">Eco — spokojnie i oszczędnie, S — sport, R — wyścig. W grze zmienisz go klawiszem <kbd>G</kbd> (na telefonie TRYB).</div><div class="set-modes">${modes}</div></div>
+    <div class="shop-item set-wide"><div class="si-nm">🔦 Tryb urbex</div><div class="si-ds">Zwiedzanie opuszczonych budynków: latarka i GPS do najbliższej ruiny. Zaliczone: ${Object.keys(save.urbex || {}).length}/${ruins.length}. Klawisz <kbd>U</kbd>.</div><div class="set-modes"><button class="xbtn ${urbexMode ? 'on' : ''}" data-urbex="1">${urbexMode ? '✓ Włączony — wyłącz' : 'Włącz tryb urbex'}</button></div></div>
     <div class="shop-item set-wide"><div class="si-nm">${se.ico} Pora roku: ${se.name}</div><div class="si-ds">Pory roku zmieniają się co 3 dni gry (36 minut). Następna za ok. ${left} min.</div></div>`;
   $('shop-grid').querySelectorAll('[data-vc]').forEach(b => b.onclick = () => setVehColor(b.dataset.vc, +b.dataset.c));
   $('shop-grid').querySelectorAll('[data-sm]').forEach(b => b.onclick = () => setScooterMode(b.dataset.sm));
+  $('shop-grid').querySelectorAll('[data-urbex]').forEach(b => b.onclick = () => toggleUrbex());
   $('shop-perk').hidden = !hasCashGlasses();
 }
 
@@ -4025,6 +4406,7 @@ function frame() {
   updateSnow(dt);
   twinkleXmas();
   updateAnimals(dt);
+  if (ui !== 'start') { checkHomes(); collectGems(dt); updateFlashlight(); }
   updatePeds(dt);
   updateNPCs(dt);
   updateCamera(dt);
@@ -4049,7 +4431,7 @@ function frame() {
     if (route && route.length > 1) {
       let nx = route[route.length - 1].x, nz = route[route.length - 1].z;
       for (let i = 1; i < route.length; i++) if (Math.hypot(route[i].x - focus.x, route[i].z - focus.z) > 12) { nx = route[i].x; nz = route[i].z; break; }
-      gpsArrow.visible = true;
+      gpsArrow.visible = !indoor;
       gpsArrow.position.set(focus.x, focus.y + (P.car ? 3.9 : 2.9) + Math.sin(elapsed * 3) * 0.08, focus.z);
       gpsArrow.rotation.y = Math.atan2(nx - focus.x, nz - focus.z);
     } else gpsArrow.visible = false;
@@ -4122,6 +4504,8 @@ async function boot() {
   }
   SPAWN = { x: P.pos.x, z: P.pos.z, facing: P.facing };
   buildFishSpots();
+  buildHomes();
+  buildRuins();
   buildMushrooms();
   buildSnow();
   applySeason(false);
