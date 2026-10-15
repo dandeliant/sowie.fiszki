@@ -1,13 +1,34 @@
-// Użycie: node convert-dxf.js <wyjście warsaw.json> <topoexport_3D_modeling.dxf>
-// topoexport 3D DXF → grammar-city/warsaw/warsaw.json (mapa „Warszawa — Śródmieście")
-// Układ gry: X = x − C, Z = C − y (północ = −Z), wysokości spłaszczone (teren → 0).
+// Użycie: node convert-dxf.js <wyjście.json> <topoexport_3D_modeling.dxf> [--name "Nazwa"] [--landmark pkin|tallest|center]
+//   Warszawa: node convert-dxf.js ../warsaw.json …/topoexport_3D_modeling.dxf --name "Warszawa — Śródmieście" --landmark pkin --center 512.5,512.5 --ext 515
+//   Jeleniec: node convert-dxf.js ../../jeleniec/jeleniec.json …/topoexport_3D_modeling.dxf --name "Jeleniec" --landmark center
+// topoexport 3D DXF → mapa Grammar City (budynki, drogi, zieleń, woda, drzewa, chodniki, misje).
+// Układ gry: X = x − CX, Z = CZ − y (północ = −Z), wysokości spłaszczone (teren → 0).
+// Środek i zasięg mapy liczone z siatki terenu; punkt orientacyjny (egzamin końcowy):
+// 'pkin' — Pałac Kultury (iglica ~236 m z dala od Varso), 'tallest' — najwyższy budynek (np. kościół), 'center' — budynek w środku zabudowy (wieś bez wysokości w danych).
 const parse = require('./bdxf.js');
 const fs = require('fs');
 const OUT = process.argv[2];
+const arg = (k, d) => { const i = process.argv.indexOf('--' + k); return i > 0 ? process.argv[i + 1] : d; };
+const NAME = arg('name', 'Warszawa — Śródmieście'), LANDMARK = arg('landmark', 'tallest');
 const t = parse(process.argv[3] || 'topoexport_3D_modeling.dxf', 'i16');
-const C = 512.5, EXT = 515;                 // środek i zasięg (±EXT) mapy
+let C = 512.5, CZ = 512.5, EXT = 515;       // środek i zasięg (±EXT) mapy — ustawiane z siatki terenu
 const q1 = v => Math.round(v * 10) / 10;
-const X = x => x - C, Z = y => C - y;
+const X = x => x - C, Z = y => CZ - y;
+// wstępny przebieg: zasięg siatki terenu → środek i EXT
+{ let sec0 = null, minx = Infinity, maxx = -Infinity, miny = Infinity, maxy = -Infinity;
+  for (let k = 0; k < t.length; k++) {
+    const [c, v] = t[k];
+    if (c === 0 && v === 'SECTION') { sec0 = t[k + 1][1]; continue; }
+    if (sec0 !== 'ENTITIES' || c !== 0 || v !== 'MESH') continue;
+    let j = k + 1; const tg = []; while (j < t.length && t[j][0] !== 0) tg.push(t[j++]);
+    if ((tg.find(x => x[0] === 8) || [])[1] !== 'TPX_TERRAIN_TERRAIN_MESH') continue;
+    for (const [cc, vv] of tg) { if (cc === 10) { minx = Math.min(minx, vv); maxx = Math.max(maxx, vv); } if (cc === 20) { miny = Math.min(miny, vv); maxy = Math.max(maxy, vv); } }
+  }
+  if (isFinite(minx)) { C = (minx + maxx) / 2; CZ = (miny + maxy) / 2; EXT = Math.floor(Math.min(maxx - minx, maxy - miny) / 2); }
+  const ce = arg('center'), ee = arg('ext');                 // ręczne nadpisanie (Warszawa: --center 512.5,512.5 --ext 515)
+  if (ce) [C, CZ] = ce.split(',').map(Number);
+  if (ee) EXT = +ee;
+  console.log('środek', C.toFixed(1), CZ.toFixed(1), 'EXT', EXT); }
 
 const raw = { buildings: [], roads: [], green: [], water: [], trees: [], axes: [], rail: [], terrain: null };
 let sec = null;
@@ -147,11 +168,15 @@ function pavement(x, z, r = 2.5, near = 14) {
 // ── punkty orientacyjne ──
 const byH = [...buildings].sort((a, c2) => c2.h - a.h);
 console.log('najwyższe:', byH.slice(0, 8).map(b => `${b.h}m area${Math.round(b.area)} @${b.cx},${b.cz}`).join(' | '));
-// Pałac Kultury: iglica 225–245 m daleko (>150 m) od Varso (najwyższy obiekt, 310 m)
+// Punkt orientacyjny: Pałac Kultury (iglica 225–245 m daleko od Varso) albo najwyższy budynek
 const varso = byH[0];
-const pkin = byH.filter(b => b.h > 225 && b.h < 245 && Math.hypot(b.cx - varso.cx, b.cz - varso.cz) > 150)[0];
-console.log('PKiN:', pkin.h, Math.round(pkin.area), pkin.cx, pkin.cz);
-// spawn i finał: na wschód od PKiN (Plac Defilad / Marszałkowska)
+const pkin = LANDMARK === 'pkin'
+  ? byH.filter(b => b.h > 225 && b.h < 245 && Math.hypot(b.cx - varso.cx, b.cz - varso.cz) > 150)[0]
+  : LANDMARK === 'center'
+    ? (() => { const gb = buildings.filter(b => b.ground && inExt(b.cx, b.cz, 60)); const mx = gb.reduce((s2, b) => s2 + b.cx, 0) / gb.length, mz = gb.reduce((s2, b) => s2 + b.cz, 0) / gb.length;
+        return gb.filter(b => b.area > 60).sort((p, q) => Math.hypot(p.cx - mx, p.cz - mz) - Math.hypot(q.cx - mx, q.cz - mz))[0]; })()
+    : byH.filter(b => b.ground && b.area > 40 && inExt(b.cx, b.cz, 60))[0] || byH[0];
+console.log('punkt orientacyjny:', pkin.h, Math.round(pkin.area), pkin.cx, pkin.cz);
 function nearestPavement(x, z, maxR = 120) {
   for (let r = 0; r <= maxR; r += 2) for (let a = 0; a < 32; a++) {
     const px = x + Math.cos(a / 32 * Math.PI * 2) * r, pz = z + Math.sin(a / 32 * Math.PI * 2) * r;
@@ -159,20 +184,32 @@ function nearestPavement(x, z, maxR = 120) {
   }
   return null;
 }
-// Finał przed wschodnią fasadą (Plac Defilad): idziemy na wschód od iglicy do końca budynku
-let ex = pkin.cx; while (ex < pkin.cx + 300 && cell(ex, pkin.cz) === 2) ex += 1;
-const finale = nearestPavement(ex + 8, pkin.cz, 60) || [q1(ex + 8), q1(pkin.cz)];
-const spawn = nearestPavement(finale[0] + 34, finale[1] + 4, 80);
+let finale, spawn;
+if (LANDMARK === 'pkin') {
+  // Finał przed wschodnią fasadą (Plac Defilad): idziemy na wschód od iglicy do końca budynku
+  let ex = pkin.cx; while (ex < pkin.cx + 300 && cell(ex, pkin.cz) === 2) ex += 1;
+  finale = nearestPavement(ex + 8, pkin.cz, 60) || [q1(ex + 8), q1(pkin.cz)];
+  spawn = nearestPavement(finale[0] + 34, finale[1] + 4, 80);
+} else {
+  // Finał: najbliższy chodnik przy budynku; start ~30 m dalej w tym samym kierunku
+  finale = nearestPavement(pkin.cx, pkin.cz, 150) || [q1(pkin.cx + 15), q1(pkin.cz)];
+  const dx = finale[0] - pkin.cx, dz = finale[1] - pkin.cz, l = Math.hypot(dx, dz) || 1;
+  spawn = nearestPavement(finale[0] + dx / l * 30, finale[1] + dz / l * 30, 80) || finale;
+}
 // ── miejsca na misje: chodniki, odstęp ≥ 110 m, sortowane po odległości od startu ──
 const cands = [];
 for (let z = -EXT + 20; z < EXT - 20; z += 6) for (let x = -EXT + 20; x < EXT - 20; x += 6) if (pavement(x, z)) cands.push([x, z]);
 const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
 const missionSpots = [];
 const sorted = cands.map(p => [p, dist(p, spawn)]).sort((a, b) => a[1] - b[1]);
-for (const [p, d] of sorted) {
-  if (d < 70) continue;
-  if (dist(p, finale) < 90) continue;
-  if (missionSpots.every(s => dist(s, p) >= 110)) missionSpots.push(p.map(q1));
+for (const gap of [110, 90, 70, 55]) {
+  missionSpots.length = 0;
+  for (const [p, d] of sorted) {
+    if (d < Math.min(70, gap * 0.7)) continue;
+    if (dist(p, finale) < Math.min(90, gap)) continue;
+    if (missionSpots.every(s => dist(s, p) >= gap)) missionSpots.push(p.map(q1));
+  }
+  if (missionSpots.length >= 22) { console.log('odstęp misji', gap, 'm'); break; }
 }
 console.log('miejsca misji:', missionSpots.length, 'kandydatów chodnika:', cands.length);
 // ── trasy pieszych i miejsca NPC: osie dróg przesunięte na chodnik ──
@@ -216,9 +253,9 @@ const axes = raw.axes.map(p => p.map(([x, z]) => [q1(x), q1(z)]).flat());
 const rail = raw.rail.map(p => p.map(([x, z]) => [q1(x), q1(z)]).flat());
 
 const out = {
-  name: 'Warszawa — Śródmieście', ext: EXT,
+  name: NAME, ext: EXT,
   attribution: 'Dane mapy: © Overture Maps Foundation (ODbL) · GUGiK NMT (CC BY 4.0) · Meta & WRI Global Canopy Height (CC BY 4.0) · eksport topoexport.com',
-  spawn, finale, pkin: [pkin.cx, pkin.cz],
+  spawn, finale, pkin: [pkin.cx, pkin.cz], landmark: [pkin.cx, pkin.cz, pkin.h],
   buildings: buildings.map(b => ({ h: b.h, g: b.ground ? 1 : 0, v: b.v, f: b.f, r: b.rings })),
   roads, green, water, trees, axes, rail, missionSpots, pedPaths, parkSpots
 };

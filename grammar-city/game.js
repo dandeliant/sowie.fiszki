@@ -22,13 +22,22 @@ const fmtMoney = n => '$' + Math.round(n).toLocaleString('en-US');
 const norm = s => String(s).toLowerCase().replace(/[’‘`´]/g, "'").replace(/[.,!?;:]/g, '').replace(/\s+/g, ' ').trim();
 
 // ---------------------------------------------------------------- mapa
-// ?map=warsaw → „Warszawa — Śródmieście" (warsaw/warsaw.json — prawdziwe budynki, drogi, zieleń
-// i drzewa ok. 1×1 km wokół Pałacu Kultury; dane: Overture Maps ODbL, GUGiK NMT CC BY 4.0,
-// eksport topoexport.com). Bez parametru — klasyczne Grammar City (siatka kwartałów).
-const MAP_ID = new URLSearchParams(location.search).get('map') === 'warsaw' ? 'warsaw' : 'grid';
-const WARSAW = MAP_ID === 'warsaw';
-const W_EXT = 515;            // Warszawa: mapa w zakresie ±W_EXT m (środek = środek eksportu)
-let WD = null;                // Warszawa: dane mapy (ładowane w boot)
+// Mapy z prawdziwych danych (eksport topoexport.com: Overture Maps ODbL, GUGiK NMT CC BY 4.0;
+// konwersja grammar-city/warsaw/tools/convert-dxf.js): ?map=warsaw | ?map=jeleniec.
+// Bez parametru — klasyczne Grammar City (siatka kwartałów).
+const MAP_DEFS = {
+  warsaw: { file: 'warsaw/warsaw.json', ext: 515, label: 'Warszawa — Śródmieście', of: 'Warszawy',
+    banner: ['WARSZAWA', 'Witaj w Śródmieściu!'], finalePL: 'Pałac Kultury', finaleIn: 'w Pałacu Kultury', finaleEN: 'Palace of Culture',
+    tagline: 'Prawdziwe Śródmieście Warszawy w 3D', ground: 'pave', landmarkTint: 0xe8dcc0, landmarkR: 75, orbit: [280, 150, 70], fog: [200, 820] },
+  jeleniec: { file: 'jeleniec/jeleniec.json', ext: 482, label: 'Jeleniec', of: 'Jeleńca',
+    banner: ['JELENIEC', 'Witaj we wsi!'], finalePL: 'świetlica wiejska', finaleIn: 'w świetlicy wiejskiej', finaleEN: 'Village Hall',
+    tagline: 'Prawdziwa wieś Jeleniec w 3D', enter: 'Wejdź do wsi', ground: 'grass', gable: true, orbit: [170, 75, 4], fog: [220, 900] },
+};
+const MAP_ID = (p => (MAP_DEFS[p] ? p : 'grid'))(new URLSearchParams(location.search).get('map'));
+const MAPDEF = MAP_DEFS[MAP_ID] || null;
+const REALMAP = !!MAPDEF;     // mapa z prawdziwych danych (Warszawa, Jeleniec)
+const W_EXT = MAPDEF ? MAPDEF.ext : 515;   // mapa z danych: zakres ±W_EXT m (środek = środek eksportu)
+let WD = null;                // dane mapy (ładowane w boot)
 
 // ---------------------------------------------------------------- city layout
 const N = 8;                  // blocks per side
@@ -41,8 +50,8 @@ const L = (B - 2 * SW - GAP) / 2; // lot size (25)
 const HALF = (N * CELL + R) / 2;  // 328
 const LANE = 4;
 const SIDE_H = 0.3;
-const BOUND = WARSAW ? W_EXT - 3 : HALF + 70;
-const PAVE_Y = WARSAW ? 0 : SIDE_H;   // wysokość chodnika (Warszawa: teren spłaszczony do 0)
+const BOUND = REALMAP ? W_EXT - 3 : HALF + 70;
+const PAVE_Y = REALMAP ? 0 : SIDE_H;   // wysokość chodnika (Warszawa: teren spłaszczony do 0)
 const rc = i => -HALF + R / 2 + i * CELL;          // road centre line i (0..N)
 const bx0 = i => -HALF + R + i * CELL;             // block start
 const bc = i => bx0(i) + B / 2;                     // block centre
@@ -55,7 +64,7 @@ function onBlock(x, z) {
   if (iu >= N || iv >= N) return false;
   return (u - iu * CELL) < B && (v - iv * CELL) < B;
 }
-const groundAt = (x, z) => (WARSAW ? 0 : onBlock(x, z) ? SIDE_H : 0);
+const groundAt = (x, z) => (REALMAP ? 0 : onBlock(x, z) ? SIDE_H : 0);
 
 // ---------------------------------------------------------------- save
 // Tryb słówek (vocab-missions.js) podaje własny klucz — osobny postęp per rozdział.
@@ -351,12 +360,15 @@ function warsawFlat(L, y, material) {
 const texClone = (t, r) => { const c = t.clone(); c.needsUpdate = true; c.repeat.set(r, r); return c; };
 function buildWarsaw() {
   const D = WD;
-  scene.fog.near = 200; scene.fog.far = 820;
-  // ziemia: trawa dookoła, w obrębie mapy płyty chodnikowe
+  scene.fog.near = MAPDEF.fog[0]; scene.fog.far = MAPDEF.fog[1];
+  // ziemia: trawa dookoła; w mieście w obrębie mapy płyty chodnikowe, na wsi trawa
+  const paved = MAPDEF.ground === 'pave';
   const grass = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000), new THREE.MeshLambertMaterial({ map: grassTex }));
-  grass.rotation.x = -Math.PI / 2; grass.position.y = -0.6; grass.receiveShadow = true; scene.add(grass);   // nisko: bez migotania z płytami z daleka
-  const pave = new THREE.Mesh(new THREE.PlaneGeometry(2 * W_EXT, 2 * W_EXT), new THREE.MeshLambertMaterial({ map: texClone(sidewalkTex, 2 * W_EXT / 5) }));
-  pave.rotation.x = -Math.PI / 2; pave.position.y = -0.02; pave.receiveShadow = true; scene.add(pave);
+  grass.rotation.x = -Math.PI / 2; grass.position.y = paved ? -0.6 : -0.02; grass.receiveShadow = true; scene.add(grass);   // pod płytami nisko: bez migotania z daleka
+  if (paved) {
+    const pave = new THREE.Mesh(new THREE.PlaneGeometry(2 * W_EXT, 2 * W_EXT), new THREE.MeshLambertMaterial({ map: texClone(sidewalkTex, 2 * W_EXT / 5) }));
+    pave.rotation.x = -Math.PI / 2; pave.position.y = -0.02; pave.receiveShadow = true; scene.add(pave);
+  }
   const off = (m, f) => Object.assign(m, { polygonOffset: true, polygonOffsetFactor: f, polygonOffsetUnits: f, side: THREE.DoubleSide });
   warsawFlat(D.green, 0.01, off(new THREE.MeshLambertMaterial({ map: texClone(parkGrassTex, 1) }), -1));
   warsawFlat(D.roads, 0.02, off(new THREE.MeshLambertMaterial({ map: texClone(asphaltTex, 1) }), -2));
@@ -364,13 +376,14 @@ function buildWarsaw() {
   mapPolys.push({ tri: D.green, c: '#2d5237' }, { tri: D.roads, c: '#5b6578' }, { tri: D.water, c: '#2b5d8a' });
   // budynki: ściany z oknami (UV: 16 m × 14 m na kafel, jak w Grammar City), dachy szare
   const W = {}, Rf = { p: [], n: [], u: [] };
-  const sand = wallMaterial(0, 0xe8dcc0, 0);           // Pałac Kultury — piaskowiec
+  const sand = wallMaterial(0, MAPDEF.landmarkTint || 0xe8dcc0, 0);   // punkt orientacyjny (Pałac Kultury — piaskowiec)
   wallPool.push(sand); const sandIdx = wallPool.length - 1;
+  const Tl = { p: [], n: [], u: [] };                  // dachówka (dachy dwuspadowe na wsi)
   const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), e1 = new THREE.Vector3(), e2 = new THREE.Vector3(), nrm = new THREE.Vector3();
   D.buildings.forEach((bd, bi) => {
     const v = bd.v, f = bd.f;
     let cx = 0, cz = 0; const r0 = bd.r[0]; for (let i = 0; i < r0.length; i += 2) { cx += r0[i]; cz += r0[i + 1]; } cx /= r0.length / 2; cz /= r0.length / 2;
-    const nearPkin = Math.hypot(cx - D.pkin[0], cz - D.pkin[1]) < 75;
+    const nearPkin = !!MAPDEF.landmarkTint && Math.hypot(cx - D.pkin[0], cz - D.pkin[1]) < MAPDEF.landmarkR;
     const wi = nearPkin ? sandIdx : (bi * 7 + Math.round(bd.h)) % (wallPool.length - 1);
     const dst = W[wi] || (W[wi] = { p: [], n: [], u: [] });
     for (let t = 0; t < f.length; t += 3) {
@@ -388,6 +401,7 @@ function buildWarsaw() {
         for (const p of [a, b, c]) { dst.p.push(p.x, p.y, p.z); dst.n.push(nrm.x, nrm.y, nrm.z); dst.u.push((p.x * tx + p.z * tz) / 16, p.y / 14); }
       }
     }
+    if (MAPDEF.gable && bd.g) gableRoof(bd, dst, Tl);
     if (bd.g) {
       addPolyCol(bd.r, bd.h);
       mapPolys.push({ rings: bd.r, c: bd.h > 40 ? '#4a5568' : '#3c4656' });
@@ -407,6 +421,7 @@ function buildWarsaw() {
   for (const wi in W) { wallPool[wi].side = THREE.DoubleSide; meshOf(W[wi], wallPool[wi]); }
   roofMat.side = THREE.DoubleSide;
   meshOf(Rf, roofMat);
+  if (Tl.p.length) meshOf(Tl, new THREE.MeshLambertMaterial({ color: 0xa4452f, side: THREE.DoubleSide }));
   // drzewa z danych + latarnie wzdłuż chodników
   for (let i = 0; i < D.trees.length; i += 3) treeSpots.push([D.trees[i], D.trees[i + 1], D.trees[i + 2]]);
   for (const path of D.pedPaths) {
@@ -422,6 +437,44 @@ function buildWarsaw() {
   const st = staticParts.length ? new THREE.Mesh(mergeColored(staticParts), vcMat) : null;
   if (st) { st.castShadow = st.receiveShadow = true; st.frustumCulled = false; scene.add(st); staticParts.length = 0; }
 }
+// Dach dwuspadowy na prostokątnym domu (obrys 4 narożniki, bez dziedzińca): kalenica wzdłuż
+// dłuższego boku, połacie w kolorze dachówki, szczyty (trójkąty) w kolorze ścian.
+function gableRoof(bd, wallDst, tileDst) {
+  if (bd.r.length !== 1) return;
+  let pts = [];
+  for (let i = 0; i < bd.r[0].length; i += 2) pts.push([bd.r[0][i], bd.r[0][i + 1]]);
+  if (pts.length > 1 && Math.hypot(pts[0][0] - pts[pts.length - 1][0], pts[0][1] - pts[pts.length - 1][1]) < 0.05) pts.pop();
+  // usuń punkty prawie współliniowe
+  pts = pts.filter((p, i) => {
+    const a = pts[(i + pts.length - 1) % pts.length], c = pts[(i + 1) % pts.length];
+    const cr = (p[0] - a[0]) * (c[1] - p[1]) - (p[1] - a[1]) * (c[0] - p[0]);
+    return Math.abs(cr) > 0.02 * Math.hypot(p[0] - a[0], p[1] - a[1]) * Math.hypot(c[0] - p[0], c[1] - p[1]);
+  });
+  if (pts.length !== 4) return;
+  const L = (i, j) => Math.hypot(pts[i][0] - pts[j][0], pts[i][1] - pts[j][1]);
+  let [A, B, C, Dd] = pts;
+  if (L(0, 1) < L(1, 2)) [A, B, C, Dd] = [pts[1], pts[2], pts[3], pts[0]];   // AB = dłuższy bok
+  const short = Math.min(L(0, 1), L(1, 2));
+  if (short < 3 || short > 22) return;
+  const h = bd.h, rh = Math.min(3.2, short * 0.42);
+  const M1 = [(Dd[0] + A[0]) / 2, (Dd[1] + A[1]) / 2], M2 = [(B[0] + C[0]) / 2, (B[1] + C[1]) / 2];
+  const V = (p, y) => new THREE.Vector3(p[0], y, p[1]);
+  const tri = (dst, a, b, c, wall) => {
+    const n = new THREE.Vector3().crossVectors(new THREE.Vector3().subVectors(b, a), new THREE.Vector3().subVectors(c, a));
+    const len = n.length(); if (len < 1e-6) return; n.divideScalar(len);
+    if (wall) { if (polyInside((a.x + b.x + c.x) / 3 + n.x * 0.6, (a.z + b.z + c.z) / 3 + n.z * 0.6, bd.r)) n.negate(); }
+    else if (n.y < 0) n.negate();
+    const tl = Math.hypot(n.x, n.z) || 1, tx = -n.z / tl, tz = n.x / tl;
+    for (const p of [a, b, c]) {
+      dst.p.push(p.x, p.y, p.z); dst.n.push(n.x, n.y, n.z);
+      if (wall) dst.u.push((p.x * tx + p.z * tz) / 16, p.y / 14); else dst.u.push(p.x / 4, p.z / 4);
+    }
+  };
+  const a = V(A, h), b = V(B, h), c = V(C, h), d = V(Dd, h), m1 = V(M1, h + rh), m2 = V(M2, h + rh);
+  tri(tileDst, a, b, m2); tri(tileDst, a, m2, m1);       // połać nad AB
+  tri(tileDst, c, d, m1); tri(tileDst, c, m1, m2);       // połać nad CD
+  tri(wallDst, b, c, m2, true); tri(wallDst, d, a, m1, true);   // szczyty
+}
 // Misje w Warszawie: miejsca na chodnikach (posortowane od startu) — wyższe etapy dalej;
 // egzamin końcowy przed Pałacem Kultury.
 function layoutMissionsWarsaw() {
@@ -429,12 +482,12 @@ function layoutMissionsWarsaw() {
     .sort((a, b) => (a.tier - b.tier) || (MISSIONS.indexOf(a) - MISSIONS.indexOf(b)));
   const step = spots.length / Math.max(1, order.length);
   order.forEach((m, i) => { const s = spots[Math.min(spots.length - 1, Math.floor(i * step + step * 0.35))]; m.mx = s[0]; m.mz = s[1]; });
-  for (const m of MISSIONS) if (m.cityHall) { m.mx = WD.finale[0]; m.mz = WD.finale[1]; if (m.place === 'City Hall') m.place = 'Palace of Culture'; }
+  for (const m of MISSIONS) if (m.cityHall) { m.mx = WD.finale[0]; m.mz = WD.finale[1]; if (m.place === 'City Hall') m.place = MAPDEF.finaleEN; }
 }
 const slabMat = new THREE.MeshLambertMaterial({ map: sidewalkTex });
 
 function buildCity() {
-  if (WARSAW) { buildWarsaw(); return; }
+  if (REALMAP) { buildWarsaw(); return; }
   layoutMissions();
   buildGround();
   const lotOwner = {};
@@ -1009,7 +1062,7 @@ function choosePlan(a) {
   a.turnAt = a.plan.t === 'turn' ? (a.axis === 'x' ? rc(a.k) - LANE * a.plan.d2 : rc(a.k) + LANE * a.plan.d2) : rc(a.k);
 }
 function spawnTraffic(count) {
-  if (WARSAW) return;   // etap 2: ruch po prawdziwych drogach
+  if (REALMAP) return;   // etap 2: ruch po prawdziwych drogach
   let tries = 0;
   while (count > 0 && tries++ < 500) {
     const axis = rand() < 0.5 ? 'x' : 'z', dir = rand() < 0.5 ? 1 : -1, line = Math.floor(rand() * (N + 1));
@@ -1027,7 +1080,7 @@ function spawnTraffic(count) {
   }
 }
 function spawnParked(count) {
-  if (WARSAW) {
+  if (REALMAP) {
     const spots = WD.parkSpots; let tries = 0;
     while (count > 0 && tries++ < 600) {
       const [x, z, hd] = spots[Math.floor(rand() * spots.length)];
@@ -1054,7 +1107,7 @@ function spawnParked(count) {
 // ---------------------------------------------------------------- pedestrians
 const peds = [];
 function spawnPeds(count) {
-  if (WARSAW) {
+  if (REALMAP) {
     const paths = WD.pedPaths.filter(p => p.length >= 6);
     for (let i = 0; i < count && paths.length; i++) {
       const path = paths[Math.floor(rand() * paths.length)], cum = [0];
@@ -1992,10 +2045,10 @@ let attractT = 0;
 function updateCamera(dt) {
   if (ui === 'start') {
     attractT += dt;
-    if (WARSAW) {
-      const [cx, cz] = WD.pkin;
-      camera.position.set(cx + Math.sin(attractT * 0.05) * 280, 150 + Math.sin(attractT * 0.1) * 15, cz + Math.cos(attractT * 0.05) * 280);
-      camera.lookAt(cx, 70, cz);
+    if (REALMAP) {
+      const [cx, cz] = WD.pkin, [R, H, LY] = MAPDEF.orbit;
+      camera.position.set(cx + Math.sin(attractT * 0.05) * R, H + Math.sin(attractT * 0.1) * H * 0.1, cz + Math.cos(attractT * 0.05) * R);
+      camera.lookAt(cx, LY, cz);
       return;
     }
     const cx = bc(3), cz = bx0(3) + 30;
@@ -2068,7 +2121,7 @@ function setGPS(g, silent) {
 function computeRoute() {
   const t = gpsTarget(); if (!t) { route = null; return; }
   const from = P.car ? P.car.pos : P.pos;
-  if (WARSAW) { route = [{ x: from.x, z: from.z }, { x: t.x, z: t.z }]; return; }
+  if (REALMAP) { route = [{ x: from.x, z: from.z }, { x: t.x, z: t.z }]; return; }
   const ni = x => clamp(Math.round((x + HALF - R / 2) / CELL), 0, N);
   const si = ni(from.x), sj = ni(from.z), ei = ni(t.x), ej = ni(t.z);
   const face = P.car ? carFwd(P.car) : { x: Math.sin(P.facing), z: Math.cos(P.facing) };
@@ -2093,13 +2146,13 @@ function recommendMission() {
 }
 
 // ---------------------------------------------------------------- map rendering
-const MAP_EXT = WARSAW ? W_EXT + 15 : HALF + 70, MAPS = 1024, MSC = MAPS / (2 * MAP_EXT);
+const MAP_EXT = REALMAP ? W_EXT + 15 : HALF + 70, MAPS = 1024, MSC = MAPS / (2 * MAP_EXT);
 const w2m = v => (v + MAP_EXT) * MSC;
 const mapCanvas = makeCanvas(MAPS, MAPS);
 function buildMapCanvas() {
   const g = mapCanvas.getContext('2d');
   g.fillStyle = '#1e2a22'; g.fillRect(0, 0, MAPS, MAPS);
-  if (WARSAW) {
+  if (REALMAP) {
     g.fillStyle = '#2b3340'; g.fillRect(w2m(-W_EXT), w2m(-W_EXT), 2 * W_EXT * MSC, 2 * W_EXT * MSC);
     for (const pl of mapPolys) {
       g.fillStyle = pl.c;
@@ -2582,7 +2635,7 @@ function closeQuiz() {
   if (s) {
     if (s.pass) {
       showBanner(m.final ? 'GRAMMAR LEGEND' : 'MISSION PASSED', `${s.money ? `+${fmtMoney(s.money)} · ` : ''}+${s.xp} XP`, m.final ? '#c77dff' : '#f2b632');
-      s.newlyUnlocked.forEach((t, i) => setTimeout(() => toast(t.name === 'FINAL' ? (WARSAW ? 'Odblokowano egzamin końcowy w Pałacu Kultury!' : 'Odblokowano egzamin końcowy w City Hall!') : `Odblokowano nowe misje: poziom ${t.name}!`, 'good', 5000), 1200 + i * 400));
+      s.newlyUnlocked.forEach((t, i) => setTimeout(() => toast(t.name === 'FINAL' ? (REALMAP ? `Odblokowano egzamin końcowy ${MAPDEF.finaleIn}!` : 'Odblokowano egzamin końcowy w City Hall!') : `Odblokowano nowe misje: poziom ${t.name}!`, 'good', 5000), 1200 + i * 400));
       const next = recommendMission();
       if (next) setTimeout(() => setGPS({ kind: 'mission', m: next }), 1800);
       else setGPS(null, true);
@@ -2615,7 +2668,7 @@ function npcLabelTexture(name, done) {
 function spawnNPCs() {
   let si = 0;
   const wSpots = [];
-  if (WARSAW) {
+  if (REALMAP) {
     const cands = [];
     WD.pedPaths.forEach(p => { for (let i = 0; i < p.length; i += 8) cands.push([p[i], p[i + 1]]); });
     shuffle(cands, rand);
@@ -2627,7 +2680,7 @@ function spawnNPCs() {
   }
   for (const t of TALKS) {
     let x, z, tries = 0;
-    if (WARSAW) { [x, z] = wSpots[si++ % Math.max(1, wSpots.length)] || WD.spawn; tries = 99; }
+    if (REALMAP) { [x, z] = wSpots[si++ % Math.max(1, wSpots.length)] || WD.spawn; tries = 99; }
     else do {
       const [bx, bz] = NPC_SPOTS[si++ % NPC_SPOTS.length];
       const side = (si + tries) % 4, X = bx0(bx), Z = bx0(bz), mid = B / 2 + ((si * 7) % 9 - 4);
@@ -2885,7 +2938,7 @@ function showResetLink() {
     w.innerHTML = '<span>Usunąć cały postęp?</span><button class="xbtn" id="reset-yes">Tak, usuń</button><button class="xbtn" id="reset-no">Anuluj</button>';
     $('reset-yes').onclick = () => {
       save = freshSave(); shownMoney = 0; persist(); refreshMarkers(); refreshStartInfo();
-      $('btn-start').textContent = 'Wejdź do miasta';
+      $('btn-start').textContent = (MAPDEF && MAPDEF.enter) || 'Wejdź do miasta';
     };
     $('reset-no').onclick = showResetLink;
   };
@@ -2895,7 +2948,7 @@ showResetLink();
 // ---------------------------------------------------------------- wybór mapy (ekran startowy)
 function setMap(id) {
   const u = new URL(location.href);
-  if (id === 'warsaw') u.searchParams.set('map', 'warsaw'); else u.searchParams.delete('map');
+  if (MAP_DEFS[id]) u.searchParams.set('map', id); else u.searchParams.delete('map');
   location.href = u.toString();
 }
 function initMapPicker() {
@@ -2905,12 +2958,12 @@ function initMapPicker() {
     b.onclick = () => { if (b.dataset.map !== MAP_ID) { Sound.click && Sound.click(); setMap(b.dataset.map); } };
   });
   const at = $('map-attrib');
-  if (at) { at.hidden = !WARSAW; if (WARSAW) at.textContent = WD.attribution; }
-  if (WARSAW) {
-    document.querySelectorAll('.chip').forEach(c => { if (/ratusz/i.test(c.textContent)) c.textContent = 'Egzamin w Pałacu Kultury'; });
+  if (at) { at.hidden = !REALMAP; if (REALMAP) at.textContent = WD.attribution; }
+  if (REALMAP) {
+    document.querySelectorAll('.chip').forEach(c => { if (/ratusz/i.test(c.textContent)) c.textContent = 'Egzamin ' + MAPDEF.finaleIn; });
     const tl = document.querySelector('.tagline');
-    if (tl) tl.textContent = tl.textContent.replace(/na ulicach Grammar City|w Grammar City/, 'na ulicach Warszawy').replace(/Otwarte miasto 3D/, 'Prawdziwe Śródmieście Warszawy w 3D');
-    document.querySelectorAll('.tagline, .story').forEach(el => { el.innerHTML = el.innerHTML.replace(/egzamin w ratuszu/g, 'egzamin w Pałacu Kultury'); });
+    if (tl) tl.textContent = tl.textContent.replace(/na ulicach Grammar City|w Grammar City/, 'na ulicach ' + MAPDEF.of).replace(/Otwarte miasto 3D/, MAPDEF.tagline);
+    document.querySelectorAll('.tagline, .story').forEach(el => { el.innerHTML = el.innerHTML.replace(/egzamin w ratuszu/g, 'egzamin ' + MAPDEF.finaleIn); });
     const story = document.querySelector('#help-ov .story');
     if (story) story.insertAdjacentHTML('afterend', '<p class="story" style="font-size:13px;opacity:.75">' + esc(WD.attribution) + '</p>');
   }
@@ -2924,9 +2977,9 @@ function startGame() {
   requestLock();
   const first = recommendMission();
   if (doneCount() === 0) {
-    if (WARSAW) {
-      showBanner('WARSZAWA', 'Witaj w Śródmieściu!', '#f2b632', 2600);
-      setTimeout(() => toast('Za Tobą Pałac Kultury — tam czeka egzamin końcowy. Najpierw zdobądź doświadczenie w mieście.', '', 5500), 1500);
+    if (REALMAP) {
+      showBanner(MAPDEF.banner[0], MAPDEF.banner[1], '#f2b632', 2600);
+      setTimeout(() => toast(`Za Tobą ${MAPDEF.finalePL} — tam czeka egzamin końcowy. Najpierw zdobądź doświadczenie w okolicy.`, '', 5500), 1500);
     } else {
     showBanner('GRAMMAR CITY', 'Witaj w mieście!', '#f2b632', 2600);
     setTimeout(() => toast('Za Tobą ratusz — egzamin końcowy. Najpierw zdobądź doświadczenie w mieście.', '', 5500), 1500);
@@ -3026,15 +3079,15 @@ async function boot() {
       new Promise(r => setTimeout(r, 2500)),
     ]);
   } catch (e) { /* fonts optional */ }
-  if (WARSAW) {
-    btn.textContent = 'Ładowanie Warszawy…';
-    try { WD = await (await fetch('warsaw/warsaw.json')).json(); }
-    catch (e) { toast('Nie udało się wczytać mapy Warszawy — wracam do Grammar City.', 'bad', 5000); setTimeout(() => setMap('grid'), 1800); return; }
+  if (REALMAP) {
+    btn.textContent = `Ładowanie mapy: ${MAPDEF.label}…`;
+    try { WD = await (await fetch(MAPDEF.file)).json(); }
+    catch (e) { toast(`Nie udało się wczytać mapy ${MAPDEF.of} — wracam do Grammar City.`, 'bad', 5000); setTimeout(() => setMap('grid'), 1800); return; }
   }
   buildCity();
   createMarkers();
-  if (WARSAW) {
-    // start na Placu Defilad, plecami do Pałacu Kultury (tam egzamin końcowy)
+  if (REALMAP) {
+    // start przy punkcie orientacyjnym (Warszawa: Plac Defilad), plecami do miejsca egzaminu końcowego
     const [sx, sz] = WD.spawn;
     P.pos.set(sx, 0, sz);
     P.facing = Math.atan2(sx - WD.finale[0], sz - WD.finale[1]);
@@ -3050,7 +3103,7 @@ async function boot() {
   spawnVehicle('sport', 0xf2b632, sx + 4, rc(4) - 6.2, Math.PI / 2, 'parked');
   }
   loadKScooter();
-  spawnParked(WARSAW ? 40 : 18);
+  spawnParked(REALMAP ? 40 : 18);
   spawnTraffic(26);
   spawnPeds(40);
   spawnNPCs();
@@ -3060,7 +3113,7 @@ async function boot() {
   resizeMinimap();
   refreshStartInfo();
   initMapPicker();
-  btn.disabled = false; btn.textContent = doneCount() ? 'Kontynuuj grę' : 'Wejdź do miasta';
+  btn.disabled = false; btn.textContent = doneCount() ? 'Kontynuuj grę' : ((MAPDEF && MAPDEF.enter) || 'Wejdź do miasta');
   btn.addEventListener('click', startGame);
   frame();
 }
