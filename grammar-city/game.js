@@ -1459,6 +1459,23 @@ const Sound = {
   passed() { [523, 659, 784, 1047].forEach((f, i) => this.tone(f, 0.35, 'triangle', 0.2, i * 0.12)); this.tone(1319, 0.6, 'sine', 0.12, 0.5); },
   failed() { [392, 330, 262].forEach((f, i) => this.tone(f, 0.4, 'sawtooth', 0.1, i * 0.18)); },
   horn() { this.tone(392, 0.28, 'square', 0.07); this.tone(466, 0.28, 'square', 0.07); },
+  // Syrena radiowozu: ton piłokształtny 900 ± 320 Hz „falujący" (LFO 0,55 Hz); głośność wg odległości.
+  siren(on) {
+    if (!this.ctx) return;
+    if (on && !this.sir) {
+      const o = this.ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = 900;
+      const lfo = this.ctx.createOscillator(); lfo.type = 'triangle'; lfo.frequency.value = 0.55;
+      const depth = this.ctx.createGain(); depth.gain.value = 320; lfo.connect(depth); depth.connect(o.frequency);
+      const f = this.ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 2200;
+      const gn = this.ctx.createGain(); gn.gain.value = 0;
+      o.connect(f); f.connect(gn); gn.connect(this.master); o.start(); lfo.start();
+      this.sir = { o, lfo, g: gn };
+    } else if (!on && this.sir) {
+      const s = this.sir; this.sir = null;
+      try { s.g.gain.setTargetAtTime(0, this.ctx.currentTime, 0.05); setTimeout(() => { try { s.o.stop(); s.lfo.stop(); } catch (e) { /* ignore */ } }, 300); } catch (e) { /* ignore */ }
+    }
+  },
+  sirenLevel(k) { if (this.sir) this.sir.g.gain.setTargetAtTime(0.012 + 0.07 * k, this.ctx.currentTime, 0.1); },
   crash(v) { this.noise(0.35, Math.min(0.6, v / 30), 500); },
   door() { this.noise(0.12, 0.25, 1500); },
   engine(active, speed, throttle) {
@@ -1591,6 +1608,8 @@ function updateCar(v, dt) {
     }
   }
   if (impact > 7) { Sound.crash(impact); shake = Math.min(0.6, impact / 40); }
+  // pościg: jazda szybciej niż limit przez ponad 1,2 s
+  if (Math.abs(v.speed) * 3.6 > SPEED_LIMIT_KMH) { overSpeedT += dt; if (overSpeedT > 1.2) triggerPolice('speed'); } else overSpeedT = 0;
   v.pos.x = clamp(v.pos.x, -BOUND, BOUND); v.pos.z = clamp(v.pos.z, -BOUND, BOUND);
   v.pos.y = lerp(v.pos.y, groundAt(v.pos.x, v.pos.z), Math.min(1, dt * 12));
   // pedestrians
@@ -1601,6 +1620,7 @@ function updateCar(v, dt) {
       if (Math.hypot(qx - cx, qz - cz) < sp.rad + 0.5) {
         q.knock = 3.2; q.vx = f.x * v.speed * 0.55 + (qx - cx) * 2; q.vz = f.z * v.speed * 0.55 + (qz - cz) * 2; q.vy = 5 + Math.abs(v.speed) * 0.1;
         v.speed *= 0.85; Sound.noise(0.18, 0.4, 400);
+        triggerPolice('ped');
         if (performance.now() - pedWarnT > 2500) { pedWarnT = performance.now(); const fine = Math.min(save.money, 25); save.money -= fine; persist(); toast(`Uważaj na pieszych! −$${fine}`, 'bad'); }
         break;
       }
@@ -1650,12 +1670,163 @@ function toggleCar() {
     return;
   }
   let best = null, bd = 4.5;
-  for (const v of vehicles) { const d = Math.hypot(v.pos.x - P.pos.x, v.pos.z - P.pos.z); if (d < bd) { bd = d; best = v; } }
+  for (const v of vehicles) { if (v.kind === 'police') continue; const d = Math.hypot(v.pos.x - P.pos.x, v.pos.z - P.pos.z); if (d < bd) { bd = d; best = v; } }
   if (!best) return;
   if (best.ai) { best.ai = null; toast('Auto przejęte! Kierowca uciekł.', 'good'); }
   best.kind = 'player'; best.speed = 0; P.car = best; player.g.visible = !!(best.spec && best.spec.ride);
   Sound.door();
   $('speedo').hidden = false;
+}
+
+// ---------------------------------------------------------------- pościg policji
+// Wyzwalacz (w pojeździe): potrącenie pieszego albo jazda > 50 km/h przez ponad 1,2 s.
+// Radiowóz rusza ~70 m za graczem — syrena i migające światła. Dogonił → mandat −$500
+// i kontrola: pytanie po polsku, odpowiedź wpisywana po angielsku (POLICE_STEPS w npc-talks.js).
+// Ucieczka: ponad 170 m od radiowozu przez 6 s. Po pościgu 25 s spokoju.
+const SPEED_LIMIT_KMH = 50, POLICE_FINE = 500, CHASE_ESCAPE_M = 170;
+let chase = null, chaseCooldown = 0, overSpeedT = 0, police = null;
+function chaseHud(html) {
+  let el = $('chase-hud');
+  if (!el) {
+    el = document.createElement('div'); el.id = 'chase-hud';
+    el.style.cssText = 'position:fixed;top:64px;left:50%;transform:translateX(-50%);z-index:30;padding:8px 16px;border-radius:8px;font:700 18px "Barlow Condensed",sans-serif;letter-spacing:.04em;color:#fff;background:linear-gradient(90deg,rgba(200,20,30,.92),rgba(30,60,200,.92));box-shadow:0 4px 16px rgba(0,0,0,.4);pointer-events:none;text-align:center;max-width:92vw';
+    document.body.appendChild(el);
+  }
+  el.hidden = !html; if (html) el.innerHTML = html;
+}
+function triggerPolice(why) {
+  if (chase || police || chaseCooldown > 0 || ui) return;
+  const from = P.car ? P.car.pos : P.pos, f = P.car ? carFwd(P.car) : { x: Math.sin(P.facing), z: Math.cos(P.facing) };
+  const p = { x: clamp(from.x - f.x * 70, -BOUND + 5, BOUND - 5), z: clamp(from.z - f.z * 70, -BOUND + 5, BOUND - 5) };
+  const near = colliders.filter(b => p.x > b.x0 - 8 && p.x < b.x1 + 8 && p.z > b.z0 - 8 && p.z < b.z1 + 8);
+  for (let k = 0; k < 4; k++) pushOut(p, 1.6, near);
+  const v = spawnVehicle('police', carColor('police'), p.x, p.z, Math.atan2(from.x - p.x, from.z - p.z), 'police');
+  v.pos.y = groundAt(p.x, p.z); v.mesh.position.copy(v.pos);
+  // migający „kogut" na dachu (nad stałym paskiem z geometrii radiowozu)
+  const red = new THREE.Mesh(BOX(0.54, 0.2, 0.3), new THREE.MeshBasicMaterial({ color: 0xff2030 }));
+  const blue = new THREE.Mesh(BOX(0.54, 0.2, 0.3), new THREE.MeshBasicMaterial({ color: 0x2060ff }));
+  red.position.set(-0.3, 1.76, -0.4); blue.position.set(0.3, 1.76, -0.4);
+  v.mesh.add(red, blue);
+  chase = { v, why, red, blue, far: 0, stuckT: 0, ghost: 0, near: [], nearT: 0 };
+  overSpeedT = 0;
+  Sound.siren(true);
+  toast(why === 'ped' ? '🚨 Potrąciłeś pieszego! Policja rusza w pościg!' : `🚨 Przekroczyłeś ${SPEED_LIMIT_KMH} km/h! Policja rusza w pościg!`, 'bad', 4000);
+}
+function endChase() {
+  if (chase) {
+    const v = chase.v;
+    scene.remove(v.mesh);
+    const k = vehicles.indexOf(v); if (k >= 0) vehicles.splice(k, 1);
+  }
+  chase = null; chaseCooldown = 25; overSpeedT = 0;
+  Sound.siren(false); chaseHud('');
+}
+function updateChase(dt) {
+  if (chaseCooldown > 0 && !chase && !police) chaseCooldown -= dt;
+  if (!chase) return;
+  const c = chase, v = c.v, tgt = P.car ? P.car.pos : P.pos;
+  const ph = Math.floor(elapsed * 6) % 2;
+  c.red.material.color.setHex(ph ? 0xff2030 : 0x3a0608); c.blue.material.color.setHex(ph ? 0x0c1230 : 0x2060ff);
+  let dx = tgt.x - v.pos.x, dz = tgt.z - v.pos.z, d = Math.hypot(dx, dz);
+  Sound.sirenLevel(Math.max(0, 1 - d / 260));
+  if (ui) { v.speed = 0; chaseHud(''); return; }        // misja / sklep / mapa — pościg wstrzymany
+  // jazda: skręt w stronę gracza, zwalnia w zakrętach i blisko celu
+  const want = Math.atan2(dx, dz);
+  v.heading += clamp(angDiff(v.heading, want), -2.2 * dt, 2.2 * dt);
+  const align = Math.cos(angDiff(v.heading, want));
+  const target = (d > 40 ? 34 : d > 15 ? 22 : 12) * Math.max(0.35, align);
+  v.speed += clamp(target - v.speed, -30 * dt, 16 * dt);
+  const fw = carFwd(v), x0 = v.pos.x, z0 = v.pos.z;
+  v.pos.x += fw.x * v.speed * dt; v.pos.z += fw.z * v.speed * dt;
+  c.nearT -= dt;
+  if (c.nearT <= 0) { c.nearT = 0.3; c.near = colliders.filter(b => v.pos.x > b.x0 - 30 && v.pos.x < b.x1 + 30 && v.pos.z > b.z0 - 30 && v.pos.z < b.z1 + 30); }
+  if (c.ghost > 0) c.ghost -= dt;                       // po utknięciu chwilę „przenika" przeszkody
+  else for (const off of [v.spec.off, -v.spec.off]) {
+    const p = { x: v.pos.x + fw.x * off, z: v.pos.z + fw.z * off }, ox = p.x, oz = p.z;
+    pushOut(p, v.spec.rad, c.near);
+    v.pos.x += p.x - ox; v.pos.z += p.z - oz;
+  }
+  const moved = Math.hypot(v.pos.x - x0, v.pos.z - z0);
+  if (d > 15 && moved < 2 * dt) { c.stuckT += dt; if (c.stuckT > 1.2) { c.ghost = 1.2; c.stuckT = 0; } } else c.stuckT = 0;
+  v.pos.x = clamp(v.pos.x, -BOUND, BOUND); v.pos.z = clamp(v.pos.z, -BOUND, BOUND);
+  v.pos.y = lerp(v.pos.y, groundAt(v.pos.x, v.pos.z), Math.min(1, dt * 12));
+  v.mesh.visible = true;
+  poseCar(v, dt);
+  dx = tgt.x - v.pos.x; dz = tgt.z - v.pos.z; d = Math.hypot(dx, dz);
+  chaseHud(`🚨 POŚCIG POLICJI · ${Math.round(d)} m <span style="font-weight:600;opacity:.85">— oddal się na ${CHASE_ESCAPE_M} m albo się zatrzymaj</span>`);
+  if (d > CHASE_ESCAPE_M) {
+    c.far += dt;
+    if (c.far > 6) { endChase(); toast('😮‍💨 Zgubiłeś pościg! Następnym razem jedź wolniej.', 'good', 3800); return; }
+  } else c.far = 0;
+  const pSpeed = P.car ? Math.abs(P.car.speed) : P.speed;
+  if (d < (P.car ? 5.5 : 3.2) && (pSpeed < 7 || d < 3.6)) arrestPlayer();
+}
+function arrestPlayer() {
+  if (!chase) return;
+  if (P.car) { P.car.speed = 0; P.car.steer = 0; }
+  chase.v.speed = 0;
+  const fine = Math.min(save.money, POLICE_FINE);
+  save.money -= fine; persist();
+  Sound.siren(false); Sound.wrong();
+  chaseHud('');
+  openPoliceTalk(chase.why, fine);
+}
+// Kontrola drogowa: policjant pyta po polsku, gracz wpisuje odpowiedź po angielsku.
+function openPoliceTalk(why, fine) {
+  ui = 'police'; keys.clear(); releaseLock(); setPrompt('');
+  const pool = (window.POLICE_STEPS || []).filter(s => s.why === why || s.why === 'any');
+  const step = pool[Math.floor(Math.random() * pool.length)];
+  police = { step, wrong: 0, fine, done: !step };
+  qCard.innerHTML = `
+    <div class="card-head">
+      <div class="eyebrow"><span class="chip" style="background:#d62839">POLICJA</span>Kontrola drogowa · ${why === 'ped' ? 'potrącenie pieszego' : 'przekroczenie prędkości'}</div>
+      <h2 class="place">Officer Smith</h2>
+      <div class="meta" style="color:#ff7b7b">Mandat: −${fmtMoney(fine)}${fine < POLICE_FINE ? ' (tyle było w portfelu)' : ''}</div>
+    </div>
+    <div class="card-body">
+      <div class="npc">
+        <div class="npc-avatar" style="background:#1e3a8a">🚓</div>
+        <div>
+          <div class="npc-name">Policjant mówi (po polsku):</div>
+          <p class="story talk-q">„${esc(step ? step.pl : 'Proszę jechać ostrożnie.')}”</p>
+          <div class="meta">Odpowiedz <b>po angielsku</b> — wpisz całe zdanie. Musisz odpowiedzieć poprawnie, żeby odjechać.</div>
+        </div>
+      </div>
+      <form class="typebox" id="pol-form" autocomplete="off" style="margin-top:16px">
+        <input id="pol-in" type="text" spellcheck="false" autocapitalize="off" placeholder="Napisz po angielsku…" aria-label="Twoja odpowiedź po angielsku">
+        <button class="btn" type="submit" id="pol-send">Odpowiedz</button>
+      </form>
+      <div id="pol-fb"></div>
+      <div class="actions"><button class="btn ghost" id="pol-hint" type="button">💡 Podpowiedź</button><span class="meta">Enter — odpowiedz</span></div>
+    </div>`;
+  $('quiz-ov').hidden = false;
+  const inp = $('pol-in');
+  $('pol-form').onsubmit = e => { e.preventDefault(); if (police.done) closePolice(); else if (inp.value.trim()) answerPolice(inp.value); };
+  $('pol-hint').onclick = () => { const fb = $('pol-fb'); fb.className = 'feedback'; fb.innerHTML = `💡 Zacznij tak: <b>${esc(step.hint)}</b>`; inp.focus(); };
+  setTimeout(() => inp.focus(), 30);
+}
+function answerPolice(val) {
+  const s = police.step, fb = $('pol-fb'), inp = $('pol-in');
+  if (window.NPC_CHECK(s, val)) {
+    police.done = true; inp.readOnly = true; inp.classList.add('correct');
+    fb.className = 'feedback ok';
+    fb.innerHTML = '<b>Dobrze!</b> Policjant: „<i>OK. Drive carefully next time!</i>” <span class="meta">(Dobrze. Następnym razem jedź ostrożnie!)</span>';
+    $('pol-send').textContent = 'Wróć do miasta';
+    Sound.correct(); sayEN('OK. Drive carefully next time!');
+    return;
+  }
+  police.wrong++;
+  Sound.wrong(); inp.classList.add('wrong'); setTimeout(() => inp.classList.remove('wrong'), 600);
+  fb.className = 'feedback no';
+  fb.innerHTML = police.wrong >= 2
+    ? `Przykładowa odpowiedź: <b>${esc(s.ex)}</b><br>Przepisz ją lub napisz własną, podobną.`
+    : `Spróbuj jeszcze raz — pełnym zdaniem po angielsku. Podpowiedź: <b>${esc(s.hint)}</b>`;
+}
+function closePolice() {
+  police = null; ui = null; $('quiz-ov').hidden = true; canvas.focus();
+  try { window.speechSynthesis && speechSynthesis.cancel(); } catch (e) { /* ignore */ }
+  endChase();
+  toast(`Mandat zapłacony. Pamiętaj: w mieście limit to ${SPEED_LIMIT_KMH} km/h!`, '', 3800);
 }
 
 // ---------------------------------------------------------------- traffic update
@@ -1916,6 +2087,7 @@ function drawMinimap(dt) {
     blip(m.mx, m.mz, col, st === 'done' ? '✓' : m.short[0], active, active);
   }
   if (gps && gps.kind === 'point') blip(gps.x, gps.z, '#c77dff', '•', true, true);
+  if (chase) blip(chase.v.pos.x, chase.v.pos.z, Math.floor(elapsed * 6) % 2 ? '#ff3b3b' : '#4f7bff', 'P', true);
   // north
   const [nx, ny] = (() => { const v = [0, -1]; return [v[0] * cos - v[1] * sin, v[0] * sin + v[1] * cos]; })();
   g.fillStyle = '#f3eee4'; g.font = '700 13px "Barlow Condensed", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
@@ -2693,6 +2865,7 @@ function frame() {
   }
   for (const v of vehicles) if (v.kind === 'parked' && v.mesh.visible) v.pos.y = groundAt(v.pos.x, v.pos.z), v.mesh.position.copy(v.pos);
   updateTraffic(dt);
+  updateChase(dt);
   updatePeds(dt);
   updateNPCs(dt);
   updateCamera(dt);

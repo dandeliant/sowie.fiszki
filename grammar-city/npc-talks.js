@@ -78,6 +78,21 @@
       { pl: 'Zapytaj go, ile osób jest w jego rodzinie.', ok: [/\bhow many people (are there )?(are )?in your family/, /\bhow many people do you have in your family/, /\bhow big is your family/], hint: 'How many people are there in your family?', ex: 'How many people are there in your family?', en: "Five! It's a big family.", enPl: 'Pięć! To duża rodzina.' },
     ] },
   ];
+  // Kontrola policyjna po pościgu: policjant pyta PO POLSKU, gracz odpowiada PO ANGIELSKU.
+  // why: 'speed' (przekroczenie prędkości) | 'ped' (potrącenie pieszego) | 'any'.
+  window.POLICE_STEPS = [
+    { why: 'speed', pl: 'Dlaczego jechałeś tak szybko? Powiedz, że się spieszyłeś.', ok: [/\b(i was|i'm|i am|im)( really| very| so)? (in a hurry|late|running late)\b/, /\bi (was )?hurr(y|ied|ying)\b/], hint: 'I was in a hurry.', ex: 'I was in a hurry.' },
+    { why: 'speed', pl: 'Powiedz, że nie widziałeś znaku ograniczenia prędkości.', ok: [/\bi (didn't|did not|didnt) (see|notice) (the |any |a )?(speed limit |speed )?sign\b/], hint: "I didn't see the sign.", ex: "I didn't see the speed limit sign." },
+    { why: 'speed', pl: 'Obiecaj, że będziesz jeździć wolniej.', ok: [/\bi( will|'ll|ll| promise to| promise i will| promise i'll) (drive|go|ride) (more )?(slowly|slower|carefully)\b/], hint: 'I will drive more slowly.', ex: 'I promise I will drive more slowly.' },
+    { why: 'ped', pl: 'Potrąciłeś pieszego! Powiedz, że to był wypadek.', ok: [/\b(it was|that was|it's|its) an accident\b/, /\bby (accident|mistake)\b/, /\bi (didn't|did not|didnt) (mean|want) to\b/], hint: 'It was an accident.', ex: 'It was an accident. I am very sorry.' },
+    { why: 'ped', pl: 'Zapytaj, czy ten pieszy jest cały i zdrowy.', ok: [/\b(is|are) (he|she|they|the (man|woman|person|pedestrian|boy|girl)) (ok|okay|alright|all right|fine|hurt|injured|safe)\b/, /\bis (everyone|everybody) (ok|okay|alright|all right|fine|safe)\b/], hint: 'Is he OK?', ex: 'Is the pedestrian OK?' },
+    { why: 'ped', pl: 'Obiecaj, że będziesz uważać na pieszych.', ok: [/\bi( will|'ll|ll| promise to| promise i will| promise i'll) (be careful|be more careful|look out|watch out|pay attention)\b/], hint: 'I will be careful.', ex: 'I will be more careful.' },
+    { why: 'any', pl: 'Przeproś i powiedz, że to się więcej nie powtórzy.', all: [/\b(sorry|apologi[sz]e)\b/, /\b((won't|will not|wont) happen again|never again|(won't|will not|wont) do (it|that) again)\b/], hint: "I'm sorry. It won't happen again.", ex: "I'm sorry. It won't happen again." },
+    { why: 'any', pl: 'Policjant pyta, czy masz prawo jazdy. Odpowiedz twierdząco pełnym zdaniem.', ok: [/\byes,? i (do|have)\b/, /\bi (have|'ve|ve)( got)? (a |my )?(driving licence|driving license|driver's licen[cs]e|drivers licen[cs]e|licen[cs]e)\b/], hint: 'Yes, I do. / I have got a driving licence.', ex: 'Yes, I have got a driving licence.' },
+    { why: 'any', pl: 'Zapytaj, ile wynosi mandat.', ok: [/\bhow much is (the|my|this) (fine|ticket)\b/, /\bhow much (do|must|should|have) i (have to )?pay\b/, /\bhow (big|much) is the (fine|ticket)\b/], hint: 'How much is the fine?', ex: 'How much is the fine?' },
+    { why: 'any', pl: 'Policjant pyta, gdzie mieszkasz. Powiedz, że mieszkasz w Warszawie.', ok: [/\bi live in (warsaw|warszawa)\b/, /\bmy (home|house|flat) is in (warsaw|warszawa)\b/], hint: 'I live in Warsaw.', ex: 'I live in Warsaw.' },
+    { why: 'any', pl: 'Zapytaj, czy możesz już jechać.', ok: [/\b(can|may|could) i (go|leave|drive)( now| away)?\b/, /\bam i free to go\b/], hint: 'Can I go now?', ex: 'Can I go now?' },
+  ];
   window.NPC_NORM = s => String(s || '').toLowerCase().replace(/[’‘`´]/g, "'").replace(/[.,!?;:"„”()]/g, ' ').replace(/\s+/g, ' ').trim();
   window.NPC_CHECK = (step, answer) => {
     const a = window.NPC_NORM(answer);
