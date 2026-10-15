@@ -70,11 +70,11 @@ window.GC_STATS_XP = () => save.xp;
 // pieniądze zostają w zapisie danego trybu.
 const WARDROBE_KEY = 'grammarCity.wardrobe.v1';
 const freshWardrobe = () => ({ owned: { outfit_classic: 1, hat_cap: 1, hat_none: 1, glasses_none: 1, hair_blond: 1, veh_kscooter: 1 },
-  equip: { outfit: 'classic', hat: 'cap', glasses: 'none', hair: 'blond', vehicle: 'veh_kscooter' }, talked: {} });
+  equip: { outfit: 'classic', hat: 'cap', glasses: 'none', hair: 'blond', vehicle: 'veh_kscooter' }, talked: {}, fuel: 1 });
 let wardrobe = freshWardrobe();
 try {
   const w = JSON.parse(localStorage.getItem(WARDROBE_KEY));
-  if (w && w.owned) { const f = freshWardrobe(); wardrobe = { owned: Object.assign(f.owned, w.owned), equip: Object.assign(f.equip, w.equip || {}), talked: w.talked || {} }; }
+  if (w && w.owned) { const f = freshWardrobe(); wardrobe = { owned: Object.assign(f.owned, w.owned), equip: Object.assign(f.equip, w.equip || {}), talked: w.talked || {}, fuel: typeof w.fuel === 'number' ? clamp(w.fuel, 0, 1) : 1 }; }
 } catch (e) { /* storage unavailable */ }
 function persistWardrobe() { try { localStorage.setItem(WARDROBE_KEY, JSON.stringify(wardrobe)); } catch (e) { /* ignore */ } }
 const doneCount = () => Object.keys(save.done).length;
@@ -985,7 +985,7 @@ function makeCarMesh(type, color) {
 const vehicles = [];
 function spawnVehicle(type, color, x, z, heading, kind) {
   const c = makeCarMesh(type, color);
-  const v = { mesh: c.g, wheels: c.wheels, type, spec: specOf(type), pos: new THREE.Vector3(x, 0, z), heading, speed: 0, steer: 0, kind, ai: null, honk: 0, lean: 0 };
+  const v = { mesh: c.g, wheels: c.wheels, type, spec: specOf(type), pos: new THREE.Vector3(x, 0, z), heading, speed: 0, steer: 0, kind, ai: null, honk: 0, lean: 0, len: c.len || 4.5 };
   c.g.position.copy(v.pos); c.g.rotation.y = heading;
   scene.add(c.g);
   vehicles.push(v);
@@ -1195,6 +1195,8 @@ const SHOP = [
   { id: 'hair_bun', cat: 'hair', name: 'Kok', desc: '', price: 100, hair: 0x111111, hairStyle: 'bun' },
   { id: 'hair_red', cat: 'hair', name: 'Rude', desc: '', price: 150, hair: 0xb5501f, hairStyle: 'short' },
   { id: 'hair_bald', cat: 'hair', name: 'Łysy', desc: '', price: 0, hair: 0x2b1d14, hairStyle: 'bald' },
+  { id: 'nitro', cat: 'extra', name: 'Nitro', desc: 'W pojeździe przytrzymaj Shift (na telefonie NITRO) — przyspieszenie do 300 km/h i płomienie z wydechu. Ładunek ~6 s, sam się odnawia.', price: 3000, perk: true },
+  { id: 'fuel', cat: 'extra', name: 'Pełny bak', desc: 'Tankowanie do pełna. Paliwo ubywa podczas jazdy (z nitro 4× szybciej).', price: 500, consumable: true },
   { id: 'veh_kscooter', cat: 'vehicle', name: 'Hulajnoga Pixel Rider', desc: 'Startowa e-hulajnoga — dostępna od początku', price: 0, vtype: 'kscooter', color: 0x2b2b2b },
   { id: 'veh_scooter', cat: 'vehicle', name: 'Hulajnoga elektryczna Volt K-Pro', desc: 'Szybka e-hulajnoga, do ~45 km/h', price: 400, vtype: 'scooter', color: 0x2b2b2b },
   { id: 'veh_hatch', cat: 'vehicle', name: 'Hatchback City', desc: 'Małe miejskie auto', price: 800, vtype: 'hatch', color: 0x2e86de },
@@ -1202,7 +1204,7 @@ const SHOP = [
   { id: 'veh_moto', cat: 'vehicle', name: 'Motor sportowy Raptor 600', desc: 'Zielona strzała, do ~170 km/h', price: 2200, vtype: 'moto', color: 0x63c132 },
   { id: 'veh_super', cat: 'vehicle', name: 'Supercar Fulmine', desc: 'Najszybsze auto w mieście', price: 4000, vtype: 'supercar', color: 0xe8410b },
 ];
-const SHOP_CATS = [['outfit', '👕 Stroje'], ['hat', '🧢 Nakrycia głowy'], ['glasses', '🕶️ Okulary'], ['hair', '💇 Fryzury'], ['vehicle', '🏍️ Pojazdy']];
+const SHOP_CATS = [['outfit', '👕 Stroje'], ['hat', '🧢 Nakrycia głowy'], ['glasses', '🕶️ Okulary'], ['hair', '💇 Fryzury'], ['vehicle', '🏍️ Pojazdy'], ['extra', '🔥 Nitro i paliwo']];
 const shopItem = id => SHOP.find(i => i.id === id);
 function playerLook() {
   const e = wardrobe.equip;
@@ -1400,7 +1402,7 @@ function updateTouchUI() {
   const carAvail = !!P.car || vehicles.some(v => Math.hypot(v.pos.x - P.pos.x, v.pos.z - P.pos.z) < 4.5);
   const talkAvail = !nearMission && !!nearNPC && !P.car;
   const misAvail = (!!nearMission && !P.car && isUnlocked(nearMission)) || talkAvail;
-  const st = `${show}|${carAvail}|${misAvail}|${!!P.car}|${talkAvail}`;
+  const st = `${show}|${carAvail}|${misAvail}|${!!P.car}|${talkAvail}|${hasNitro()}`;
   if (st === touchState) return;
   touchState = st;
   touchUI.hidden = !show;
@@ -1410,7 +1412,8 @@ function updateTouchUI() {
   $('t-mission').classList.toggle('off', !misAvail);
   $('t-mission').textContent = talkAvail ? 'ROZMOWA' : 'MISJA';
   $('t-jump').textContent = P.car ? 'HAMULEC' : 'SKOK';
-  $('t-sprint').classList.toggle('off', !!P.car);
+  $('t-sprint').classList.toggle('off', !!P.car && !hasNitro());
+  $('t-sprint').textContent = P.car ? 'NITRO' : 'BIEG';
 }
 
 function onEscape() {
@@ -1569,11 +1572,13 @@ function updateOnFoot(dt) {
 const ACC = 15, MAXS = 36, MAXR = 10, BRAKE = 32;
 let shake = 0, pedWarnT = 0;
 function updateCar(v, dt) {
-  const up = !ui && key('KeyW', 'ArrowUp'), down = !ui && key('KeyS', 'ArrowDown');
+  const wantUp = !ui && key('KeyW', 'ArrowUp'), down = !ui && key('KeyS', 'ArrowDown');
   const left = !ui && key('KeyA', 'ArrowLeft'), right = !ui && key('KeyD', 'ArrowRight');
   const hb = !ui && key('Space');
   const sp = v.spec || VSPEC.car;
-  if (up) { v.speed += (v.speed < -0.5 ? sp.brake : sp.acc * (1 - v.speed / sp.max)) * dt; }
+  const up = fuelAndNitro(v, dt, wantUp) && wantUp;      // bez paliwa — brak gazu
+  if (nitroActive) { v.speed += NITRO_ACC * (1 - v.speed / NITRO_MAX) * dt; }
+  else if (up) { v.speed += (v.speed < -0.5 ? sp.brake : sp.acc * (1 - v.speed / sp.max)) * dt; }
   else if (down) { v.speed -= (v.speed > 0.5 ? sp.brake : sp.acc * 0.7 * (1 + v.speed / sp.rev)) * dt; }
   else { v.speed *= 1 - Math.min(1, 0.55 * dt); if (Math.abs(v.speed) < 0.15) v.speed = 0; }
   if (hb) { v.speed *= 1 - Math.min(1, 2.2 * dt); }
@@ -1662,6 +1667,7 @@ function toggleCar() {
       if (!pushOut(p, 0.45, nearCols, 0.2) || s === -1) { P.pos.set(p.x, groundAt(p.x, p.z), p.z); break; }
     }
     v.kind = 'parked'; v.speed = 0; v.steer = 0; v.lean = 0; v.mesh.rotation.z = 0;
+    nitroActive = false; if (v.flames) v.flames.visible = false; persistWardrobe();
     P.car = null; player.g.visible = true; P.facing = v.heading; P.speed = 0;
     player.g.rotation.set(0, P.facing, 0);
     for (const l of [player.ll, player.rl, player.la, player.ra]) l.rotation.set(0, 0, 0);
@@ -1676,6 +1682,76 @@ function toggleCar() {
   best.kind = 'player'; best.speed = 0; P.car = best; player.g.visible = !!(best.spec && best.spec.ride);
   Sound.door();
   $('speedo').hidden = false;
+}
+
+// ---------------------------------------------------------------- nitro i paliwo
+// Nitro (kupowane w sklepie): w pojeździe Shift + gaz → przyspieszenie do 300 km/h, płomienie
+// z wydechu. Ładunek NITRO_SEC sekund, odnawia się w NITRO_RECHARGE s.
+// Paliwo (wardrobe.fuel 0…1): ubywa z przejechanym dystansem — pełny bak = FUEL_RANGE_M metrów
+// (hulajnoga i motor oszczędniej, nitro 4× szybciej). Pusty bak → brak gazu (auto tylko się toczy).
+// Tankowanie do pełna w sklepie za FUEL_PRICE.
+const NITRO_MAX = 300 / 3.6, NITRO_ACC = 55, NITRO_SEC = 6, NITRO_RECHARGE = 15;
+const FUEL_RANGE_M = 6000, FUEL_PRICE = 500;
+let nitroCharge = 1, nitroActive = false, fuelSaveT = 0, fuelWarned = false, fuelEmptyWarned = false;
+const hasNitro = () => !!wardrobe.owned.nitro;
+const fuelMult = v => (v.type === 'kscooter' || v.type === 'scooter' ? 0.35 : v.type === 'moto' ? 0.7 : 1);
+function buyFuel() {
+  if (wardrobe.fuel >= 0.995) return;
+  if (save.money < FUEL_PRICE) { Sound.wrong(); toast(`Tankowanie kosztuje ${fmtMoney(FUEL_PRICE)} — zrób misję albo porozmawiaj z mieszkańcami.`, 'bad'); return; }
+  save.money -= FUEL_PRICE; persist();
+  wardrobe.fuel = 1; persistWardrobe();
+  fuelWarned = fuelEmptyWarned = false;
+  Sound.passed(); toast('⛽ Bak pełny! Szerokiej drogi.', 'good', 3200);
+  renderShop();
+}
+// Wołane w updateCar przed fizyką: zwraca, czy gaz działa, i czy nitro jest aktywne.
+function fuelAndNitro(v, dt, up) {
+  const wantNitro = hasNitro() && !ui && up && key('ShiftLeft', 'ShiftRight') && wardrobe.fuel > 0;
+  nitroActive = wantNitro && nitroCharge > 0;
+  if (nitroActive) nitroCharge = Math.max(0, nitroCharge - dt / NITRO_SEC);
+  else if (!wantNitro) nitroCharge = Math.min(1, nitroCharge + dt / NITRO_RECHARGE);
+  const used = Math.abs(v.speed) * dt / FUEL_RANGE_M * fuelMult(v) * (nitroActive ? 4 : 1);
+  if (used > 0 && wardrobe.fuel > 0) {
+    wardrobe.fuel = Math.max(0, wardrobe.fuel - used);
+    fuelSaveT -= dt; if (fuelSaveT <= 0) { fuelSaveT = 3; persistWardrobe(); }
+    if (wardrobe.fuel < 0.15 && !fuelWarned) { fuelWarned = true; toast(`⛽ Mało paliwa (${Math.round(wardrobe.fuel * 100)}%) — zatankuj w sklepie (B) za ${fmtMoney(FUEL_PRICE)}.`, 'bad', 4500); }
+    if (wardrobe.fuel <= 0) { persistWardrobe(); if (!fuelEmptyWarned) { fuelEmptyWarned = true; toast(`⛽ Skończyło się paliwo! Zatankuj w sklepie (B) — pełny bak ${fmtMoney(FUEL_PRICE)}.`, 'bad', 6000); } }
+  }
+  updateFlames(v, dt);
+  return wardrobe.fuel > 0;
+}
+// Płomienie z wydechu: dwa stożki (pomarańczowy + niebiesko-biały rdzeń), migoczące.
+const flameOuterGeo = new THREE.ConeGeometry(0.17, 1, 10, 1, true).translate(0, 0.5, 0).rotateX(-Math.PI / 2);
+const flameInnerGeo = new THREE.ConeGeometry(0.09, 1, 8, 1, true).translate(0, 0.5, 0).rotateX(-Math.PI / 2);
+const flameOuterMat = new THREE.MeshBasicMaterial({ color: 0xff7a1a, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+const flameInnerMat = new THREE.MeshBasicMaterial({ color: 0x9fd8ff, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+function updateFlames(v, dt) {
+  if (!v.flames) {
+    if (!nitroActive) return;
+    const two = !!(v.spec && v.spec.ride), grp = new THREE.Group();
+    const back = -(v.len || 4.5) / 2 - 0.05, y = two ? 0.42 : 0.4;
+    for (const x of two ? [0.12] : [-0.45, 0.45]) {
+      const o = new THREE.Mesh(flameOuterGeo, flameOuterMat), i = new THREE.Mesh(flameInnerGeo, flameInnerMat);
+      o.position.set(x, y, back); i.position.set(x, y, back);
+      grp.add(o, i);
+    }
+    v.mesh.add(grp); v.flames = grp;
+  }
+  v.flames.visible = nitroActive;
+  if (nitroActive) v.flames.children.forEach((m, k) => {
+    const s = (k % 2 ? 0.8 : 1.3) * (0.75 + Math.random() * 0.5);
+    m.scale.set(1 + Math.random() * 0.2, 1 + Math.random() * 0.2, s * (1 + Math.min(1, Math.abs(v.speed) / 40)));
+  });
+}
+function updateFuelHud() {
+  const el = $('fuelhud'); if (!el) return;
+  const pct = Math.round(wardrobe.fuel * 100);
+  $('fuel-fill').style.width = pct + '%';
+  $('fuel-fill').style.background = pct < 15 ? '#ff4d4d' : pct < 35 ? '#f2b632' : '#45d483';
+  $('fuel-pct').textContent = pct + '%';
+  const nb = $('nitrohud');
+  nb.hidden = !hasNitro();
+  if (hasNitro()) { $('nitro-fill').style.width = Math.round(nitroCharge * 100) + '%'; nb.classList.toggle('on', nitroActive); }
 }
 
 // ---------------------------------------------------------------- pościg policji
@@ -2723,8 +2799,17 @@ function renderShop() {
   const items = SHOP.filter(i => i.cat === shopCat), eq = equippedId(shopCat);
   $('shop-grid').innerHTML = items.map(it => {
     const own = !!wardrobe.owned[it.id], on = eq === it.id;
+    if (it.consumable) {
+      const full = wardrobe.fuel >= 0.995, pct = Math.round(wardrobe.fuel * 100);
+      return `<div class="shop-item">
+      <div class="si-ico">⛽</div>
+      <div class="si-nm">${esc(it.name)} · teraz ${pct}%</div>
+      <div class="si-ds">${esc(it.desc)}</div>
+      <div class="si-act">${full ? '<span class="owned-on">✓ Bak pełny</span>' : `<button class="btn" data-fuel="1" ${save.money < it.price ? 'disabled' : ''}>Zatankuj · ${fmtMoney(it.price)}</button>`}</div></div>`;
+    }
     const btn = !own ? `<button class="btn" data-buy="${it.id}" ${save.money < it.price ? 'disabled' : ''}>Kup · ${fmtMoney(it.price)}</button>`
       : it.cat === 'vehicle' ? `<button class="btn" data-call="${it.id}">🚚 Przywołaj</button>`
+      : it.cat === 'extra' ? '<span class="owned-on">✓ Kupione</span>'
       : on ? '<span class="owned-on">✓ Założone</span>' : `<button class="btn ghost" data-eq="${it.id}">Załóż</button>`;
     return `<div class="shop-item ${on ? 'on' : ''} ${it.perk ? 'perk' : ''}">
       <div class="si-ico">${shopIcon(it)}</div>
@@ -2735,9 +2820,11 @@ function renderShop() {
   $('shop-grid').querySelectorAll('[data-buy]').forEach(b => b.onclick = () => buyItem(b.dataset.buy));
   $('shop-grid').querySelectorAll('[data-eq]').forEach(b => b.onclick = () => equipItem(b.dataset.eq));
   $('shop-grid').querySelectorAll('[data-call]').forEach(b => b.onclick = () => { equipItem(b.dataset.call); closeShop(); summonVehicle(); });
+  $('shop-grid').querySelectorAll('[data-fuel]').forEach(b => b.onclick = buyFuel);
   $('shop-perk').hidden = !hasCashGlasses();
 }
 function shopIcon(it) {
+  if (it.cat === 'extra') return it.id === 'nitro' ? '🔥' : '⛽';
   if (it.cat === 'vehicle') return { scooter: '🛴', kscooter: '🛴', moto: '🏍️', hatch: '🚗', suv: '🚙', supercar: '🏎️' }[it.vtype] || '🚗';
   if (it.cat === 'glasses') return it.glasses === 'cash' ? '<span class="pixglass">▀█▀▀ ▀█▀▀</span>' : it.glasses === 'sun' ? '🕶️' : '🙂';
   if (it.cat === 'hat') return { none: '💇', cap: '🧢', beanie: '🧶', fedora: '🎩', crown: '👑' }[it.hat];
@@ -2750,11 +2837,12 @@ function buyItem(id) {
   save.money -= it.price; persist();
   wardrobe.owned[id] = 1; persistWardrobe();
   Sound.passed();
-  toast(`Kupiono: ${it.name}${it.perk ? ' — od teraz misje dają podwójne pieniądze!' : ''}`, 'good', 4200);
+  toast(`Kupiono: ${it.name}${it.id === 'nitro' ? ' — w pojeździe przytrzymaj Shift (NITRO)!' : it.perk ? ' — od teraz misje dają podwójne pieniądze!' : ''}`, 'good', 4200);
   equipItem(id);
 }
 function equipItem(id) {
   const it = shopItem(id); if (!it || !wardrobe.owned[id]) return;
+  if (it.cat === 'extra') { renderShop(); return; }
   if (it.cat === 'vehicle') wardrobe.equip.vehicle = id;
   else wardrobe.equip[it.cat] = id.slice(it.cat.length + 1);
   persistWardrobe();
@@ -2898,7 +2986,7 @@ function frame() {
     updateTouchUI();
     hudT -= dt;
     drawMinimap(dt);
-    if (hudT <= 0) { updateHUD(0.1, clockStr); hudT = 0.1; }
+    if (hudT <= 0) { updateHUD(0.1, clockStr); updateFuelHud(); hudT = 0.1; }
   }
   renderer.render(scene, camera);
   adaptQuality(dt);
