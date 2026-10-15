@@ -79,11 +79,12 @@ window.GC_STATS_XP = () => save.xp;
 // pieniądze zostają w zapisie danego trybu.
 const WARDROBE_KEY = 'grammarCity.wardrobe.v1';
 const freshWardrobe = () => ({ owned: { outfit_classic: 1, hat_cap: 1, hat_none: 1, glasses_none: 1, hair_blond: 1, veh_kscooter: 1 },
-  equip: { outfit: 'classic', hat: 'cap', glasses: 'none', hair: 'blond', vehicle: 'veh_kscooter' }, talked: {}, fuel: 1 });
+  equip: { outfit: 'classic', hat: 'cap', glasses: 'none', hair: 'blond', vehicle: 'veh_kscooter' }, talked: {}, fuel: 1, vcolor: {}, smode: 'S' });
 let wardrobe = freshWardrobe();
 try {
   const w = JSON.parse(localStorage.getItem(WARDROBE_KEY));
-  if (w && w.owned) { const f = freshWardrobe(); wardrobe = { owned: Object.assign(f.owned, w.owned), equip: Object.assign(f.equip, w.equip || {}), talked: w.talked || {}, fuel: typeof w.fuel === 'number' ? clamp(w.fuel, 0, 1) : 1 }; }
+  if (w && w.owned) { const f = freshWardrobe(); wardrobe = { owned: Object.assign(f.owned, w.owned), equip: Object.assign(f.equip, w.equip || {}), talked: w.talked || {}, fuel: typeof w.fuel === 'number' ? clamp(w.fuel, 0, 1) : 1,
+    vcolor: w.vcolor && typeof w.vcolor === 'object' ? w.vcolor : {}, smode: ['E', 'S', 'R'].includes(w.smode) ? w.smode : 'S' }; }
 } catch (e) { /* storage unavailable */ }
 function persistWardrobe() { try { localStorage.setItem(WARDROBE_KEY, JSON.stringify(wardrobe)); } catch (e) { /* ignore */ } }
 const doneCount = () => Object.keys(save.done).length;
@@ -357,7 +358,7 @@ function warsawFlat(L, y, material) {
   geom.computeBoundingSphere();
   const m = new THREE.Mesh(geom, material); m.receiveShadow = true; m.frustumCulled = false; scene.add(m);
 }
-const texClone = (t, r) => { const c = t.clone(); c.needsUpdate = true; c.repeat.set(r, r); return c; };
+const texClone = (t, r) => { const c = t.clone(); c.needsUpdate = true; c.repeat.set(r, r); c.__src = t; return c; };
 function buildWarsaw() {
   const D = WD;
   scene.fog.near = MAPDEF.fog[0]; scene.fog.far = MAPDEF.fog[1];
@@ -372,7 +373,8 @@ function buildWarsaw() {
   const off = (m, f) => Object.assign(m, { polygonOffset: true, polygonOffsetFactor: f, polygonOffsetUnits: f, side: THREE.DoubleSide });
   warsawFlat(D.green, 0.01, off(new THREE.MeshLambertMaterial({ map: texClone(parkGrassTex, 1) }), -1));
   warsawFlat(D.roads, 0.02, off(new THREE.MeshLambertMaterial({ map: texClone(asphaltTex, 1) }), -2));
-  warsawFlat(D.water, 0.03, off(new THREE.MeshLambertMaterial({ color: 0x3f8fc9 }), -3));
+  const waterMat = off(new THREE.MeshLambertMaterial({ color: 0x3f8fc9 }), -3); waterMat.userData.water = true;
+  warsawFlat(D.water, 0.03, waterMat);
   mapPolys.push({ tri: D.green, c: '#2d5237' }, { tri: D.roads, c: '#5b6578' }, { tri: D.water, c: '#2b5d8a' });
   // budynki: ściany z oknami (UV: 16 m × 14 m na kafel, jak w Grammar City), dachy szare
   const W = {}, Rf = { p: [], n: [], u: [] };
@@ -421,7 +423,7 @@ function buildWarsaw() {
   for (const wi in W) { wallPool[wi].side = THREE.DoubleSide; meshOf(W[wi], wallPool[wi]); }
   roofMat.side = THREE.DoubleSide;
   meshOf(Rf, roofMat);
-  if (Tl.p.length) meshOf(Tl, new THREE.MeshLambertMaterial({ color: 0xa4452f, side: THREE.DoubleSide }));
+  if (Tl.p.length) { const tm = new THREE.MeshLambertMaterial({ color: 0xa4452f, side: THREE.DoubleSide }); tm.userData.tile = true; meshOf(Tl, tm); }
   // drzewa z danych + latarnie wzdłuż chodników
   for (let i = 0; i < D.trees.length; i += 3) treeSpots.push([D.trees[i], D.trees[i + 1], D.trees[i + 2]]);
   for (const path of D.pedPaths) {
@@ -520,12 +522,14 @@ function buildCity() {
       if (k % 2 === 0) treeSpots.push([x, z, rr(0.85, 1.2)]); else lampSpots.push([x, z]);
     }
   }
+  buildLake();
   // countryside around the city
   for (let i = 0; i < 360; i++) {
     const a = rand() * Math.PI * 2, r = HALF + rr(14, 230);
     let x = Math.cos(a) * r, z = Math.sin(a) * r;
     x = clamp(x, -HALF - 240, HALF + 240); z = clamp(z, -HALF - 240, HALF + 240);
     if (Math.abs(x) < HALF + 8 && Math.abs(z) < HALF + 8) continue;
+    if (Math.hypot(x - LAKE.x, z - LAKE.z) < LAKE.r + 4.5) continue;
     treeSpots.push([x, z, rr(1, 1.8)]);
   }
   buildTrees();
@@ -539,6 +543,30 @@ function buildCity() {
   const st = new THREE.Mesh(mergeColored(staticParts), vcMat);
   st.castShadow = st.receiveShadow = true; st.frustumCulled = false; scene.add(st);
   staticParts.length = 0;
+}
+
+// Staw w lesie na wschód od miasta (tylko Grammar City — mapy z danych mają własne wody).
+const LAKE = { x: HALF + 40, z: -70, r: 19 };
+function buildLake() {
+  const shore = new THREE.Mesh(new THREE.CircleGeometry(LAKE.r + 2.6, 40), new THREE.MeshLambertMaterial({ color: 0xcdb48a }));
+  shore.rotation.x = -Math.PI / 2; shore.position.set(LAKE.x, 0.012, LAKE.z); shore.receiveShadow = true; scene.add(shore);
+  const wm = new THREE.MeshLambertMaterial({ color: 0x3f8fc9 }); wm.userData.water = true;
+  const water = new THREE.Mesh(new THREE.CircleGeometry(LAKE.r, 40), wm);
+  water.rotation.x = -Math.PI / 2; water.position.set(LAKE.x, 0.03, LAKE.z); scene.add(water);
+  const ring = []; for (let i = 0; i < 28; i++) { const a = i / 28 * Math.PI * 2; ring.push(LAKE.x + Math.cos(a) * (LAKE.r - 0.8), LAKE.z + Math.sin(a) * (LAKE.r - 0.8)); }
+  addPolyCol([ring], 0.4);
+  // trzciny
+  for (let i = 0; i < 40; i++) {
+    const a = rand() * Math.PI * 2, rr2 = LAKE.r - rr(0.2, 1.2);
+    addStatic(new THREE.CylinderGeometry(0.03, 0.05, 1.4, 4), 0x6d7f3a, LAKE.x + Math.cos(a) * rr2, 0.7, LAKE.z + Math.sin(a) * rr2);
+  }
+  // las wokół stawu (grzyby jesienią)
+  for (let i = 0; i < 140; i++) {
+    const a = rand() * Math.PI * 2, d = LAKE.r + rr(5, 48), x = LAKE.x + Math.cos(a) * d, z = LAKE.z + Math.sin(a) * d;
+    if ((Math.abs(x) < HALF + 8 && Math.abs(z) < HALF + 8) || x > BOUND - 2) continue;
+    treeSpots.push([x, z, rr(1, 1.7)]);
+  }
+  for (const a of [0.4, 1.9, 3.5, 5.0]) fishSpots.push({ x: LAKE.x + Math.cos(a) * (LAKE.r + 1.3), z: LAKE.z + Math.sin(a) * (LAKE.r + 1.3), wx: LAKE.x, wz: LAKE.z });
 }
 
 const bldParts = {};
@@ -650,6 +678,7 @@ function buildPark(X, Z, m) {
     const stone = mat(0xbfb7a6);
     addStatic(new THREE.CylinderGeometry(4.6, 4.8, 0.9, 32), stone.color, cx, SIDE_H + 0.45, cz);
     const water = new THREE.Mesh(new THREE.CylinderGeometry(4.1, 4.1, 0.1, 32), new THREE.MeshLambertMaterial({ color: 0x3f8fc9, transparent: true, opacity: 0.85 }));
+    water.material.userData.water = true;
     water.position.set(cx, SIDE_H + 0.86, cz); scene.add(water);
     addStatic(new THREE.CylinderGeometry(0.45, 0.6, 2.6, 12), stone.color, cx, SIDE_H + 2, cz);
     addStatic(new THREE.CylinderGeometry(1.6, 0.9, 0.45, 20), stone.color, cx, SIDE_H + 3.3, cz);
@@ -662,6 +691,18 @@ function buildPark(X, Z, m) {
 }
 let fountainSpray = null;
 
+let treeCrowns = null, treeBlossom = null, treeRnd = null;
+const blossomTex = (() => {
+  const c = makeCanvas(128, 128), x = c.getContext('2d');
+  const cols = ['#f8bbd0', '#f48fb1', '#fce4ec', '#ffffff', '#f06292'];
+  for (let i = 0; i < 150; i++) {
+    const px = Math.random() * 128, py = Math.random() * 128, r = 2.2 + Math.random() * 2.6;
+    x.fillStyle = cols[i % cols.length];
+    for (let k = 0; k < 5; k++) { const a = k / 5 * Math.PI * 2; x.beginPath(); x.arc(px + Math.cos(a) * r * 0.6, py + Math.sin(a) * r * 0.6, r * 0.55, 0, Math.PI * 2); x.fill(); }   // kwiatek z 5 płatków
+    x.fillStyle = '#ffe082'; x.beginPath(); x.arc(px, py, r * 0.3, 0, Math.PI * 2); x.fill();
+  }
+  const t = canvasTex(c, true); t.repeat.set(2, 2); return t;
+})();
 function buildTrees() {
   const trunkGeo = new THREE.CylinderGeometry(0.22, 0.32, 2.6, 6); trunkGeo.translate(0, 1.3, 0);
   const crownGeo = new THREE.IcosahedronGeometry(1.9, 0); crownGeo.translate(0, 3.9, 0);
@@ -669,16 +710,22 @@ function buildTrees() {
   const crowns = new THREE.InstancedMesh(crownGeo, new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true }), treeSpots.length);
   const d = new THREE.Object3D(), col = new THREE.Color();
   const greens = [0x4f8a3a, 0x3f7a32, 0x5d9a40, 0x6b8f2f, 0x2f6b3a];
+  const blossomGeo = new THREE.IcosahedronGeometry(2.0, 1); blossomGeo.translate(0, 3.9, 0);
+  const blossom = new THREE.InstancedMesh(blossomGeo, new THREE.MeshLambertMaterial({ map: blossomTex, alphaTest: 0.5, emissive: 0x3a1a26 }), treeSpots.length);
+  treeRnd = new Float32Array(treeSpots.length);
   treeSpots.forEach(([x, z, s], i) => {
     d.position.set(x, groundAt(x, z), z); d.scale.set(s, s, s); d.rotation.set(0, rand() * 6, 0); d.updateMatrix();
-    trunks.setMatrixAt(i, d.matrix); crowns.setMatrixAt(i, d.matrix);
+    trunks.setMatrixAt(i, d.matrix); crowns.setMatrixAt(i, d.matrix); blossom.setMatrixAt(i, d.matrix);
+    treeRnd[i] = Math.random();
     crowns.setColorAt(i, col.setHex(pick(greens)));
     if (Math.abs(x) < BOUND + 5 && Math.abs(z) < BOUND + 5) addCol(x - 0.35 * s, x + 0.35 * s, z - 0.35 * s, z + 0.35 * s, 6);
   });
   crowns.instanceColor.needsUpdate = true;
   trunks.castShadow = crowns.castShadow = true; crowns.receiveShadow = true;
-  trunks.frustumCulled = crowns.frustumCulled = false;
-  scene.add(trunks, crowns);
+  trunks.frustumCulled = crowns.frustumCulled = blossom.frustumCulled = false;
+  blossom.visible = false;
+  scene.add(trunks, crowns, blossom);
+  treeCrowns = crowns; treeBlossom = blossom;
 }
 const lampHeadMat = new THREE.MeshBasicMaterial({ color: 0xd8d8d8 });
 function buildLamps() {
@@ -838,6 +885,7 @@ const VSPEC = {
   van:      { acc: 11, max: 30, rev: 8, brake: 28, steer: 0.55, off: 1.45, rad: 1.2, exit: 2.6 },
   sport:    { acc: 20, max: 44, rev: 10, brake: 36, steer: 0.66, off: 1.3, rad: 1.12, exit: 2.4 },
   supercar: { acc: 25, max: 52, rev: 10, brake: 40, steer: 0.7, off: 1.35, rad: 1.15, exit: 2.4 },
+  lux:      { acc: 17, max: 42, rev: 10, brake: 34, steer: 0.6, off: 1.4, rad: 1.12, exit: 2.4 },
   moto:     { acc: 24, max: 48, rev: 3, brake: 38, steer: 1.0, off: 0.55, rad: 0.55, exit: 1.4, ride: 'moto', seatY: 0.92, seatZ: -0.2 },
   scooter:  { acc: 8, max: 12.5, rev: 2, brake: 22, steer: 1.25, off: 0.35, rad: 0.45, exit: 1.2, ride: 'scooter', seatY: 0.2, seatZ: -0.1 },
   // Startowa hulajnoga z modelu 3D (models/e-scooter.glb)
@@ -880,8 +928,12 @@ const CAR_SHAPES = {
   supercar: { len: 4.6, w: 2.1,
     lower: [[-2.3, 0.26], [2.3, 0.26], [2.38, 0.42], [2.2, 0.6], [0.6, 0.78], [-1.9, 0.86], [-2.3, 0.82], [-2.38, 0.5]],
     glass: [[0.6, 0.76], [-0.25, 1.18], [-1.0, 1.2], [-1.95, 0.84]], roof: [-0.3, -0.95, 1.18] },
+  // luksusowy sedan: długa maska, niska linia dachu, opadający tył
+  lux: { len: 4.95, w: 1.98,
+    lower: [[-2.47, 0.3], [2.47, 0.3], [2.53, 0.55], [2.42, 0.8], [1.12, 0.94], [-1.5, 0.97], [-2.32, 0.92], [-2.53, 0.62]],
+    glass: [[1.12, 0.92], [0.22, 1.43], [-0.92, 1.44], [-1.82, 0.96]], roof: [0.17, -0.87, 1.43] },
 };
-const TYPE_SHAPE = { sedan: 'sedan', taxi: 'sedan', police: 'sedan', hatch: 'hatch', suv: 'suv', van: 'van', sport: 'sport', supercar: 'supercar' };
+const TYPE_SHAPE = { sedan: 'sedan', taxi: 'sedan', police: 'sedan', hatch: 'hatch', suv: 'suv', van: 'van', sport: 'sport', supercar: 'supercar', lux: 'lux' };
 const BOX = (w, h, d) => geo(`bx${w}_${h}_${d}`, () => new THREE.BoxGeometry(w, h, d));
 const CYLX = (r, w, seg = 16) => geo(`cx${r}_${w}_${seg}`, () => new THREE.CylinderGeometry(r, r, w, seg).rotateZ(Math.PI / 2));
 function carGeometry(type, color) {
@@ -917,7 +969,7 @@ function carGeometry(type, color) {
   const wr = type === 'suv' || type === 'van' ? 0.42 : 0.37, wz = L2 - (type === 'supercar' ? 0.75 : 0.85);
   for (const [sx, sz] of [[-1, 1], [1, 1], [-1, -1], [1, -1]]) {
     push(CYLX(wr, 0.28, 18), sx * (W / 2 - 0.12), wr, sz * wz, 0x141414);
-    push(CYLX(wr * 0.62, 0.3, 12), sx * (W / 2 - 0.12), wr, sz * wz, type === 'supercar' || type === 'sport' ? 0x2b2b2b : 0xc9ced6);
+    push(CYLX(wr * 0.62, 0.3, 12), sx * (W / 2 - 0.12), wr, sz * wz, type === 'supercar' || type === 'sport' ? 0x2b2b2b : type === 'lux' ? 0xe3e6ea : 0xc9ced6);
     push(CYLX(wr * 0.2, 0.32, 8), sx * (W / 2 - 0.12), wr, sz * wz, 0x6b7280);
   }
   // dodatki wg typu
@@ -928,6 +980,19 @@ function carGeometry(type, color) {
     for (const s of [-1, 1]) push(BOX(0.02, 0.18, S.len * 0.7), s * (W / 2 + 0.01), groundY + 0.48, 0, 0x1e3a8a);
   }
   if (type === 'suv') for (const s of [-1, 1]) push(BOX(0.06, 0.06, (rf - rb) * 0.9), s * W * 0.36, top + 0.05, (rf + rb) / 2, 0x2a2d33);
+  if (type === 'lux') {
+    const chrome = 0xdfe3e8;
+    push(BOX(W * 0.4, 0.3, 0.07), 0, groundY + 0.42, L2 + 0.1, chrome);                       // duży chromowany grill
+    for (let k = 0; k < 3; k++) push(BOX(W * 0.36, 0.035, 0.03), 0, groundY + 0.33 + k * 0.09, L2 + 0.15, 0x1a1d22);
+    push(BOX(0.07, 0.07, 0.03), 0, groundY + 0.42, L2 + 0.16, 0xf5f6f8);                     // emblemat (okrągły znaczek bez marki)
+    for (const s of [-1, 1]) {
+      push(BOX(0.025, 0.03, 2.75), s * (W / 2 + 0.005), S.glass[0][1] - 0.02, -0.35, chrome);  // chromowana listwa okien
+      push(BOX(0.025, 0.05, 3.6), s * (W / 2 + 0.01), groundY + 0.2, 0, 0x2a2d33);            // progi
+      push(BOX(0.46, 0.05, 0.05), s * W * 0.32, ly + 0.07, L2 + 0.05, 0xe8f4ff);              // LED do jazdy dziennej
+      push(CYLX(0.055, 0.12, 10), s * W * 0.3, groundY + 0.06, -L2 - 0.08, 0xc9ced6);         // podwójne końcówki wydechu
+    }
+    push(BOX(W * 0.7, 0.03, 0.04), 0, ly + 0.14, -L2 - 0.02, 0xe0161b);                      // listwa świateł tylnych
+  }
   if (type === 'supercar' || type === 'sport') {
     push(BOX(W * 0.9, 0.05, 0.32), 0, S.lower[6][1] + 0.22, -L2 + 0.25, 0x111111);           // spojler
     for (const s of [-1, 1]) push(BOX(0.06, 0.2, 0.06), s * W * 0.32, S.lower[6][1] + 0.1, -L2 + 0.25, 0x111111);
@@ -1010,10 +1075,21 @@ function loadKScooter() {
     kscooterWaiting.splice(0).forEach(fn => fn());
   }, undefined, err => { kscooterLoading = false; console.warn('[Grammar City] models/e-scooter.glb', err); });
 }
-function makeKScooterMesh() {
+// Hulajnoga z modelu GLB ma jedną teksturę — kolor nakładamy jako odcień materiału.
+const KS_DEFAULT = 0x2b2b2b;
+function tintObj(o, hex) {
+  o.traverse(m => {
+    if (!m.isMesh || !m.material || m.material === vcMat) return;
+    if (!m.userData.ownMat) { m.material = m.material.clone(); m.userData.ownMat = true; }
+    m.material.color.set(0xffffff);
+    if (hex != null && hex !== KS_DEFAULT) m.material.color.lerp(new THREE.Color(hex), 0.7);
+  });
+}
+function makeKScooterMesh(tint) {
   const holder = new THREE.Group();
   holder.rotation.order = 'YXZ';
-  const attach = () => holder.add(kscooterSrc.clone(true));
+  holder.userData.tint = tint;
+  const attach = () => { const c = kscooterSrc.clone(true); if (holder.userData.tint != null) tintObj(c, holder.userData.tint); holder.add(c); };
   if (kscooterSrc) attach();
   else {
     const fb = new THREE.Mesh(geo('scooter_kfallback', () => scooterGeometry(0x2b2b2b)), vcMat);
@@ -1024,11 +1100,18 @@ function makeKScooterMesh() {
   }
   return { g: holder, wheels: [], len: KSCOOTER_LEN };
 }
-function makeCarMesh(type, color) {
-  if (type === 'kscooter') return makeKScooterMesh();
-  const g = type === 'moto' ? geo(`moto_${color}`, () => motoGeometry(color))
+function vehGeo(type, color) {
+  return type === 'moto' ? geo(`moto_${color}`, () => motoGeometry(color))
     : type === 'scooter' ? geo(`scooter_${color}`, () => scooterGeometry(color))
     : geo(`car2_${type}_${color}`, () => carGeometry(type, color));
+}
+function recolorVehicle(v, hex) {
+  if (v.type === 'kscooter') { v.mesh.userData.tint = hex; tintObj(v.mesh, hex); return; }
+  v.mesh.geometry = vehGeo(v.type, hex);
+}
+function makeCarMesh(type, color) {
+  if (type === 'kscooter') return makeKScooterMesh(color);
+  const g = vehGeo(type, color);
   const mesh = new THREE.Mesh(g, vcMat);
   mesh.castShadow = true;
   mesh.rotation.order = 'YXZ';
@@ -1046,9 +1129,10 @@ function spawnVehicle(type, color, x, z, heading, kind) {
 }
 function randomCarType() {
   const r = rand();
-  return r < 0.12 ? 'taxi' : r < 0.2 ? 'van' : r < 0.27 ? 'sport' : r < 0.32 ? 'police' : r < 0.47 ? 'suv' : r < 0.64 ? 'hatch' : 'sedan';
+  return r < 0.12 ? 'taxi' : r < 0.2 ? 'van' : r < 0.27 ? 'sport' : r < 0.32 ? 'police' : r < 0.47 ? 'suv' : r < 0.64 ? 'hatch' : r < 0.74 ? 'lux' : 'sedan';
 }
-function carColor(type) { return type === 'taxi' ? 0xf5c518 : type === 'police' ? 0xf1f2f6 : pick(CAR_COLORS); }
+const LUX_COLORS = [0x1d2027, 0xc9ccd1, 0x23324d, 0xf1f2f6, 0x5a5f66, 0x3b1f2b];
+function carColor(type) { return type === 'taxi' ? 0xf5c518 : type === 'police' ? 0xf1f2f6 : type === 'lux' ? pick(LUX_COLORS) : pick(CAR_COLORS); }
 
 // traffic AI --------------------------------------------------------------
 function laneXZ(a, along) {
@@ -1249,15 +1333,17 @@ const SHOP = [
   { id: 'hair_red', cat: 'hair', name: 'Rude', desc: '', price: 150, hair: 0xb5501f, hairStyle: 'short' },
   { id: 'hair_bald', cat: 'hair', name: 'Łysy', desc: '', price: 0, hair: 0x2b1d14, hairStyle: 'bald' },
   { id: 'nitro', cat: 'extra', name: 'Nitro', desc: 'W pojeździe przytrzymaj Shift (na telefonie NITRO) — przyspieszenie do 300 km/h i płomienie z wydechu. Ładunek ~6 s, sam się odnawia.', price: 3000, perk: true },
+  { id: 'wheelie', cat: 'extra', name: 'Willibary (jazda na jednym kole)', desc: 'Na hulajnodze i motorze przytrzymaj Q (na telefonie WHEELIE) — przednie koło w górę! Co 3 s na jednym kole +$5.', price: 1200, perk: true },
   { id: 'fuel', cat: 'extra', name: 'Pełny bak', desc: 'Tankowanie do pełna. Paliwo ubywa podczas jazdy (z nitro 4× szybciej).', price: 500, consumable: true },
   { id: 'veh_kscooter', cat: 'vehicle', name: 'Hulajnoga Pixel Rider', desc: 'Startowa e-hulajnoga — dostępna od początku', price: 0, vtype: 'kscooter', color: 0x2b2b2b },
   { id: 'veh_scooter', cat: 'vehicle', name: 'Hulajnoga elektryczna Volt K-Pro', desc: 'Szybka e-hulajnoga, do ~45 km/h', price: 400, vtype: 'scooter', color: 0x2b2b2b },
   { id: 'veh_hatch', cat: 'vehicle', name: 'Hatchback City', desc: 'Małe miejskie auto', price: 800, vtype: 'hatch', color: 0x2e86de },
   { id: 'veh_suv', cat: 'vehicle', name: 'SUV Explorer', desc: 'Wysoki i stabilny', price: 1400, vtype: 'suv', color: 0x10ac84 },
   { id: 'veh_moto', cat: 'vehicle', name: 'Motor sportowy Raptor 600', desc: 'Zielona strzała, do ~170 km/h', price: 2200, vtype: 'moto', color: 0x63c132 },
+  { id: 'veh_lux', cat: 'vehicle', name: 'Limuzyna Executive E', desc: 'Elegancki sedan klasy biznes — komfort, cisza i moc (do ~150 km/h)', price: 2800, vtype: 'lux', color: 0x1d2027 },
   { id: 'veh_super', cat: 'vehicle', name: 'Supercar Fulmine', desc: 'Najszybsze auto w mieście', price: 4000, vtype: 'supercar', color: 0xe8410b },
 ];
-const SHOP_CATS = [['outfit', '👕 Stroje'], ['hat', '🧢 Nakrycia głowy'], ['glasses', '🕶️ Okulary'], ['hair', '💇 Fryzury'], ['vehicle', '🏍️ Pojazdy'], ['extra', '🔥 Nitro i paliwo']];
+const SHOP_CATS = [['outfit', '👕 Stroje'], ['hat', '🧢 Nakrycia głowy'], ['glasses', '🕶️ Okulary'], ['hair', '💇 Fryzury'], ['vehicle', '🏍️ Pojazdy'], ['extra', '🔥 Nitro i paliwo'], ['settings', '⚙️ Ustawienia']];
 const shopItem = id => SHOP.find(i => i.id === id);
 function playerLook() {
   const e = wardrobe.equip;
@@ -1320,6 +1406,7 @@ window.addEventListener('keydown', e => {
   if (e.code === 'Escape') { onEscape(); return; }
   if (inInput) return;
   if (ui === 'quiz') { quizKey(e); return; }
+  if (ui === 'fish') { if (['Space', 'Enter', 'KeyR'].includes(e.code) && !e.repeat) { e.preventDefault(); fishAction(); } return; }
   if (e.code === 'KeyM') { e.preventDefault(); ui === 'map' ? closeMap() : !ui && openMap(); return; }
   if (e.code === 'KeyH') { ui === 'help' ? closeHelp() : !ui && openHelp(); return; }
   if (e.code === 'KeyN') { Sound.toggle(); toast(Sound.muted ? 'Dźwięk wyłączony' : 'Dźwięk włączony'); return; }
@@ -1327,6 +1414,8 @@ window.addEventListener('keydown', e => {
   if (ui) return;
   if (e.code === 'KeyV' && !e.repeat) { summonVehicle(); return; }
   if (e.code === 'KeyT' && !e.repeat) { if (nearNPC && !P.car) openTalk(nearNPC); return; }
+  if (e.code === 'KeyR' && !e.repeat) { if (nearFish && !P.car) openFishing(nearFish); return; }
+  if (e.code === 'KeyG' && !e.repeat) { if (P.car && isScooterType(P.car.type)) cycleScooterMode(); else toast('Tryby Eco / S / R działają na hulajnodze — wsiądź na nią (V, potem F).'); return; }
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
   if (e.code === 'KeyF' && !e.repeat) toggleCar();
   if (e.code === 'KeyE' && !e.repeat) tryStartMission();
@@ -1413,7 +1502,7 @@ touchUI.querySelectorAll('[data-hold]').forEach(b => {
   b.addEventListener('pointerleave', e => { if (e.pointerType !== 'touch') up(); });
 });
 // Tap buttons fire an action once.
-const TAPS = { car: () => toggleCar(), mission: () => tryStartMission(), map: () => openMap(), shop: () => openShop(), call: () => summonVehicle() };
+const TAPS = { car: () => toggleCar(), mission: () => tryStartMission(), map: () => openMap(), shop: () => openShop(), call: () => summonVehicle(), mode: () => cycleScooterMode() };
 touchUI.querySelectorAll('[data-tap]').forEach(b => {
   const fire = e => { e.preventDefault(); Sound.init(); TAPS[b.dataset.tap](); };
   if (HAS_TOUCH) b.addEventListener('touchstart', fire, { passive: false });
@@ -1453,9 +1542,11 @@ function updateTouchUI() {
   if (!touchMode) return;
   const show = !ui;
   const carAvail = !!P.car || vehicles.some(v => Math.hypot(v.pos.x - P.pos.x, v.pos.z - P.pos.z) < 4.5);
-  const talkAvail = !nearMission && !!nearNPC && !P.car;
-  const misAvail = (!!nearMission && !P.car && isUnlocked(nearMission)) || talkAvail;
-  const st = `${show}|${carAvail}|${misAvail}|${!!P.car}|${talkAvail}|${hasNitro()}`;
+  const fishAvail = !nearMission && !!nearFish && !P.car;
+  const talkAvail = !nearMission && !fishAvail && !!nearNPC && !P.car;
+  const misAvail = (!!nearMission && !P.car && isUnlocked(nearMission)) || talkAvail || fishAvail;
+  const scoot = !!P.car && isScooterType(P.car.type), wh = !!P.car && isTwoWheel(P.car.type) && hasWheelie();
+  const st = `${show}|${carAvail}|${misAvail}|${!!P.car}|${talkAvail}|${fishAvail}|${hasNitro()}|${scoot}|${wh}`;
   if (st === touchState) return;
   touchState = st;
   touchUI.hidden = !show;
@@ -1463,7 +1554,9 @@ function updateTouchUI() {
   $('t-car').classList.toggle('off', !carAvail);
   $('t-car').textContent = P.car ? 'WYSIĄDŹ' : 'AUTO';
   $('t-mission').classList.toggle('off', !misAvail);
-  $('t-mission').textContent = talkAvail ? 'ROZMOWA' : 'MISJA';
+  $('t-mission').textContent = fishAvail ? 'RYBY' : talkAvail ? 'ROZMOWA' : 'MISJA';
+  $('t-mode').classList.toggle('off', !scoot);
+  $('t-wheelie').classList.toggle('off', !wh);
   $('t-jump').textContent = P.car ? 'HAMULEC' : 'SKOK';
   $('t-sprint').classList.toggle('off', !!P.car && !hasNitro());
   $('t-sprint').textContent = P.car ? 'NITRO' : 'BIEG';
@@ -1475,6 +1568,7 @@ function onEscape() {
   else if (ui === 'quiz') abortQuiz();
   else if (ui === 'talk') closeTalk();
   else if (ui === 'shop') closeShop();
+  else if (ui === 'fish') closeFishing();
 }
 
 // ---------------------------------------------------------------- sound
@@ -1630,17 +1724,25 @@ function updateCar(v, dt) {
   const hb = !ui && key('Space');
   const sp = v.spec || VSPEC.car;
   const up = fuelAndNitro(v, dt, wantUp) && wantUp;      // bez paliwa — brak gazu
+  const sm = isScooterType(v.type) ? SCOOTER_MODES[wardrobe.smode] || SCOOTER_MODES.S : null;
+  const vmax = sm ? sm.kmh / 3.6 : sp.max, vacc = sm ? sm.acc : sp.acc;
+  const icy = season() === 'winter', brk = sp.brake * (icy ? 0.42 : 1);
   if (nitroActive) { v.speed += NITRO_ACC * (1 - v.speed / NITRO_MAX) * dt; }
-  else if (up) { v.speed += (v.speed < -0.5 ? sp.brake : sp.acc * (1 - v.speed / sp.max)) * dt; }
-  else if (down) { v.speed -= (v.speed > 0.5 ? sp.brake : sp.acc * 0.7 * (1 + v.speed / sp.rev)) * dt; }
-  else { v.speed *= 1 - Math.min(1, 0.55 * dt); if (Math.abs(v.speed) < 0.15) v.speed = 0; }
-  if (hb) { v.speed *= 1 - Math.min(1, 2.2 * dt); }
+  else if (up) { v.speed += (v.speed < -0.5 ? brk : vacc * (icy ? 0.75 : 1) * (1 - v.speed / vmax)) * dt; }
+  else if (down) { v.speed -= (v.speed > 0.5 ? brk : vacc * 0.7 * (1 + v.speed / sp.rev)) * dt; }
+  else { v.speed *= 1 - Math.min(1, (icy ? 0.22 : 0.55) * dt); if (Math.abs(v.speed) < 0.15) v.speed = 0; }
+  if (sm && !nitroActive && v.speed > vmax) v.speed = Math.max(vmax, v.speed - 8 * dt);   // niższy tryb — silnik zwalnia
+  if (hb) { v.speed *= 1 - Math.min(1, (icy ? 0.8 : 2.2) * dt); }
+  updateWheelie(v, dt);
   const steerIn = (left ? 1 : 0) - (right ? 1 : 0);
   v.steer = lerp(v.steer, steerIn, Math.min(1, dt * 6));
   const maxSteer = sp.steer / (1 + Math.abs(v.speed) * 0.045);
   v.heading += v.steer * maxSteer * v.speed / 3.0 * dt * (hb ? 1.7 : 1);
   const f = carFwd(v);
-  v.pos.x += f.x * v.speed * dt; v.pos.z += f.z * v.speed * dt;
+  // zimą auto „płynie": kierunek ruchu dogania kierunek maski z opóźnieniem (poślizg)
+  if (v.mdir == null) v.mdir = v.heading;
+  v.mdir += angDiff(v.mdir, v.heading) * Math.min(1, (icy ? (hb ? 0.9 : 2.1) : 40) * dt);
+  v.pos.x += Math.sin(v.mdir) * v.speed * dt; v.pos.z += Math.cos(v.mdir) * v.speed * dt;
   // collisions: buildings & other vehicles
   let impact = 0;
   for (const off of [sp.off, -sp.off]) {
@@ -1691,9 +1793,10 @@ function updateCar(v, dt) {
 // Gracz na motorze (siedzi, pochylony) lub hulajnodze (stoi) — pozycja i poza kończyn.
 function posePlayerRider(v) {
   const sp = v.spec, f = carFwd(v);
-  const lift = sp.ride === 'moto' ? sp.seatY - 1.0 : sp.seatY;
+  const wa = wheelieAngle(v), wl = (sp.seatZ + (v.len || 2) * 0.4) * Math.sin(wa);
+  const lift = (sp.ride === 'moto' ? sp.seatY - 1.0 : sp.seatY) + wl;
   player.g.position.set(v.pos.x + f.x * sp.seatZ, v.pos.y + lift, v.pos.z + f.z * sp.seatZ);
-  player.g.rotation.set(sp.ride === 'moto' ? 0.32 : 0.06, v.heading, v.lean || 0);
+  player.g.rotation.set((sp.ride === 'moto' ? 0.32 : 0.06) - wa * 0.8, v.heading, v.lean || 0);
   if (sp.ride === 'moto') { player.ll.rotation.set(-1.15, 0, -0.18); player.rl.rotation.set(-1.15, 0, 0.18); player.la.rotation.set(-1.25, 0, 0.15); player.ra.rotation.set(-1.25, 0, -0.15); }
   else { player.ll.rotation.set(0.12, 0, 0); player.rl.rotation.set(-0.15, 0, 0); player.la.rotation.set(-1.05, 0, 0.12); player.ra.rotation.set(-1.05, 0, -0.12); }
 }
@@ -1704,6 +1807,9 @@ function poseCar(v, dt) {
     const want = -(v.steer || 0) * Math.min(1, Math.abs(v.speed) / 14) * (v.spec.ride === 'moto' ? 0.42 : 0.22);
     v.lean = lerp(v.lean || 0, want, Math.min(1, dt * 6));
     v.mesh.rotation.z = v.lean;
+    const wa = wheelieAngle(v);
+    v.mesh.rotation.x = -wa;
+    if (wa) v.mesh.position.y += (v.len || 2) * 0.4 * Math.sin(wa);
   }
   const spin = v.speed * dt / 0.38;
   v.wheels.forEach((w, i) => { w.rotation.x += spin; if (i < 2) w.rotation.y = (v.steer || 0) * 0.45; });
@@ -1719,7 +1825,7 @@ function toggleCar() {
       const p = { x, z };
       if (!pushOut(p, 0.45, nearCols, 0.2) || s === -1) { P.pos.set(p.x, groundAt(p.x, p.z), p.z); break; }
     }
-    v.kind = 'parked'; v.speed = 0; v.steer = 0; v.lean = 0; v.mesh.rotation.z = 0;
+    v.kind = 'parked'; v.speed = 0; v.steer = 0; v.lean = 0; v.wheelie = 0; v.mesh.rotation.z = 0; v.mesh.rotation.x = 0;
     nitroActive = false; if (v.flames) v.flames.visible = false; persistWardrobe();
     P.car = null; player.g.visible = true; P.facing = v.heading; P.speed = 0;
     player.g.rotation.set(0, P.facing, 0);
@@ -2107,6 +2213,437 @@ function updateSky(dt, focus) {
   return `${String(h).padStart(2, '0')}:${String(mnt).padStart(2, '0')}`;
 }
 
+// ---------------------------------------------------------------- tryby hulajnogi i wheelie
+// Hulajnoga: Eco 20 km/h, S 45 km/h, R 100 km/h (klawisz G / przycisk TRYB, także w Ustawieniach sklepu).
+const SCOOTER_MODES = { E: { label: 'Eco', kmh: 20, acc: 5 }, S: { label: 'Sport', kmh: 45, acc: 9 }, R: { label: 'Wyścig', kmh: 100, acc: 15 } };
+const isScooterType = t => t === 'kscooter' || t === 'scooter';
+function cycleScooterMode() { const k = ['E', 'S', 'R'], i = k.indexOf(wardrobe.smode); setScooterMode(k[(i + 1) % 3]); Sound.click(); }
+// Willibary (kupowane w sklepie): Q na hulajnodze / motorze — przód w górę, co 3 s +$5 (max $50 za jedno wheelie).
+const hasWheelie = () => !!wardrobe.owned.wheelie;
+let wheelieT = 0, wheeliePaid = 0;
+const wheelieAngle = v => (v.wheelie || 0) * (v.spec && v.spec.ride === 'moto' ? 0.5 : 0.42);
+function updateWheelie(v, dt) {
+  if (!isTwoWheel(v.type)) return;
+  const want = hasWheelie() && !ui && key('KeyQ') && v.speed > 2.5;
+  v.wheelie = lerp(v.wheelie || 0, want ? 1 : 0, Math.min(1, dt * (want ? 4 : 7)));
+  if (want && v.wheelie > 0.8) {
+    wheelieT += dt;
+    if (wheelieT >= (wheeliePaid + 1) * 3 && wheeliePaid < 10) { wheeliePaid++; save.money += 5; persist(); toast(`🤸 Wheelie ${wheelieT.toFixed(1).replace('.', ',')} s · +$5`, 'good', 1400); }
+  } else if (!want) {
+    if (wheelieT > 2) { save.wheelieBest = Math.max(save.wheelieBest || 0, wheelieT); persist(); toast(`Wheelie: ${wheelieT.toFixed(1).replace('.', ',')} s (rekord ${save.wheelieBest.toFixed(1).replace('.', ',')} s)`, '', 2200); }
+    wheelieT = 0; wheeliePaid = 0;
+  }
+}
+
+// ---------------------------------------------------------------- pory roku
+// Pora roku zmienia się co 3 dni gry (3 × DAY_LEN = 36 min); na starcie losowa (test: ?season=winter).
+// Wiosna — kwitnące różowo drzewa · Lato — zielone · Jesień — pomarańczowe i żółte + grzyby w lesie ·
+// Zima — białe drzewa i ziemia, śnieg, ślisko na jezdni, kolorowe lampki na domach i drzewach.
+const SEASONS = [
+  { id: 'spring', name: 'Wiosna', ico: '🌸', sub: 'Drzewa kwitną na różowo' },
+  { id: 'summer', name: 'Lato', ico: '☀️', sub: 'Ciepło i zielono — idealnie na ryby 🎣' },
+  { id: 'autumn', name: 'Jesień', ico: '🍂', sub: 'W lesie rosną grzyby — zbieraj je 🍄' },
+  { id: 'winter', name: 'Zima', ico: '❄️', sub: 'Ślisko na jezdni — hamuj wcześniej! Na domach świąteczne lampki 🎄' },
+];
+const SEASON_DAYS = 3, SEASON_LEN = SEASON_DAYS * DAY_LEN;
+let seasonIdx = (() => { const q = new URLSearchParams(location.search).get('season'), i = SEASONS.findIndex(s => s.id === q); return i >= 0 ? i : Math.floor(Math.random() * 4); })();
+let seasonT = 0;
+const season = () => SEASONS[seasonIdx].id;
+const SEASON_TREE = {
+  spring: [0x8cc56a, 0xf2a7c3, 0x9bd07a, 0xf7c4d8, 0xe991b5, 0xa6d47e],
+  summer: [0x4f8a3a, 0x3f7a32, 0x5d9a40, 0x6b8f2f, 0x2f6b3a],
+  autumn: [0xe8892b, 0xf2b632, 0xd9662a, 0xe0a422, 0xc4501f, 0xf0c419, 0xb5651d],
+  winter: [0xf4f7fa, 0xe8eef3, 0xdde6ee, 0xffffff],
+};
+const snowTexBase = canvasTex(noiseCanvas(256, '#e9eff5', 12, 11), true);
+let seasonMatList = null;
+function collectSeasonMats() {
+  const kind = m => {
+    if (!m || !m.isMaterial) return null;
+    const t = m.map, src = t && (t.__src || t);
+    if (src === grassTex || src === parkGrassTex) return 'grass';
+    if (src === asphaltTex) return 'road';
+    if (src === sidewalkTex) return 'pave';
+    if (m === roofMat || m.userData.tile) return 'roof';
+    if (m.userData.water) return 'water';
+    return null;
+  };
+  const seen = new Set(), out = [];
+  scene.traverse(o => {
+    if (!o.isMesh) return;
+    for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+      if (seen.has(m)) continue; seen.add(m);
+      const k = kind(m); if (!k) continue;
+      m.userData.c0 = m.color.getHex(); m.userData.e0 = m.emissive ? m.emissive.getHex() : 0; m.userData.map0 = m.map;
+      out.push({ m, k });
+    }
+  });
+  return out;
+}
+function applySeason(announce) {
+  const s = season();
+  if (treeCrowns) {
+    const pal = SEASON_TREE[s], col = new THREE.Color();
+    for (let i = 0; i < treeRnd.length; i++) {
+      const r = treeRnd[i];
+      let hex = pal[Math.floor(r * 997) % pal.length];
+      if (s === 'autumn' && r < 0.12) hex = SEASON_TREE.summer[Math.floor(r * 400) % 5];   // nieliczne zielone
+      treeCrowns.setColorAt(i, col.setHex(hex));
+    }
+    treeCrowns.instanceColor.needsUpdate = true;
+    treeBlossom.visible = s === 'spring';
+  }
+  if (!seasonMatList) seasonMatList = collectSeasonMats();
+  const W = s === 'winter';
+  for (const { m, k } of seasonMatList) {
+    m.color.setHex(m.userData.c0); if (m.emissive) m.emissive.setHex(m.userData.e0);
+    if (k === 'grass') {
+      if (W) { if (!m.userData.snow) { const t = snowTexBase.clone(); t.needsUpdate = true; t.repeat.copy(m.userData.map0.repeat); m.userData.snow = t; } m.map = m.userData.snow; }
+      else { m.map = m.userData.map0; if (s === 'autumn') m.color.setHex(0xd0ae62); else if (s === 'spring') m.color.setHex(0xf2ffe6); }
+    } else if (k === 'road' && W) m.emissive.setHex(0x161c24);
+    else if (k === 'pave' && W) m.emissive.setHex(0x3c4146);
+    else if (k === 'roof' && W) m.color.setHex(0xeef3f8);
+    else if (k === 'water' && W) m.color.setHex(0xd2e8f5);
+  }
+  if (W) buildXmasLights();
+  if (xmas) xmas.visible = W;
+  if (snowPts) snowPts.visible = W;
+  for (const mu of mushrooms) mu.g.visible = s === 'autumn' && mu.alive;
+  if (announce) { const se = SEASONS[seasonIdx]; showBanner(`${se.ico} ${se.name.toUpperCase()}`, se.sub, W ? '#bfe6ff' : s === 'autumn' ? '#f0a43a' : s === 'spring' ? '#f48fb1' : '#45d483', 4200); }
+}
+function updateSeason(dt) {
+  seasonT += dt;
+  if (seasonT >= SEASON_LEN) { seasonT -= SEASON_LEN; seasonIdx = (seasonIdx + 1) % 4; applySeason(true); }
+}
+const seasonDay = () => Math.min(SEASON_DAYS, Math.floor(seasonT / DAY_LEN) + 1);
+
+// Zima: kolorowe lampki świąteczne na domach i drzewach (4 kolory, migotanie przez zmianę jasności materiału).
+let xmas = null;
+const XMAS_COLS = [0xff3b3b, 0x3bff6b, 0x4f8bff, 0xffd23b];
+function buildXmasLights() {
+  if (xmas) return;
+  const pts = [[], [], [], []];
+  let k = 0;
+  const add = (x, y, z) => { pts[k++ % 4].push(x, y, z); };
+  // drzewa: spirala żarówek wokół korony (co drugie drzewo, max ~14 tys.)
+  const TMAX = 14000;
+  treeSpots.forEach(([x, z, s], i) => {
+    if (treeRnd[i] > 0.55 || k > TMAX) return;
+    const cy = groundAt(x, z) + 3.9 * s, R = 1.95 * s;
+    for (let j = 0; j < 7; j++) {
+      const ph = -0.45 + j * 0.17, a = j * 2.3 + treeRnd[i] * 6;
+      add(x + Math.cos(a) * Math.cos(ph) * R, cy + Math.sin(ph) * R, z + Math.sin(a) * Math.cos(ph) * R);
+    }
+  });
+  // domy: girlanda wzdłuż ścian (mapa z danych — obrysy, Grammar City — prostokąty budynków)
+  const edges = [];
+  let per = 0;
+  for (const c of colliders) {
+    if (c.rings) {
+      if (c.h < 3) continue;
+      const r = c.rings[0], y = Math.min(c.h - 0.4, 6);
+      for (let i = 0, j = r.length - 2; i < r.length; j = i, i += 2) { const L = Math.hypot(r[i] - r[j], r[i + 1] - r[j + 1]); edges.push([r[j], r[j + 1], r[i], r[i + 1], y, c]); per += L; }
+    } else if (c.x1 - c.x0 > 5 && c.z1 - c.z0 > 5 && c.h >= 3.5) {
+      const y = Math.min(c.h - 0.3, 5.5), { x0, x1, z0, z1 } = c;
+      for (const e of [[x0, z0, x1, z0], [x1, z0, x1, z1], [x1, z1, x0, z1], [x0, z1, x0, z0]]) { edges.push([...e, y, null]); per += Math.hypot(e[2] - e[0], e[3] - e[1]); }
+    }
+  }
+  const step = Math.max(1.3, per / 15000);
+  for (const [ax, az, bx, bz, y, c] of edges) {
+    const L = Math.hypot(bx - ax, bz - az); if (L < 1) continue;
+    let nx = (bz - az) / L, nz = -(bx - ax) / L;
+    const mx = (ax + bx) / 2, mz = (az + bz) / 2;
+    if (c && polyInside(mx + nx * 0.5, mz + nz * 0.5, c.rings)) { nx = -nx; nz = -nz; }   // prostokąty: obrys zgodny z ruchem wskazówek — normalne już na zewnątrz
+    for (let t = step / 2; t < L; t += step) {
+      const sag = 0.22 * Math.abs(Math.sin(t / 2.6 * Math.PI));
+      add(ax + (bx - ax) * t / L + nx * 0.15, y - sag + PAVE_Y, az + (bz - az) * t / L + nz * 0.15);
+    }
+  }
+  xmas = new THREE.Group();
+  const bulb = new THREE.OctahedronGeometry(0.15, 0), d = new THREE.Object3D();
+  pts.forEach((P3, ci) => {
+    const n = P3.length / 3; if (!n) return;
+    const im = new THREE.InstancedMesh(bulb, new THREE.MeshBasicMaterial({ color: XMAS_COLS[ci] }), n);
+    for (let i = 0; i < n; i++) { d.position.set(P3[i * 3], P3[i * 3 + 1], P3[i * 3 + 2]); d.updateMatrix(); im.setMatrixAt(i, d.matrix); }
+    im.frustumCulled = false; im.userData.base = new THREE.Color(XMAS_COLS[ci]);
+    xmas.add(im);
+  });
+  scene.add(xmas);
+}
+function twinkleXmas() {
+  if (!xmas || !xmas.visible) return;
+  xmas.children.forEach((im, i) => { const k = 0.5 + 0.5 * Math.max(0, Math.sin(elapsed * 2.6 + i * 1.7)); im.material.color.copy(im.userData.base).multiplyScalar(0.35 + 0.75 * k); });
+}
+// Zima: padający śnieg wokół kamery.
+const SNOW_N = 1500;
+let snowPts = null;
+const flakeTex = (() => { const c = makeCanvas(32, 32), x = c.getContext('2d'), gr = x.createRadialGradient(16, 16, 0, 16, 16, 16); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.5, 'rgba(255,255,255,.8)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = gr; x.fillRect(0, 0, 32, 32); return canvasTex(c, false); })();
+function buildSnow() {
+  const p = new Float32Array(SNOW_N * 3);
+  for (let i = 0; i < SNOW_N; i++) { p[i * 3] = rr(-45, 45); p[i * 3 + 1] = Math.random() * 40; p[i * 3 + 2] = rr(-45, 45); }
+  const geom = new THREE.BufferGeometry(); geom.setAttribute('position', new THREE.BufferAttribute(p, 3));
+  snowPts = new THREE.Points(geom, new THREE.PointsMaterial({ color: 0xffffff, size: 0.16, map: flakeTex, transparent: true, opacity: 0.95, depthWrite: false }));
+  snowPts.frustumCulled = false; snowPts.visible = false; scene.add(snowPts);
+}
+function updateSnow(dt) {
+  if (!snowPts || !snowPts.visible) return;
+  const a = snowPts.geometry.attributes.position, p = a.array;
+  for (let i = 0; i < SNOW_N; i++) {
+    p[i * 3 + 1] -= (1.4 + (i % 7) * 0.15) * dt; p[i * 3] += Math.sin(elapsed * 0.8 + i) * 0.4 * dt;
+    if (p[i * 3 + 1] < 0) p[i * 3 + 1] += 40;
+  }
+  a.needsUpdate = true;
+  snowPts.position.set(camera.position.x, Math.max(0, camera.position.y - 22), camera.position.z);
+}
+
+// ---------------------------------------------------------------- grzyby (jesień)
+// Rosną przy drzewach w zalesionych miejscach; zbiera się je, przechodząc obok (pieszo). +$20, po 90 s odrastają gdzie indziej.
+const mushrooms = [], MUSH_N = 45, MUSH_REWARD = 20;
+let mushCand = null;
+function mushroomGeo(cap) {
+  return geo('mush_' + cap, () => mergeColored([
+    { g: new THREE.CylinderGeometry(0.08, 0.1, 0.24, 8), m: partMatrix(0, 0.12, 0), c: new THREE.Color(0xf3ead8) },
+    { g: new THREE.SphereGeometry(0.22, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), m: partMatrix(0, 0.22, 0, 0, 1, 0.8, 1), c: new THREE.Color(cap) },
+    ...(cap === 0xd23a2a ? [[0.1, 0.05], [-0.08, 0.1], [0.02, -0.12], [-0.12, -0.04]].map(([x, z]) => ({ g: new THREE.SphereGeometry(0.035, 6, 4), m: partMatrix(x, 0.36 - Math.hypot(x, z) * 0.5, z), c: new THREE.Color(0xffffff) })) : []),
+  ]));
+}
+function blockedAt(x, z, r = 0.6) {
+  if (Math.abs(x) > BOUND - 3 || Math.abs(z) > BOUND - 3) return true;
+  for (const c of colliders) {
+    if (x < c.x0 - r || x > c.x1 + r || z < c.z0 - r || z > c.z1 + r) continue;
+    if (!c.rings || polyInside(x, z, c.rings)) return true;
+  }
+  return false;
+}
+function mushroomCandidates() {
+  // drzewa, które mają w promieniu 14 m co najmniej 4 inne drzewa (las / park)
+  const cell = 14, grid = new Map(), key2 = (i, j) => i * 100003 + j;
+  treeSpots.forEach(([x, z], i) => { const k = key2(Math.floor(x / cell), Math.floor(z / cell)); (grid.get(k) || grid.set(k, []).get(k)).push(i); });
+  const out = [];
+  treeSpots.forEach(([x, z], i) => {
+    if (Math.abs(x) > BOUND - 6 || Math.abs(z) > BOUND - 6) return;
+    let n = 0; const ci = Math.floor(x / cell), cj = Math.floor(z / cell);
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (const t of grid.get(key2(ci + a, cj + b)) || []) if (t !== i && Math.hypot(treeSpots[t][0] - x, treeSpots[t][1] - z) < 14) n++;
+    if (n >= 4) out.push(i);
+  });
+  return out;
+}
+function placeMushroom(mu) {
+  for (let tries = 0; tries < 30; tries++) {
+    const [tx, tz] = treeSpots[mushCand[Math.floor(Math.random() * mushCand.length)]];
+    const a = Math.random() * Math.PI * 2, d = 1.3 + Math.random() * 1.8, x = tx + Math.cos(a) * d, z = tz + Math.sin(a) * d;
+    if (blockedAt(x, z) || mushrooms.some(o => o !== mu && o.alive && Math.hypot(o.x - x, o.z - z) < 6)) continue;
+    mu.x = x; mu.z = z; mu.g.position.set(x, groundAt(x, z), z); mu.g.rotation.y = Math.random() * 6; mu.alive = true;
+    mu.g.visible = season() === 'autumn';
+    return true;
+  }
+  return false;
+}
+function buildMushrooms() {
+  mushCand = mushroomCandidates();
+  if (!mushCand.length) return;
+  for (let i = 0; i < MUSH_N; i++) {
+    const cap = i % 3 === 0 ? 0xd23a2a : i % 3 === 1 ? 0x8a5a2b : 0xb07a3c;
+    const g2 = new THREE.Mesh(mushroomGeo(cap), vcMat); g2.scale.setScalar(1.5); g2.castShadow = true;
+    scene.add(g2);
+    const mu = { g: g2, x: 0, z: 0, alive: false, t: 0 };
+    mushrooms.push(mu);
+    if (!placeMushroom(mu)) g2.visible = false;
+  }
+}
+function updateMushrooms(dt) {
+  if (season() !== 'autumn') return;
+  for (const mu of mushrooms) {
+    if (!mu.alive) { mu.t -= dt; if (mu.t <= 0) placeMushroom(mu); continue; }
+    if (P.car || ui) continue;
+    if (Math.abs(mu.x - P.pos.x) < 1.6 && Math.abs(mu.z - P.pos.z) < 1.6 && Math.hypot(mu.x - P.pos.x, mu.z - P.pos.z) < 1.4) {
+      mu.alive = false; mu.g.visible = false; mu.t = 90;
+      save.money += MUSH_REWARD; save.mushrooms = (save.mushrooms || 0) + 1; persist();
+      Sound.click();
+      toast(`🍄 Grzyb — <b>a mushroom</b>! +${fmtMoney(MUSH_REWARD)} · zebrane: ${save.mushrooms}`, 'good', 2400);
+    }
+  }
+}
+
+// ---------------------------------------------------------------- łowienie ryb (każda pora roku)
+// Pomosty nad wodą (Grammar City: staw w lesie na wschód od miasta; mapy z danych: brzegi wód).
+// Zarzuć wędkę, poczekaj na branie i zatnij w porę — nazwa ryby po angielsku z lektorem.
+const fishSpots = [];
+const FISH = [
+  { en: 'roach', pl: 'płoć', ico: '🐟', val: 15, w: 26, kg: [0.1, 0.5] },
+  { en: 'perch', pl: 'okoń', ico: '🐟', val: 20, w: 22, kg: [0.1, 0.8] },
+  { en: 'crucian carp', pl: 'karaś', ico: '🐟', val: 20, w: 14, kg: [0.2, 0.9], noWinter: true },
+  { en: 'bream', pl: 'leszcz', ico: '🐟', val: 25, w: 14, kg: [0.5, 2.5] },
+  { en: 'tench', pl: 'lin', ico: '🐟', val: 35, w: 9, kg: [0.4, 2], noWinter: true },
+  { en: 'carp', pl: 'karp', ico: '🐠', val: 40, w: 10, kg: [1, 9], noWinter: true },
+  { en: 'trout', pl: 'pstrąg', ico: '🐠', val: 50, w: 6, kg: [0.4, 3] },
+  { en: 'zander', pl: 'sandacz', ico: '🐠', val: 55, w: 5, kg: [1, 6] },
+  { en: 'pike', pl: 'szczupak', ico: '🐟', val: 60, w: 6, kg: [1, 10] },
+  { en: 'burbot', pl: 'miętus', ico: '🐟', val: 45, w: 8, kg: [0.5, 3], winterOnly: true },
+  { en: 'eel', pl: 'węgorz', ico: '🐍', val: 70, w: 3, kg: [0.5, 3], noWinter: true },
+  { en: 'catfish', pl: 'sum', ico: '🐟', val: 90, w: 2, kg: [5, 40], noWinter: true },
+  { en: 'an old boot', pl: 'stary but', ico: '🥾', val: 0, w: 5, junk: true },
+  { en: 'a tin can', pl: 'puszka', ico: '🥫', val: 0, w: 4, junk: true },
+];
+let fishing = null, nearFish = null;
+function buildFishSpotsReal() {
+  // brzegi wód: krawędzie trójkątów wody występujące tylko raz; pomost 1,6 m od brzegu po stronie lądu
+  const L = WD.water; if (!L || !L.f || !L.f.length) return;
+  const cnt = new Map(), opp = new Map(), ek = (a, b) => (a < b ? a + ':' + b : b + ':' + a);
+  for (let t = 0; t < L.f.length; t += 3) for (let k = 0; k < 3; k++) {
+    const a = L.f[t + k], b = L.f[t + (k + 1) % 3], c = L.f[t + (k + 2) % 3], key3 = ek(a, b);
+    cnt.set(key3, (cnt.get(key3) || 0) + 1); opp.set(key3, [a, b, c]);
+  }
+  const cands = [];
+  for (const [key3, n] of cnt) {
+    if (n !== 1) continue;
+    const [a, b, c] = opp.get(key3), ax = L.v[a * 2], az = L.v[a * 2 + 1], bx = L.v[b * 2], bz = L.v[b * 2 + 1], cx = L.v[c * 2], cz = L.v[c * 2 + 1];
+    const len = Math.hypot(bx - ax, bz - az); if (len < 2.5) continue;
+    const mx = (ax + bx) / 2, mz = (az + bz) / 2;
+    let nx = (bz - az) / len, nz = -(bx - ax) / len;
+    if (nx * (cx - mx) + nz * (cz - mz) > 0) { nx = -nx; nz = -nz; }        // na zewnątrz wody (od trzeciego wierzchołka)
+    const x = mx + nx * 1.6, z = mz + nz * 1.6;
+    if (blockedAt(x, z, 1)) continue;
+    cands.push({ x, z, wx: mx - nx * 3, wz: mz - nz * 3, len });
+  }
+  cands.sort((p, q) => q.len - p.len);
+  for (const c of cands) { if (fishSpots.length >= 10) break; if (fishSpots.every(s => Math.hypot(s.x - c.x, s.z - c.z) > 45)) fishSpots.push(c); }
+}
+function fishTexture() {
+  const c = makeCanvas(128, 128), x = c.getContext('2d');
+  x.fillStyle = 'rgba(10,12,18,.8)'; x.beginPath(); x.arc(64, 64, 56, 0, Math.PI * 2); x.fill();
+  x.lineWidth = 6; x.strokeStyle = '#4fb3ff'; x.stroke();
+  x.font = '64px "Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('🎣', 64, 68);
+  return canvasTex(c, false);
+}
+function buildFishSpots() {
+  if (REALMAP) buildFishSpotsReal();
+  const tex = fishTexture(), sm = new THREE.SpriteMaterial({ map: tex, depthTest: true });
+  for (const s of fishSpots) {
+    const a = Math.atan2(s.wx - s.x, s.wz - s.z), y = groundAt(s.x, s.z);
+    // pomost z desek w stronę wody
+    const fx = Math.sin(a), fz = Math.cos(a);
+    addStatic(new THREE.BoxGeometry(1.5, 0.12, 3.2), 0x8a5a33, s.x + fx * 1.2, y + 0.16, s.z + fz * 1.2, a);
+    for (const [ox, oz] of [[-0.6, 2.6], [0.6, 2.6]]) addStatic(new THREE.CylinderGeometry(0.07, 0.07, 0.9, 6), 0x5a3a1e, s.x + fx * oz + fz * ox, y - 0.2, s.z + fz * oz - fx * ox);
+    const sp = new THREE.Sprite(sm); sp.scale.set(1.3, 1.3, 1); sp.position.set(s.x, y + 2.4, s.z); scene.add(sp);
+    s.sprite = sp; s.a = a;
+  }
+  const st = staticParts.length ? new THREE.Mesh(mergeColored(staticParts), vcMat) : null;
+  if (st) { st.castShadow = st.receiveShadow = true; st.frustumCulled = false; scene.add(st); staticParts.length = 0; }
+}
+function checkFishSpots() {
+  nearFish = null;
+  if (P.car) return;
+  for (const s of fishSpots) if (Math.hypot(s.x - P.pos.x, s.z - P.pos.z) < 3.2) { nearFish = s; break; }
+}
+function pickFish() {
+  const W = season() === 'winter';
+  const pool = FISH.filter(f => (W ? !f.noWinter : !f.winterOnly));
+  let r = Math.random() * pool.reduce((a, f) => a + f.w, 0);
+  for (const f of pool) { r -= f.w; if (r <= 0) return f; }
+  return pool[0];
+}
+function openFishing(s) {
+  ui = 'fish'; keys.clear(); releaseLock(); setPrompt('');
+  P.facing = s.a; player.g.rotation.y = s.a;
+  fishing = { s, stage: 'cast', t: 0, timer: 0 };
+  $('quiz-ov').hidden = false; renderFishing();
+}
+function renderFishing(res) {
+  const f = fishing, W = season() === 'winter';
+  const head = `<div class="card-head"><div class="eyebrow"><span class="chip" style="background:#4fb3ff">🎣</span>${W ? 'Łowienie w przeręblu' : 'Łowienie ryb'} · złowione: ${save.fish || 0}</div>`;
+  let body = '';
+  if (f.stage === 'cast') body = `${head}<div class="result-title" style="color:#4fb3ff">GONE FISHING</div><div class="meta">Zarzuć wędkę i czekaj na branie. Gdy spławik zanurkuje — zatnij od razu!</div></div>
+    <div class="card-body"><div class="fish-water">〰️ 〰️ 〰️</div><div class="actions"><button class="btn" id="f-act">🎣 Zarzuć wędkę</button><button class="btn ghost" id="f-close">Wróć</button></div><p class="meta"><kbd>Spacja</kbd> / <kbd>Enter</kbd> — akcja · Esc — wyjście</p></div>`;
+  else if (f.stage === 'wait') body = `${head}<div class="result-title" style="color:#9fb3c8">CZEKAJ…</div><div class="meta">Spławik kołysze się na wodzie. Nie zacinaj za wcześnie!</div></div>
+    <div class="card-body"><div class="fish-water bob">〰️ 🔴 〰️</div><div class="actions"><button class="btn ghost" id="f-act">Zatnij</button><button class="btn ghost" id="f-close">Wróć</button></div></div>`;
+  else if (f.stage === 'bite') body = `${head}<div class="result-title" style="color:#f2b632">BIERZE! ZATNIJ!</div><div class="meta">Szybko — Spacja, Enter albo przycisk!</div></div>
+    <div class="card-body"><div class="fish-water bite">💦 🔴 💦</div><div class="actions"><button class="btn" id="f-act">⚡ ZATNIJ!</button></div></div>`;
+  else if (f.stage === 'result') {
+    const r = res || f.res;
+    f.res = r;
+    body = r.fish ? `${head}<div class="result-title" style="color:${r.fish.junk ? '#9fb3c8' : 'var(--green)'}">${r.fish.junk ? 'OOPS!' : 'YOU CAUGHT IT!'}</div></div>
+      <div class="card-body"><div class="fish-catch">${r.fish.ico}</div>
+      <div class="fish-name">You caught ${r.fish.junk ? '' : 'a '}<b>${esc(r.fish.en)}</b>${r.kg ? ` · ${r.kg.toFixed(1).replace('.', ',')} kg` : ''}</div>
+      <div class="meta" style="text-align:center">po polsku: ${esc(r.fish.pl)}${r.fish.junk ? ' — to nie ryba 😅' : ''}</div>
+      <div class="stats"><div class="stat"><b style="color:var(--cash)">+${fmtMoney(r.money)}</b><span>Nagroda</span></div><div class="stat"><b>+${r.xp}</b><span>XP</span></div><div class="stat"><b>${save.fish || 0}</b><span>Złowione ryby</span></div></div>
+      <div class="actions"><button class="btn" id="f-act">🎣 Łów dalej</button><button class="btn ghost" id="f-say">🔊 Posłuchaj</button><button class="btn ghost" id="f-close">Wróć</button></div></div>`
+      : `${head}<div class="result-title" style="color:var(--red)">${r.early ? 'ZA WCZEŚNIE!' : 'UCIEKŁA!'}</div><div class="meta">${r.early ? 'Zaciąłeś, zanim ryba wzięła — spłoszyła się.' : 'Ryba zerwała się z haczyka. Zacinaj szybciej!'}</div></div>
+      <div class="card-body"><div class="fish-water">〰️ 〰️ 〰️</div><div class="actions"><button class="btn" id="f-act">🎣 Spróbuj jeszcze raz</button><button class="btn ghost" id="f-close">Wróć</button></div></div>`;
+  }
+  qCard.innerHTML = body;
+  $('f-act').onclick = fishAction;
+  if ($('f-close')) $('f-close').onclick = closeFishing;
+  if ($('f-say')) $('f-say').onclick = () => sayEN(f.res.fish.en);
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();   // klawisze obsługuje keydown — bez podwójnego kliknięcia
+}
+function fishAction() {
+  const f = fishing; if (!f) return;
+  if (f.stage === 'cast' || f.stage === 'result') { f.stage = 'wait'; f.timer = 2 + Math.random() * 4.5; Sound.click(); renderFishing(); return; }
+  if (f.stage === 'wait') { Sound.wrong(); f.stage = 'result'; renderFishing({ early: true }); return; }
+  if (f.stage === 'bite') {
+    const fish = pickFish(), kg = fish.kg ? rr(fish.kg[0], fish.kg[1]) : 0;
+    const money = fish.junk ? 0 : Math.round(fish.val * (0.8 + kg / (fish.kg[1] || 1) * 0.6)), xp = fish.junk ? 1 : 5;
+    save.money += money; save.xp += xp; if (!fish.junk) save.fish = (save.fish || 0) + 1; persist();
+    fish.junk ? Sound.wrong() : Sound.passed();
+    f.stage = 'result'; renderFishing({ fish, kg, money, xp });
+    sayEN(fish.junk ? fish.en : 'a ' + fish.en);
+  }
+}
+function updateFishing(dt) {
+  const f = fishing; if (!f) return;
+  if (f.stage === 'wait') { f.timer -= dt; if (f.timer <= 0) { f.stage = 'bite'; f.timer = 1.15; Sound.click(); renderFishing(); } }
+  else if (f.stage === 'bite') { f.timer -= dt; if (f.timer <= 0) { Sound.wrong(); f.stage = 'result'; renderFishing({ early: false }); } }
+}
+function closeFishing() {
+  fishing = null; ui = null; $('quiz-ov').hidden = true; canvas.focus();
+}
+
+// ---------------------------------------------------------------- limit czasu na dojazd do misji
+// 4 minuty od ustawienia GPS na misję; nie zdążysz → wracasz na start (postęp, pieniądze i zakupy zostają).
+const MISSION_TIME = 240;
+let mTimer = null, SPAWN = { x: 0, z: 0, facing: Math.PI };
+function updateMissionTimer(dt) {
+  const el = $('mtimer');
+  if (!gps || gps.kind !== 'mission' || doneCount() >= MISSIONS.length) { mTimer = null; if (el) el.hidden = true; return; }
+  if (!mTimer || mTimer.m !== gps.m) mTimer = { m: gps.m, left: MISSION_TIME, arrived: false };
+  const focus = P.car ? P.car.pos : P.pos;
+  if (!mTimer.arrived && Math.hypot(gps.m.mx - focus.x, gps.m.mz - focus.z) < 12) {
+    mTimer.arrived = true;
+    toast(`⏱ Na miejscu! Zostało ${fmtTime(mTimer.left)}.`, 'good', 2600);
+  }
+  if (!mTimer.arrived && !ui) {
+    mTimer.left -= dt;
+    if (mTimer.left <= 0) timeUp();
+  }
+  if (el) {
+    el.hidden = mTimer.arrived;
+    const txt = `⏱ ${fmtTime(Math.max(0, mTimer.left))}`;
+    if (el.textContent !== txt) el.textContent = txt;
+    el.classList.toggle('low', mTimer.left < 30);
+  }
+}
+const fmtTime = s => { s = Math.ceil(s); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+function timeUp() {
+  if (P.car) {
+    const v = P.car;
+    v.kind = 'parked'; v.speed = 0; v.steer = 0; v.lean = 0; v.wheelie = 0; v.mesh.rotation.z = 0; v.mesh.rotation.x = 0;
+    nitroActive = false; if (v.flames) v.flames.visible = false; persistWardrobe();
+    P.car = null; player.g.visible = true; $('speedo').hidden = true; Sound.engine(false, 0, false);
+    for (const l of [player.ll, player.rl, player.la, player.ra]) l.rotation.set(0, 0, 0);
+  }
+  if (chase) endChase();
+  P.pos.set(SPAWN.x, groundAt(SPAWN.x, SPAWN.z), SPAWN.z); P.facing = SPAWN.facing; P.speed = 0; P.vy = 0;
+  player.g.position.copy(P.pos); player.g.rotation.set(0, P.facing, 0);
+  refreshNear(P.pos.x, P.pos.z);
+  summonVehicle(true);
+  mTimer.left = MISSION_TIME;
+  Sound.failed();
+  showBanner('CZAS MINĄŁ', 'Wracasz na start — spróbuj jeszcze raz!', '#ef4b4b', 3200);
+  setTimeout(() => toast(`Masz ${fmtTime(MISSION_TIME)} na dotarcie do: <b>${esc(gps && gps.kind === 'mission' ? gps.m.place : '')}</b>. Postęp, pieniądze i zakupy zostają.`, '', 5000), 1200);
+  computeRoute();
+}
+
 // ---------------------------------------------------------------- GPS
 let gps = null; // {kind:'mission', m} | {kind:'point', x, z}
 let route = null, routeT = 0;
@@ -2171,6 +2708,7 @@ function buildMapCanvas() {
   const s = N * CELL + R;
   g.fillStyle = '#5b6578'; g.fillRect(w2m(-HALF), w2m(-HALF), s * MSC, s * MSC);
   for (const r of mapRects) { g.fillStyle = r.c; g.fillRect(w2m(r.x0), w2m(r.z0), (r.x1 - r.x0) * MSC, (r.z1 - r.z0) * MSC); }
+  g.fillStyle = '#2b5d8a'; g.beginPath(); g.arc(w2m(LAKE.x), w2m(LAKE.z), LAKE.r * MSC, 0, Math.PI * 2); g.fill();
   g.fillStyle = '#2f4a32';
   for (const [x, z] of treeSpots) if (!onBlock(x, z)) { g.beginPath(); g.arc(w2m(x), w2m(z), 2.2, 0, Math.PI * 2); g.fill(); }
   g.strokeStyle = 'rgba(233,198,74,.35)'; g.lineWidth = 1; g.setLineDash([4, 5]);
@@ -2216,6 +2754,8 @@ function drawMinimap(dt) {
     blip(m.mx, m.mz, col, st === 'done' ? '✓' : m.short[0], active, active);
   }
   if (gps && gps.kind === 'point') blip(gps.x, gps.z, '#c77dff', '•', true, true);
+  for (const s of fishSpots) blip(s.x, s.z, '#4fb3ff', '≈', false);
+  if (season() === 'autumn') for (const mu of mushrooms) if (mu.alive && Math.hypot(mu.x - focus.x, mu.z - focus.z) < 70) { const [sx, sy] = toScreen(mu.x, mu.z); g.beginPath(); g.arc(c + sx, c + sy, 3, 0, Math.PI * 2); g.fillStyle = '#f0a43a'; g.fill(); }
   if (chase) blip(chase.v.pos.x, chase.v.pos.z, Math.floor(elapsed * 6) % 2 ? '#ff3b3b' : '#4f7bff', 'P', true);
   // north
   const [nx, ny] = (() => { const v = [0, -1]; return [v[0] * cos - v[1] * sin, v[0] * sin + v[1] * cos]; })();
@@ -2346,7 +2886,13 @@ function updateHUD(dt, clock) {
   $('xpfill').style.width = next ? `${((dc - RANKS[ri][0]) / (next[0] - RANKS[ri][0])) * 100}%` : '100%';
   $('clock').textContent = clock;
   $('done-count').textContent = `${dc}/${MISSIONS.length}`;
-  if (P.car) $('speed').textContent = Math.round(Math.abs(P.car.speed) * 3.6);
+  if (P.car) {
+    $('speed').textContent = Math.round(Math.abs(P.car.speed) * 3.6);
+    const mt = isScooterType(P.car.type) ? `KM/H · ${wardrobe.smode === 'E' ? 'ECO' : wardrobe.smode}` : 'KM/H';
+    if ($('speed-unit').textContent !== mt) $('speed-unit').textContent = mt;
+  }
+  const se = SEASONS[seasonIdx], stx = `${se.ico} ${se.name} · dzień ${seasonDay()}/${SEASON_DAYS}`;
+  if ($('season').textContent !== stx) $('season').textContent = stx;
   const obj = $('objective');
   const dist = route ? Math.round(routeLength()) : 0;
   let html;
@@ -2377,6 +2923,8 @@ function checkMissionProximity() {
   } else if (P.car) {
     const close = markers.find(mk => Math.hypot(mk.m.mx - P.car.pos.x, mk.m.mz - P.car.pos.z) < 7 && mk.state !== 'locked');
     if (close) promptText = `<kbd>F</kbd> Wysiądź z auta i wejdź w znacznik: <b>${esc(close.m.place)}</b>`;
+  } else if (nearFish) {
+    promptText = `<kbd>R</kbd> Łów ryby 🎣${season() === 'winter' ? ' (przerębel)' : ''}`;
   } else if (nearNPC) {
     promptText = `<kbd>T</kbd> Porozmawiaj: <b>${esc(nearNPC.t.name)}</b> · ${esc(nearNPC.t.role)}${nearNPC.done ? ' ✓' : ` · <span style="color:var(--cash)">+${fmtMoney(TALK_REWARD)}</span>`}`;
   } else {
@@ -2386,6 +2934,7 @@ function checkMissionProximity() {
   setPrompt(promptText);
 }
 function tryStartMission() {
+  if (!nearMission && nearFish && !P.car) { openFishing(nearFish); return; }
   if (!nearMission && nearNPC && !P.car) { openTalk(nearNPC); return; }
   if (!nearMission || P.car) return;
   if (!isUnlocked(nearMission)) { Sound.wrong(); return; }
@@ -2849,6 +3398,7 @@ function renderShop() {
   $('shop-money').textContent = fmtMoney(save.money);
   $('shop-tabs').innerHTML = SHOP_CATS.map(([c, l]) => `<button class="xbtn ${c === shopCat ? 'on' : ''}" data-c="${c}">${l}</button>`).join('');
   $('shop-tabs').querySelectorAll('button').forEach(b => b.onclick = () => { shopCat = b.dataset.c; renderShop(); Sound.click(); });
+  if (shopCat === 'settings') { renderSettings(); return; }
   const items = SHOP.filter(i => i.cat === shopCat), eq = equippedId(shopCat);
   $('shop-grid').innerHTML = items.map(it => {
     const own = !!wardrobe.owned[it.id], on = eq === it.id;
@@ -2877,8 +3427,8 @@ function renderShop() {
   $('shop-perk').hidden = !hasCashGlasses();
 }
 function shopIcon(it) {
-  if (it.cat === 'extra') return it.id === 'nitro' ? '🔥' : '⛽';
-  if (it.cat === 'vehicle') return { scooter: '🛴', kscooter: '🛴', moto: '🏍️', hatch: '🚗', suv: '🚙', supercar: '🏎️' }[it.vtype] || '🚗';
+  if (it.cat === 'extra') return it.id === 'nitro' ? '🔥' : it.id === 'wheelie' ? '🤸' : '⛽';
+  if (it.cat === 'vehicle') return { scooter: '🛴', kscooter: '🛴', moto: '🏍️', hatch: '🚗', suv: '🚙', supercar: '🏎️', lux: '🚘' }[it.vtype] || '🚗';
   if (it.cat === 'glasses') return it.glasses === 'cash' ? '<span class="pixglass">▀█▀▀ ▀█▀▀</span>' : it.glasses === 'sun' ? '🕶️' : '🙂';
   if (it.cat === 'hat') return { none: '💇', cap: '🧢', beanie: '🧶', fedora: '🎩', crown: '👑' }[it.hat];
   if (it.cat === 'hair') return `<span class="swatch" style="background:#${it.hair.toString(16).padStart(6, '0')}"></span>`;
@@ -2890,7 +3440,7 @@ function buyItem(id) {
   save.money -= it.price; persist();
   wardrobe.owned[id] = 1; persistWardrobe();
   Sound.passed();
-  toast(`Kupiono: ${it.name}${it.id === 'nitro' ? ' — w pojeździe przytrzymaj Shift (NITRO)!' : it.perk ? ' — od teraz misje dają podwójne pieniądze!' : ''}`, 'good', 4200);
+  toast(`Kupiono: ${it.name}${it.id === 'nitro' ? ' — w pojeździe przytrzymaj Shift (NITRO)!' : it.id === 'wheelie' ? ' — na hulajnodze lub motorze przytrzymaj Q (WHEELIE)!' : it.perk ? ' — od teraz misje dają podwójne pieniądze!' : ''}`, 'good', 4200);
   equipItem(id);
 }
 function equipItem(id) {
@@ -2917,13 +3467,48 @@ function summonVehicle(quiet) {
     if (!pushOut(p, isTwoWheel(it.vtype) ? 0.6 : 1.3, nearCols)) { best = p; break; }
   }
   if (!best) best = { x: P.pos.x + fz * 2.6, z: P.pos.z - fx * 2.6 };
-  summoned = spawnVehicle(it.vtype, it.color, best.x, best.z, P.facing, 'parked');
-  summoned.owned = true; summoned.pos.y = groundAt(best.x, best.z); summoned.mesh.position.copy(summoned.pos);
+  summoned = spawnVehicle(it.vtype, vehColor(id), best.x, best.z, P.facing, 'parked');
+  summoned.owned = true; summoned.itemId = id; summoned.pos.y = groundAt(best.x, best.z); summoned.mesh.position.copy(summoned.pos);
   if (quiet) return;
   Sound.door();
   toast(`Twój pojazd czeka obok: ${it.name}. Naciśnij <kbd>F</kbd>, aby ${isTwoWheel(it.vtype) ? 'wskoczyć' : 'wsiąść'}.`, 'good', 4000);
 }
 $('shop-close').addEventListener('click', closeShop);
+
+// Ustawienia: kolory własnych pojazdów i tryb hulajnogi.
+const VEH_PALETTE = [[0x2b2b2b, 'czarny'], [0xf1f2f6, 'biały'], [0xc9ccd1, 'srebrny'], [0x7f8c8d, 'grafitowy'], [0xc0392b, 'czerwony'], [0xe8410b, 'pomarańczowy'],
+  [0xf2b632, 'żółty'], [0x63c132, 'limonkowy'], [0x10ac84, 'zielony'], [0x2e86de, 'niebieski'], [0x1e3799, 'granatowy'], [0x8e44ad, 'fioletowy'], [0xe84393, 'różowy'], [0x6d4c2f, 'brązowy']];
+const vehColor = id => { const c = wardrobe.vcolor && wardrobe.vcolor[id]; return typeof c === 'number' ? c : (shopItem(id) || {}).color; };
+const hexCss = n => '#' + n.toString(16).padStart(6, '0');
+function setVehColor(id, hex) {
+  wardrobe.vcolor[id] = hex; persistWardrobe();
+  for (const v of vehicles) if (v.itemId === id) recolorVehicle(v, hex);
+  Sound.click(); renderShop();
+}
+function setScooterMode(m, quiet) {
+  if (!SCOOTER_MODES[m]) return;
+  wardrobe.smode = m; persistWardrobe();
+  if (!quiet) { const s = SCOOTER_MODES[m]; toast(`🛴 Tryb ${s.label} (${m}) — do ${s.kmh} km/h${s.kmh > SPEED_LIMIT_KMH ? ' · uwaga: powyżej 50 km/h ściga policja!' : ''}`, 'good', 3600); }
+  if (ui === 'shop') renderShop();
+}
+function renderSettings() {
+  const own = SHOP.filter(i => i.cat === 'vehicle' && wardrobe.owned[i.id]);
+  const rows = own.map(it => {
+    const cur = vehColor(it.id);
+    return `<div class="shop-item set-row"><div class="si-ico">${shopIcon(it)}</div><div class="si-nm">${esc(it.name)}</div>
+      <div class="swatches">${VEH_PALETTE.map(([c, n]) => `<button class="sw ${c === cur ? 'on' : ''}" title="${n}" style="background:${hexCss(c)}" data-vc="${it.id}" data-c="${c}"></button>`).join('')}</div></div>`;
+  }).join('');
+  const modes = Object.entries(SCOOTER_MODES).map(([k, s]) => `<button class="xbtn ${wardrobe.smode === k ? 'on' : ''}" data-sm="${k}">${k} · ${s.label} · ${s.kmh} km/h</button>`).join('');
+  const se = SEASONS[seasonIdx], left = Math.max(1, Math.ceil((SEASON_LEN - seasonT) / 60));
+  $('shop-grid').innerHTML = `
+    <div class="shop-item set-wide"><div class="si-nm">🎨 Kolor pojazdu</div><div class="si-ds">Wybierz kolor dla każdego swojego pojazdu. Zmiana działa od razu — także w trakcie jazdy.</div></div>
+    ${rows}
+    <div class="shop-item set-wide"><div class="si-nm">🛴 Tryb hulajnogi</div><div class="si-ds">Eco — spokojnie i oszczędnie, S — sport, R — wyścig. W grze zmienisz go klawiszem <kbd>G</kbd> (na telefonie TRYB).</div><div class="set-modes">${modes}</div></div>
+    <div class="shop-item set-wide"><div class="si-nm">${se.ico} Pora roku: ${se.name}</div><div class="si-ds">Pory roku zmieniają się co 3 dni gry (36 minut). Następna za ok. ${left} min.</div></div>`;
+  $('shop-grid').querySelectorAll('[data-vc]').forEach(b => b.onclick = () => setVehColor(b.dataset.vc, +b.dataset.c));
+  $('shop-grid').querySelectorAll('[data-sm]').forEach(b => b.onclick = () => setScooterMode(b.dataset.sm));
+  $('shop-perk').hidden = !hasCashGlasses();
+}
 
 // ---------------------------------------------------------------- start screen
 function refreshStartInfo() {
@@ -2989,6 +3574,9 @@ function startGame() {
     if (touchMode) setTimeout(() => toast('Lewy pad — ruch · przeciągnij palcem po ekranie — kamera · dotknij minimapy — mapa', '', 6500), 300);
   }
   if (first) setTimeout(() => setGPS({ kind: 'mission', m: first }), 900);
+  const se = SEASONS[seasonIdx];
+  setTimeout(() => toast(`${se.ico} Pora roku: <b>${se.name}</b> — ${se.sub}. Zmienia się co 3 dni gry (36 min).`, '', 6000), doneCount() === 0 ? 10800 : 1200);
+  setTimeout(() => toast(`⏱ Na dojazd do każdej misji masz ${fmtTime(MISSION_TIME)} — nie zdążysz, wracasz na start.`, '', 5500), doneCount() === 0 ? 14000 : 4000);
 }
 
 // ---------------------------------------------------------------- main loop
@@ -3007,6 +3595,9 @@ function frame() {
   for (const v of vehicles) if (v.kind === 'parked' && v.mesh.visible) v.pos.y = groundAt(v.pos.x, v.pos.z), v.mesh.position.copy(v.pos);
   updateTraffic(dt);
   updateChase(dt);
+  if (ui !== 'start') { updateSeason(dt); updateMissionTimer(dt); updateMushrooms(dt); checkFishSpots(); updateFishing(dt); }
+  updateSnow(dt);
+  twinkleXmas();
   updatePeds(dt);
   updateNPCs(dt);
   updateCamera(dt);
@@ -3102,6 +3693,11 @@ async function boot() {
   player.g.position.copy(P.pos); player.g.rotation.y = P.facing;
   spawnVehicle('sport', 0xf2b632, sx + 4, rc(4) - 6.2, Math.PI / 2, 'parked');
   }
+  SPAWN = { x: P.pos.x, z: P.pos.z, facing: P.facing };
+  buildFishSpots();
+  buildMushrooms();
+  buildSnow();
+  applySeason(false);
   loadKScooter();
   spawnParked(REALMAP ? 40 : 18);
   spawnTraffic(26);
