@@ -1146,7 +1146,7 @@ function choosePlan(a) {
   a.turnAt = a.plan.t === 'turn' ? (a.axis === 'x' ? rc(a.k) - LANE * a.plan.d2 : rc(a.k) + LANE * a.plan.d2) : rc(a.k);
 }
 function spawnTraffic(count) {
-  if (REALMAP) return;   // etap 2: ruch po prawdziwych drogach
+  if (REALMAP) { spawnTrafficReal(count); return; }
   let tries = 0;
   while (count > 0 && tries++ < 500) {
     const axis = rand() < 0.5 ? 'x' : 'z', dir = rand() < 0.5 ? 1 : -1, line = Math.floor(rand() * (N + 1));
@@ -1413,7 +1413,7 @@ window.addEventListener('keydown', e => {
   if (e.code === 'KeyB') { ui === 'shop' ? closeShop() : !ui && openShop(); return; }
   if (ui) return;
   if (e.code === 'KeyV' && !e.repeat) { summonVehicle(); return; }
-  if (e.code === 'KeyT' && !e.repeat) { if (nearNPC && !P.car) openTalk(nearNPC); return; }
+  if (e.code === 'KeyT' && !e.repeat) { if (nearPet && !P.car && !nearMission) petAnimal(nearPet); else if (nearNPC && !P.car) openTalk(nearNPC); return; }
   if (e.code === 'KeyR' && !e.repeat) { if (nearFish && !P.car) openFishing(nearFish); return; }
   if (e.code === 'KeyG' && !e.repeat) { if (P.car && isScooterType(P.car.type)) cycleScooterMode(); else toast('Tryby Eco / S / R działają na hulajnodze — wsiądź na nią (V, potem F).'); return; }
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
@@ -1542,11 +1542,12 @@ function updateTouchUI() {
   if (!touchMode) return;
   const show = !ui;
   const carAvail = !!P.car || vehicles.some(v => Math.hypot(v.pos.x - P.pos.x, v.pos.z - P.pos.z) < 4.5);
-  const fishAvail = !nearMission && !!nearFish && !P.car;
-  const talkAvail = !nearMission && !fishAvail && !!nearNPC && !P.car;
-  const misAvail = (!!nearMission && !P.car && isUnlocked(nearMission)) || talkAvail || fishAvail;
+  const petAvail = !nearMission && !!nearPet && !P.car;
+  const fishAvail = !nearMission && !petAvail && !!nearFish && !P.car;
+  const talkAvail = !nearMission && !fishAvail && !petAvail && !!nearNPC && !P.car;
+  const misAvail = (!!nearMission && !P.car && isUnlocked(nearMission)) || talkAvail || fishAvail || petAvail;
   const scoot = !!P.car && isScooterType(P.car.type), wh = !!P.car && isTwoWheel(P.car.type) && hasWheelie();
-  const st = `${show}|${carAvail}|${misAvail}|${!!P.car}|${talkAvail}|${fishAvail}|${hasNitro()}|${scoot}|${wh}`;
+  const st = `${show}|${carAvail}|${misAvail}|${!!P.car}|${talkAvail}|${fishAvail}|${petAvail}|${hasNitro()}|${scoot}|${wh}`;
   if (st === touchState) return;
   touchState = st;
   touchUI.hidden = !show;
@@ -1554,7 +1555,7 @@ function updateTouchUI() {
   $('t-car').classList.toggle('off', !carAvail);
   $('t-car').textContent = P.car ? 'WYSIĄDŹ' : 'AUTO';
   $('t-mission').classList.toggle('off', !misAvail);
-  $('t-mission').textContent = fishAvail ? 'RYBY' : talkAvail ? 'ROZMOWA' : 'MISJA';
+  $('t-mission').textContent = petAvail ? 'GŁASKAJ' : fishAvail ? 'RYBY' : talkAvail ? 'ROZMOWA' : 'MISJA';
   $('t-mode').classList.toggle('off', !scoot);
   $('t-wheelie').classList.toggle('off', !wh);
   $('t-jump').textContent = P.car ? 'HAMULEC' : 'SKOK';
@@ -2069,7 +2070,7 @@ function updateTraffic(dt) {
   const focus = P.car ? P.car.pos : P.pos;
   for (const v of vehicles) {
     const a = v.ai; if (!a) continue;
-    const fx = a.axis === 'x' ? a.dir : 0, fz = a.axis === 'z' ? a.dir : 0;
+    const fx = a.real ? Math.sin(v.heading) : a.axis === 'x' ? a.dir : 0, fz = a.real ? Math.cos(v.heading) : a.axis === 'z' ? a.dir : 0;
     let ahead = Infinity, byPlayer = false;
     const look = (ox, oz, isP) => {
       const rx = ox - v.pos.x, rz = oz - v.pos.z, al = rx * fx + rz * fz;
@@ -2079,9 +2080,10 @@ function updateTraffic(dt) {
     if (a.ghost <= 0) for (const o of vehicles) if (o !== v) look(o.pos.x, o.pos.z, o === P.car);
     if (!P.car) look(P.pos.x, P.pos.z, true);
     else if (a.ghost > 0) look(P.car.pos.x, P.car.pos.z, true);
-    let target = 11.5;
+    let target = a.real ? a.vmax : 11.5;
     if (ahead < 16) target = ahead < 6.5 ? 0 : target * (ahead - 6.5) / 9.5;
-    if (a.plan.t === 'turn' && Math.abs(a.along - a.turnAt) < 12) target = Math.min(target, 6.5);
+    if (!a.real && a.plan.t === 'turn' && Math.abs(a.along - a.turnAt) < 12) target = Math.min(target, 6.5);
+    if (season() === 'winter') target *= 0.8;
     v.speed = target < v.speed ? Math.max(target, v.speed - 20 * dt) : Math.min(target, v.speed + 5 * dt);
     if (v.speed < 0.3 && target === 0) {
       a.stuck += dt;
@@ -2089,6 +2091,16 @@ function updateTraffic(dt) {
       if (!byPlayer && a.stuck > 2.5) { a.ghost = 2.5; a.stuck = 0; }
     } else a.stuck = 0;
     a.ghost -= dt; v.honk -= dt;
+    if (a.real) {
+      advanceRealCar(v, a, dt);
+      // auta daleko od gracza wracają w jego okolicę (gęsty ruch tam, gdzie gracz jest)
+      a.recycle -= dt;
+      if (a.recycle <= 0) { a.recycle = 2; if (Math.hypot(v.pos.x - focus.x, v.pos.z - focus.z) > 330 && placeRealCar(a, focus.x, focus.z)) { const [x, z, hd] = realCarPos(a); v.pos.set(x, 0, z); v.heading = hd; } }
+      const farR = Math.abs(v.pos.x - focus.x) > 220 || Math.abs(v.pos.z - focus.z) > 220;
+      v.mesh.visible = !farR;
+      if (!farR) poseCar(v, dt);
+      continue;
+    }
     // advance along lane
     a.along += a.dir * v.speed * dt;
     if ((a.along - a.turnAt) * a.dir >= 0) {
@@ -2599,6 +2611,417 @@ function closeFishing() {
   fishing = null; ui = null; $('quiz-ov').hidden = true; canvas.focus();
 }
 
+// ---------------------------------------------------------------- siatka kolizji (zwierzęta)
+let colGrid = null;
+const COLG = 16;
+function colsAt(x, z) {
+  if (!colGrid) {
+    colGrid = new Map();
+    for (const c of colliders) {
+      for (let i = Math.floor((c.x0 - 1) / COLG); i <= Math.floor((c.x1 + 1) / COLG); i++)
+        for (let j = Math.floor((c.z0 - 1) / COLG); j <= Math.floor((c.z1 + 1) / COLG); j++) {
+          const k = i * 4099 + j; (colGrid.get(k) || colGrid.set(k, []).get(k)).push(c);
+        }
+    }
+  }
+  return colGrid.get(Math.floor(x / COLG) * 4099 + Math.floor(z / COLG)) || [];
+}
+
+// ---------------------------------------------------------------- zwierzęta
+// Dzikie (dziki, sarny, jelenie, łosie, lisy, wilki) w lasach i przy drzewach; oswojone (koty, psy) przy domach.
+// Pierwsze spotkanie gatunku = odkrycie: nazwa po angielsku z lektorem, +$10 (save.zoo). Dzikie uciekają przed graczem
+// i pojazdami; kota i psa można pogłaskać (T / E) — pies przez chwilę chodzi za graczem.
+const ANIMALS = {
+  boar:  { pl: 'dzik', en: 'a wild boar', ico: '🐗', L: 1.25, H: 0.55, W: 0.48, leg: 0.36, c: 0x4a3b30, c2: 0x2b221c, speed: 1.6, run: 6.5, shy: 8 },
+  roe:   { pl: 'sarna', en: 'a roe deer', ico: '🦌', L: 1.0, H: 0.4, W: 0.3, leg: 0.6, c: 0xa0703c, c2: 0xf2e6d0, speed: 1.3, run: 8.5, shy: 15 },
+  deer:  { pl: 'jeleń', en: 'a red deer', ico: '🦌', L: 1.55, H: 0.6, W: 0.44, leg: 0.85, c: 0x7b4a2a, c2: 0xe8d8c0, antler: 'deer', speed: 1.4, run: 8.5, shy: 15 },
+  moose: { pl: 'łoś', en: 'a moose', ico: '🫎', L: 2.1, H: 0.9, W: 0.66, leg: 1.1, c: 0x3d2b1f, c2: 0x24180f, antler: 'moose', speed: 1.1, run: 6, shy: 10 },
+  fox:   { pl: 'lis', en: 'a fox', ico: '🦊', L: 0.62, H: 0.27, W: 0.21, leg: 0.27, c: 0xd8642a, c2: 0xf5f0e8, tail: 'bushy', speed: 1.5, run: 7.5, shy: 11 },
+  wolf:  { pl: 'wilk', en: 'a wolf', ico: '🐺', L: 1.1, H: 0.42, W: 0.3, leg: 0.52, c: 0x8a8d90, c2: 0xd8d8d8, tail: 'bushy', speed: 1.7, run: 8, shy: 13 },
+  cat:   { pl: 'kot', en: 'a cat', ico: '🐱', L: 0.42, H: 0.2, W: 0.16, leg: 0.17, cs: [0xe08a3c, 0x222222, 0x9a9a9a, 0xf2f2f2, 0x6b4a2f], speed: 0.8, run: 5, pet: true, ears: 'cat' },
+  dog:   { pl: 'pies', en: 'a dog', ico: '🐶', L: 0.72, H: 0.32, W: 0.25, leg: 0.34, cs: [0x8a5a2b, 0x1e1e1e, 0xd9b35b, 0xf2efe8, 0x6e6e6e], speed: 1.3, run: 5.5, pet: true, ears: 'dog' },
+};
+const ANIMAL_KEYS = Object.keys(ANIMALS);
+const animals = [];
+function animalGeo(kind, color) {
+  const s = ANIMALS[kind], c = color, c2 = s.c2 != null ? s.c2 : 0xf2efe8;
+  return geo(`an_${kind}_${color}`, () => {
+    const P = [], B = (w, h, d, x, y, z, col, rx = 0) => P.push({ g: new THREE.BoxGeometry(w, h, d), m: new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, 0, 0)), new THREE.Vector3(1, 1, 1)), c: new THREE.Color(col) });
+    const { L, H, W, leg } = s, by = leg + H / 2;
+    B(W, H, L, 0, by, 0, c);                                                       // tułów
+    const tall = kind === 'deer' || kind === 'roe' || kind === 'moose';
+    const hx = 0, hy = tall ? by + H * 0.9 : by + H * 0.25, hz = L / 2 + (tall ? L * 0.1 : L * 0.12);
+    if (tall) B(W * 0.45, H * 1.1, W * 0.5, 0, by + H * 0.5, L / 2 - W * 0.1, c, -0.5);   // szyja
+    const hw = W * (kind === 'moose' ? 0.7 : 0.75), hh = H * (kind === 'cat' ? 0.85 : 0.7), hd = L * (kind === 'cat' ? 0.32 : 0.28);
+    B(hw, hh, hd, hx, hy, hz, c);                                                   // głowa
+    const snoutL = kind === 'cat' ? 0.04 : kind === 'moose' ? hd * 0.9 : hd * 0.6;
+    B(hw * 0.6, hh * 0.55, snoutL, hx, hy - hh * 0.15, hz + hd / 2 + snoutL / 2, kind === 'boar' ? 0x5a463a : kind === 'fox' || kind === 'wolf' ? c2 : c);
+    B(hw * 0.25, hh * 0.22, 0.03, hx, hy - hh * 0.05, hz + hd / 2 + snoutL + 0.01, 0x111111);   // nos
+    for (const sx of [-1, 1]) B(0.035, 0.035, 0.02, sx * hw * 0.32, hy + hh * 0.15, hz + hd / 2 + 0.01, 0x111111);   // oczy
+    // uszy
+    const ew = kind === 'cat' ? 0.06 : hw * 0.28, eh = kind === 'dog' ? hh * 0.5 : kind === 'fox' || kind === 'wolf' || kind === 'cat' ? hh * 0.55 : hh * 0.45;
+    for (const sx of [-1, 1]) {
+      if (kind === 'dog') B(ew, eh, 0.04, sx * (hw / 2 + 0.01), hy + hh * 0.05, hz - hd * 0.1, c === 0xf2efe8 ? 0x8a5a2b : c);
+      else B(ew, eh, 0.04, sx * hw * 0.32, hy + hh / 2 + eh / 2 - 0.02, hz - hd * 0.15, kind === 'fox' ? 0x2b1a12 : c);
+    }
+    // ogon
+    if (s.tail === 'bushy') { B(W * 0.32, W * 0.32, L * 0.55, 0, by + H * 0.05, -L / 2 - L * 0.24, c, 0.5); B(W * 0.3, W * 0.3, L * 0.14, 0, by - H * 0.25, -L / 2 - L * 0.5, c2, 0.5); }
+    else if (kind === 'cat') B(0.04, 0.04, L * 0.7, 0, by + H * 0.55, -L / 2 - L * 0.22, c, -0.9);
+    else if (kind === 'dog') B(0.06, 0.06, L * 0.35, 0, by + H * 0.4, -L / 2 - L * 0.12, c, -0.7);
+    else B(W * 0.25, W * 0.2, 0.12, 0, by + H * 0.3, -L / 2 - 0.05, kind === 'roe' || kind === 'deer' ? c2 : c);
+    if (kind === 'roe' || kind === 'deer') B(W * 0.7, H * 0.6, 0.04, 0, by + H * 0.05, -L / 2 - 0.01, c2);   // białe lustro
+    // poroże
+    const ay = hy + hh / 2;
+    if (s.antler === 'deer') for (const sx of [-1, 1]) {
+      B(0.05, 0.55, 0.05, sx * 0.14, ay + 0.26, hz - 0.05, 0xd9c7a3, -0.2);
+      B(0.04, 0.3, 0.04, sx * 0.22, ay + 0.42, hz + 0.05, 0xd9c7a3, 0.5);
+      B(0.04, 0.28, 0.04, sx * 0.1, ay + 0.55, hz - 0.12, 0xd9c7a3, -0.5);
+    }
+    if (s.antler === 'moose') for (const sx of [-1, 1]) {
+      B(0.06, 0.18, 0.06, sx * 0.2, ay + 0.08, hz - 0.05, 0xc9b48a);
+      B(0.55, 0.06, 0.38, sx * 0.48, ay + 0.2, hz - 0.08, 0xc9b48a);
+      for (let k = 0; k < 3; k++) B(0.05, 0.16, 0.05, sx * (0.32 + k * 0.17), ay + 0.3, hz - 0.2 + k * 0.08, 0xc9b48a);
+    }
+    if (kind === 'moose') B(W * 0.5, H * 0.35, L * 0.35, 0, by + H * 0.6, L * 0.2, c);   // garb
+    if (kind === 'boar') { for (const sx of [-1, 1]) B(0.03, 0.08, 0.03, sx * hw * 0.3, hy - hh * 0.2, hz + hd / 2 + snoutL - 0.02, 0xf2efe0); B(W * 0.25, 0.08, L * 0.7, 0, by + H / 2 + 0.03, 0, s.c2); }
+    return mergeColored(P);
+  });
+}
+function legGeo(kind, color) {
+  const s = ANIMALS[kind], w = Math.max(0.05, s.W * (kind === 'moose' || kind === 'deer' || kind === 'roe' ? 0.18 : 0.26));
+  return geo(`al_${kind}_${color}`, () => mergeColored([{ g: new THREE.BoxGeometry(w, s.leg + 0.02, w).translate(0, -s.leg / 2, 0), m: new THREE.Matrix4(), c: new THREE.Color(kind === 'fox' ? 0x2b1a12 : color) }]));
+}
+function makeAnimal(kind, x, z, home) {
+  const s = ANIMALS[kind], color = s.cs ? s.cs[Math.floor(Math.random() * s.cs.length)] : s.c;
+  const grp = new THREE.Group();
+  const body = new THREE.Mesh(animalGeo(kind, color), vcMat); body.castShadow = true; grp.add(body);
+  const legs = [];
+  const lx = s.W * 0.32, lz = s.L * 0.36;
+  for (const [sx, sz] of [[-1, 1], [1, 1], [-1, -1], [1, -1]]) {
+    const l = new THREE.Mesh(legGeo(kind, color), vcMat); l.position.set(sx * lx, s.leg, sz * lz); grp.add(l); legs.push(l);
+  }
+  const k = kind === 'boar' && home && home.small ? 0.6 : 1;
+  grp.scale.setScalar(k);
+  grp.position.set(x, groundAt(x, z), z);
+  scene.add(grp);
+  const a = { kind, s, g: grp, legs, x, z, hx: home ? home.x : x, hz: home ? home.z : z, hr: s.pet ? 7 : 26, heading: Math.random() * 6, state: 'idle', t: Math.random() * 4, tx: x, tz: z, ph: 0, spd: 0, follow: 0, r: s.L * 0.4 * k };
+  animals.push(a);
+  return a;
+}
+function spawnAnimals() {
+  // dzikie: stada przy drzewach w zalesionych miejscach (Grammar City: las przy stawie i okolice miasta)
+  let spots = (mushCand || []).map(i => treeSpots[i]);
+  if (!REALMAP) spots = spots.concat(treeSpots.filter(([x, z]) => Math.abs(x) > HALF + 20 || Math.abs(z) > HALF + 20)).filter(([x, z]) => Math.abs(x) > HALF + 8 || Math.abs(z) > HALF + 8);
+  spots = spots.filter(([x, z]) => Math.abs(x) < BOUND - 10 && Math.abs(z) < BOUND - 10 && Math.hypot(x - SPAWN.x, z - SPAWN.z) > 40);
+  const GROUPS = [['roe', 3], ['roe', 2], ['roe', 2], ['deer', 2], ['deer', 1], ['boar', 4], ['boar', 3], ['fox', 1], ['fox', 1], ['fox', 1], ['wolf', 3], ['moose', 1], ['moose', 1]];
+  const homes = [];
+  for (const [kind, n] of GROUPS) {
+    if (!spots.length) break;
+    let h = null;
+    for (let t = 0; t < 30; t++) {
+      const [x, z] = spots[Math.floor(Math.random() * spots.length)];
+      const hx = x + rr(-4, 4), hz = z + rr(-4, 4);
+      if (homes.some(o => Math.hypot(o.x - hx, o.z - hz) < 45) || blockedAt(hx, hz, 1.2)) continue;
+      h = { x: hx, z: hz }; break;
+    }
+    if (!h) continue;
+    homes.push(h);
+    for (let i = 0; i < n; i++) {
+      const x = h.x + rr(-3, 3), z = h.z + rr(-3, 3);
+      makeAnimal(kind, x, z, { x: h.x, z: h.z, small: kind === 'boar' && i > 0 });
+    }
+  }
+  // oswojone: koty i psy przy domach
+  const houses = colliders.filter(c => (c.rings ? c.h >= 3 && c.h < 40 : c.x1 - c.x0 > 5 && c.z1 - c.z0 > 5 && c.h >= 3.5 && c.h < 40));
+  for (let i = 0; i < 24 && houses.length; i++) {
+    for (let t = 0; t < 20; t++) {
+      const c = houses[Math.floor(Math.random() * houses.length)];
+      let x, z;
+      if (c.rings) { const r = c.rings[0], k = Math.floor(Math.random() * (r.length / 2)) * 2, k2 = (k + 2) % r.length, u = Math.random(); const ex = r[k] + (r[k2] - r[k]) * u, ez = r[k + 1] + (r[k2 + 1] - r[k + 1]) * u, L = Math.hypot(r[k2] - r[k], r[k2 + 1] - r[k + 1]) || 1; let nx = (r[k2 + 1] - r[k + 1]) / L, nz = -(r[k2] - r[k]) / L; if (polyInside(ex + nx * 0.5, ez + nz * 0.5, c.rings)) { nx = -nx; nz = -nz; } x = ex + nx * 2.2; z = ez + nz * 2.2; }
+      else { const side = Math.floor(Math.random() * 4), u = Math.random(); x = side < 2 ? c.x0 + (c.x1 - c.x0) * u : side === 2 ? c.x0 - 1.8 : c.x1 + 1.8; z = side >= 2 ? c.z0 + (c.z1 - c.z0) * u : side === 0 ? c.z0 - 1.8 : c.z1 + 1.8; }
+      if (blockedAt(x, z, 0.5) || Math.hypot(x - SPAWN.x, z - SPAWN.z) < 8) continue;
+      makeAnimal(i % 2 ? 'dog' : 'cat', x, z, { x, z });
+      break;
+    }
+  }
+}
+function discoverAnimal(a) {
+  save.zoo = save.zoo || {};
+  if (save.zoo[a.kind]) return;
+  save.zoo[a.kind] = 1; save.money += 10; save.xp += 5; persist();
+  const n = Object.keys(save.zoo).length;
+  toast(`${a.s.ico} Odkrycie: <b>${a.s.en}</b> — ${a.s.pl} · +$10 · zwierzęta ${n}/${ANIMAL_KEYS.length}`, 'good', 4200);
+  sayEN(a.s.en);
+}
+let nearPet = null;
+const heartTex = (() => { const c = makeCanvas(64, 64), x = c.getContext('2d'); x.font = '48px "Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('❤️', 32, 36); return canvasTex(c, false); })();
+const hearts = [];
+function petAnimal(a) {
+  const dog = a.kind === 'dog';
+  toast(dog ? '🐶 <b>Good dog!</b> Pies merda ogonem i idzie za Tobą.' : '🐱 <b>Nice kitty!</b> Kot mruczy z zadowolenia.', 'good', 2800);
+  sayEN(dog ? 'Good dog!' : 'Nice kitty!');
+  if (dog) { a.state = 'follow'; a.follow = 25; }
+  else { a.state = 'idle'; a.t = 4; }
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: heartTex, transparent: true, depthWrite: false }));
+  sp.scale.set(0.6, 0.6, 1); sp.position.set(a.x, groundAt(a.x, a.z) + a.s.leg + a.s.H + 0.5, a.z); scene.add(sp);
+  hearts.push({ sp, t: 1.4 });
+  discoverAnimal(a);
+}
+function updateAnimals(dt) {
+  nearPet = null;
+  const cx = camera.position.x, cz = camera.position.z, focus = P.car ? P.car.pos : P.pos;
+  const carFast = P.car && Math.abs(P.car.speed) > 3;
+  let bestPet = 2.4;
+  for (const a of animals) {
+    const dc = Math.abs(a.x - cx) + Math.abs(a.z - cz);
+    a.g.visible = dc < 230;
+    if (dc > 260) continue;
+    const s = a.s, dp = Math.hypot(a.x - focus.x, a.z - focus.z);
+    if (!P.car && !ui && dp < (s.pet ? 4 : 9)) discoverAnimal(a);
+    if (s.pet && !P.car && dp < bestPet && a.state !== 'flee') { bestPet = dp; nearPet = a; }
+    // ucieczka przed graczem (dzikie) i przed szybkim pojazdem (wszystkie)
+    const threat = carFast ? dp < (s.pet ? 7 : s.shy * 1.3) : (!s.pet && !P.car && dp < s.shy * 0.6);
+    if (threat && a.state !== 'flee') {
+      a.state = 'flee'; a.t = 2.2 + Math.random() * 1.5;
+      const ang = Math.atan2(a.x - focus.x, a.z - focus.z) + rr(-0.5, 0.5);
+      a.tx = a.x + Math.sin(ang) * 40; a.tz = a.z + Math.cos(ang) * 40;
+    }
+    let want = 0, gx = a.tx, gz = a.tz;
+    if (a.state === 'idle') {
+      a.t -= dt;
+      if (a.t <= 0) { const ang = Math.random() * Math.PI * 2, d = Math.random() * a.hr; a.tx = a.hx + Math.cos(ang) * d; a.tz = a.hz + Math.sin(ang) * d; a.state = 'walk'; a.t = 12; }
+    } else if (a.state === 'walk') {
+      want = s.speed; a.t -= dt;
+      if (Math.hypot(gx - a.x, gz - a.z) < 0.6 || a.t <= 0) { a.state = 'idle'; a.t = 2 + Math.random() * (s.pet ? 8 : 5); }
+    } else if (a.state === 'flee') {
+      want = s.run; a.t -= dt;
+      if (a.t <= 0) { a.state = 'walk'; a.tx = a.hx + rr(-5, 5); a.tz = a.hz + rr(-5, 5); a.t = 20; }
+    } else if (a.state === 'follow') {
+      a.follow -= dt; gx = P.pos.x - Math.sin(P.facing) * 1.6; gz = P.pos.z - Math.cos(P.facing) * 1.6;
+      const d = Math.hypot(gx - a.x, gz - a.z);
+      want = P.car ? 0 : d > 6 ? s.run : d > 1.2 ? s.speed * 2.2 : 0;
+      if (a.follow <= 0 || P.car) { a.state = 'idle'; a.t = 3; a.hx = a.x; a.hz = a.z; }
+    }
+    a.spd = lerp(a.spd, want, Math.min(1, dt * 5));
+    if (a.spd > 0.05) {
+      const dx = gx - a.x, dz = gz - a.z, d = Math.hypot(dx, dz) || 1;
+      a.heading += angDiff(a.heading, Math.atan2(dx, dz)) * Math.min(1, dt * 6);
+      const p = { x: a.x + Math.sin(a.heading) * a.spd * dt, z: a.z + Math.cos(a.heading) * a.spd * dt };
+      if (d < 0.3) { p.x = a.x; p.z = a.z; }
+      pushOut(p, a.r, colsAt(p.x, p.z), 0.05);
+      if (P.car) for (const [qx, qz] of carCircles(P.car)) { const ex = p.x - qx, ez = p.z - qz, e = Math.hypot(ex, ez), lim = (P.car.spec || VSPEC.car).rad + a.r; if (e < lim && e > 1e-4) { p.x = qx + ex / e * lim; p.z = qz + ez / e * lim; } }
+      a.x = clamp(p.x, -BOUND, BOUND); a.z = clamp(p.z, -BOUND, BOUND);
+      if (a.state === 'flee' && Math.hypot(a.x - a.hx, a.z - a.hz) > a.hr * 3) { a.tx = a.hx; a.tz = a.hz; }
+    }
+    if (a.g.visible && dc < 140) {
+      a.ph += a.spd * dt * (7 / Math.max(0.4, s.leg * 2));
+      const sw = Math.min(0.75, a.spd * 0.18);
+      a.legs.forEach((l, i) => { l.rotation.x = Math.sin(a.ph + (i === 0 || i === 3 ? 0 : Math.PI)) * sw; });
+    }
+    a.g.position.set(a.x, groundAt(a.x, a.z), a.z);
+    a.g.rotation.y = a.heading;
+  }
+  for (let i = hearts.length - 1; i >= 0; i--) {
+    const h = hearts[i]; h.t -= dt; h.sp.position.y += dt * 0.8; h.sp.material.opacity = Math.min(1, h.t);
+    if (h.t <= 0) { scene.remove(h.sp); h.sp.material.dispose(); hearts.splice(i, 1); }
+  }
+}
+
+// ---------------------------------------------------------------- graf dróg (mapy z danych): ruch uliczny i GPS po drogach
+// Osie dróg z danych (WD.axes) → krawędzie grafu; tylko te leżące na jezdni (trójkąty WD.roads) — bez ścieżek w parkach.
+let roadGraph = null;
+function buildRoadGraph() {
+  const R = WD.roads, tg = new Map(), TC = 10;
+  for (let t = 0; t < R.f.length; t += 3) {
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    for (let k = 0; k < 3; k++) { const j = R.f[t + k] * 2, x = R.v[j], z = R.v[j + 1]; if (x < x0) x0 = x; if (x > x1) x1 = x; if (z < z0) z0 = z; if (z > z1) z1 = z; }
+    for (let i = Math.floor(x0 / TC); i <= Math.floor(x1 / TC); i++) for (let j = Math.floor(z0 / TC); j <= Math.floor(z1 / TC); j++) { const k = i * 4099 + j; (tg.get(k) || tg.set(k, []).get(k)).push(t); }
+  }
+  const onRoad = (x, z) => {
+    for (const t of tg.get(Math.floor(x / TC) * 4099 + Math.floor(z / TC)) || []) {
+      const a = R.f[t] * 2, b = R.f[t + 1] * 2, c = R.f[t + 2] * 2;
+      const ax = R.v[a], az = R.v[a + 1], bx = R.v[b], bz = R.v[b + 1], cx = R.v[c], cz = R.v[c + 1];
+      const d1 = (x - bx) * (az - bz) - (ax - bx) * (z - bz), d2 = (x - cx) * (bz - cz) - (bx - cx) * (z - cz), d3 = (x - ax) * (cz - az) - (cx - ax) * (z - az);
+      if (!(((d1 < 0) || (d2 < 0) || (d3 < 0)) && ((d1 > 0) || (d2 > 0) || (d3 > 0)))) return true;
+    }
+    return false;
+  };
+  const nodes = [], nodeMap = new Map(), SN = 3;
+  const nodeAt = (x, z) => {
+    const i = Math.round(x / SN), j = Math.round(z / SN);
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) { const n = nodeMap.get((i + a) * 100003 + (j + b)); if (n !== undefined && Math.hypot(nodes[n].x - x, nodes[n].z - z) < SN) return n; }
+    nodes.push({ x, z, e: [] }); nodeMap.set(i * 100003 + j, nodes.length - 1); return nodes.length - 1;
+  };
+  const edges = [];
+  // skrzyżowania typu T: koniec jednej osi leży na wierzchołku wewnątrz innej → dzielimy tę oś w tym punkcie
+  const ends = new Map(), ek = (x, z) => Math.round(x / SN) * 100003 + Math.round(z / SN);
+  const isEnd = (x, z) => { const i = Math.round(x / SN), j = Math.round(z / SN); for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) { const q = ends.get((i + a) * 100003 + (j + b)); if (q && q.some(([qx, qz]) => Math.hypot(qx - x, qz - z) < SN)) return true; } return false; };
+  for (const p of WD.axes) if (p.length >= 4) for (const k of [0, p.length - 2]) { const key = ek(p[k], p[k + 1]); (ends.get(key) || ends.set(key, []).get(key)).push([p[k], p[k + 1]]); }
+  // koniec osi w środku odcinka innej osi (bez wierzchołka) → wstaw tam wierzchołek
+  const axes = WD.axes.map(p => p.slice()), SG = 12, sgrid = new Map();
+  axes.forEach((p, pi) => { for (let k = 2; k < p.length; k += 2) for (let i = Math.floor(Math.min(p[k - 2], p[k]) / SG); i <= Math.floor(Math.max(p[k - 2], p[k]) / SG); i++) for (let j = Math.floor(Math.min(p[k - 1], p[k + 1]) / SG); j <= Math.floor(Math.max(p[k - 1], p[k + 1]) / SG); j++) { const key = i * 4099 + j; (sgrid.get(key) || sgrid.set(key, []).get(key)).push([pi, k]); } });
+  const ins = new Map();
+  axes.forEach((p, pi) => {
+    if (p.length < 4) return;
+    for (const k0 of [0, p.length - 2]) {
+      const x = p[k0], z = p[k0 + 1];
+      for (const [qi, k] of sgrid.get(Math.floor(x / SG) * 4099 + Math.floor(z / SG)) || []) {
+        if (qi === pi) continue;
+        const q = axes[qi], ax = q[k - 2], az = q[k - 1], ex = q[k] - ax, ez = q[k + 1] - az, L2 = ex * ex + ez * ez; if (L2 < 1) continue;
+        const t = ((x - ax) * ex + (z - az) * ez) / L2; if (t <= 0.02 || t >= 0.98) continue;
+        const px = ax + ex * t, pz = az + ez * t; if (Math.hypot(px - x, pz - z) >= SN) continue;
+        (ins.get(qi) || ins.set(qi, []).get(qi)).push([k, t, x, z]);
+      }
+    }
+  });
+  for (const [qi, list] of ins) {
+    const q = axes[qi]; list.sort((a, b) => b[0] - a[0] || b[1] - a[1]);
+    for (const [k, , x, z] of list) q.splice(k, 0, x, z);   // wierzchołek dokładnie w punkcie końca drugiej osi
+  }
+  // skrzyżowania typu X: wspólny wierzchołek wewnątrz dwóch osi
+  const vk = (x, z) => Math.round(x * 2) * 1000003 + Math.round(z * 2), vcount = new Map();
+  axes.forEach((p, pi) => { for (let k = 2; k < p.length - 2; k += 2) { const key = vk(p[k], p[k + 1]), s = vcount.get(key); if (s === undefined) vcount.set(key, pi); else if (s !== pi) vcount.set(key, -1); } });
+  const pieces = [];
+  for (const p of axes) {
+    if (p.length < 4) continue;
+    let st = 0;
+    for (let k = 2; k < p.length - 2; k += 2) if (vcount.get(vk(p[k], p[k + 1])) === -1 || isEnd(p[k], p[k + 1])) { pieces.push(p.slice(st, k + 2)); st = k; }
+    pieces.push(p.slice(st));
+  }
+  for (const p of pieces) {
+    if (p.length < 4) continue;
+    const cum = [0]; for (let k = 2; k < p.length; k += 2) cum.push(cum[cum.length - 1] + Math.hypot(p[k] - p[k - 2], p[k + 1] - p[k - 1]));
+    const len = cum[cum.length - 1]; if (len < 4) continue;
+    let ok = 0;
+    for (const f of [0.25, 0.5, 0.75]) { const q = polyAt(p, cum, len * f); if (onRoad(q[0], q[1])) ok++; }
+    if (ok < 2) continue;
+    const a = nodeAt(p[0], p[1]), b = nodeAt(p[p.length - 2], p[p.length - 1]);
+    if (a === b) continue;
+    const e = { p, cum, len, a, b }; edges.push(e);
+    nodes[a].e.push(edges.length - 1); nodes[b].e.push(edges.length - 1);
+  }
+  // spójne składowe: ruch tylko na składowych dłuższych niż 300 m
+  const comp = new Int32Array(nodes.length).fill(-1), compLen = [];
+  for (let s = 0; s < nodes.length; s++) {
+    if (comp[s] >= 0 || !nodes[s].e.length) continue;
+    const id = compLen.length; let L = 0; const st = [s]; comp[s] = id;
+    while (st.length) { const n = st.pop(); for (const ei of nodes[n].e) { const e = edges[ei]; L += e.len / 2; for (const m of [e.a, e.b]) if (comp[m] < 0) { comp[m] = id; st.push(m); } } }
+    compLen.push(L);
+  }
+  const drive = edges.map((e, i) => i).filter(i => compLen[comp[edges[i].a]] > 300);
+  const dcum = []; let total = 0; for (const i of drive) { total += edges[i].len; dcum.push(total); }
+  roadGraph = { nodes, edges, drive, dcum, total, comp, compLen };
+}
+function polyAt(p, cum, s) {
+  let k = 1; while (k < cum.length - 1 && cum[k] < s) k++;
+  const s0 = cum[k - 1], seg = (cum[k] - s0) || 1, t = clamp((s - s0) / seg, 0, 1);
+  const x0 = p[(k - 1) * 2], z0 = p[(k - 1) * 2 + 1], x1 = p[k * 2], z1 = p[k * 2 + 1];
+  return [x0 + (x1 - x0) * t, z0 + (z1 - z0) * t, (x1 - x0) / seg, (z1 - z0) / seg];
+}
+const REAL_LANE = 1.7;
+function realCarPos(a) {
+  const e = roadGraph.edges[a.e], [x, z, dx, dz] = polyAt(e.p, e.cum, a.s), sx = dx * a.dir, sz = dz * a.dir;
+  return [x - sz * REAL_LANE, z + sx * REAL_LANE, Math.atan2(sx, sz)];   // prawy pas: (−dz, dx)
+}
+function placeRealCar(a, nearX, nearZ) {
+  const G = roadGraph;
+  for (let t = 0; t < 40; t++) {
+    const r = Math.random() * G.total; let lo = 0, hi = G.dcum.length - 1;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (G.dcum[m] < r) lo = m + 1; else hi = m; }
+    const ei = G.drive[lo];
+    a.e = ei; a.dir = Math.random() < 0.5 ? 1 : -1; a.s = Math.random() * G.edges[ei].len;
+    const [x, z] = realCarPos(a);
+    if (nearX != null) { const d = Math.hypot(x - nearX, z - nearZ); if (d < 120 || d > 300) continue; }
+    if (Math.hypot(x - SPAWN.x, z - SPAWN.z) < 20 || vehicles.some(v => Math.hypot(v.pos.x - x, v.pos.z - z) < 14)) continue;
+    return true;
+  }
+  return false;
+}
+function spawnTrafficReal(count) {
+  if (!roadGraph) buildRoadGraph();
+  if (!roadGraph.drive.length) return;
+  for (let i = 0; i < count; i++) {
+    const a = { real: true, e: 0, dir: 1, s: 0, stuck: 0, ghost: 0, vmax: MAP_ID === 'warsaw' ? 11.5 : 9.5, recycle: 0 };
+    if (!placeRealCar(a)) continue;
+    const [x, z, hd] = realCarPos(a), type = randomCarType();
+    const v = spawnVehicle(type === 'police' ? 'sedan' : type, carColor(type), x, z, hd, 'traffic');
+    v.ai = a; v.speed = 6;
+  }
+}
+function advanceRealCar(v, a, dt) {
+  const G = roadGraph;
+  a.s += a.dir * v.speed * dt;
+  let e = G.edges[a.e];
+  for (let guard = 0; guard < 4 && (a.s > e.len || a.s < 0); guard++) {
+    const over = a.s > e.len ? a.s - e.len : -a.s, node = a.s > e.len ? e.b : e.a;
+    let opts = G.nodes[node].e.filter(i => i !== a.e && G.compLen[G.comp[G.edges[i].a]] > 300);
+    if (!opts.length) opts = [a.e];                       // ślepa uliczka — zawracanie
+    a.e = opts[Math.floor(Math.random() * opts.length)]; e = G.edges[a.e];
+    a.dir = e.a === node ? 1 : -1; a.s = a.dir > 0 ? over : e.len - over;
+  }
+  const [x, z, hd] = realCarPos(a);
+  const k = Math.min(1, dt * 9);
+  v.pos.set(lerp(v.pos.x, x, k), 0, lerp(v.pos.z, z, k));
+  v.heading += angDiff(v.heading, hd) * Math.min(1, dt * 6);
+}
+// GPS po drogach (Dijkstra po grafie, start i cel rzutowane na najbliższy punkt drogi);
+// gdy gracz lub cel jest daleko od dróg — linia prosta.
+function nearestOnRoad(x, z) {
+  const G = roadGraph; let best = null, bd = Infinity;
+  for (const ei of G.drive) {
+    const e = G.edges[ei], p = e.p;
+    for (let k = 2; k < p.length; k += 2) {
+      const ax = p[k - 2], az = p[k - 1], ex = p[k] - ax, ez = p[k + 1] - az, L2 = ex * ex + ez * ez;
+      let t = L2 > 0 ? ((x - ax) * ex + (z - az) * ez) / L2 : 0; t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const px = ax + ex * t, pz = az + ez * t, d = (px - x) * (px - x) + (pz - z) * (pz - z);
+      if (d < bd) { bd = d; best = { ei, s: e.cum[k / 2 - 1] + Math.sqrt(L2) * t, x: px, z: pz, d: 0 }; }
+    }
+  }
+  if (best) best.d = Math.sqrt(bd);
+  return best;
+}
+// punkty osi krawędzi między odległościami s0 → s1 (w dowolnym kierunku)
+function edgeSlice(e, s0, s1, out) {
+  const n = e.p.length / 2;
+  if (s1 >= s0) { for (let k = 0; k < n; k++) if (e.cum[k] > s0 && e.cum[k] < s1) out.push({ x: e.p[k * 2], z: e.p[k * 2 + 1] }); }
+  else { for (let k = n - 1; k >= 0; k--) if (e.cum[k] < s0 && e.cum[k] > s1) out.push({ x: e.p[k * 2], z: e.p[k * 2 + 1] }); }
+  const q = polyAt(e.p, e.cum, s1); out.push({ x: q[0], z: q[1] });
+}
+function graphRoute(from, t) {
+  const G = roadGraph, straight = [{ x: from.x, z: from.z }, { x: t.x, z: t.z }];
+  if (Math.hypot(t.x - from.x, t.z - from.z) < 40) return straight;
+  const A = nearestOnRoad(from.x, from.z), Bp = nearestOnRoad(t.x, t.z);
+  if (!A || !Bp || A.d > 90 || Bp.d > 150) return straight;
+  const ea = G.edges[A.ei], eb = G.edges[Bp.ei];
+  if (G.comp[ea.a] !== G.comp[eb.a]) return straight;
+  const pts = [{ x: from.x, z: from.z }, { x: A.x, z: A.z }];
+  if (A.ei === Bp.ei) { edgeSlice(ea, A.s, Bp.s, pts); pts.push({ x: t.x, z: t.z }); return pts; }
+  const dist = new Float64Array(G.nodes.length).fill(Infinity), prev = new Int32Array(G.nodes.length).fill(-1), prevE = new Int32Array(G.nodes.length).fill(-1);
+  const heap = [];
+  const push = (d, n) => { heap.push([d, n]); let i = heap.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
+  const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
+  // start: oba końce krawędzi startowej
+  dist[ea.a] = A.s; dist[ea.b] = Math.min(dist[ea.b], ea.len - A.s);
+  push(dist[ea.a], ea.a); push(dist[ea.b], ea.b);
+  while (heap.length) {
+    const [d, n] = pop(); if (d > dist[n]) continue;
+    for (const ei of G.nodes[n].e) { const e = G.edges[ei], m = e.a === n ? e.b : e.a, nd = d + e.len; if (nd < dist[m]) { dist[m] = nd; prev[m] = n; prevE[m] = ei; push(nd, m); } }
+  }
+  // cel: wejście na krawędź docelową od strony a lub b
+  const viaA = dist[eb.a] + Bp.s, viaB = dist[eb.b] + (eb.len - Bp.s);
+  if (!isFinite(viaA) && !isFinite(viaB)) return straight;
+  const end = viaA <= viaB ? eb.a : eb.b;
+  const chain = []; for (let n = end; prev[n] >= 0; n = prev[n]) chain.push(n);
+  chain.reverse();
+  const first = chain.length ? prev[chain[0]] : end;   // węzeł krawędzi startowej, od którego ruszamy
+  edgeSlice(ea, A.s, first === ea.a ? 0 : ea.len, pts);
+  let cur = first;
+  for (const n of chain) { const e = G.edges[prevE[n]]; edgeSlice(e, e.a === cur ? 0 : e.len, e.a === cur ? e.len : 0, pts); cur = n; }
+  edgeSlice(eb, end === eb.a ? 0 : eb.len, Bp.s, pts);
+  pts.push({ x: t.x, z: t.z });
+  return pts;
+}
+
 // ---------------------------------------------------------------- limit czasu na dojazd do misji
 // 4 minuty od ustawienia GPS na misję; nie zdążysz → wracasz na start (postęp, pieniądze i zakupy zostają).
 const MISSION_TIME = 240;
@@ -2658,7 +3081,7 @@ function setGPS(g, silent) {
 function computeRoute() {
   const t = gpsTarget(); if (!t) { route = null; return; }
   const from = P.car ? P.car.pos : P.pos;
-  if (REALMAP) { route = [{ x: from.x, z: from.z }, { x: t.x, z: t.z }]; return; }
+  if (REALMAP) { route = roadGraph ? graphRoute(from, t) : [{ x: from.x, z: from.z }, { x: t.x, z: t.z }]; return; }
   const ni = x => clamp(Math.round((x + HALF - R / 2) / CELL), 0, N);
   const si = ni(from.x), sj = ni(from.z), ei = ni(t.x), ej = ni(t.z);
   const face = P.car ? carFwd(P.car) : { x: Math.sin(P.facing), z: Math.cos(P.facing) };
@@ -2923,6 +3346,8 @@ function checkMissionProximity() {
   } else if (P.car) {
     const close = markers.find(mk => Math.hypot(mk.m.mx - P.car.pos.x, mk.m.mz - P.car.pos.z) < 7 && mk.state !== 'locked');
     if (close) promptText = `<kbd>F</kbd> Wysiądź z auta i wejdź w znacznik: <b>${esc(close.m.place)}</b>`;
+  } else if (nearPet) {
+    promptText = `<kbd>T</kbd> Pogłaszcz: ${nearPet.s.ico} ${nearPet.s.pl} (<i>${nearPet.s.en}</i>)`;
   } else if (nearFish) {
     promptText = `<kbd>R</kbd> Łów ryby 🎣${season() === 'winter' ? ' (przerębel)' : ''}`;
   } else if (nearNPC) {
@@ -2934,6 +3359,7 @@ function checkMissionProximity() {
   setPrompt(promptText);
 }
 function tryStartMission() {
+  if (!nearMission && nearPet && !P.car) { petAnimal(nearPet); return; }
   if (!nearMission && nearFish && !P.car) { openFishing(nearFish); return; }
   if (!nearMission && nearNPC && !P.car) { openTalk(nearNPC); return; }
   if (!nearMission || P.car) return;
@@ -3598,6 +4024,7 @@ function frame() {
   if (ui !== 'start') { updateSeason(dt); updateMissionTimer(dt); updateMushrooms(dt); checkFishSpots(); updateFishing(dt); }
   updateSnow(dt);
   twinkleXmas();
+  updateAnimals(dt);
   updatePeds(dt);
   updateNPCs(dt);
   updateCamera(dt);
@@ -3700,8 +4127,9 @@ async function boot() {
   applySeason(false);
   loadKScooter();
   spawnParked(REALMAP ? 40 : 18);
-  spawnTraffic(26);
-  spawnPeds(40);
+  spawnTraffic(REALMAP ? 34 : 40);
+  spawnPeds(REALMAP ? 64 : 62);
+  spawnAnimals();
   spawnNPCs();
   buildMapCanvas();
   refreshNear(P.pos.x, P.pos.z);
