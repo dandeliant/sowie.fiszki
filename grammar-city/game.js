@@ -886,6 +886,7 @@ const VSPEC = {
   sport:    { acc: 20, max: 44, rev: 10, brake: 36, steer: 0.66, off: 1.3, rad: 1.12, exit: 2.4 },
   supercar: { acc: 25, max: 52, rev: 10, brake: 40, steer: 0.7, off: 1.35, rad: 1.15, exit: 2.4 },
   lux:      { acc: 17, max: 42, rev: 10, brake: 34, steer: 0.6, off: 1.4, rad: 1.12, exit: 2.4 },
+  plane:    { acc: 9, max: 70, rev: 0, brake: 10, steer: 0.5, off: 2.2, rad: 1.5, exit: 5.6, fly: true },
   moto:     { acc: 24, max: 48, rev: 3, brake: 38, steer: 1.0, off: 0.55, rad: 0.55, exit: 1.4, ride: 'moto', seatY: 0.92, seatZ: -0.2 },
   scooter:  { acc: 8, max: 12.5, rev: 2, brake: 22, steer: 1.25, off: 0.35, rad: 0.45, exit: 1.2, ride: 'scooter', seatY: 0.2, seatZ: -0.1 },
   // Startowa hulajnoga z modelu 3D (models/e-scooter.glb)
@@ -1100,17 +1101,49 @@ function makeKScooterMesh(tint) {
   }
   return { g: holder, wheels: [], len: KSCOOTER_LEN };
 }
+// Samolot sportowy (dolnopłat): kadłub, kabina, skrzydła, usterzenie, podwozie; śmigło osobno (obraca się).
+function planeGeometry(color) {
+  const parts = [], C = c => new THREE.Color(c);
+  const P2 = (gm, x, y, z, c, sx = 1, sy = 1, sz = 1) => parts.push({ g: gm, m: partMatrix(x, y, z, 0, sx, sy, sz), c: C(c) });
+  P2(new THREE.CylinderGeometry(0.75, 0.42, 6.6, 16).rotateX(Math.PI / 2), 0, 1.5, 0.2, color);          // kadłub
+  P2(new THREE.SphereGeometry(0.75, 16, 10), 0, 1.5, 3.5, color, 1, 1, 0.9);                               // nos
+  P2(new THREE.SphereGeometry(0.62, 14, 8), 0, 2.05, 1.0, 0x1b3550, 0.85, 0.7, 1.6);                      // kabina
+  P2(new THREE.BoxGeometry(9.2, 0.14, 1.7), 0, 1.15, 0.8, color);                                         // skrzydła
+  for (const s of [-1, 1]) P2(new THREE.BoxGeometry(0.9, 0.16, 1.7), s * 4.2, 1.15, 0.8, 0xe0161b);       // końcówki
+  P2(new THREE.BoxGeometry(9.0, 0.02, 0.15), 0, 1.23, 1.55, 0x2a2d33);                                    // linia klap
+  P2(new THREE.BoxGeometry(3.4, 0.1, 0.9), 0, 1.75, -3.0, color);                                         // statecznik poziomy
+  P2(new THREE.BoxGeometry(0.12, 1.5, 1.1), 0, 2.45, -3.1, color);                                        // statecznik pionowy
+  P2(new THREE.BoxGeometry(0.14, 0.5, 0.7), 0, 3.0, -3.2, 0xe0161b);
+  P2(new THREE.BoxGeometry(1.52, 0.12, 4.5), 0, 1.5, 0.2, 0xe0161b, 1, 1, 1);                             // pas na kadłubie
+  for (const s of [-1, 1]) {
+    P2(new THREE.BoxGeometry(0.08, 0.7, 0.08), s * 1.2, 0.68, 1.0, 0x6b7280);                              // goleń
+    P2(CYLX(0.33, 0.22, 14), s * 1.2, 0.33, 1.0, 0x141414);                                                 // koło
+  }
+  P2(new THREE.BoxGeometry(0.06, 0.5, 0.06), 0, 0.85, -2.9, 0x6b7280); P2(CYLX(0.17, 0.12, 10), 0, 0.17, -2.9, 0x141414);
+  P2(new THREE.SphereGeometry(0.22, 10, 8), 0, 1.5, 4.25, 0xd9dde3, 1, 1, 1.3);                           // kołpak śmigła
+  return mergeColored(parts);
+}
 function vehGeo(type, color) {
+  if (type === 'plane') return geo(`plane_${color}`, () => planeGeometry(color));
   return type === 'moto' ? geo(`moto_${color}`, () => motoGeometry(color))
     : type === 'scooter' ? geo(`scooter_${color}`, () => scooterGeometry(color))
     : geo(`car2_${type}_${color}`, () => carGeometry(type, color));
 }
 function recolorVehicle(v, hex) {
   if (v.type === 'kscooter') { v.mesh.userData.tint = hex; tintObj(v.mesh, hex); return; }
+  if (v.type === 'plane') { v.mesh.children[0].geometry = vehGeo('plane', hex); return; }
   v.mesh.geometry = vehGeo(v.type, hex);
 }
 function makeCarMesh(type, color) {
   if (type === 'kscooter') return makeKScooterMesh(color);
+  if (type === 'plane') {
+    const grp = new THREE.Group(); grp.rotation.order = 'YXZ';
+    const body = new THREE.Mesh(vehGeo('plane', color), vcMat); body.castShadow = true; grp.add(body);
+    const prop = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.2, 0.06), new THREE.MeshLambertMaterial({ color: 0x222222 }));
+    prop.position.set(0, 1.5, 4.45); grp.add(prop);
+    grp.userData.prop = prop;
+    return { g: grp, wheels: [], len: 7.5 };
+  }
   const g = vehGeo(type, color);
   const mesh = new THREE.Mesh(g, vcMat);
   mesh.castShadow = true;
@@ -1333,6 +1366,7 @@ const SHOP = [
   { id: 'hair_red', cat: 'hair', name: 'Rude', desc: '', price: 150, hair: 0xb5501f, hairStyle: 'short' },
   { id: 'hair_bald', cat: 'hair', name: 'Łysy', desc: '', price: 0, hair: 0x2b1d14, hairStyle: 'bald' },
   { id: 'nitro', cat: 'extra', name: 'Nitro', desc: 'W pojeździe przytrzymaj Shift (na telefonie NITRO) — przyspieszenie do 300 km/h i płomienie z wydechu. Ładunek ~6 s, sam się odnawia.', price: 3000, perk: true },
+  { id: 'invis', cat: 'extra', name: 'Niewidzialność', desc: 'Policja Cię nie widzi — żadnych pościgów ani mandatów. Włączasz i wyłączasz klawiszem I (lub w Ustawieniach).', price: 3000, perk: true },
   { id: 'wheelie', cat: 'extra', name: 'Willibary (jazda na jednym kole)', desc: 'Na hulajnodze i motorze przytrzymaj Q (na telefonie WHEELIE) — przednie koło w górę! Co 3 s na jednym kole +$5.', price: 1200, perk: true },
   { id: 'gem_sell', cat: 'extra', name: 'Wymiana diamentów', desc: 'Diamenty znajdziesz w domach (🚪) i opuszczonych budynkach (🏚️). Każdy wymienisz tutaj na $500.', price: 0, gemSell: true },
   { id: 'fuel', cat: 'extra', name: 'Pełny bak', desc: 'Tankowanie do pełna. Paliwo ubywa podczas jazdy (z nitro 4× szybciej).', price: 500, consumable: true },
@@ -1342,6 +1376,7 @@ const SHOP = [
   { id: 'veh_suv', cat: 'vehicle', name: 'SUV Explorer', desc: 'Wysoki i stabilny', price: 1400, vtype: 'suv', color: 0x10ac84 },
   { id: 'veh_moto', cat: 'vehicle', name: 'Motor sportowy Raptor 600', desc: 'Zielona strzała, do ~170 km/h', price: 2200, vtype: 'moto', color: 0x63c132 },
   { id: 'veh_lux', cat: 'vehicle', name: 'Limuzyna Executive E', desc: 'Elegancki sedan klasy biznes — komfort, cisza i moc (do ~150 km/h)', price: 2800, vtype: 'lux', color: 0x1d2027 },
+  { id: 'veh_plane', cat: 'vehicle', name: 'Samolot Sky Hopper', desc: 'Lataj nad miastem — bez korków i policji! W/S gaz, A/D skręt, Spacja w górę, Shift/X w dół. Wysiadasz po wylądowaniu.', price: 10000, vtype: 'plane', color: 0xf2f2f2 },
   { id: 'veh_super', cat: 'vehicle', name: 'Supercar Fulmine', desc: 'Najszybsze auto w mieście', price: 4000, vtype: 'supercar', color: 0xe8410b },
 ];
 const SHOP_CATS = [['outfit', '👕 Stroje'], ['hat', '🧢 Nakrycia głowy'], ['glasses', '🕶️ Okulary'], ['hair', '💇 Fryzury'], ['vehicle', '🏍️ Pojazdy'], ['extra', '🔥 Nitro, paliwo, 💎'], ['settings', '⚙️ Ustawienia']];
@@ -1364,6 +1399,7 @@ function rebuildPlayer() {
   np.g.position.copy(old.g.position); np.g.rotation.copy(old.g.rotation); np.g.visible = old.g.visible;
   scene.remove(old.g); scene.add(np.g);
   player = np;
+  applyGhost();
 }
 const P = { pos: new THREE.Vector3(), vy: 0, facing: Math.PI, onGround: true, car: null, speed: 0 };
 
@@ -1415,6 +1451,7 @@ window.addEventListener('keydown', e => {
   if (ui) return;
   if (e.code === 'KeyV' && !e.repeat) { if (indoor) toast('Najpierw wyjdź z domu.'); else summonVehicle(); return; }
   if (e.code === 'KeyU' && !e.repeat) { toggleUrbex(); return; }
+  if (e.code === 'KeyI' && !e.repeat) { toggleInvis(); return; }
   if (e.code === 'KeyT' && !e.repeat) { if (nearPet && !P.car && !nearMission) petAnimal(nearPet); else if (nearNPC && !P.car) openTalk(nearNPC); return; }
   if (e.code === 'KeyR' && !e.repeat) { if (nearFish && !P.car) openFishing(nearFish); return; }
   if (e.code === 'KeyG' && !e.repeat) { if (P.car && isScooterType(P.car.type)) cycleScooterMode(); else toast('Tryby Eco / S / R działają na hulajnodze — wsiądź na nią (V, potem F).'); return; }
@@ -1550,7 +1587,7 @@ function updateTouchUI() {
   const talkAvail = !nearMission && !fishAvail && !petAvail && !doorAvail && !!nearNPC && !P.car;
   const misAvail = (!!nearMission && !P.car && isUnlocked(nearMission)) || talkAvail || fishAvail || petAvail || doorAvail;
   const scoot = !!P.car && isScooterType(P.car.type), wh = !!P.car && isTwoWheel(P.car.type) && hasWheelie();
-  const st = `${show}|${carAvail}|${misAvail}|${!!P.car}|${talkAvail}|${fishAvail}|${petAvail}|${doorAvail}|${!!indoor}|${hasNitro()}|${scoot}|${wh}`;
+  const st = `${show}|${carAvail}|${misAvail}|${!!P.car}|${talkAvail}|${fishAvail}|${petAvail}|${doorAvail}|${!!indoor}|${hasNitro()}|${scoot}|${wh}|${!!(P.car && P.car.spec.fly)}`;
   if (st === touchState) return;
   touchState = st;
   touchUI.hidden = !show;
@@ -1561,9 +1598,10 @@ function updateTouchUI() {
   $('t-mission').textContent = doorAvail ? (nearPhoto ? 'ZDJĘCIE' : indoor ? 'WYJDŹ' : 'WEJDŹ') : petAvail ? 'GŁASKAJ' : fishAvail ? 'RYBY' : talkAvail ? 'ROZMOWA' : 'MISJA';
   $('t-mode').classList.toggle('off', !scoot);
   $('t-wheelie').classList.toggle('off', !wh);
-  $('t-jump').textContent = P.car ? 'HAMULEC' : 'SKOK';
-  $('t-sprint').classList.toggle('off', !!P.car && !hasNitro());
-  $('t-sprint').textContent = P.car ? 'NITRO' : 'BIEG';
+  const fly = !!(P.car && P.car.spec.fly);
+  $('t-jump').textContent = fly ? 'W GÓRĘ' : P.car ? 'HAMULEC' : 'SKOK';
+  $('t-sprint').classList.toggle('off', !!P.car && !fly && !hasNitro());
+  $('t-sprint').textContent = fly ? 'W DÓŁ' : P.car ? 'NITRO' : 'BIEG';
 }
 
 function onEscape() {
@@ -1823,6 +1861,7 @@ function poseCar(v, dt) {
 function toggleCar() {
   if (P.car) {
     const v = P.car;
+    if (v.spec.fly && v.pos.y - groundAt(v.pos.x, v.pos.z) > 0.3) { toast('✈️ Najpierw wyląduj (przytrzymaj Shift / X, żeby się zniżyć).'); return; }
     if (Math.abs(v.speed) > 6) { toast('Zwolnij, żeby wysiąść!'); return; }
     const f = carFwd(v);
     for (const s of [1, -1]) {
@@ -1836,7 +1875,7 @@ function toggleCar() {
     player.g.rotation.set(0, P.facing, 0);
     for (const l of [player.ll, player.rl, player.la, player.ra]) l.rotation.set(0, 0, 0);
     Sound.door(); Sound.engine(false, 0, false);
-    $('speedo').hidden = true;
+    $('speedo').hidden = true; $('speed-unit').textContent = 'KM/H';
     return;
   }
   let best = null, bd = 4.5;
@@ -1846,6 +1885,74 @@ function toggleCar() {
   best.kind = 'player'; best.speed = 0; P.car = best; player.g.visible = !!(best.spec && best.spec.ride);
   Sound.door();
   $('speedo').hidden = false;
+}
+
+// ---------------------------------------------------------------- samolot
+// W / S — gaz / hamowanie, A / D — skręt, Spacja — w górę, Shift / X / C — w dół (na dotyku SKOK / BIEG).
+// Start od PLANE_LIFT (~72 km/h), maks. 250 km/h, pułap 300 m. W powietrzu: bez ruchu ulicznego, pieszych i policji;
+// kolizje tylko z budynkami wyższymi niż samolot. Wysiadka tylko na ziemi.
+const PLANE_MAX = 70, PLANE_LIFT = 20, PLANE_CEIL = 300;
+function updatePlane(v, dt) {
+  const up = !ui && key('KeyW', 'ArrowUp'), down = !ui && key('KeyS', 'ArrowDown');
+  const left = !ui && key('KeyA', 'ArrowLeft'), right = !ui && key('KeyD', 'ArrowRight');
+  const climb = !ui && key('Space'), desc = !ui && key('ShiftLeft', 'ShiftRight', 'KeyX', 'KeyC');
+  const gy = groundAt(v.pos.x, v.pos.z), alt = v.pos.y - gy, air = alt > 0.3, fuel = wardrobe.fuel > 0;
+  if (up && fuel) v.speed = Math.min(PLANE_MAX, v.speed + 9 * (1 - v.speed / (PLANE_MAX * 1.15)) * dt);
+  else if (down) v.speed = Math.max(0, v.speed - (air ? 6 : 14) * dt);
+  else v.speed = Math.max(0, v.speed - (air ? 0.5 : 2.5) * dt);
+  const lift = v.speed >= PLANE_LIFT;
+  const tvy = climb && lift && fuel ? 10 : desc ? -10 : air && !lift ? -7 : 0;
+  v.vy = lerp(v.vy || 0, tvy, Math.min(1, dt * 2.2));
+  v.pos.y = Math.min(gy + PLANE_CEIL, v.pos.y + v.vy * dt);
+  if (v.pos.y <= gy) {
+    if ((v.vy || 0) < -8) { Sound.crash(12); shake = 0.4; v.speed *= 0.5; toast('Twarde lądowanie!', 'bad', 1800); }
+    v.pos.y = gy; v.vy = 0;
+  }
+  const steerIn = (left ? 1 : 0) - (right ? 1 : 0);
+  v.steer = lerp(v.steer || 0, steerIn, Math.min(1, dt * 3));
+  v.heading += v.steer * (air ? 0.75 : 1.1 * Math.min(1, v.speed / 6)) * dt;
+  const fx = Math.sin(v.heading), fz = Math.cos(v.heading);
+  v.pos.x += fx * v.speed * dt; v.pos.z += fz * v.speed * dt;
+  // kolizje: tylko budynki wyższe niż samolot (na ziemi także drzewa, latarnie itd.)
+  let hit = 0;
+  for (const off of [2.2, -2.2]) {
+    const p = { x: v.pos.x + fx * off, z: v.pos.z + fz * off }, ox = p.x, oz = p.z;
+    if (pushOut(p, 1.5, nearCols, v.pos.y + 0.3)) { v.pos.x += p.x - ox; v.pos.z += p.z - oz; hit = Math.max(hit, Math.hypot(p.x - ox, p.z - oz)); }
+  }
+  if (hit > 0.05 && v.speed > 8) { Sound.crash(v.speed); shake = Math.min(0.6, v.speed / 60); v.speed *= 0.35; if (air) toast('Uwaga na budynki — wznieś się wyżej (Spacja)!', 'bad', 1800); }
+  v.pos.x = clamp(v.pos.x, -BOUND, BOUND); v.pos.z = clamp(v.pos.z, -BOUND, BOUND);
+  // paliwo (oszczędnie), bez nitro
+  if (v.speed > 0.5 && wardrobe.fuel > 0) {
+    wardrobe.fuel = Math.max(0, wardrobe.fuel - v.speed * dt / FUEL_RANGE_M * 0.5);
+    fuelSaveT -= dt; if (fuelSaveT <= 0) { fuelSaveT = 3; persistWardrobe(); }
+    if (wardrobe.fuel <= 0 && !fuelEmptyWarned) { fuelEmptyWarned = true; toast(`⛽ Skończyło się paliwo — samolot szybuje w dół. Zatankuj w sklepie (B) za ${fmtMoney(FUEL_PRICE)}.`, 'bad', 6000); }
+  }
+  nitroActive = false;
+  // poza: przechył w zakręcie, nos w górę przy wznoszeniu, kręcące się śmigło
+  v.mesh.position.copy(v.pos);
+  v.mesh.rotation.y = v.heading;
+  v.mesh.rotation.z = air ? -v.steer * 0.55 : 0;
+  v.mesh.rotation.x = air ? clamp(-(v.vy || 0) * 0.035, -0.35, 0.35) : 0;
+  const prop = v.mesh.userData.prop; if (prop) prop.rotation.z += (6 + v.speed * 0.9 + (up ? 25 : 0)) * dt;
+  Sound.engine(true, v.speed * 0.45, up);
+}
+
+// ---------------------------------------------------------------- niewidzialność
+// Kupowana raz w sklepie ($3000), włączana / wyłączana klawiszem I lub w Ustawieniach. Policja nie widzi gracza
+// (brak pościgów, trwający pościg się kończy); postać gracza staje się półprzezroczysta.
+const hasInvis = () => !!wardrobe.owned.invis;
+const invisibleOn = () => hasInvis() && !wardrobe.invisOff;
+const ghostMat = vcMat.clone(); ghostMat.transparent = true; ghostMat.opacity = 0.38; ghostMat.depthWrite = false;
+function applyGhost() {
+  const on = invisibleOn();
+  player.g.traverse(o => { if (o.isMesh && (o.material === vcMat || o.material === ghostMat)) o.material = on ? ghostMat : vcMat; });
+}
+function toggleInvis(force) {
+  if (!hasInvis()) { toast('👻 Niewidzialność kupisz w sklepie (B) za $3000.'); return; }
+  wardrobe.invisOff = force != null ? !force : !wardrobe.invisOff; persistWardrobe();
+  applyGhost();
+  toast(invisibleOn() ? '👻 Niewidzialność włączona — policja Cię nie widzi.' : '👻 Niewidzialność wyłączona.', invisibleOn() ? 'good' : '', 3000);
+  if (ui === 'shop') renderShop();
 }
 
 // ---------------------------------------------------------------- nitro i paliwo
@@ -1919,11 +2026,12 @@ function updateFuelHud() {
 }
 
 // ---------------------------------------------------------------- pościg policji
-// Wyzwalacz (w pojeździe): potrącenie pieszego albo jazda > 50 km/h przez ponad 1,2 s.
+// Wyzwalacz (w pojeździe): potrącenie pieszego albo jazda > 100 km/h przez ponad 1,2 s.
+// Niewidzialność (sklep) i lot samolotem — policja nie widzi gracza.
 // Radiowóz rusza ~70 m za graczem — syrena i migające światła. Dogonił → mandat −$500
 // i kontrola: pytanie po polsku, odpowiedź wpisywana po angielsku (POLICE_STEPS w npc-talks.js).
 // Ucieczka: ponad 170 m od radiowozu przez 6 s. Po pościgu 25 s spokoju.
-const SPEED_LIMIT_KMH = 50, POLICE_FINE = 500, CHASE_ESCAPE_M = 170;
+const SPEED_LIMIT_KMH = 100, POLICE_FINE = 500, CHASE_ESCAPE_M = 170;
 let chase = null, chaseCooldown = 0, overSpeedT = 0, police = null;
 function chaseHud(html) {
   let el = $('chase-hud');
@@ -1936,6 +2044,7 @@ function chaseHud(html) {
 }
 function triggerPolice(why) {
   if (chase || police || chaseCooldown > 0 || ui) return;
+  if (invisibleOn() || (P.car && P.car.spec && P.car.spec.fly)) return;   // policja nas nie widzi
   const from = P.car ? P.car.pos : P.pos, f = P.car ? carFwd(P.car) : { x: Math.sin(P.facing), z: Math.cos(P.facing) };
   const p = { x: clamp(from.x - f.x * 70, -BOUND + 5, BOUND - 5), z: clamp(from.z - f.z * 70, -BOUND + 5, BOUND - 5) };
   const near = colliders.filter(b => p.x > b.x0 - 8 && p.x < b.x1 + 8 && p.z > b.z0 - 8 && p.z < b.z1 + 8);
@@ -1964,6 +2073,11 @@ function endChase() {
 function updateChase(dt) {
   if (chaseCooldown > 0 && !chase && !police) chaseCooldown -= dt;
   if (!chase) return;
+  if (invisibleOn() || (P.car && P.car.spec && P.car.spec.fly && P.car.pos.y - groundAt(P.car.pos.x, P.car.pos.z) > 6)) {
+    endChase(); chaseCooldown = 10;
+    toast(invisibleOn() ? '👻 Jesteś niewidzialny — policja straciła Cię z oczu.' : '✈️ Odleciałeś — policja straciła Cię z oczu.', 'good', 3500);
+    return;
+  }
   const c = chase, v = c.v, tgt = P.car ? P.car.pos : P.pos;
   const ph = Math.floor(elapsed * 6) % 2;
   c.red.material.color.setHex(ph ? 0xff2030 : 0x3a0608); c.blue.material.color.setHex(ph ? 0x0c1230 : 0x2060ff);
@@ -2081,7 +2195,7 @@ function updateTraffic(dt) {
       if (al <= 0 || al > 16) return;
       if (Math.abs(rx * fz - rz * fx) < 2.4 && al < ahead) { ahead = al; byPlayer = isP; }
     };
-    if (a.ghost <= 0) for (const o of vehicles) if (o !== v) look(o.pos.x, o.pos.z, o === P.car);
+    if (a.ghost <= 0) for (const o of vehicles) if (o !== v && !(o.spec && o.spec.fly && o.pos.y > 2)) look(o.pos.x, o.pos.z, o === P.car);
     if (!P.car) look(P.pos.x, P.pos.z, true);
     else if (a.ghost > 0) look(P.car.pos.x, P.car.pos.z, true);
     let target = a.real ? a.vmax : 11.5;
@@ -2189,7 +2303,7 @@ function updateCamera(dt) {
     const toward = -(Math.sin(P.facing) * -Math.sin(camYaw) + Math.cos(P.facing) * -Math.cos(camYaw));
     if (toward < 0.4) camYaw += angDiff(camYaw, P.facing + Math.PI) * Math.min(1, dt * 1.6);
   }
-  const want = v ? 10.5 + Math.abs(v.speed) * 0.06 : 6.5;
+  const want = v ? (v.spec && v.spec.fly ? 17 + Math.abs(v.speed) * 0.08 : 10.5 + Math.abs(v.speed) * 0.06) : 6.5;
   camDist = lerp(camDist, want, Math.min(1, dt * 3));
   const cp = Math.cos(camPitch), dx = Math.sin(camYaw) * cp, dy = Math.sin(camPitch), dz = Math.cos(camYaw) * cp;
   let d = camDist;
@@ -2778,7 +2892,7 @@ function petAnimal(a) {
 function updateAnimals(dt) {
   nearPet = null;
   const cx = camera.position.x, cz = camera.position.z, focus = P.car ? P.car.pos : P.pos;
-  const carFast = P.car && Math.abs(P.car.speed) > 3;
+  const carFast = P.car && Math.abs(P.car.speed) > 3 && P.car.pos.y < 6;
   let bestPet = 2.4;
   for (const a of animals) {
     const dc = Math.abs(a.x - cx) + Math.abs(a.z - cz);
@@ -3663,6 +3777,7 @@ function updateHUD(dt, clock) {
   $('money').textContent = fmtMoney(shownMoney);
   const gn = save.gems || 0, ge = $('gems'); ge.hidden = !gn; if (gn) ge.textContent = `💎 ${gn}`;
   const ub = $('urbex-tag'); ub.hidden = !urbexMode;
+  $('invis-tag').hidden = !invisibleOn();
   const dc = doneCount();
   let ri = 0; for (let i = 0; i < RANKS.length; i++) if (dc >= RANKS[i][0]) ri = i;
   $('rank').textContent = `${RANKS[ri][1]} · ${save.xp.toLocaleString('en-US')} XP`;
@@ -3672,7 +3787,7 @@ function updateHUD(dt, clock) {
   $('done-count').textContent = `${dc}/${MISSIONS.length}`;
   if (P.car) {
     $('speed').textContent = Math.round(Math.abs(P.car.speed) * 3.6);
-    const mt = isScooterType(P.car.type) ? `KM/H · ${wardrobe.smode === 'E' ? 'ECO' : wardrobe.smode}` : 'KM/H';
+    const mt = P.car.spec.fly ? `KM/H · ↑ ${Math.round(P.car.pos.y - groundAt(P.car.pos.x, P.car.pos.z))} m` : isScooterType(P.car.type) ? `KM/H · ${wardrobe.smode === 'E' ? 'ECO' : wardrobe.smode}` : 'KM/H';
     if ($('speed-unit').textContent !== mt) $('speed-unit').textContent = mt;
   }
   const se = SEASONS[seasonIdx], stx = `${se.ico} ${se.name} · dzień ${seasonDay()}/${SEASON_DAYS}`;
@@ -4232,8 +4347,8 @@ function renderShop() {
   $('shop-perk').hidden = !hasCashGlasses();
 }
 function shopIcon(it) {
-  if (it.cat === 'extra') return it.id === 'nitro' ? '🔥' : it.id === 'wheelie' ? '🤸' : it.id === 'gem_sell' ? '💎' : '⛽';
-  if (it.cat === 'vehicle') return { scooter: '🛴', kscooter: '🛴', moto: '🏍️', hatch: '🚗', suv: '🚙', supercar: '🏎️', lux: '🚘' }[it.vtype] || '🚗';
+  if (it.cat === 'extra') return it.id === 'nitro' ? '🔥' : it.id === 'wheelie' ? '🤸' : it.id === 'gem_sell' ? '💎' : it.id === 'invis' ? '👻' : '⛽';
+  if (it.cat === 'vehicle') return { scooter: '🛴', kscooter: '🛴', moto: '🏍️', hatch: '🚗', suv: '🚙', supercar: '🏎️', lux: '🚘', plane: '✈️' }[it.vtype] || '🚗';
   if (it.cat === 'glasses') return it.glasses === 'cash' ? '<span class="pixglass">▀█▀▀ ▀█▀▀</span>' : it.glasses === 'sun' ? '🕶️' : '🙂';
   if (it.cat === 'hat') return { none: '💇', cap: '🧢', beanie: '🧶', fedora: '🎩', crown: '👑' }[it.hat];
   if (it.cat === 'hair') return `<span class="swatch" style="background:#${it.hair.toString(16).padStart(6, '0')}"></span>`;
@@ -4244,8 +4359,9 @@ function buyItem(id) {
   if (save.money < it.price) { Sound.wrong(); toast('Za mało pieniędzy — zrób misję albo porozmawiaj z mieszkańcami.', 'bad'); return; }
   save.money -= it.price; persist();
   wardrobe.owned[id] = 1; persistWardrobe();
+  if (id === 'invis') { wardrobe.invisOff = false; persistWardrobe(); applyGhost(); }
   Sound.passed();
-  toast(`Kupiono: ${it.name}${it.id === 'nitro' ? ' — w pojeździe przytrzymaj Shift (NITRO)!' : it.id === 'wheelie' ? ' — na hulajnodze lub motorze przytrzymaj Q (WHEELIE)!' : it.perk ? ' — od teraz misje dają podwójne pieniądze!' : ''}`, 'good', 4200);
+  toast(`Kupiono: ${it.name}${it.id === 'nitro' ? ' — w pojeździe przytrzymaj Shift (NITRO)!' : it.id === 'wheelie' ? ' — na hulajnodze lub motorze przytrzymaj Q (WHEELIE)!' : it.id === 'invis' ? ' — policja Cię nie widzi (I = włącz / wyłącz).' : it.perk ? ' — od teraz misje dają podwójne pieniądze!' : ''}`, 'good', 4200);
   equipItem(id);
 }
 function equipItem(id) {
@@ -4267,9 +4383,10 @@ function summonVehicle(quiet) {
   if (summoned && summoned !== P.car) { scene.remove(summoned.mesh); const k = vehicles.indexOf(summoned); if (k >= 0) vehicles.splice(k, 1); }
   const fx = Math.sin(P.facing), fz = Math.cos(P.facing);
   let best = null;
-  for (const [ox, oz] of [[fz * 2.6, -fx * 2.6], [-fz * 2.6, fx * 2.6], [fx * 3, fz * 3], [-fx * 3, -fz * 3]]) {
+  const dd = it.vtype === 'plane' ? 3.2 : 1;
+  for (const [ox, oz] of [[fz * 2.6 * dd, -fx * 2.6 * dd], [-fz * 2.6 * dd, fx * 2.6 * dd], [fx * 3 * dd, fz * 3 * dd], [-fx * 3 * dd, -fz * 3 * dd]]) {
     const p = { x: P.pos.x + ox, z: P.pos.z + oz };
-    if (!pushOut(p, isTwoWheel(it.vtype) ? 0.6 : 1.3, nearCols)) { best = p; break; }
+    if (!pushOut(p, it.vtype === 'plane' ? 4.5 : isTwoWheel(it.vtype) ? 0.6 : 1.3, nearCols)) { best = p; break; }
   }
   if (!best) best = { x: P.pos.x + fz * 2.6, z: P.pos.z - fx * 2.6 };
   summoned = spawnVehicle(it.vtype, vehColor(id), best.x, best.z, P.facing, 'parked');
@@ -4293,7 +4410,7 @@ function setVehColor(id, hex) {
 function setScooterMode(m, quiet) {
   if (!SCOOTER_MODES[m]) return;
   wardrobe.smode = m; persistWardrobe();
-  if (!quiet) { const s = SCOOTER_MODES[m]; toast(`🛴 Tryb ${s.label} (${m}) — do ${s.kmh} km/h${s.kmh > SPEED_LIMIT_KMH ? ' · uwaga: powyżej 50 km/h ściga policja!' : ''}`, 'good', 3600); }
+  if (!quiet) { const s = SCOOTER_MODES[m]; toast(`🛴 Tryb ${s.label} (${m}) — do ${s.kmh} km/h${s.kmh >= SPEED_LIMIT_KMH ? ` · uwaga: powyżej ${SPEED_LIMIT_KMH} km/h ściga policja!` : ''}`, 'good', 3600); }
   if (ui === 'shop') renderShop();
 }
 function renderSettings() {
@@ -4309,11 +4426,13 @@ function renderSettings() {
     <div class="shop-item set-wide"><div class="si-nm">🎨 Kolor pojazdu</div><div class="si-ds">Wybierz kolor dla każdego swojego pojazdu. Zmiana działa od razu — także w trakcie jazdy.</div></div>
     ${rows}
     <div class="shop-item set-wide"><div class="si-nm">🛴 Tryb hulajnogi</div><div class="si-ds">Eco — spokojnie i oszczędnie, S — sport, R — wyścig. W grze zmienisz go klawiszem <kbd>G</kbd> (na telefonie TRYB).</div><div class="set-modes">${modes}</div></div>
+    ${hasInvis() ? `<div class="shop-item set-wide"><div class="si-nm">👻 Niewidzialność</div><div class="si-ds">Gdy jest włączona, policja Cię nie widzi. Klawisz <kbd>I</kbd>.</div><div class="set-modes"><button class="xbtn ${invisibleOn() ? 'on' : ''}" data-invis="1">${invisibleOn() ? '✓ Włączona — wyłącz' : 'Włącz niewidzialność'}</button></div></div>` : ''}
     <div class="shop-item set-wide"><div class="si-nm">🔦 Tryb urbex</div><div class="si-ds">Zwiedzanie opuszczonych budynków: latarka i GPS do najbliższej ruiny. Zaliczone: ${Object.keys(save.urbex || {}).length}/${ruins.length}. Klawisz <kbd>U</kbd>.</div><div class="set-modes"><button class="xbtn ${urbexMode ? 'on' : ''}" data-urbex="1">${urbexMode ? '✓ Włączony — wyłącz' : 'Włącz tryb urbex'}</button></div></div>
     <div class="shop-item set-wide"><div class="si-nm">${se.ico} Pora roku: ${se.name}</div><div class="si-ds">Pory roku zmieniają się co 3 dni gry (36 minut). Następna za ok. ${left} min.</div></div>`;
   $('shop-grid').querySelectorAll('[data-vc]').forEach(b => b.onclick = () => setVehColor(b.dataset.vc, +b.dataset.c));
   $('shop-grid').querySelectorAll('[data-sm]').forEach(b => b.onclick = () => setScooterMode(b.dataset.sm));
   $('shop-grid').querySelectorAll('[data-urbex]').forEach(b => b.onclick = () => toggleUrbex());
+  $('shop-grid').querySelectorAll('[data-invis]').forEach(b => b.onclick = () => toggleInvis());
   $('shop-perk').hidden = !hasCashGlasses();
 }
 
@@ -4397,7 +4516,7 @@ function frame() {
   nearTimer -= dt;
   if (nearTimer <= 0) { refreshNear(focus.x, focus.z); nearTimer = 0.2; }
   if (ui !== 'start') {
-    if (P.car) updateCar(P.car, dt); else { updateOnFoot(dt); Sound.engine(false, 0, false); }
+    if (P.car) (P.car.spec && P.car.spec.fly ? updatePlane : updateCar)(P.car, dt); else { updateOnFoot(dt); Sound.engine(false, 0, false); }
   }
   for (const v of vehicles) if (v.kind === 'parked' && v.mesh.visible) v.pos.y = groundAt(v.pos.x, v.pos.z), v.mesh.position.copy(v.pos);
   updateTraffic(dt);
@@ -4503,6 +4622,7 @@ async function boot() {
   spawnVehicle('sport', 0xf2b632, sx + 4, rc(4) - 6.2, Math.PI / 2, 'parked');
   }
   SPAWN = { x: P.pos.x, z: P.pos.z, facing: P.facing };
+  applyGhost();
   buildFishSpots();
   buildHomes();
   buildRuins();
