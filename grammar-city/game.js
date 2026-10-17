@@ -438,10 +438,48 @@ function buildWarsaw() {
     }
   }
   layoutMissionsWarsaw();
+  buildWaterGrid();
   buildTrees();
   buildLamps();
   const st = staticParts.length ? new THREE.Mesh(mergeColored(staticParts), vcMat) : null;
   if (st) { st.castShadow = st.receiveShadow = true; st.frustumCulled = false; scene.add(st); staticParts.length = 0; }
+}
+// Woda blokuje ruch (pieszo, pojazdy na ziemi, zwierzęta) — raster 1 m z trójkątów WD.water; jezdnie (mosty)
+// wycinają przejście. Grammar City ma staw z kolizją wielokątną, więc tam raster nie jest potrzebny.
+let waterGrid = null;
+function buildWaterGrid() {
+  const E = W_EXT, G = Math.ceil(2 * E), grid = new Uint8Array(G * G);
+  const fill = (L, val) => {
+    if (!L || !L.f) return;
+    for (let t = 0; t < L.f.length; t += 3) {
+      const a = L.f[t] * 2, b = L.f[t + 1] * 2, c = L.f[t + 2] * 2;
+      const ax = L.v[a], az = L.v[a + 1], bx = L.v[b], bz = L.v[b + 1], cx = L.v[c], cz = L.v[c + 1];
+      const d = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz); if (Math.abs(d) < 1e-9) continue;
+      const x0 = Math.max(0, Math.floor(Math.min(ax, bx, cx) + E)), x1 = Math.min(G - 1, Math.ceil(Math.max(ax, bx, cx) + E));
+      const z0 = Math.max(0, Math.floor(Math.min(az, bz, cz) + E)), z1 = Math.min(G - 1, Math.ceil(Math.max(az, bz, cz) + E));
+      for (let iz = z0; iz <= z1; iz++) for (let ix = x0; ix <= x1; ix++) {
+        const px = ix - E + 0.5, pz = iz - E + 0.5;
+        const l1 = ((bz - cz) * (px - cx) + (cx - bx) * (pz - cz)) / d, l2 = ((cz - az) * (px - cx) + (ax - cx) * (pz - cz)) / d;
+        if (l1 >= -0.02 && l2 >= -0.02 && 1 - l1 - l2 >= -0.02) grid[iz * G + ix] = val;
+      }
+    }
+  };
+  fill(WD.water, 1); fill(WD.roads, 0);
+  waterGrid = { grid, G, E };
+}
+function inWater(x, z) {
+  if (!waterGrid) return false;
+  const ix = Math.floor(x + waterGrid.E), iz = Math.floor(z + waterGrid.E);
+  return ix >= 0 && iz >= 0 && ix < waterGrid.G && iz < waterGrid.G && waterGrid.grid[iz * waterGrid.G + ix] === 1;
+}
+const waterHit = (x, z, r = 0.4) => inWater(x, z) || inWater(x + r, z) || inWater(x - r, z) || inWater(x, z + r) || inWater(x, z - r);
+// Przesunięcie (ox,oz) → p wchodzi do wody: ślizg wzdłuż brzegu albo powrót. Gdy już stoimy w wodzie — nie blokuje (wyjście).
+function waterSlide(ox, oz, p, r) {
+  if (!waterGrid || !waterHit(p.x, p.z, r) || waterHit(ox, oz, r)) return false;
+  if (!waterHit(p.x, oz, r)) p.z = oz;
+  else if (!waterHit(ox, p.z, r)) p.x = ox;
+  else { p.x = ox; p.z = oz; }
+  return true;
 }
 // Dach dwuspadowy na prostokątnym domu (obrys 4 narożniki, bez dziedzińca): kalenica wzdłuż
 // dłuższego boku, połacie w kolorze dachówki, szczyty (trójkąty) w kolorze ścian.
@@ -1739,6 +1777,7 @@ function updateOnFoot(dt) {
   P.speed = lerp(P.speed, target, Math.min(1, dt * 10));
   if (len > 0) { mx /= len; mz /= len; P.facing += angDiff(P.facing, Math.atan2(mx, mz)) * Math.min(1, dt * 12); P.mx = mx; P.mz = mz; }
   const vx = (P.mx || 0) * P.speed, vz = (P.mz || 0) * P.speed;
+  const ox0 = P.pos.x, oz0 = P.pos.z;
   P.pos.x += vx * dt; P.pos.z += vz * dt;
   // vertical
   const g = groundAt(P.pos.x, P.pos.z);
@@ -1756,6 +1795,7 @@ function updateOnFoot(dt) {
       if (d < lim && d > 1e-4) { p.x = cx + dx / d * lim; p.z = cz + dz / d * lim; }
     }
   }
+  if (!indoor) waterSlide(ox0, oz0, p, 0.35);
   if (indoor) { P.pos.x = clamp(p.x, indoor.room.x - ROOM_W / 2 + 0.4, indoor.room.x + ROOM_W / 2 - 0.4); P.pos.z = clamp(p.z, indoor.room.z - ROOM_D / 2 + 0.4, indoor.room.z + ROOM_D / 2 - 0.4); }
   else { P.pos.x = clamp(p.x, -BOUND, BOUND); P.pos.z = clamp(p.z, -BOUND, BOUND); }
   player.g.position.copy(P.pos);
@@ -1789,6 +1829,7 @@ function updateCar(v, dt) {
   // zimą auto „płynie": kierunek ruchu dogania kierunek maski z opóźnieniem (poślizg)
   if (v.mdir == null) v.mdir = v.heading;
   v.mdir += angDiff(v.mdir, v.heading) * Math.min(1, (icy ? (hb ? 0.9 : 2.1) : 40) * dt);
+  const vox = v.pos.x, voz = v.pos.z;
   v.pos.x += Math.sin(v.mdir) * v.speed * dt; v.pos.z += Math.cos(v.mdir) * v.speed * dt;
   // collisions: buildings & other vehicles
   let impact = 0;
@@ -1814,6 +1855,7 @@ function updateCar(v, dt) {
       if (dot * v.speed < 0) { impact = Math.max(impact, Math.abs(v.speed * dot)); v.speed *= 1 - 1.3 * dot * dot; }
     }
   }
+  if (vehicleWater(v, vox, voz, f)) { impact = Math.max(impact, Math.abs(v.speed) * 0.6); v.speed *= 0.25; }
   if (impact > 7) { Sound.crash(impact); shake = Math.min(0.6, impact / 40); }
   // pościg: jazda szybciej niż limit przez ponad 1,2 s
   if (Math.abs(v.speed) * 3.6 > SPEED_LIMIT_KMH) { overSpeedT += dt; if (overSpeedT > 1.2) triggerPolice('speed'); } else overSpeedT = 0;
@@ -1836,6 +1878,17 @@ function updateCar(v, dt) {
   poseCar(v, dt);
   if (sp.ride) posePlayerRider(v);
   Sound.engine(true, v.speed * (sp.ride === 'scooter' ? 0.4 : 1), up && sp.ride !== 'scooter');
+}
+// Pojazd na ziemi nie wjedzie do wody: sprawdzamy przód i tył (okręgi kolizji); ślizg wzdłuż brzegu.
+function vehicleWater(v, ox, oz, f) {
+  if (!waterGrid) return false;
+  const off = (v.spec || VSPEC.car).off, r = Math.max(0.4, (v.spec || VSPEC.car).rad * 0.8);
+  const hit = (x, z) => waterHit(x + f.x * off, z + f.z * off, r) || waterHit(x - f.x * off, z - f.z * off, r);
+  if (!hit(v.pos.x, v.pos.z) || hit(ox, oz)) return false;
+  if (!hit(v.pos.x, oz)) v.pos.z = oz;
+  else if (!hit(ox, v.pos.z)) v.pos.x = ox;
+  else { v.pos.x = ox; v.pos.z = oz; }
+  return true;
 }
 // Gracz na motorze (siedzi, pochylony) lub hulajnodze (stoi) — pozycja i poza kończyn.
 function posePlayerRider(v) {
@@ -1871,7 +1924,7 @@ function toggleCar() {
     for (const s of [1, -1]) {
       const ex = (v.spec || VSPEC.car).exit, x = v.pos.x + f.z * ex * s, z = v.pos.z - f.x * ex * s;
       const p = { x, z };
-      if (!pushOut(p, 0.45, nearCols, 0.2) || s === -1) { P.pos.set(p.x, groundAt(p.x, p.z), p.z); break; }
+      if ((!pushOut(p, 0.45, nearCols, 0.2) && !waterHit(p.x, p.z, 0.4)) || s === -1) { P.pos.set(p.x, groundAt(p.x, p.z), p.z); break; }
     }
     v.kind = 'parked'; v.speed = 0; v.steer = 0; v.lean = 0; v.wheelie = 0; v.mesh.rotation.z = 0; v.mesh.rotation.x = 0;
     nitroActive = false; if (v.flames) v.flames.visible = false; persistWardrobe();
@@ -1917,8 +1970,9 @@ function updatePlane(v, dt) {
   const steerIn = (left ? 1 : 0) - (right ? 1 : 0);
   v.steer = lerp(v.steer || 0, steerIn, Math.min(1, dt * 3));
   v.heading += v.steer * (air ? 0.75 : 1.1 * Math.min(1, v.speed / 6)) * dt;
-  const fx = Math.sin(v.heading), fz = Math.cos(v.heading);
+  const fx = Math.sin(v.heading), fz = Math.cos(v.heading), pox = v.pos.x, poz = v.pos.z;
   v.pos.x += fx * v.speed * dt; v.pos.z += fz * v.speed * dt;
+  if (!air && vehicleWater(v, pox, poz, { x: fx, z: fz })) v.speed *= 0.25;
   // kolizje: tylko budynki wyższe niż samolot (na ziemi także drzewa, latarnie itd.)
   let hit = 0;
   for (const off of [2.2, -2.2]) {
@@ -2565,6 +2619,7 @@ function mushroomGeo(cap) {
 }
 function blockedAt(x, z, r = 0.6) {
   if (Math.abs(x) > BOUND - 3 || Math.abs(z) > BOUND - 3) return true;
+  if (waterHit(x, z, r)) return true;
   for (const c of colliders) {
     if (x < c.x0 - r || x > c.x1 + r || z < c.z0 - r || z > c.z1 + r) continue;
     if (!c.rings || polyInside(x, z, c.rings)) return true;
@@ -2953,6 +3008,7 @@ function updateAnimals(dt) {
       const p = { x: a.x + Math.sin(a.heading) * a.spd * dt, z: a.z + Math.cos(a.heading) * a.spd * dt };
       if (d < 0.3) { p.x = a.x; p.z = a.z; }
       pushOut(p, a.r, colsAt(p.x, p.z), 0.05);
+      if (waterSlide(a.x, a.z, p, a.r) && a.state === 'walk') a.t = 0;
       if (P.car) for (const [qx, qz] of carCircles(P.car)) { const ex = p.x - qx, ez = p.z - qz, e = Math.hypot(ex, ez), lim = (P.car.spec || VSPEC.car).rad + a.r; if (e < lim && e > 1e-4) { p.x = qx + ex / e * lim; p.z = qz + ez / e * lim; } }
       a.x = clamp(p.x, -BOUND, BOUND); a.z = clamp(p.z, -BOUND, BOUND);
       if (a.state === 'flee' && Math.hypot(a.x - a.hx, a.z - a.hz) > a.hr * 3) { a.tx = a.hx; a.tz = a.hz; }
@@ -4409,7 +4465,8 @@ function summonVehicle(quiet) {
   const dd = it.vtype === 'plane' ? 3.2 : 1;
   for (const [ox, oz] of [[fz * 2.6 * dd, -fx * 2.6 * dd], [-fz * 2.6 * dd, fx * 2.6 * dd], [fx * 3 * dd, fz * 3 * dd], [-fx * 3 * dd, -fz * 3 * dd]]) {
     const p = { x: P.pos.x + ox, z: P.pos.z + oz };
-    if (!pushOut(p, it.vtype === 'plane' ? 4.5 : isTwoWheel(it.vtype) ? 0.6 : 1.3, nearCols)) { best = p; break; }
+    const rr0 = it.vtype === 'plane' ? 4.5 : isTwoWheel(it.vtype) ? 0.6 : 1.3;
+    if (!pushOut(p, rr0, nearCols) && !waterHit(p.x, p.z, rr0)) { best = p; break; }
   }
   if (!best) best = { x: P.pos.x + fz * 2.6, z: P.pos.z - fx * 2.6 };
   summoned = spawnVehicle(it.vtype, vehColor(id), best.x, best.z, P.facing, 'parked');
