@@ -1871,6 +1871,7 @@ function toggleCar() {
     }
     v.kind = 'parked'; v.speed = 0; v.steer = 0; v.lean = 0; v.wheelie = 0; v.mesh.rotation.z = 0; v.mesh.rotation.x = 0;
     nitroActive = false; if (v.flames) v.flames.visible = false; persistWardrobe();
+    if (v.ghost) ghostVehicle(v, false);
     P.car = null; player.g.visible = true; P.facing = v.heading; P.speed = 0;
     player.g.rotation.set(0, P.facing, 0);
     for (const l of [player.ll, player.rl, player.la, player.ra]) l.rotation.set(0, 0, 0);
@@ -1883,6 +1884,7 @@ function toggleCar() {
   if (!best) return;
   if (best.ai) { best.ai = null; toast('Auto przejęte! Kierowca uciekł.', 'good'); }
   best.kind = 'player'; best.speed = 0; P.car = best; player.g.visible = !!(best.spec && best.spec.ride);
+  if (invisibleOn()) ghostVehicle(best, true);
   Sound.door();
   $('speedo').hidden = false;
 }
@@ -1946,6 +1948,22 @@ const ghostMat = vcMat.clone(); ghostMat.transparent = true; ghostMat.opacity = 
 function applyGhost() {
   const on = invisibleOn();
   player.g.traverse(o => { if (o.isMesh && (o.material === vcMat || o.material === ghostMat)) o.material = on ? ghostMat : vcMat; });
+  if (P.car) ghostVehicle(P.car, on);
+}
+// Pojazd, którym jedzie niewidzialny gracz, też jest półprzezroczysty (po wyjściu wraca do normy).
+// Oryginalny materiał każdej części zapamiętany w userData; płomienie nitro (addytywne) bez zmian.
+function ghostVehicle(v, on) {
+  v.ghost = on;
+  v.mesh.traverse(o => {
+    if (!o.isMesh || !o.material) return;
+    const base = o.userData.origMat || o.material;
+    if (base.blending === THREE.AdditiveBlending) return;
+    if (!on) { if (o.userData.origMat) { o.material = o.userData.origMat; delete o.userData.origMat; } return; }
+    o.userData.origMat = base;
+    if (base === vcMat) { o.material = ghostMat; return; }
+    if (!base.userData.ghost) { const gm = base.clone(); gm.transparent = true; gm.opacity = 0.38; gm.depthWrite = false; base.userData.ghost = gm; }
+    o.material = base.userData.ghost;
+  });
 }
 function toggleInvis(force) {
   if (!hasInvis()) { toast('👻 Niewidzialność kupisz w sklepie (B) za $3000.'); return; }
@@ -3524,6 +3542,7 @@ function timeUp() {
     const v = P.car;
     v.kind = 'parked'; v.speed = 0; v.steer = 0; v.lean = 0; v.wheelie = 0; v.mesh.rotation.z = 0; v.mesh.rotation.x = 0;
     nitroActive = false; if (v.flames) v.flames.visible = false; persistWardrobe();
+    if (v.ghost) ghostVehicle(v, false);
     P.car = null; player.g.visible = true; $('speedo').hidden = true; Sound.engine(false, 0, false);
     for (const l of [player.ll, player.rl, player.la, player.ra]) l.rotation.set(0, 0, 0);
   }
@@ -4404,7 +4423,11 @@ const vehColor = id => { const c = wardrobe.vcolor && wardrobe.vcolor[id]; retur
 const hexCss = n => '#' + n.toString(16).padStart(6, '0');
 function setVehColor(id, hex) {
   wardrobe.vcolor[id] = hex; persistWardrobe();
-  for (const v of vehicles) if (v.itemId === id) recolorVehicle(v, hex);
+  for (const v of vehicles) if (v.itemId === id) {
+    const gh = v.ghost; if (gh) ghostVehicle(v, false);   // odcień nakładamy na oryginalny materiał
+    recolorVehicle(v, hex);
+    if (gh) ghostVehicle(v, true);
+  }
   Sound.click(); renderShop();
 }
 function setScooterMode(m, quiet) {
