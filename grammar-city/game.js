@@ -23,7 +23,7 @@ const norm = s => String(s).toLowerCase().replace(/[’‘`´]/g, "'").replace(/
 
 // ---------------------------------------------------------------- mapa
 // Mapy z prawdziwych danych (eksport topoexport.com: Overture Maps ODbL, GUGiK NMT CC BY 4.0;
-// konwersja grammar-city/warsaw/tools/convert-dxf.js): ?map=warsaw | ?map=jeleniec.
+// konwersja grammar-city/warsaw/tools/convert-dxf.js): ?map=warsaw | ?map=jeleniec | ?map=london.
 // Bez parametru — klasyczne Grammar City (siatka kwartałów).
 const MAP_DEFS = {
   warsaw: { file: 'warsaw/warsaw.json', ext: 515, label: 'Warszawa — Śródmieście', of: 'Warszawy',
@@ -32,6 +32,10 @@ const MAP_DEFS = {
   jeleniec: { file: 'jeleniec/jeleniec.json', ext: 482, label: 'Jeleniec', of: 'Jeleńca',
     banner: ['JELENIEC', 'Witaj we wsi!'], finalePL: 'świetlica wiejska', finaleIn: 'w świetlicy wiejskiej', finaleEN: 'Village Hall',
     tagline: 'Prawdziwa wieś Jeleniec w 3D', enter: 'Wejdź do wsi', ground: 'grass', gable: true, orbit: [170, 75, 4], fog: [220, 900] },
+  // Westminster: Big Ben (punkt orientacyjny), Pałac Westminsterski, Tamiza, most Westminsterski
+  london: { file: 'london/london.json', ext: 507, label: 'Londyn — Westminster', of: 'Londynu',
+    banner: ['LONDON', 'Welcome to Westminster!'], finalePL: 'Big Ben', finaleIn: 'pod Big Benem', finaleEN: 'Big Ben',
+    tagline: 'Prawdziwy Londyn (Westminster) w 3D', ground: 'pave', landmarkTint: 0xd9c38f, landmarkR: 150, orbit: [260, 130, 60], fog: [200, 820] },
 };
 const MAP_ID = (p => (MAP_DEFS[p] ? p : 'grid'))(new URLSearchParams(location.search).get('map'));
 const MAPDEF = MAP_DEFS[MAP_ID] || null;
@@ -372,10 +376,10 @@ function buildWarsaw() {
   }
   const off = (m, f) => Object.assign(m, { polygonOffset: true, polygonOffsetFactor: f, polygonOffsetUnits: f, side: THREE.DoubleSide });
   warsawFlat(D.green, 0.01, off(new THREE.MeshLambertMaterial({ map: texClone(parkGrassTex, 1) }), -1));
-  warsawFlat(D.roads, 0.02, off(new THREE.MeshLambertMaterial({ map: texClone(asphaltTex, 1) }), -2));
-  const waterMat = off(new THREE.MeshLambertMaterial({ color: 0x3f8fc9 }), -3); waterMat.userData.water = true;
-  warsawFlat(D.water, 0.03, waterMat);
-  mapPolys.push({ tri: D.green, c: '#2d5237' }, { tri: D.roads, c: '#5b6578' }, { tri: D.water, c: '#2b5d8a' });
+  const waterMat = off(new THREE.MeshLambertMaterial({ color: 0x3f8fc9 }), -2); waterMat.userData.water = true;
+  warsawFlat(D.water, 0.02, waterMat);
+  warsawFlat(D.roads, 0.03, off(new THREE.MeshLambertMaterial({ map: texClone(asphaltTex, 1) }), -3));   // jezdnia nad wodą — mosty
+  mapPolys.push({ tri: D.green, c: '#2d5237' }, { tri: D.water, c: '#2b5d8a' }, { tri: D.roads, c: '#5b6578' });
   // budynki: ściany z oknami (UV: 16 m × 14 m na kafel, jak w Grammar City), dachy szare
   const W = {}, Rf = { p: [], n: [], u: [] };
   const sand = wallMaterial(0, MAPDEF.landmarkTint || 0xe8dcc0, 0);   // punkt orientacyjny (Pałac Kultury — piaskowiec)

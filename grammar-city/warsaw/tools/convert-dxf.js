@@ -1,6 +1,7 @@
-// Użycie: node convert-dxf.js <wyjście.json> <topoexport_3D_modeling.dxf> [--name "Nazwa"] [--landmark pkin|tallest|center]
+// Użycie: node convert-dxf.js <wyjście.json> <topoexport_3D_modeling.dxf> [--name "Nazwa"] [--landmark pkin|tallest|center|at:x,z]
 //   Warszawa: node convert-dxf.js ../warsaw.json …/topoexport_3D_modeling.dxf --name "Warszawa — Śródmieście" --landmark pkin --center 512.5,512.5 --ext 515
 //   Jeleniec: node convert-dxf.js ../../jeleniec/jeleniec.json …/topoexport_3D_modeling.dxf --name "Jeleniec" --landmark center
+//   Londyn:   node convert-dxf.js ../../london/london.json …/topoexport_3D_modeling.dxf --name "Londyn — Westminster" --landmark at:302,-201  (Big Ben)
 // topoexport 3D DXF → mapa Grammar City (budynki, drogi, zieleń, woda, drzewa, chodniki, misje).
 // Układ gry: X = x − CX, Z = CZ − y (północ = −Z), wysokości spłaszczone (teren → 0).
 // Środek i zasięg mapy liczone z siatki terenu; punkt orientacyjny (egzamin końcowy):
@@ -172,6 +173,9 @@ console.log('najwyższe:', byH.slice(0, 8).map(b => `${b.h}m area${Math.round(b.
 const varso = byH[0];
 const pkin = LANDMARK === 'pkin'
   ? byH.filter(b => b.h > 225 && b.h < 245 && Math.hypot(b.cx - varso.cx, b.cz - varso.cz) > 150)[0]
+  : LANDMARK.startsWith('at:')
+    ? (() => { const [ax, az] = LANDMARK.slice(3).split(',').map(Number);   // 'at:x,z' — najwyższa część budynku w promieniu 15 m od punktu (układ gry)
+        return byH.filter(b => Math.hypot(b.cx - ax, b.cz - az) < 15)[0] || byH[0]; })()
   : LANDMARK === 'center'
     ? (() => { const gb = buildings.filter(b => b.ground && inExt(b.cx, b.cz, 60)); const mx = gb.reduce((s2, b) => s2 + b.cx, 0) / gb.length, mz = gb.reduce((s2, b) => s2 + b.cz, 0) / gb.length;
         return gb.filter(b => b.area > 60).sort((p, q) => Math.hypot(p.cx - mx, p.cz - mz) - Math.hypot(q.cx - mx, q.cz - mz))[0]; })()
@@ -196,6 +200,9 @@ if (LANDMARK === 'pkin') {
   const dx = finale[0] - pkin.cx, dz = finale[1] - pkin.cz, l = Math.hypot(dx, dz) || 1;
   spawn = nearestPavement(finale[0] + dx / l * 30, finale[1] + dz / l * 30, 80) || finale;
 }
+// ręczne nadpisanie startu / finału (układ gry), np. --spawn 250,-230 --finale 280,-205
+if (arg('spawn')) spawn = nearestPavement(...arg('spawn').split(',').map(Number), 40) || arg('spawn').split(',').map(Number);
+if (arg('finale')) finale = nearestPavement(...arg('finale').split(',').map(Number), 40) || arg('finale').split(',').map(Number);
 // ── miejsca na misje: chodniki, odstęp ≥ 110 m, sortowane po odległości od startu ──
 const cands = [];
 for (let z = -EXT + 20; z < EXT - 20; z += 6) for (let x = -EXT + 20; x < EXT - 20; x += 6) if (pavement(x, z)) cands.push([x, z]);
@@ -254,7 +261,7 @@ const rail = raw.rail.map(p => p.map(([x, z]) => [q1(x), q1(z)]).flat());
 
 const out = {
   name: NAME, ext: EXT,
-  attribution: 'Dane mapy: © Overture Maps Foundation (ODbL) · GUGiK NMT (CC BY 4.0) · Meta & WRI Global Canopy Height (CC BY 4.0) · eksport topoexport.com',
+  attribution: arg('attrib', 'Dane mapy: © Overture Maps Foundation (ODbL) · GUGiK NMT (CC BY 4.0) · Meta & WRI Global Canopy Height (CC BY 4.0) · eksport topoexport.com'),
   spawn, finale, pkin: [pkin.cx, pkin.cz], landmark: [pkin.cx, pkin.cz, pkin.h],
   buildings: buildings.map(b => ({ h: b.h, g: b.ground ? 1 : 0, v: b.v, f: b.f, r: b.rings })),
   roads, green, water, trees, axes, rail, missionSpots, pedPaths, parkSpots
