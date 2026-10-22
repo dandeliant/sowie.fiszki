@@ -23,7 +23,7 @@ const norm = s => String(s).toLowerCase().replace(/[’‘`´]/g, "'").replace(/
 
 // ---------------------------------------------------------------- mapa
 // Mapy z prawdziwych danych (eksport topoexport.com: Overture Maps ODbL, GUGiK NMT CC BY 4.0;
-// konwersja grammar-city/warsaw/tools/convert-dxf.js): ?map=warsaw | ?map=jeleniec | ?map=london | ?map=lukow | ?map=wesolowka | ?map=kierzkow.
+// konwersja grammar-city/warsaw/tools/convert-dxf.js): ?map=warsaw | ?map=jeleniec | ?map=london | ?map=lukow | ?map=wesolowka | ?map=kierzkow | ?map=sarnow.
 // Bez parametru — klasyczne Grammar City (siatka kwartałów).
 const MAP_DEFS = {
   warsaw: { file: 'warsaw/warsaw.json', ext: 515, label: 'Warszawa — Śródmieście', of: 'Warszawy',
@@ -48,6 +48,10 @@ const MAP_DEFS = {
   kierzkow: { file: 'kierzkow/kierzkow.json', ext: 514, label: 'Kierzków', of: 'Kierzkowa',
     banner: ['KIERZKÓW', 'Witaj we wsi!'], finalePL: 'świetlica wiejska', finaleIn: 'w świetlicy wiejskiej', finaleEN: 'Village Hall',
     tagline: 'Prawdziwa wieś Kierzków w 3D', enter: 'Wejdź do wsi', ground: 'grass', gable: true, orbit: [170, 75, 4], fog: [220, 900] },
+  // Sarnów: wieś (w danych budynki 3–9 m), stawy — jak Jeleniec
+  sarnow: { file: 'sarnow/sarnow.json', ext: 515, label: 'Sarnów', of: 'Sarnowa',
+    banner: ['SARNÓW', 'Witaj we wsi!'], finalePL: 'świetlica wiejska', finaleIn: 'w świetlicy wiejskiej', finaleEN: 'Village Hall',
+    tagline: 'Prawdziwa wieś Sarnów w 3D', enter: 'Wejdź do wsi', ground: 'grass', gable: true, orbit: [170, 75, 4], fog: [220, 900] },
 };
 const MAP_ID = (p => (MAP_DEFS[p] ? p : 'grid'))(new URLSearchParams(location.search).get('map'));
 const MAPDEF = MAP_DEFS[MAP_ID] || null;
