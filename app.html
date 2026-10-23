@@ -22034,6 +22034,16 @@ if ('serviceWorker' in navigator) {
       <div id="nicknameMsg" style="font-size:.7rem;font-weight:700;margin-top:6px;min-height:14px"></div>
     </div>
 
+    <!-- Wirtualny pupil (Tamagotchi) — wlacz/wylacz -->
+    <div id="petToggleSection" style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:12px 16px;margin-bottom:14px">
+      <label style="display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer">
+        <span style="font-size:.82rem;font-weight:800;color:var(--text)">🐾 Wirtualny pupil</span>
+        <input type="checkbox" id="petToggleInput" onchange="window.sfPetSetEnabled && window.sfPetSetEnabled(this.checked)" style="width:20px;height:20px;accent-color:var(--accent2,#06d6a0);cursor:pointer">
+      </label>
+      <div style="font-size:.68rem;color:var(--muted);font-weight:600;line-height:1.45;margin-top:6px">Zwierzak lub roślinka jak Tamagotchi: codzienna nauka go karmi, rośnie w 4 etapach, a bez nauki robi się smutny. Widać go w nagłówku (🥚) i na ekranie głównym.</div>
+      <button class="btn-sm" id="petOpenBtn" onclick="closeAccountModal(); window.sfOpenPet && window.sfOpenPet()" style="width:100%;margin-top:8px;font-size:.72rem">🐾 Otwórz pupila</button>
+    </div>
+
     <!-- Glos lektora -->
     <div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:12px 16px;margin-bottom:14px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:8px">
@@ -22624,6 +22634,7 @@ if ('serviceWorker' in navigator) {
       const am = document.getElementById('avatarMsg'); if (am) am.textContent = '';
       const as = document.getElementById('avatarSection'); if (as) as.style.display = isGuest ? 'none' : '';
       if (typeof _renderAvatarPreview === 'function') _renderAvatarPreview();
+      if (typeof window.sfPetSyncToggle === 'function') window.sfPetSyncToggle();
     } catch(e) {}
     document.getElementById('deleteExpectedName').textContent = uname;
     // Resetuj UI usuwania
@@ -30613,13 +30624,30 @@ ${bodyHtml}
   // (inaczej pet wybrany przez ucznia "pojawialby sie" na koncie admina —
   // m.in. przez wspolny klucz 'guest' zanim DB.getUserId() sie ustawi).
   function petAllowed(){
-    // Pupil = dla ZALOGOWANEGO ucznia. Wykluczamy tylko admina (to jego konto
-    // "lapalo" pupila ucznia przez wspolny klucz 'guest'). Klucz jest per-uid,
-    // wiec konta i tak sie nie mieszaja. Gosc (uid='guest') nie ma pupila.
+    // Pupil = dla ZALOGOWANEGO uzytkownika. Gosc (uid='guest') nie ma pupila.
+    // Kazdy moze go wlaczyc/wylaczyc w „Moje konto" (fiszki_pet_on_<uid>);
+    // domyslnie wlaczony, u admina domyslnie wylaczony (zatloczony naglowek).
     if(uid()==='guest') return false;
+    let v=null; try{ v=localStorage.getItem('fiszki_pet_on_'+uid()); }catch(e){}
+    if(v==='1') return true;
+    if(v==='0') return false;
     try{ if(window.DB && DB.isAdmin && DB.isAdmin()) return false; }catch(e){}
     return true;
   }
+  window.sfPetSetEnabled=function(on){
+    if(uid()==='guest') return;
+    try{ localStorage.setItem('fiszki_pet_on_'+uid(), on?'1':'0'); }catch(e){}
+    ensureButtons(); petRefresh(); renderPetCard(); window.sfPetSyncToggle();
+    safeToast(on?'🐾 Pupil włączony — znajdziesz go w nagłówku i na ekranie głównym.':'Pupil wyłączony (jego postęp zostaje zapisany).');
+  };
+  window.sfPetSyncToggle=function(){
+    const c=$('petToggleInput'), b=$('petOpenBtn'), sec=$('petToggleSection');
+    if(sec) sec.style.display = uid()==='guest' ? 'none' : '';
+    const on=petAllowed();
+    if(c) c.checked=on;
+    if(b) b.style.display=on?'':'none';
+  };
+  window.sfOpenPet=function(){ if(petAllowed()) openPet(); };
 
   /* ---- HEADER BUTTONS ---- */
   function ensureButtons(){

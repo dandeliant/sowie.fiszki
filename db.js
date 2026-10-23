@@ -4703,3 +4703,7 @@ const DB = (() => {
   };
 
 })();
+
+// `const` na najwyższym poziomie nie trafia na window — moduły sprawdzające
+// `window.DB` (pupil, mapa wiedzy, wyzwania, ranking ucznia) bez tego nie działały.
+window.DB = DB;
