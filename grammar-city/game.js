@@ -1193,6 +1193,9 @@ function recolorVehicle(v, hex) {
   v.mesh.geometry = vehGeo(v.type, hex);
 }
 function makeCarMesh(type, color) {
+  const m = makeCarMesh0(type, color); m.g.userData.color = color; return m;
+}
+function makeCarMesh0(type, color) {
   if (type === 'kscooter') return makeKScooterMesh(color);
   if (type === 'plane') {
     const grp = new THREE.Group(); grp.rotation.order = 'YXZ';
@@ -1439,12 +1442,12 @@ const SHOP = [
 ];
 const SHOP_CATS = [['outfit', '👕 Stroje'], ['hat', '🧢 Nakrycia głowy'], ['glasses', '🕶️ Okulary'], ['hair', '💇 Fryzury'], ['vehicle', '🏍️ Pojazdy'], ['extra', '🔥 Nitro, paliwo, 💎'], ['settings', '⚙️ Ustawienia']];
 const shopItem = id => SHOP.find(i => i.id === id);
-function playerLook() {
-  const e = wardrobe.equip;
+function playerLook() { return lookFrom(wardrobe.equip, true); }
+function lookFrom(e, shadow) {
   const out = (shopItem('outfit_' + e.outfit) || SHOP[0]).look;
   const h = shopItem('hat_' + e.hat) || shopItem('hat_cap');
   const hair = shopItem('hair_' + e.hair) || shopItem('hair_blond');
-  return Object.assign({ skin: 0xe8b98f, shadow: true, hair: hair.hair, hairStyle: hair.hairStyle, hat: h.hat, hatColor: h.hatColor,
+  return Object.assign({ skin: 0xe8b98f, shadow: !!shadow, hair: hair.hair, hairStyle: hair.hairStyle, hat: h.hat, hatColor: h.hatColor,
     glasses: e.glasses || 'none', shoes: 0x1c1c1c }, out);
 }
 const hasCashGlasses = () => wardrobe.equip.glasses === 'cash';
@@ -1669,6 +1672,7 @@ function onEscape() {
   else if (ui === 'talk') closeTalk();
   else if (ui === 'shop') closeShop();
   else if (ui === 'fish') closeFishing();
+  else if (ui === 'travel') closeTravel();
 }
 
 // ---------------------------------------------------------------- sound
@@ -3588,6 +3592,193 @@ function updateFlashlight() {
   flashlight.target.position.set(P.pos.x + fx * 8, P.pos.y + 0.3, P.pos.z + fz * 8);
 }
 
+// ---------------------------------------------------------------- przejazd do innej miejscowości (skraj mapy)
+// Dojście / dojazd do granicy mapy otwiera okno „Dokąd jedziesz?” z listą map (przyciski z #map-pick).
+// Wybór przeładowuje grę z ?map=… (postęp, pieniądze i zakupy zostają — zapis jest wspólny dla map).
+// Na mapach z danych przy drogach wyjazdowych (ślepe końce osi przy granicy) stoją drogowskazy 🧭.
+let travelCd = 0;
+function placeExitSigns() {
+  if (!REALMAP || !roadGraph) return;
+  const sp = [], mat0 = iconSprite('🧭', 1.6).material;
+  for (const n of roadGraph.nodes) {
+    if (n.e.length !== 1 || (Math.abs(n.x) < BOUND - 25 && Math.abs(n.z) < BOUND - 25)) continue;
+    if (sp.some(([x, z]) => Math.hypot(x - n.x, z - n.z) < 40) || sp.length >= 12) continue;
+    sp.push([n.x, n.z]);
+    const s = new THREE.Sprite(mat0); s.scale.set(1.6, 1.6, 1); s.position.set(n.x, 3.4, n.z); scene.add(s);
+  }
+}
+function checkMapEdge(dt) {
+  travelCd -= dt;
+  if (ui || indoor || travelCd > 0) return;
+  const f = P.car ? P.car.pos : P.pos, m = BOUND - 1.5;
+  if (Math.abs(f.x) > m || Math.abs(f.z) > m) openTravel();
+}
+function travelMaps() {
+  return [...document.querySelectorAll('#map-pick [data-map]')].map(b => ({ id: b.dataset.map, label: b.textContent.trim() })).filter(m => m.id !== MAP_ID);
+}
+function openTravel() {
+  ui = 'travel'; keys.clear(); releaseLock(); setPrompt('');
+  if (P.car) { P.car.speed = 0; P.car.vy = 0; }
+  const here = (document.querySelector(`#map-pick [data-map="${MAP_ID}"]`) || {}).textContent || 'Grammar City';
+  qCard.innerHTML = `<div class="card-head"><div class="eyebrow"><span class="chip" style="background:#45d483">🧭</span>Koniec mapy · ${esc(here.trim())}</div>
+    <div class="result-title" style="color:var(--gold)">DOKĄD JEDZIESZ?</div>
+    <div class="meta">Wybierz miejscowość — zaczniesz w jej centrum. Postęp, pieniądze i zakupy zostają.</div></div>
+    <div class="card-body"><div class="travel-grid">${travelMaps().map(m => `<button class="btn ghost" data-go="${m.id}">${esc(m.label)}</button>`).join('')}</div>
+    <div class="actions"><button class="btn" id="tr-stay">↩ Zostań tutaj</button><span class="meta">Esc — zostań</span></div></div>`;
+  qCard.querySelectorAll('[data-go]').forEach(b => b.onclick = () => travelTo(b.dataset.go, b.textContent));
+  $('tr-stay').onclick = () => closeTravel();
+  $('quiz-ov').hidden = false;
+  Sound.click();
+}
+function closeTravel() {
+  ui = null; $('quiz-ov').hidden = true; canvas.focus(); travelCd = 4;
+  // cofnij gracza / pojazd ~8 m do środka mapy
+  const f = P.car ? P.car.pos : P.pos, m = BOUND - 9;
+  f.x = clamp(f.x, -m, m); f.z = clamp(f.z, -m, m);
+  if (P.car) { P.car.heading += Math.PI; P.car.mdir = P.car.heading; P.car.mesh.position.copy(P.car.pos); }
+  refreshNear(f.x, f.z);
+}
+function travelTo(id, label) {
+  persist(); persistWardrobe(); netLeave();
+  qCard.innerHTML = `<div class="card-head"><div class="result-title" style="color:var(--gold)">W DRODZE…</div><div class="meta">${esc(label || id)}</div></div>`;
+  Sound.passed();
+  setTimeout(() => setMap(id), 700);
+}
+
+// ---------------------------------------------------------------- gra online z klasą (Supabase Realtime)
+// Tylko gracze z tej samej klasy (prywatny kanał „gc:<class_id>:<mapa>”, autoryzacja w migracji #68).
+// Bez czatu i wiadomości — widać tylko postacie / pojazdy i ksywki. Oszczędnie: pozycja 2×/s w ruchu,
+// na stojąco co 5 s; inni gracze wygładzani (interpolacja). Wymaga zalogowania w Sowie Fiszki.
+const NET = { sb: null, me: null, classes: [], cls: null, ch: null, on: false, want: false, started: false, peers: new Map(), sendT: 0, last: null };
+const NET_KEY = 'grammarCity.online.v1';
+function netPrefs() { try { return JSON.parse(localStorage.getItem(NET_KEY)) || {}; } catch (e) { return {}; } }
+function netSavePrefs() { try { localStorage.setItem(NET_KEY, JSON.stringify({ on: NET.want, cls: NET.cls && NET.cls.class_id })); } catch (e) { /* ignore */ } }
+function netNote(t) { const el = $('online-note'); if (el) { el.textContent = t || ''; el.hidden = !t; } }
+async function netInit() {
+  const sb = window.supabase && typeof window.supabase.rpc === 'function' ? window.supabase : null;
+  if (!sb) { netNote('🌐 Gra online z klasą działa po wejściu przez Sowie Fiszki (sowiefiszki.com).'); return; }
+  NET.sb = sb;
+  try {
+    const { data: s } = await sb.auth.getSession();
+    const user = s && s.session && s.session.user;
+    if (!user) { netNote('🌐 Gra online z klasą: zaloguj się w Sowie Fiszki.'); return; }
+    const { data, error } = await sb.rpc('gc_my_classes');
+    if (error) { netNote(/gc_my_classes|PGRST202|function/i.test(error.message + error.code) ? '🌐 Gra online wymaga aktualizacji bazy (migracja #68).' : '🌐 Gra online chwilowo niedostępna.'); return; }
+    NET.classes = data || [];
+    if (!NET.classes.length) { netNote('🌐 Gra online z klasą: nie należysz jeszcze do żadnej klasy.'); return; }
+    NET.me = { id: user.id, name: NET.classes[0].my_name || 'Gracz' };
+    const pr = netPrefs();
+    NET.cls = NET.classes.find(c => c.class_id === pr.cls) || NET.classes[0];
+    NET.want = pr.on !== false;
+    const sel = $('online-class'), chk = $('online-on'), box = $('online-pick');
+    sel.innerHTML = NET.classes.map(c => `<option value="${c.class_id}">${esc(c.class_name)}${c.role === 'teacher' ? ' (nauczyciel)' : ''}</option>`).join('');
+    sel.value = NET.cls.class_id; chk.checked = NET.want; box.hidden = false;
+    netNote(`Widzisz tylko kolegów z wybranej klasy na tej samej mapie · Twoja nazwa: ${NET.me.name} · bez czatu.`);
+    sel.onchange = () => { NET.cls = NET.classes.find(c => c.class_id === sel.value) || NET.cls; netSavePrefs(); if (NET.on || NET.ch) { netLeave(); netJoin(); } };
+    chk.onchange = () => { NET.want = chk.checked; netSavePrefs(); if (NET.want) netJoin(); else netLeave(); };
+    if (NET.started) netJoin();
+  } catch (e) { netNote('🌐 Gra online chwilowo niedostępna.'); }
+}
+function netJoin() {
+  if (!NET.sb || !NET.want || !NET.cls || !NET.started || NET.ch) return;
+  const topic = `gc:${NET.cls.class_id}:${MAP_ID}`;
+  const ch = NET.sb.channel(topic, { config: { private: true, broadcast: { self: false }, presence: { key: NET.me.id } } });
+  NET.ch = ch;
+  ch.on('broadcast', { event: 'p' }, msg => netOnPos(msg.payload));
+  ch.on('presence', { event: 'leave' }, ({ key }) => netRemove(key));
+  ch.subscribe(status => {
+    if (status === 'SUBSCRIBED') {
+      NET.on = true; NET.sendT = 0; NET.last = null;
+      ch.track({ n: NET.me.name });
+      toast(`🌐 Online z klasą ${esc(NET.cls.class_name)} — widzisz kolegów na tej mapie.`, 'good', 3500);
+    } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+      if (NET.ch === ch) { NET.on = false; toast('🌐 Nie udało się połączyć z klasą (sprawdź migrację #68 i logowanie).', 'bad', 4500); netLeave(); }
+    }
+  });
+}
+function netLeave() {
+  if (NET.ch) { try { NET.sb.removeChannel(NET.ch); } catch (e) { /* ignore */ } }
+  NET.ch = null; NET.on = false;
+  for (const id of [...NET.peers.keys()]) netRemove(id);
+}
+function nameTag(text) {
+  const c = makeCanvas(256, 64), x = c.getContext('2d');
+  x.font = 'bold 30px "Barlow Condensed", sans-serif';
+  const w = Math.min(244, x.measureText(text).width + 28);
+  x.fillStyle = 'rgba(10,12,18,.78)'; x.beginPath(); x.roundRect ? x.roundRect(128 - w / 2, 8, w, 48, 12) : x.rect(128 - w / 2, 8, w, 48); x.fill();
+  x.fillStyle = '#7fd3ff'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(text, 128, 33);
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: canvasTex(c, false), depthTest: false, transparent: true }));
+  s.scale.set(2.6, 0.65, 1); s.renderOrder = 10;
+  return s;
+}
+function netOnPos(d) {
+  if (!d || !d.i || (NET.me && d.i === NET.me.id)) return;
+  let p = NET.peers.get(d.i);
+  if (!p) {
+    if (NET.peers.size >= 40) return;
+    p = { id: d.i, name: d.n || 'Gracz', x: d.x, y: d.y || 0, z: d.z, h: d.h || 0, tx: d.x, ty: d.y || 0, tz: d.z, th: d.h || 0, s: 0, person: null, veh: null, vkey: '', lkey: '', tag: nameTag(d.n || 'Gracz') };
+    scene.add(p.tag);
+    NET.peers.set(d.i, p);
+    toast(`🌐 ${esc(p.name)} dołącza do gry`, '', 2200);
+  }
+  p.tx = d.x; p.ty = d.y || 0; p.tz = d.z; p.th = d.h || 0; p.s = d.s || 0; p.inside = !!d.in; p.t = performance.now();
+  const lk = (d.l || []).join('|');
+  if (lk !== p.lkey) {
+    p.lkey = lk;
+    if (p.person) scene.remove(p.person.g);
+    const l = d.l || [];
+    p.person = makePerson(lookFrom({ outfit: l[0] || 'classic', hat: l[1] || 'cap', hair: l[2] || 'blond', glasses: l[3] || 'none' }, false));
+    scene.add(p.person.g);
+  }
+  const vk = d.v ? d.v + ':' + (d.c || 0) : '';
+  if (vk !== p.vkey) {
+    p.vkey = vk;
+    if (p.veh) { scene.remove(p.veh.g); p.veh = null; }
+    if (d.v && VSPEC[d.v]) { p.veh = makeCarMesh(d.v, d.c || 0x888888); p.veh.type = d.v; scene.add(p.veh.g); }
+  }
+}
+function netRemove(id) {
+  const p = NET.peers.get(id); if (!p) return;
+  if (p.person) scene.remove(p.person.g);
+  if (p.veh) scene.remove(p.veh.g);
+  scene.remove(p.tag);
+  NET.peers.delete(id);
+}
+function netTick(dt) {
+  if (!NET.on || !NET.ch) return;
+  // wysyłanie: w ruchu 2×/s, na stojąco co 5 s
+  NET.sendT -= dt;
+  const v = P.car, f = v ? v.pos : P.pos, h = v ? v.heading : P.facing;
+  const moved = !NET.last || Math.hypot(f.x - NET.last.x, f.z - NET.last.z) > 0.3 || Math.abs((f.y || 0) - NET.last.y) > 0.3 || Math.abs(angDiff(h, NET.last.h)) > 0.1;
+  if ((moved && NET.sendT <= 0) || NET.sendT <= -4.5) {
+    NET.sendT = 0.5;
+    const e = wardrobe.equip, r1 = n => Math.round(n * 10) / 10;
+    const msg = { i: NET.me.id, n: NET.me.name, x: r1(indoor ? indoor.door.ax : f.x), y: r1(f.y || 0), z: r1(indoor ? indoor.door.az : f.z), h: Math.round(h * 100) / 100,
+      s: r1(v ? Math.abs(v.speed) : P.speed), in: indoor ? 1 : 0, l: [e.outfit, e.hat, e.hair, e.glasses || 'none'] };
+    if (v) { msg.v = v.type; msg.c = v.itemId ? vehColor(v.itemId) : (v.mesh.userData.color || 0x888888); }
+    NET.ch.send({ type: 'broadcast', event: 'p', payload: msg });
+    NET.last = { x: f.x, y: f.y || 0, z: f.z, h };
+  }
+  // inni gracze: wygładzanie ruchu, znikają po 15 s ciszy
+  const now = performance.now(), k = Math.min(1, dt * 5);
+  for (const p of [...NET.peers.values()]) {
+    if (now - p.t > 15000) { netRemove(p.id); continue; }
+    p.x = lerp(p.x, p.tx, k); p.y = lerp(p.y, p.ty, k); p.z = lerp(p.z, p.tz, k); p.h += angDiff(p.h, p.th) * k;
+    const far = Math.abs(p.x - camera.position.x) > 260 || Math.abs(p.z - camera.position.z) > 260;
+    const vis = !p.inside && !far && !indoor;
+    const ride = p.veh && VSPEC[p.veh.type] && VSPEC[p.veh.type].ride;
+    if (p.veh) { p.veh.g.visible = vis; p.veh.g.position.set(p.x, p.y, p.z); p.veh.g.rotation.y = p.h; }
+    if (p.person) {
+      p.person.g.visible = vis && (!p.veh || !!ride);
+      const sy = p.veh && ride ? (VSPEC[p.veh.type].seatY || 0.3) : 0;
+      p.person.g.position.set(p.x, p.y + sy, p.z); p.person.g.rotation.y = p.h;
+      if (p.person.g.visible) animPerson(p.person, p.veh ? 0 : p.s, dt, false);
+    }
+    p.tag.visible = vis;
+    p.tag.position.set(p.x, p.y + (p.veh && !ride ? 3.0 : 2.75), p.z);
+  }
+}
+
 // ---------------------------------------------------------------- limit czasu na dojazd do misji
 // 4 minuty od ustawienia GPS na misję; nie zdążysz → wracasz na start (postęp, pieniądze i zakupy zostają).
 const MISSION_TIME = 240;
@@ -3745,6 +3936,7 @@ function drawMinimap(dt) {
   }
   if (gps && gps.kind === 'point') blip(gps.x, gps.z, '#c77dff', '•', true, true);
   for (const s of fishSpots) blip(s.x, s.z, '#4fb3ff', '≈', false);
+  for (const p of NET.peers.values()) if (!p.inside) blip(p.x, p.z, '#7fd3ff', (p.name || '?')[0].toUpperCase(), false);
   for (const r of ruins) blip(r.x, r.z, save.urbex && save.urbex[r.id] ? '#45d483' : '#c9a0ff', 'U', urbexMode);
   if (season() === 'autumn') for (const mu of mushrooms) if (mu.alive && Math.hypot(mu.x - focus.x, mu.z - focus.z) < 70) { const [sx, sy] = toScreen(mu.x, mu.z); g.beginPath(); g.arc(c + sx, c + sy, 3, 0, Math.PI * 2); g.fillStyle = '#f0a43a'; g.fill(); }
   if (chase) blip(chase.v.pos.x, chase.v.pos.z, Math.floor(elapsed * 6) % 2 ? '#ff3b3b' : '#4f7bff', 'P', true);
@@ -3873,6 +4065,8 @@ function updateHUD(dt, clock) {
   const gn = save.gems || 0, ge = $('gems'); ge.hidden = !gn; if (gn) ge.textContent = `💎 ${gn}`;
   const ub = $('urbex-tag'); ub.hidden = !urbexMode;
   $('invis-tag').hidden = !invisibleOn();
+  const ot = $('online-tag'); ot.hidden = !NET.on;
+  if (NET.on) { const t = `🌐 ${NET.cls.class_name} · ${NET.peers.size + 1} w grze`; if (ot.textContent !== t) ot.textContent = t; }
   const dc = doneCount();
   let ri = 0; for (let i = 0; i < RANKS.length; i++) if (dc >= RANKS[i][0]) ri = i;
   $('rank').textContent = `${RANKS[ri][1]} · ${save.xp.toLocaleString('en-US')} XP`;
@@ -4582,6 +4776,7 @@ function initMapPicker() {
 
 function startGame() {
   Sound.init();
+  NET.started = true; netJoin();
   $('start-ov').hidden = true; $('hud').hidden = false;
   ui = null; camYaw = 0; camPitch = 0.3; camDist = 12;
   canvas.focus();
@@ -4621,7 +4816,8 @@ function frame() {
   for (const v of vehicles) if (v.kind === 'parked' && v.mesh.visible) v.pos.y = groundAt(v.pos.x, v.pos.z), v.mesh.position.copy(v.pos);
   updateTraffic(dt);
   updateChase(dt);
-  if (ui !== 'start') { updateSeason(dt); updateMissionTimer(dt); updateMushrooms(dt); checkFishSpots(); updateFishing(dt); }
+  if (ui !== 'start') { updateSeason(dt); updateMissionTimer(dt); updateMushrooms(dt); checkFishSpots(); updateFishing(dt); checkMapEdge(dt); }
+  netTick(dt);
   updateSnow(dt);
   twinkleXmas();
   updateAnimals(dt);
@@ -4743,6 +4939,8 @@ async function boot() {
   initMapPicker();
   btn.disabled = false; btn.textContent = doneCount() ? 'Kontynuuj grę' : ((MAPDEF && MAPDEF.enter) || 'Wejdź do miasta');
   btn.addEventListener('click', startGame);
+  placeExitSigns();
+  netInit();
   frame();
 }
 boot();
