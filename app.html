@@ -283,6 +283,21 @@ header{width:100%;display:flex;align-items:flex-start;justify-content:space-betw
 .mode-btn.speed-mode{color:#ffb347;}
 .mode-btn.speed-mode.active{background:rgba(255,179,71,.15);color:#ffb347;}
 
+/* ── TRYB SKUPIENIA (sStudy): .sf-pick = wybór trybu, .sf-focus = jeden tryb na pełnym ekranie ── */
+.focus-bar{display:none;}
+.study-pick-hint{display:none;width:100%;text-align:center;font-size:.78rem;font-weight:700;color:var(--muted);margin:2px 0 8px;}
+#sStudy.sf-pick .study-pick-hint{display:block;}
+#sStudy.sf-pick > .mode-switcher ~ *:not(.modal-overlay),
+#sStudy.sf-pick > .reward-shelf, #sStudy.sf-pick > .reward-count{display:none !important;}
+#sStudy.sf-focus{position:fixed;inset:0;z-index:1000;background:var(--bg);overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0 16px 40px;align-items:center;}
+#sStudy.sf-focus > *:not(.modal-overlay){width:100%;max-width:var(--card-w);}
+#sStudy.sf-focus > .study-topbar, #sStudy.sf-focus > .dir-toggle, #sStudy.sf-focus > .mode-switcher,
+#sStudy.sf-focus > .reward-shelf, #sStudy.sf-focus > .reward-count{display:none !important;}
+#sStudy.sf-focus > .focus-bar{display:flex;align-items:center;gap:8px;position:sticky;top:0;z-index:5;background:var(--bg);padding:12px 0 10px;margin-bottom:6px;border-bottom:1px solid var(--border);}
+.focus-title{flex:1;min-width:0;text-align:center;font-weight:800;font-size:.95rem;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.focus-title #focusUnit{font-weight:600;color:var(--muted);font-size:.75rem;margin-left:6px;}
+body.sf-focus-on{overflow:hidden;}
+
 /* ── STATS BAR ── */
 .stats{display:flex;gap:13px;margin-bottom:11px;font-size:.71rem;color:var(--muted);font-weight:600;}
 .stats span strong{color:var(--text);}
@@ -2975,6 +2990,12 @@ szkoła	school"></textarea>
 
 <!-- ══ SCREEN: STUDY ══ -->
 <div class="screen" id="sStudy">
+  <!-- Tryb skupienia: wybrany tryb nauki na pełnym ekranie (pokazywany tylko w .sf-focus) -->
+  <div class="focus-bar" id="focusBar">
+    <button class="btn-sm" onclick="exitStudyFocus()" title="Wróć do wyboru trybu tego unitu">← Wróć</button>
+    <div class="focus-title"><span id="focusMode">🃏 Fiszki</span><span id="focusUnit"></span></div>
+    <button class="btn-sm" id="focusDirBtn" onclick="setDir(studyDir === 'pl_en' ? 'en_pl' : 'pl_en')" title="Zmień kierunek nauki">🇵🇱 → 🇬🇧</button>
+  </div>
   <div class="study-topbar">
     <div class="unit-badge" id="unitBadge">📖 Unit 1</div>
     <div class="topbar-btns">
@@ -2996,6 +3017,7 @@ szkoła	school"></textarea>
   </div>
   <div class="reward-shelf" id="rShelf"></div>
   <div class="reward-count" id="rCount" style="display:none"></div>
+  <div class="study-pick-hint">👇 Wybierz tryb nauki — otworzy się na pełnym ekranie, żeby nic Cię nie rozpraszało.</div>
   <div class="mode-switcher" style="flex-direction:column;gap:0;padding:6px">
     <!-- Nauka -->
     <div style="width:100%;font-size:.55rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;padding:3px 8px">📚 Nauka</div>
@@ -5298,6 +5320,17 @@ function showScreen(id) {
   // Zakończ poprzednią aktywność (przez DB.endActivity — best-effort).
   try { if (typeof DB !== 'undefined' && DB.endActivity) DB.endActivity(); } catch(e) {}
 
+  // Tryb skupienia nauki działa tylko na sStudy — przy wyjściu na inny ekran go zamknij.
+  try {
+    const st = document.getElementById('sStudy');
+    if (id !== 'sStudy' && st && st.classList.contains('sf-focus')) {
+      clearInterval(studySpeedTimer);
+      st.classList.remove('sf-focus');
+      document.body.classList.remove('sf-focus-on');
+      _leaveBrowserFullscreen();
+    }
+    if (id === 'sStudy' && st && !st.classList.contains('sf-focus')) st.classList.add('sf-pick');
+  } catch(e) {}
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
   try { _gsSyncScreen(id); } catch(e) {}
@@ -7092,10 +7125,11 @@ function startStudy(key, forcedPool = null, reviewSort = false) {
   renderLives(); updateStats();
   DB.updateStreak(currentUser);
   showScreen('sStudy');
+  setStudyPick(); // najpierw wybór trybu — każdy tryb otwiera się potem na pełnym ekranie
   hideAreas(); document.getElementById('cardScene').style.display = '';
   updateDirUI();
   updateOrderUI();
-  setTimeout(() => { setOwl(''); owlSay('Ćwiczymy ' + u.name + '! Naciśnij Generuj! 🎲'); }, 250);
+  setTimeout(() => { setOwl(''); owlSay('Ćwiczymy ' + u.name + '! Wybierz tryb nauki 👇'); }, 250);
 }
 
 // „Ucz się dalej" — pełna powtórka wszystkich słów rozdziału, nawet gdy już
@@ -7104,7 +7138,9 @@ function startStudy(key, forcedPool = null, reviewSort = false) {
 // Wymuszona pula = wszystkie indeksy; postęp (known/FSRS) zostaje zapisany.
 function restartUnit() {
   const idxs = (activeWords && activeWords.length) ? activeWords.map((_, i) => i) : null;
+  const lastMode = _lastFocusMode;
   startStudy(currentUnitKey, idxs, true); // reviewSort = od najtrudniejszych
+  if (lastMode) setMode(lastMode); // od razu w tym samym trybie (pełny ekran)
 }
 
 // ─── Powtórka błędów ─────────────────────────
@@ -10165,6 +10201,13 @@ function setMode(m) {
     else if (m === 'typeSent') document.getElementById('typeSentArea').style.display = 'block';
     else if (m === 'dictSent') document.getElementById('dictSentArea').style.display = 'block';
   }
+  // Każdy tryb nauki otwiera się na pełnym ekranie (tryb skupienia) i od razu
+  // startuje — bez „Generuj". Speed Quiz czeka na start (ma licznik czasu).
+  const _sStudyEl = document.getElementById('sStudy');
+  if (_sStudyEl && _sStudyEl.classList.contains('active')) {
+    enterStudyFocus(m);
+    if (!active && m !== 'speed') generate();
+  }
   // Sledzenie aktywnosci per tryb: restart sesji ze wlasciwym trybem (tylko gdy
   // jestesmy na ekranie nauki). Dzieki temu dziennik pokazuje KONKRETNY tryb,
   // a nie ogolne "Nauka (tryby)". Krotkie przelaczenia (<3s) nie sa logowane.
@@ -10180,6 +10223,49 @@ function setMode(m) {
   } catch(e) {}
 }
 
+// ── Tryb skupienia: wybrany tryb nauki na pełnym ekranie ──
+const FOCUS_MODE_LABELS = {card:'🃏 Fiszki',quiz:'🎯 Quiz',speed:'⚡ Speed Quiz',match:'🧩 Znajdź parę',tf:'✅ Prawda/Fałsz',type:'✏️ Wpisz',missing:'🔤 Litery',gap:'📝 Luka',scramble:'🔀 Rozsypanka',sentscr:'📜 Zdanie',typeSent:'✏️ Wpisz zdania',dictate:'🎧 Dyktando',dictSent:'🎧 Dyktando (zdania)',speak:'🎤 Mów',speakSent:'🎤 Mów (zdania)'};
+let _lastFocusMode = null;
+function setStudyPick() {
+  const s = document.getElementById('sStudy');
+  if (!s) return;
+  s.classList.remove('sf-focus'); s.classList.add('sf-pick');
+  document.body.classList.remove('sf-focus-on');
+  s.querySelectorAll('.mode-btn.active').forEach(b => b.classList.remove('active'));
+}
+function enterStudyFocus(m) {
+  const s = document.getElementById('sStudy');
+  if (!s) return;
+  _lastFocusMode = m;
+  document.getElementById('focusMode').textContent = FOCUS_MODE_LABELS[m] || '📚 Nauka';
+  document.getElementById('focusUnit').textContent = '· ' + (document.getElementById('unitBadge').textContent || '');
+  const wasFocus = s.classList.contains('sf-focus');
+  s.classList.remove('sf-pick'); s.classList.add('sf-focus');
+  document.body.classList.add('sf-focus-on');
+  updateDirUI();
+  if (!wasFocus) {
+    s.scrollTop = 0;
+    // Pełny ekran przeglądarki (gdzie się da — iPhone tego nie obsługuje, wtedy zostaje widok w aplikacji)
+    try {
+      const de = document.documentElement;
+      if (!document.fullscreenElement && de.requestFullscreen) de.requestFullscreen().catch(() => {});
+    } catch(e) {}
+  }
+}
+function _leaveBrowserFullscreen() {
+  try { if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {}); } catch(e) {}
+}
+// „← Wróć": koniec trybu, powrót do wyboru trybu w tym samym unicie (postęp sesji zostaje).
+function exitStudyFocus() {
+  clearInterval(studySpeedTimer); studySpeedTimer = null;
+  try { if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel(); } catch(e) {}
+  hideAreas(); hideDiff();
+  document.getElementById('livesBar').classList.remove('visible');
+  setStudyPick();
+  _leaveBrowserFullscreen();
+  window.scrollTo(0, 0);
+}
+
 function setDir(d) {
   studyDir = d;
   updateDirUI();
@@ -10188,6 +10274,8 @@ function setDir(d) {
 function updateDirUI() {
   document.getElementById('dirPL').classList.toggle('active', studyDir === 'pl_en');
   document.getElementById('dirEN').classList.toggle('active', studyDir === 'en_pl');
+  const fb = document.getElementById('focusDirBtn');
+  if (fb) fb.textContent = studyDir === 'pl_en' ? '🇵🇱 → 🇬🇧' : '🇬🇧 → 🇵🇱';
 }
 
 // Kolejność nauki (po kolei / losowo) — działa we wszystkich trybach nauki.
@@ -11590,6 +11678,7 @@ document.addEventListener('keydown', e => {
 
   const studyActive = document.getElementById('sStudy').classList.contains('active');
   if (!studyActive) return;
+  if (document.getElementById('sStudy').classList.contains('sf-pick')) return; // wybór trybu — skróty tylko w trybie skupienia
   if (!active) return;
   if (e.code === 'Space') { e.preventDefault(); if (mode==='card'&&!revealed) flipCard(); }
   // „Dalej" w trybie Wpisz podczas 10-sekundowego pokazania poprawnej odpowiedzi.
