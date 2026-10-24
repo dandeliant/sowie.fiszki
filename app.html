@@ -10123,6 +10123,8 @@ function rate(r, noAdvance) {
   if (ws[curIdx].known) pool = pool.filter(i => i !== curIdx);
   // Wave 2: zaloguj opanowane slowo (wyzwania klasowe typu 'words')
   if (!_wasKnown && ws[curIdx].known) { try { DB.logDailyWords(1); } catch(e) {} }
+  // Wirtualny pupil: Wpisz karmi, inne tryby (powtórki) dają energię, opanowane słówko = smakołyk
+  try { if (window.sfPet) window.sfPet.onAnswer(mode, r, !_wasKnown && ws[curIdx].known); } catch(e) {}
 
   const xp = _xpFor(r); addXP(xp); // XP ważone trybem (mniej za „klikanie", więcej za wpisanie)
 
@@ -22247,7 +22249,7 @@ if ('serviceWorker' in navigator) {
         <span id="reminderStatusBadge" style="font-size:.6rem;font-weight:800;color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:100px;padding:2px 9px">—</span>
       </div>
       <div style="font-size:.7rem;color:var(--muted);font-weight:600;line-height:1.45;margin-bottom:10px">
-        🦉 Dostaniesz powiadomienie o stałej porze — gdy będziesz mieć słówka do powtórki.
+        🦉 Dostaniesz powiadomienie o stałej porze (domyślnie 17:00) — gdy będziesz mieć słówka do powtórki albo Twój pupil będzie głodny, znudzony lub zmęczony (np. „🐼 Pandzia prosi o jedzenie – 5 minut nauki?”).
       </div>
       <label style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--surface);border:1px solid var(--border);border-radius:8px;cursor:pointer;margin-bottom:8px">
         <input type="checkbox" id="reminderEnabled" onchange="toggleDailyReminder()" style="accent-color:var(--accent2);width:16px;height:16px;cursor:pointer">
@@ -23674,20 +23676,21 @@ if ('serviceWorker' in navigator) {
     let lastFired;
     try { lastFired = localStorage.getItem(_reminderKey('lastFired')); } catch(e) {}
     if (lastFired === today) return; // juz dzis bylo
-    // Sprawdz liczbe slow do powtorki
+    // Sprawdz liczbe slow do powtorki + czy wirtualny pupil czegoś potrzebuje
     if (!DB || typeof DB.getReviewQueue !== 'function') return;
     const q = DB.getReviewQueue();
-    if (!q || q.totalDue <= 0) {
-      // Nawet bez slow do powtorki — nie spamujemy. Tylko gdy >0.
-      // (Mozemy w przyszlosci dodac „motywacyjne" powiadomienia gdy 0.)
-      return;
-    }
+    const due = (q && q.totalDue > 0) ? q.totalDue : 0;
+    let petMsg = null;
+    try { if (typeof window.sfPetReminderText === 'function') petMsg = window.sfPetReminderText(); } catch(e) {}
+    if (!due && !petMsg) return; // nie spamujemy, gdy nie ma powodu
     // Strzelaj powiadomienie
     try {
-      const body = '📚 ' + q.totalDue + ' ' + plural(q.totalDue, 'słówko czeka', 'słówka czekają', 'słówek czeka') + ' na powtórkę!';
+      const dueTxt = due ? '📚 ' + due + ' ' + plural(due, 'słówko czeka', 'słówka czekają', 'słówek czeka') + ' na powtórkę!' : '';
+      const body = petMsg ? petMsg + (dueTxt ? '\n' + dueTxt : '') : dueTxt;
+      const title = petMsg ? '🐾 Sowie Fiszki — Twój pupil czeka' : '🦉 Sowie Fiszki — czas na powtórkę';
       if (navigator.serviceWorker && navigator.serviceWorker.ready) {
         navigator.serviceWorker.ready.then(reg => {
-          reg.showNotification('🦉 Sowie Fiszki — czas na powtórkę', {
+          reg.showNotification(title, {
             body,
             icon: '/manifest.json',
             badge: '/manifest.json',
@@ -23697,7 +23700,7 @@ if ('serviceWorker' in navigator) {
           });
         }).catch(() => {});
       } else if (typeof Notification !== 'undefined') {
-        new Notification('🦉 Sowie Fiszki — czas na powtórkę', { body });
+        new Notification(title, { body });
       }
       try { localStorage.setItem(_reminderKey('lastFired'), today); } catch(e) {}
     } catch(e) { console.warn('[reminder] fire:', e); }
@@ -30952,6 +30955,44 @@ ${bodyHtml}
   .sf-sub{color:var(--muted,#aaa);font-size:.85rem;margin:0 0 14px;line-height:1.4;}
   .sf-pet-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:10px;margin-bottom:8px;}
   .sf-pet-cat{font-size:.72rem;font-weight:800;color:var(--accent2,#06d6a0);text-transform:uppercase;letter-spacing:.05em;margin:12px 0 6px;}
+  /* Pupil: dymek, potrzeby, jedzenie, animacje */
+  .sf-stage{position:relative;text-align:center;padding-top:4px;min-height:150px;}
+  .sf-bubble{position:relative;display:inline-block;max-width:92%;min-height:20px;background:#fff;color:#2d2350;border-radius:16px;padding:8px 14px;margin:0 auto 10px;box-shadow:0 6px 18px rgba(0,0,0,.25);}
+  .sf-bubble:empty{visibility:hidden;}
+  .sf-bubble:after{content:'';position:absolute;left:50%;bottom:-8px;transform:translateX(-50%);border:8px solid transparent;border-top-color:#fff;border-bottom:0;}
+  .sf-bub-en{font-size:1rem;font-weight:800;}
+  .sf-bub-pl{font-size:.72rem;color:#7a6fa8;font-weight:700;margin-top:2px;}
+  .sf-bubble.pop{animation:sfPop .35s ease;}
+  .sf-pet-big{cursor:pointer;user-select:none;}
+  .sf-pet-big.sleep{animation:none;filter:saturate(.55) brightness(.85);}
+  .sf-pet-big.eat{animation:sfEat .6s ease;}
+  .sf-pet-big.jump{animation:sfJump .7s ease;}
+  .sf-pet-big.love{animation:sfLove .7s ease;}
+  .sf-pet-big.wobble{animation:sfWob .6s ease;}
+  @keyframes sfEat{0%{transform:scale(1)}35%{transform:scale(1.25)}65%{transform:scale(.92)}100%{transform:scale(1)}}
+  @keyframes sfJump{0%,100%{transform:translateY(0)}40%{transform:translateY(-34px) rotate(-6deg)}70%{transform:translateY(0) scale(1.08,.92)}}
+  @keyframes sfLove{0%,100%{transform:rotate(0)}25%{transform:rotate(-12deg) scale(1.08)}75%{transform:rotate(12deg) scale(1.08)}}
+  @keyframes sfWob{0%,100%{transform:rotate(0)}20%{transform:rotate(-14deg)}40%{transform:rotate(12deg)}60%{transform:rotate(-8deg)}80%{transform:rotate(5deg)}}
+  .sf-zzz{position:absolute;left:calc(50% + 40px);top:52px;font-size:1.5rem;animation:sfZzz 2.2s ease-in-out infinite;}
+  @keyframes sfZzz{0%{opacity:0;transform:translate(0,10px) scale(.7)}50%{opacity:1}100%{opacity:0;transform:translate(14px,-22px) scale(1.15)}}
+  .sf-fly{position:absolute;font-size:1.9rem;pointer-events:none;z-index:3;}
+  .sf-fly.in{top:88%;animation:sfFlyIn 1s ease forwards;}
+  .sf-fly.up{top:55%;animation:sfFlyUp 1.3s ease forwards;}
+  @keyframes sfFlyIn{0%{opacity:0;transform:translateY(20px) scale(.6)}30%{opacity:1}100%{opacity:0;transform:translateY(-95px) scale(.4)}}
+  @keyframes sfFlyUp{0%{opacity:0;transform:translateY(0) scale(.6)}25%{opacity:1}100%{opacity:0;transform:translateY(-110px) scale(1.2)}}
+  .sf-mini{background:transparent;border:none;cursor:pointer;font-size:1rem;vertical-align:middle;}
+  .sf-needs{display:grid;gap:3px;margin:10px 0 6px;}
+  .sf-need{display:flex;align-items:center;gap:8px;font-size:.74rem;font-weight:800;}
+  .sf-need .sf-bar{flex:1;height:10px;margin:0;}
+  .sf-need-hint{font-size:.6rem;color:var(--muted,#aaa);font-weight:700;margin:-2px 0 3px 26px;}
+  .sf-foods{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin:6px 0;}
+  .sf-food{font-size:1.7rem;line-height:1;background:rgba(255,255,255,.07);border:2px solid transparent;border-radius:14px;padding:7px 10px;cursor:pointer;position:relative;font-family:inherit;}
+  .sf-food:hover{background:rgba(255,255,255,.14);transform:translateY(-2px);}
+  .sf-food.fav{border-color:#ffd166;}
+  .sf-food.fav:after{content:'❤';position:absolute;top:-7px;right:-5px;font-size:.75rem;color:#ff6b9d;}
+  .sf-inbox{background:rgba(255,107,157,.12);border:1.5px solid rgba(255,107,157,.4);border-radius:12px;padding:8px 12px;font-size:.78rem;font-weight:700;margin:8px 0;line-height:1.5;}
+  .sf-petmini{display:inline-flex;align-items:center;gap:3px;cursor:pointer;background:rgba(255,255,255,.08);border-radius:999px;padding:0 7px 0 4px;margin-right:4px;font-size:.8rem;}
+  .sf-petmini small{font-size:.58rem;color:var(--muted,#aaa);font-weight:800;}
   .sf-pet-pick{display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 6px;background:rgba(255,255,255,.05);border:2px solid transparent;border-radius:14px;cursor:pointer;color:inherit;font-weight:700;font-size:.76rem;font-family:inherit;}
   .sf-pet-pick:hover{background:rgba(255,255,255,.1);}
   .sf-pet-pick.sel{border-color:var(--accent2,#06d6a0);background:rgba(6,214,160,.14);}
@@ -31085,10 +31126,12 @@ ${bodyHtml}
     ['home','🏠 Domowe'], ['wild','🌍 Dzikie'], ['bird','🐦 Ptaki'],
     ['water','🌊 Wodne i owady'], ['magic','✨ Fantastyczne'], ['plant','🌱 Rośliny'],
   ];
-  const STAGE_NAMES = ['Maluch','Podrostek','Nastolatek','Dorosły'];
-  const PLANT_STAGE_NAMES = ['Kiełek','Listek','Roślinka','Drzewko'];
-  const GP_THRESH = [3,8,20];
-  function stageIdx(gp){ if(gp>=20)return 3; if(gp>=8)return 2; if(gp>=3)return 1; return 0; }
+  const STAGE_NAMES = ['Jajko','Maluch','Nastolatek','Dorosły'];
+  const PLANT_STAGE_NAMES = ['Nasionko','Kiełek','Roślinka','Drzewko'];
+  // Punkty wzrostu (gp): dzień nauki +5, smakołyk +1 (ulubiony +2). Stary zapis (gp = dni nauki)
+  // przelicza petMigrate (×5), więc etapy dotychczasowych pupili się nie zmieniają.
+  const GP_THRESH = [15,40,100];
+  function stageIdx(gp){ if(gp>=100)return 3; if(gp>=40)return 2; if(gp>=15)return 1; return 0; }
   // Stan pupila: localStorage = szybka kopia na urządzeniu, profiles.pet (migracja #70) = wspólny zapis
   // dla wszystkich urządzeń. Przy każdej zmianie zapisujemy oba miejsca; przy starcie wygrywa nowszy (ts).
   function petKey(){ return 'fiszki_pet_' + uid(); }
@@ -31142,26 +31185,180 @@ ${bodyHtml}
     return{em:'😭',txt:'bardzo tęskni!',col:'var(--danger,#ef4444)'};
   }
 
+  /* ---- POTRZEBY (🍎 najedzenie / 😊 humor / ⚡ energia), JEDZENIE, SEN ---- */
+  // Bez kar: potrzeby nigdy nie spadają poniżej NEED_MIN — pupil nie umiera i nie znika, najwyżej tęskni.
+  const NEED_MIN = 5;
+  const clamp = v => Math.max(NEED_MIN, Math.min(100, Math.round(v)));
+  const nv = (v, d) => (v == null ? (d == null ? 70 : d) : v);
+  function isNightAt(ms){ const h=new Date(ms).getHours(); return h>=22 || h<7; }
+  function isNight(){ return isNightAt(Date.now()); }
+  function needCol(v){ return v>=60 ? 'var(--accent2,#06d6a0)' : (v>=30 ? '#ffd166' : 'var(--danger,#ef4444)'); }
+  function needsMin(s){ return Math.min(nv(s.hunger), nv(s.happy), nv(s.energy)); }
+
+  // Jedzenie: emoji → [po angielsku, po polsku] (pupil mówi nazwę — nauka słówek)
+  const FOOD = {
+    '🍎':['an apple','jabłko'], '🥕':['a carrot','marchewka'], '🍪':['a cookie','ciasteczko'], '🧀':['cheese','ser'],
+    '🍌':['a banana','banan'], '🥛':['milk','mleko'], '🍓':['a strawberry','truskawka'], '🍞':['bread','chleb'],
+    '🎋':['bamboo','bambus'], '🐟':['a fish','rybka'], '🌶️':['a chilli pepper','papryczka chili'], '🦴':['a bone','kość'],
+    '🌰':['a nut','orzech'], '🌽':['corn','kukurydza'], '🌿':['grass','trawa'], '🍇':['grapes','winogrona'],
+    '🍯':['honey','miód'], '🥩':['meat','mięso'], '🍉':['a watermelon','arbuz'], '🥬':['lettuce','sałata'],
+    '🥦':['broccoli','brokuł'], '🦐':['a shrimp','krewetka'], '🦀':['a crab','krab'], '🦟':['a mosquito','komar'],
+    '🌸':['a flower','kwiatek'], '🌼':['a daisy','stokrotka'], '🍃':['a leaf','listek'], '🧁':['a cupcake','babeczka'],
+    '🔋':['a battery','bateria'], '🍕':['pizza','pizza'], '🍬':['a sweet','cukierek'], '🍰':['a piece of cake','kawałek ciasta'],
+    '🍔':['a burger','burger'], '🍩':['a doughnut','pączek'], '💧':['water','woda'], '☀️':['sunshine','słońce'], '🌧️':['rain','deszcz']
+  };
+  const BASE_FOOD = ['🍎','🥕','🍪','🧀','🍌','🥛','🍓','🍞'];
+  const PLANT_FOOD = ['💧','☀️','🌧️'];
+  const FAV = {
+    cat:'🐟', dog:'🦴', poodle:'🦴', rabbit:'🥕', hamster:'🌰', mouse:'🧀', pony:'🍎', pig:'🌽', cow:'🌿', chick:'🌽',
+    fox:'🍇', bear:'🍯', panda:'🎋', koala:'🍃', tiger:'🥩', lion:'🥩', monkey:'🍌', elephant:'🍉', giraffe:'🍃', zebra:'🌿',
+    hedgehog:'🍎', squirrel:'🌰', sloth:'🍃', kangaroo:'🌿', llama:'🌿', wolf:'🥩', turtle:'🥬', dino:'🥦',
+    owl:'🍪', penguin:'🐟', parrot:'🍇', duck:'🍞', flamingo:'🦐', peacock:'🌽', swan:'🥬',
+    fish:'🦐', dolphin:'🐟', whale:'🦐', octopus:'🦀', otter:'🐟', frog:'🦟', butterfly:'🌸', bee:'🌼', ladybug:'🍃',
+    dragon:'🌶️', unicorn:'🧁', phoenix:'🌶️', robot:'🔋', alien:'🍕', ghost:'🍬', fairy:'🍯', wizard:'🍰', mermaid:'🦐', hero:'🍔', genie:'🍩',
+    plant:'💧', flower:'💧', sunflower:'☀️', rose:'💧', cactus:'☀️', mushroom:'🌧️', appletree:'💧', xmastree:'💧', bamboo:'💧'
+  };
+  function favFood(type){ const P=PETS[type]; return FAV[type] || (P && P.plant ? '💧' : '🍎'); }
+  function isEgg(s){ return stageIdx(s.gp||0)===0; }
+  function typeKnown(s){ return !isEgg(s) || !!s.pick; }   // jajko-niespodzianka: gatunek ukryty do wyklucia
+  // 4 smakołyki do wyboru: ulubiony + 3 inne (stałe w ciągu dnia). Jajko — zwykłe, żeby nie zdradzić gatunku.
+  function foodChoices(s){
+    const P=PETS[s.type]; const plant=P && P.plant && typeKnown(s);
+    const base=(plant ? PLANT_FOOD : BASE_FOOD).slice();
+    const seed=new Date().getDate();
+    const rest=base.sort((a,b)=>((a.codePointAt(0)*seed)%97)-((b.codePointAt(0)*seed)%97));
+    if(!typeKnown(s)) return rest.slice(0,4);
+    const fav=favFood(s.type);
+    return [fav].concat(rest.filter(f=>f!==fav)).slice(0, plant ? 3 : 4);
+  }
+  function petEmoji(s){ if(!s || !s.type || !PETS[s.type]) return '🥚'; return isEgg(s) ? '🥚' : PETS[s.type].s[stageIdx(s.gp||0)]; }
+  function petName(s){ if(!s || !s.type || !PETS[s.type]) return ''; return s.name || (isEgg(s) ? 'Jajko-niespodzianka' : PETS[s.type].n); }
+  // Dopisuje nowe pola do starszego zapisu pupila (bez zmiany jego etapu).
+  function petMigrate(s){
+    if(!s || !s.type) return s;
+    if(!(s.v>=2)){ s.gp=(s.gp||0)*5; s.v=2; s.pick=true; }
+    if(s.hunger==null) s.hunger=75;
+    if(s.energy==null) s.energy=75;
+    if(s.happy==null)  s.happy=70;
+    if(s.treats==null) s.treats=0;
+    if(!Array.isArray(s.col)) s.col=[];
+    if(!s.t) s.t=Date.now();
+    return s;
+  }
+
+  /* ---- PUPIL MÓWI PO ANGIELSKU (dymek + lektor en-GB, z tłumaczeniem) ---- */
+  const PH = {
+    greet:[["Hello! 👋","Cześć!"],["Hi there!","Hej!"],["Nice to see you!","Miło cię widzieć!"],["I missed you!","Tęskniłem za tobą!"],["How are you?","Jak się masz?"],["Welcome back!","Witaj z powrotem!"],["You're my best friend!","Jesteś moim najlepszym przyjacielem!"],["What a lovely day!","Co za piękny dzień!"],["Let's have fun today!","Zabawmy się dziś!"],["I'm so happy you're here!","Tak się cieszę, że tu jesteś!"],["Ready for some English?","Gotowy na trochę angielskiego?"],["Let's learn! 📚","Uczmy się!"]],
+    morning:[["Good morning! ☀️","Dzień dobry!"],["Rise and shine!","Pobudka!"]],
+    afternoon:[["Good afternoon!","Dzień dobry! (po południu)"],["How was school today?","Jak było dziś w szkole?"]],
+    evening:[["Good evening! 🌆","Dobry wieczór!"],["One more word before bed?","Jeszcze jedno słówko przed snem?"]],
+    hungry:[["I'm hungry! 🍎","Jestem głodny!"],["My tummy is rumbling.","Burczy mi w brzuchu."],["Can I have a snack, please?","Czy mogę dostać przekąskę?"],["Feed me, please!","Nakarm mnie, proszę!"],["I'd love something to eat.","Chętnie bym coś zjadł."],["Learn some words and feed me!","Naucz się słówek i mnie nakarm!"],["Is it lunchtime yet?","Czy to już pora obiadu?"],["I could eat a horse!","Zjadłbym konia z kopytami!"],["Yummy food, please!","Poproszę pyszne jedzenie!"],["Type some words — it fills my bowl!","Wpisuj słówka — to napełnia moją miskę!"]],
+    bored:[["I'm bored. Let's play! 🎾","Nudzę się. Pobawmy się!"],["Can we play a game?","Możemy zagrać w grę?"],["I feel a bit sad.","Jest mi trochę smutno."],["Play with me, please!","Pobaw się ze mną, proszę!"],["A game would make me smile.","Gra by mnie rozweseliła."],["I miss you.","Tęsknię za tobą."],["Let's have some fun!","Zabawmy się!"],["Pick a game from the list!","Wybierz grę z listy!"],["Give me a hug? 🤗","Przytulisz mnie?"],["I need a friend today.","Potrzebuję dziś przyjaciela."]],
+    tired:[["I'm tired. 😴","Jestem zmęczony."],["I need some energy! ⚡","Potrzebuję energii!"],["Let's review some words!","Powtórzmy słówka!"],["Flashcards give me power!","Fiszki dają mi siłę!"],["I'm a little sleepy.","Jestem trochę śpiący."],["A quick quiz will wake me up!","Szybki quiz mnie obudzi!"],["My battery is low. 🔋","Mam słabą baterię."],["Review time?","Czas na powtórkę?"],["Help me feel strong again!","Pomóż mi znów poczuć się silnym!"],["Let's practise together!","Poćwiczmy razem!"]],
+    happy:[["I'm so happy! 😊","Jestem taki szczęśliwy!"],["You're awesome!","Jesteś niesamowity!"],["This is the best day ever!","To najlepszy dzień w życiu!"],["I love learning with you!","Uwielbiam się z tobą uczyć!"],["Thank you for taking care of me!","Dziękuję, że się mną opiekujesz!"],["I feel great!","Czuję się świetnie!"],["You make me smile!","Sprawiasz, że się uśmiecham!"],["We make a great team!","Jesteśmy świetną drużyną!"],["Hooray! 🎉","Hurra!"],["Life is good!","Życie jest piękne!"]],
+    eat:[["Mmm, {en}! Thank you!","Mmm, {pl}! Dziękuję!"],["Yummy! I like {en}.","Pycha! Lubię: {pl}."],["Nom nom nom!","Mniam, mniam!"],["That was tasty!","To było smaczne!"],["Mmm, delicious!","Mmm, przepyszne!"],["More, please!","Jeszcze, proszę!"],["Thank you for {en}!","Dziękuję za: {pl}!"]],
+    fav:[["My favourite! 😍","Mój ulubiony przysmak!"],["Wow, {en}! I love it!","Łał, {pl}! Uwielbiam to!"],["This is my favourite food!","To moje ulubione jedzenie!"],["Best snack ever!","Najlepsza przekąska!"],["You remembered!","Pamiętałeś!"],["Double yummy!","Podwójnie pyszne!"]],
+    full:[["I'm full! 😋","Jestem najedzony!"],["No more, thank you!","Już nie, dziękuję!"],["My tummy is full.","Mój brzuszek jest pełny."],["Maybe later!","Może później!"]],
+    notreat:[["I need treats! Learn some words. 📚","Potrzebuję smakołyków! Naucz się słówek."],["No snacks left. Let's learn!","Nie ma przekąsek. Uczmy się!"],["Every new word is a treat for me!","Każde nowe słowo to dla mnie smakołyk!"]],
+    poke:[["Hee hee! That tickles!","Hi hi! To łaskocze!"],["Boop! 👉","Pac!"],["Hey! What's up?","Hej! Co słychać?"],["Do you want to learn a word?","Chcesz nauczyć się słowa?"],["I can count: one, two, three!","Umiem liczyć: jeden, dwa, trzy!"],["Can you say 'hello' in English?","Umiesz powiedzieć „cześć” po angielsku?"],["Look at me!","Popatrz na mnie!"],["I'm learning English too!","Ja też uczę się angielskiego!"],["Peekaboo! 🙈","A kuku!"],["Guess what? I like you!","Wiesz co? Lubię cię!"],["Ouch! Just kidding!","Auć! Żartuję!"],["Let's do a little dance! 💃","Zatańczmy trochę!"],["Practice makes perfect!","Trening czyni mistrza!"],["Knock, knock! Who's there?","Puk, puk! Kto tam?"]],
+    pat:[["That feels nice!","Jak przyjemnie!"],["More pats, please!","Jeszcze głaskania, proszę!"],["I love cuddles! 🤗","Uwielbiam się przytulać!"],["You're so kind!","Jesteś taki miły!"],["Aww, thank you!","Ojej, dziękuję!"],["I feel loved! 💕","Czuję się kochany!"]],
+    play:[["Catch the ball! 🎾","Złap piłkę!"],["Again! Again!","Jeszcze raz!"],["That was fun!","To było fajne!"],["I'm the champion! 🏆","Jestem mistrzem!"],["Let's play tag!","Zagrajmy w berka!"],["Whee!","Juhu!"]],
+    sleep:[["Zzz… 💤","Chrr…"],["I'm sleeping. Good night!","Śpię. Dobranoc!"],["Shh… it's night time.","Ciii… jest noc."],["See you in the morning!","Do zobaczenia rano!"],["Sweet dreams! 🌙","Słodkich snów!"],["Time for bed.","Czas spać."],["I'm dreaming about English words…","Śnią mi się angielskie słówka…"],["Five more minutes…","Jeszcze pięć minut…"]],
+    learn:[["Good job! 👍","Dobra robota!"],["Well done!","Brawo!"],["Keep going!","Tak trzymaj!"],["You're doing great!","Świetnie ci idzie!"],["I'm proud of you!","Jestem z ciebie dumny!"],["One more word?","Jeszcze jedno słówko?"],["Every word makes me stronger!","Każde słowo czyni mnie silniejszym!"],["Let's learn five words today!","Nauczmy się dziś pięciu słówek!"],["You're a star! ⭐","Jesteś gwiazdą!"],["Don't give up!","Nie poddawaj się!"]],
+    egg:[["*knock, knock* 🥚","*puk, puk*"],["Something is moving inside…","Coś się rusza w środku…"],["Keep me warm, please!","Ogrzewaj mnie, proszę!"],["I'll hatch soon!","Niedługo się wykluję!"],["Crack… crack…","Trzask… trzask…"],["Learn every day and I'll hatch!","Ucz się codziennie, a się wykluję!"]],
+    hatch:[["Hello, world! 🐣","Witaj, świecie!"],["I'm here! Nice to meet you!","Jestem! Miło cię poznać!"],["What's my name?","Jak mam na imię?"],["Thank you for waiting!","Dziękuję, że czekałeś!"]],
+    grow:[["Look, I'm bigger now!","Zobacz, jestem już większy!"],["I'm growing up!","Dorastam!"],["Thanks to you, I grew!","Dzięki tobie urosłem!"]],
+    hearts:[["Someone sent me love! 💕","Ktoś przesłał mi serduszka!"],["I have friends!","Mam przyjaciół!"],["Thank you, friends!","Dziękuję, przyjaciele!"],["My heart is full!","Moje serce jest pełne!"]],
+    visit:[["Thank you! 💕","Dziękuję!"],["Hello, friend!","Cześć, przyjacielu!"],["You're so nice!","Jesteś taki miły!"],["Come again!","Przyjdź znowu!"],["Yay, a visitor!","Hura, gość!"]],
+    home:[["Bye! I'll live in the Pet House now. 🏡","Pa! Teraz zamieszkam w Domku pupili."],["Take care of my new friend!","Zaopiekuj się moim nowym przyjacielem!"]]
+  };
+  function pickPhrase(cat, food){
+    let a=PH[cat]||PH.greet;
+    if(cat==='greet'){ const h=new Date().getHours(); a=a.concat(h<12?PH.morning:(h<18?PH.afternoon:PH.evening)); }
+    const p=a[Math.floor(Math.random()*a.length)];
+    if(!food) return p;
+    const f=FOOD[food]||['a snack','przekąska'];
+    return [p[0].replace('{en}',f[0]), p[1].replace('{pl}',f[1])];
+  }
+  // Co pupil mówi „sam z siebie”: noc → sen, jajko → puk-puk, niska potrzeba → prośba o nią.
+  function needPhraseCat(s){
+    if(isNight()) return 'sleep';
+    if(isEgg(s)) return 'egg';
+    const h=nv(s.hunger), m=nv(s.happy), e=nv(s.energy), lo=Math.min(h,m,e);
+    if(lo<40) return lo===h ? 'hungry' : (lo===m ? 'bored' : 'tired');
+    return lo>=75 ? (Math.random()<.5 ? 'happy' : 'greet') : 'greet';
+  }
+  function petSpeak(text){
+    try{
+      const clean=String(text||'').replace(/[^\p{L}\p{N}\s'’,.!?…-]/gu,' ').replace(/\*/g,'').replace(/\s+/g,' ').trim();
+      if(clean && typeof spk==='function') spk(clean,'en-GB',0.9);
+    }catch(e){}
+  }
+
+  function petGrow(s,n){
+    const prev=stageIdx(s.gp||0); s.gp=(s.gp||0)+n; const ns=stageIdx(s.gp);
+    if(ns<=prev) return;
+    const P=PETS[s.type];
+    if(prev===0){ if(!s.name) s.needName=true; s.say='hatch'; safeToast('🐣 Z jajka wykluł się: '+P.n+'!'); }
+    else { s.say='grow'; safeToast('🎉 '+(s.name||P.n)+' urósł: '+(P.plant?PLANT_STAGE_NAMES:STAGE_NAMES)[ns]+'!'); }
+    if(ns>=2) petAch('pet_teen'); if(ns>=3) petAch('pet_adult');
+  }
+
   function petTick(){
-    const s = petLoad(); if(!s || !s.type) return null;
-    const t = today();
-    if (s.lastCheck && s.lastCheck !== t && !studiedToday() && s.fedDate !== t){
-      const gap = Math.max(1, Math.round((new Date(t) - new Date(s.lastCheck))/86400000));
-      s.happy = Math.max(0, (s.happy==null?80:s.happy) - 12*Math.min(gap,5));
+    const s = petMigrate(petLoad()); if(!s || !s.type) return null;
+    const now=Date.now(), td=today();
+    // Spadek potrzeb co pełną godzinę — tylko w dzień (7:00–22:00); w nocy pupil śpi i nic nie traci.
+    let t=s.t||now, i=0;
+    while(now-t>=3600e3 && i<168){
+      if(!isNightAt(t)){ s.hunger=clamp(nv(s.hunger)-4); s.happy=clamp(nv(s.happy)-3); s.energy=clamp(nv(s.energy)-3); }
+      t+=3600e3; i++;
     }
-    s.lastCheck = t;
-    if (studiedToday() && s.fedDate !== t){
-      const prev = stageIdx(s.gp||0);
-      s.happy = Math.min(100, (s.happy==null?60:s.happy) + 30);
-      s.gp = (s.gp||0) + 1;
-      s.fedDate = t;
-      const ns = stageIdx(s.gp);
-      if (ns>prev){ const P=PETS[s.type]; safeToast('🎉 '+(s.name||P.n)+' urósł: '+(P.plant?PLANT_STAGE_NAMES:STAGE_NAMES)[ns]+'!'); if(ns>=2) petAch('pet_teen'); if(ns>=3) petAch('pet_adult'); }
-    }
-    if (s.happy==null) s.happy = 70;
+    s.t = i>=168 ? now : t;
+    // Gry → humor: sekundy aktywnej gry z game-stats.js (10 s = +1).
+    try{
+      const k='fiszki_pet_play_'+curUser(); const sec=+localStorage.getItem(k)||0;
+      if(sec>=10){ s.happy=clamp(nv(s.happy)+Math.floor(sec/10)); localStorage.setItem(k, String(sec%10)); }
+    }catch(e){}
+    // Pierwsza nauka dnia → wzrost.
+    if(studiedToday() && s.fedDate!==td){ s.fedDate=td; petGrow(s,5); }
+    s.lastCheck=td;
     petSave(s);
     return s;
   }
+
+  // Wołane z rate(): poprawna odpowiedź w trybie Wpisz karmi, w innych trybach (powtórki) daje energię;
+  // każde nowo opanowane słówko = 1 smakołyk do karmienia.
+  const PET_FEED_MODES=['type','typeSent'];
+  window.sfPet = {
+    onAnswer(m, r, mastered){
+      try{
+        if(!petAllowed()) return;
+        const s=petMigrate(petLoad()); if(!s || !s.type) return;
+        if(r==='easy' || r==='good' || r==='medium'){
+          if(PET_FEED_MODES.includes(m)) s.hunger=clamp(nv(s.hunger)+3); else s.energy=clamp(nv(s.energy)+2);
+        }
+        if(mastered){
+          s.treats=(s.treats||0)+1;
+          if(s.treats===1 || s.treats%5===0) safeToast('🍪 Smakołyk dla pupila! Masz już: '+s.treats+' — nakarm go 🐾');
+        }
+        petSave(s); petRefresh();
+      }catch(e){}
+    }
+  };
+  // Tekst przypomnienia (o 17:00) — gdy pupil czegoś potrzebuje; null = brak powodu.
+  window.sfPetReminderText = function(){
+    try{
+      if(!petAllowed()) return null;
+      const s=petTick(); if(!s || !s.type) return null;
+      const em=petEmoji(s), nm=petName(s);
+      if(isEgg(s)) return em+' '+nm+' czeka, aż się wykluje — 5 minut nauki?';
+      const h=nv(s.hunger), m=nv(s.happy), e=nv(s.energy), lo=Math.min(h,m,e);
+      if(lo>=60) return null;
+      if(lo===h) return em+' '+nm+' prosi o jedzenie – 5 minut nauki?';
+      if(lo===m) return em+' '+nm+' chce się pobawić – zagrasz w grę?';
+      return em+' '+nm+' potrzebuje energii – szybka powtórka?';
+    }catch(e){ return null; }
+  };
 
   /* ---- KTO MA PUPILA ---- */
   // Pupil to funkcja dla UCZNIA. Admin/nauczyciel/opiekun i gość go nie maja
@@ -31212,13 +31409,12 @@ ${bodyHtml}
   }
   function petRefresh(){
     const b=$('sfPetBtn'); if(!b) return;
-    const s=petLoad();
-    if(!s||!s.type){ b.textContent='🥚'; b.style.boxShadow=''; b.title='Wybierz pupila!'; return; }
-    const P=PETS[s.type];
-    b.textContent=P.s[stageIdx(s.gp||0)];
-    const h=s.happy==null?70:s.happy; const m=petMood(h);
+    const s=petMigrate(petLoad());
+    if(!s||!s.type||!PETS[s.type]){ b.textContent='🥚'; b.style.boxShadow=''; b.title='Weź jajko-niespodziankę!'; return; }
+    b.textContent=petEmoji(s);
+    const m=petMood(needsMin(s));
     b.style.boxShadow='inset 0 0 0 2px '+m.col;
-    b.title=(s.name||P.n)+' — '+m.txt;
+    b.title=petName(s)+' — '+(isNight()?'śpi 💤':m.txt)+' · 🍪 '+(s.treats||0);
   }
 
   /* ---- MODAL HELPERS ---- */
@@ -31239,75 +31435,282 @@ ${bodyHtml}
     petTick();
     const o=modal('sfPetModal'); const box=$('sfPetModal_box');
     const s=petLoad();
-    if(!s||!s.type){ box.innerHTML=petSelectHTML(); bindPetSelect(box); }
+    if(!s||!s.type||!PETS[s.type]){ box.innerHTML=petSelectHTML(); bindPetSelect(box); }
     else { box.innerHTML=petStatusHTML(s); bindPetStatus(box,s); }
     o.classList.add('show');
   }
+  // Pierwsze jajko: uczeń nie wybiera postaci — wykluje się niespodzianka (najpierw te, których jeszcze nie ma).
+  function petNewEgg(s, keepCurrent){
+    const all=Object.keys(PETS); const have=new Set((s.col||[]).map(c=>c.t));
+    if(keepCurrent && s.type) have.add(s.type);
+    let pool=all.filter(k=>!have.has(k) && k!==s.type);
+    if(!pool.length) pool=all.filter(k=>k!==s.type);
+    s.type=pool[Math.floor(Math.random()*pool.length)];
+    s.gp=0; s.name=null; s.pick=false; s.needName=false; s.born=Date.now(); s.fedDate=null; delete s.say;
+  }
   function petSelectHTML(){
-    // Pogrupowane w kategorie; na kafelku dorosła postać (s[3]) — od razu widać, w co wyrośnie.
-    let g='';
-    PET_CATS.forEach(([c,label])=>{
-      const keys=Object.keys(PETS).filter(k=>PETS[k].c===c); if(!keys.length) return;
-      g+=`<div class="sf-pet-cat">${label}</div><div class="sf-pet-grid">`
-        + keys.map(k=>`<button class="sf-pet-pick" data-k="${k}"><span class="sf-pet-em">${PETS[k].s[3]}</span><span>${PETS[k].n}</span></button>`).join('')
-        + '</div>';
-    });
+    const n=Object.keys(PETS).length;
     return `<button class="sf-x" data-close>✕</button>
-      <h2 class="sf-h">🐾 Wybierz swojego pupila</h2>
-      <p class="sf-sub">Ucz się codziennie, a Twój pupil będzie rósł i będzie szczęśliwy! Brak nauki = smutek 🥺</p>
-      ${g}
-      <label class="sf-lab">Nadaj mu imię</label>
-      <input id="sfPetName" class="sf-inp" maxlength="20" placeholder="np. Pysio">
-      <button id="sfPetCreate" class="sf-btn sf-btn-main" disabled>Adoptuj 💚</button>`;
+      <h2 class="sf-h">🥚 Jajko-niespodzianka</h2>
+      <p class="sf-sub">Co się z niego wykluje? Jeden z ${n} pupili — zwierzak, ptak, roślinka albo postać z bajki! Ucz się codziennie, a jajko szybko się wykluje. 🐣</p>
+      <div class="sf-stage" style="min-height:0"><span class="sf-pet-big">🥚</span></div>
+      <button id="sfPetCreate" class="sf-btn sf-btn-main">Weź jajko 💚</button>
+      <div class="sf-row"><button class="sf-btn sf-btn-ghost" id="sfPetAtlas">📖 Zobacz wszystkie postacie</button></div>`;
   }
   function bindPetSelect(box){
     bindClose(box);
-    let chosen=null;
-    box.querySelectorAll('.sf-pet-pick').forEach(btn=>btn.onclick=()=>{
-      box.querySelectorAll('.sf-pet-pick').forEach(x=>x.classList.remove('sel'));
-      btn.classList.add('sel'); chosen=btn.dataset.k;
-      const c=$('sfPetCreate'); if(c)c.disabled=false;
-      const ni=$('sfPetName'); if(ni && !ni.value) ni.placeholder='np. '+PETS[chosen].n;
-    });
     const create=$('sfPetCreate');
     if(create) create.onclick=()=>{
-      if(!chosen)return;
-      const nm=(($('sfPetName')&&$('sfPetName').value.trim())||PETS[chosen].n).slice(0,20);
-      petSave({type:chosen,name:nm,gp:0,happy:80,fedDate:null,lastCheck:today(),born:Date.now()});
-      petAch('pet_adopt');
-      petTick(); petRefresh(); renderPetCard(); openPet(); safeToast('💚 Adoptowano: '+nm+'!');
+      const prev=petLoad()||{};
+      const s={ v:2, type:null, gp:0, happy:80, hunger:80, energy:80, treats:prev.treats||0, col:Array.isArray(prev.col)?prev.col:[], t:Date.now(), lastCheck:today(), born:Date.now() };
+      petNewEgg(s,false);
+      petSave(s); petAch('pet_adopt');
+      petTick(); petRefresh(); renderPetCard(); openPet(); safeToast('🥚 Masz jajko-niespodziankę! Ucz się, żeby się wykluło.');
     };
+    const atlas=$('sfPetAtlas'); if(atlas) atlas.onclick=openHouse;
+  }
+  function needRow(id, icon, label, val, hint){
+    return `<div class="sf-need"><span style="width:100px">${icon} ${label}</span><div class="sf-bar"><i id="${id}" style="width:${val}%;background:${needCol(val)}"></i></div><b id="${id}V" style="width:38px;text-align:right">${val}%</b></div><div class="sf-need-hint">${hint}</div>`;
+  }
+  // Reakcje od kolegów czekające na pokazanie (z petCheckInbox).
+  const KIND_EM={heart:'❤️',star:'🌟',clap:'👏',party:'🎉',cookie:'🍪'};
+  function inboxKey(){ return 'fiszki_pet_inboxlist_'+uid(); }
+  function inboxList(){ try{ const a=JSON.parse(localStorage.getItem(inboxKey())||'[]'); return Array.isArray(a)?a:[]; }catch(e){ return []; } }
+  function inboxHTML(){
+    const list=inboxList(); if(!list.length) return '';
+    return '<div class="sf-inbox">💕 <b>Odwiedziny!</b><br>'+list.slice(0,8).map(r=>'<b>'+escTxt(r.n)+'</b> przekazał(a) Twojemu pupilowi '+r.c+' '+(KIND_EM[r.k]||'❤️')).join('<br>')+'</div>';
   }
   function petStatusHTML(s){
-    const P=PETS[s.type]; const si=stageIdx(s.gp||0); const em=P.s[si];
-    const h=s.happy==null?70:s.happy; const m=petMood(h);
-    const stName=(P.plant?PLANT_STAGE_NAMES:STAGE_NAMES)[si];
-    const nextGp = si<3 ? GP_THRESH[si] : null;
+    s=petMigrate(s);
+    const P=PETS[s.type]; const si=stageIdx(s.gp||0); const egg=si===0; const night=isNight();
+    const stName=(P.plant && !egg ? PLANT_STAGE_NAMES : STAGE_NAMES)[si];
+    const species=typeKnown(s) ? P.n : '❓ Niespodzianka';
+    const lo=si>0 ? GP_THRESH[si-1] : 0, hi=GP_THRESH[si];
+    const growPct=hi ? Math.max(0, Math.min(100, Math.round(((s.gp||0)-lo)/(hi-lo)*100))) : 100;
+    const growTxt=hi ? (egg?'🐣 Do wyklucia: ':'🌱 Do wzrostu: ')+(s.gp||0)+'/'+hi : '👑 Dorosły — może zamieszkać w Domku pupili';
+    const fav=typeKnown(s) ? favFood(s.type) : null;
+    const foods=foodChoices(s).map(f=>`<button class="sf-food${f===fav?' fav':''}" data-food="${f}" title="${FOOD[f]?FOOD[f][0]+' — '+FOOD[f][1]:''}${f===fav?' (ulubione!)':''}">${f}</button>`).join('');
+    const ncol=new Set((s.col||[]).map(c=>c.t)).size, total=Object.keys(PETS).length;
     return `<button class="sf-x" data-close>✕</button>
-      <div style="text-align:center">
-        <div class="sf-pet-big">${em}</div>
-        <h2 class="sf-h" style="text-align:center">${escTxt(s.name||P.n)}</h2>
-        <p class="sf-sub" style="text-align:center;margin-bottom:8px">${m.em} ${P.n} • ${stName} ${nextGp?('• '+(s.gp||0)+'/'+nextGp+' do wzrostu'):'• MAX 👑'}</p>
+      <div class="sf-stage" id="sfPetStage">
+        <div class="sf-bubble" id="sfPetBubble"></div>
+        <div><span class="sf-pet-big${night?' sleep':''}" id="sfPetBig" title="Kliknij mnie!">${petEmoji(s)}</span>${night?'<span class="sf-zzz">💤</span>':''}</div>
       </div>
-      <label class="sf-lab">Nastrój: ${m.txt}</label>
-      <div class="sf-bar"><i style="width:${h}%;background:${m.col}"></i></div>
-      <div class="sf-stat">
-        <div><b>${s.gp||0}</b><span>Dni karmienia</span></div>
-        <div><b>${h}%</b><span>Szczęście</span></div>
-        <div><b>${si+1}/4</b><span>Etap</span></div>
+      <h2 class="sf-h" style="text-align:center;margin-top:2px">${escTxt(petName(s))} <button class="sf-mini" id="sfPetSayAgain" title="Posłuchaj jeszcze raz">🔊</button></h2>
+      <p class="sf-sub" style="text-align:center;margin-bottom:6px">${species} • ${stName}${night?' • 🌙 śpi (22:00–7:00) i nic nie traci':''}</p>
+      <div class="sf-bar" style="height:8px"><i id="sfGrowBar" style="width:${growPct}%;background:linear-gradient(90deg,var(--accent,#7c4dff),var(--accent2,#06d6a0))"></i></div>
+      <div id="sfGrowTxt" style="font-size:.66rem;color:var(--muted);font-weight:800;text-align:right">${growTxt}</div>
+      ${s.needName && !egg ? '<div class="sf-inbox" style="background:rgba(6,214,160,.12);border-color:rgba(6,214,160,.45)">🎉 Wykluł się: <b>'+P.n+'</b>! <button class="sf-btn sf-btn-ghost" id="sfPetNameNew" style="padding:5px 10px;font-size:.72rem">✏️ Nadaj imię</button></div>' : ''}
+      ${inboxHTML()}
+      <div class="sf-needs">
+        ${needRow('sfNeedH','🍎','Najedzenie',nv(s.hunger),'karmi go tryb ✏️ Wpisz i smakołyki')}
+        ${needRow('sfNeedM','😊','Humor',nv(s.happy),'poprawiają go 🎮 gry, zabawa i ❤️ od kolegów')}
+        ${needRow('sfNeedE','⚡','Energia',nv(s.energy),'dają ją powtórki: Fiszki, Quiz i inne tryby')}
       </div>
-      <p class="sf-sub">${ studiedToday()? '✅ Dziś już nakarmiony! Świetna robota.' : '🍽️ Poucz się dziś (zdobądź XP), żeby nakarmić pupila.' }</p>
+      <label class="sf-lab">🍪 Smakołyki: <span id="sfTreats">${s.treats||0}</span> <span style="text-transform:none;color:var(--muted);font-weight:700;letter-spacing:0">· 1 opanowane słówko = 1 smakołyk${fav?' · ❤ = ulubione (2× więcej radości)':''}</span></label>
+      <div class="sf-foods">${foods}</div>
+      <div class="sf-row" style="margin-top:8px">
+        <button class="sf-btn sf-btn-ghost" data-act="pat">🤗 Pogłaszcz</button>
+        <button class="sf-btn sf-btn-ghost" data-act="play">🎾 Pobaw się</button>
+        <button class="sf-btn sf-btn-ghost" data-act="talk">🗣️ Powiedz coś</button>
+      </div>
       <div class="sf-row">
-        <button class="sf-btn sf-btn-main" id="sfPetLearn" style="flex:2">📚 Ucz się (nakarm)</button>
+        <button class="sf-btn sf-btn-main" id="sfPetLearn" style="flex:2">📚 Ucz się</button>
         <button class="sf-btn sf-btn-ghost" id="sfPetRename">✏️ Imię</button>
       </div>
-      <div class="sf-row"><button class="sf-btn sf-btn-ghost" id="sfPetReset" style="font-size:.78rem">🔄 Wybierz nowego pupila</button></div>`;
+      <div class="sf-row">
+        <button class="sf-btn sf-btn-ghost" id="sfPetHouse">🏡 Domek pupili (${ncol}/${total})</button>
+        ${si===3 ? '<button class="sf-btn sf-btn-main" id="sfPetToHouse">🏡 Do Domku + nowe jajko 🥚</button>' : '<button class="sf-btn sf-btn-ghost" id="sfPetSwap" style="font-size:.78rem">🔄 Wymień na inne jajko</button>'}
+      </div>
+      <div class="sf-row"><button class="sf-btn sf-btn-ghost" id="sfPetRemind" style="font-size:.74rem">🔔 Przypomnienie o pupilu (np. o 17:00)</button></div>`;
+  }
+
+  let _lastSay=null;
+  function petBubble(p, speak, id){
+    if(!p) return;
+    if(!id || id==='sfPetBubble') _lastSay=p;
+    const b=$(id||'sfPetBubble');
+    if(b){ b.innerHTML='<div class="sf-bub-en">'+escTxt(p[0])+'</div><div class="sf-bub-pl">'+escTxt(p[1])+'</div>'; b.classList.remove('pop'); void b.offsetWidth; b.classList.add('pop'); }
+    if(speak) petSpeak(p[0]);
+  }
+  function petAnim(kind, emoji, bigId, stageId){
+    const big=$(bigId||'sfPetBig'); if(!big) return;
+    big.classList.remove('eat','jump','love','wobble'); void big.offsetWidth; big.classList.add(kind);
+    const wrap=$(stageId||'sfPetStage'); if(!emoji || !wrap) return;
+    const n=kind==='love' ? 3 : 1;
+    for(let i=0;i<n;i++){
+      const f=document.createElement('span'); f.className='sf-fly '+(kind==='eat'?'in':'up'); f.textContent=emoji;
+      f.style.left=(38+Math.random()*24)+'%'; f.style.animationDelay=(i*0.15)+'s';
+      wrap.appendChild(f); setTimeout(()=>f.remove(), 1600);
+    }
+  }
+  // Odśwież paski i licznik bez przebudowy okna (żeby animacja i dymek zostały); przy zmianie etapu — pełne odświeżenie.
+  function petUpdateStatus(){
+    const box=$('sfPetModal_box'); if(!box) return;
+    const s=petLoad(); if(!s) return;
+    if(String(stageIdx(s.gp||0))!==box.dataset.stage){ setTimeout(openPet, 900); return; }
+    [['sfNeedH',s.hunger],['sfNeedM',s.happy],['sfNeedE',s.energy]].forEach(([id,v])=>{
+      v=nv(v); const i=$(id), b=$(id+'V'); if(i){ i.style.width=v+'%'; i.style.background=needCol(v); } if(b) b.textContent=v+'%';
+    });
+    const t=$('sfTreats'); if(t) t.textContent=s.treats||0;
+    const si=stageIdx(s.gp||0), lo=si>0 ? GP_THRESH[si-1] : 0, hi=GP_THRESH[si];
+    const gb=$('sfGrowBar'), gt=$('sfGrowTxt');
+    if(hi && gb) gb.style.width=Math.max(0, Math.min(100, Math.round(((s.gp||0)-lo)/(hi-lo)*100)))+'%';
+    if(hi && gt) gt.textContent=(si===0?'🐣 Do wyklucia: ':'🌱 Do wzrostu: ')+(s.gp||0)+'/'+hi;
+  }
+  function petFeed(food){
+    const s=petMigrate(petLoad()); if(!s || !s.type) return;
+    if(isNight()){ petAnim('wobble'); petBubble(pickPhrase('sleep'), true); return; }
+    if((s.treats||0)<=0){ petAnim('wobble'); petBubble(pickPhrase('notreat'), true); return; }
+    if(nv(s.hunger)>=97){ petAnim('wobble'); petBubble(pickPhrase('full'), true); return; }
+    const fav=typeKnown(s) && food===favFood(s.type);
+    s.treats--; s.hunger=clamp(nv(s.hunger)+(fav?15:12)); s.happy=clamp(nv(s.happy)+(fav?8:4));
+    petGrow(s, fav?2:1);
+    petSave(s);
+    petAnim('eat', food);
+    petBubble(isEgg(s) ? pickPhrase('egg') : pickPhrase(fav?'fav':'eat', food), true);
+    petUpdateStatus(); petRefresh(); renderPetCard();
+  }
+  function petAction(kind){
+    const s=petMigrate(petLoad()); if(!s || !s.type) return;
+    if(isNight()){ petAnim('wobble'); petBubble(pickPhrase('sleep'), true); return; }
+    if(isEgg(s)){ petAnim('wobble'); petBubble(pickPhrase('egg'), true); return; }
+    const td=today(); if(s.actDay!==td){ s.actDay=td; s.actGain=0; }
+    const gain=kind==='pat' ? 3 : (kind==='play' ? 5 : 0);
+    if(gain && (s.actGain||0)<15){ const g=Math.min(gain, 15-(s.actGain||0)); s.happy=clamp(nv(s.happy)+g); s.actGain=(s.actGain||0)+g; }
+    if(kind==='play') s.energy=clamp(nv(s.energy)-2);
+    petSave(s);
+    let cat=kind;
+    if(kind==='talk'){ cat=needPhraseCat(s); if(cat==='greet' || cat==='happy') cat=['poke','learn','happy','greet'][Math.floor(Math.random()*4)]; }
+    petAnim(kind==='play' ? 'jump' : (kind==='pat' ? 'love' : 'wobble'), kind==='play' ? '🎾' : (kind==='pat' ? '💖' : null));
+    petBubble(pickPhrase(cat), true);
+    petUpdateStatus(); petRefresh(); renderPetCard();
+  }
+  function petToHouse(){
+    const s=petLoad(); if(!s || stageIdx(s.gp||0)<3) return;
+    petBubble(pickPhrase('home'), true);
+    s.col=(s.col||[]).concat([{ t:s.type, n:s.name||PETS[s.type].n, d:Date.now() }]);
+    petNewEgg(s,true);
+    petSave(s);
+    safeToast('🏡 Pupil zamieszkał w Domku! Masz nowe jajko-niespodziankę 🥚');
+    setTimeout(()=>{ petRefresh(); renderPetCard(); openPet(); }, 1600);
   }
   function bindPetStatus(box,s){
     bindClose(box);
-    const L=$('sfPetLearn'); if(L)L.onclick=()=>{ const o=box.closest('.sf-ov'); if(o)o.classList.remove('show'); goLearn(); };
-    const R=$('sfPetRename'); if(R)R.onclick=()=>{ const nm=prompt('Nowe imię pupila:',s.name||''); if(nm&&nm.trim()){ s.name=nm.trim().slice(0,20); petSave(s); petRefresh(); openPet(); } };
-    const X=$('sfPetReset'); if(X)X.onclick=()=>{ if(confirm('Wybrać nowego pupila? Obecny zniknie i zaczniesz od nowa.')){ petSave(null); petRefresh(); renderPetCard(); openPet(); } };
+    box.dataset.stage=String(stageIdx(s.gp||0));
+    const big=$('sfPetBig');
+    if(big) big.onclick=()=>{ const s2=petLoad()||s; const cat=isNight() ? 'sleep' : (isEgg(s2) ? 'egg' : 'poke'); petAnim(isNight()||isEgg(s2) ? 'wobble' : 'jump'); petBubble(pickPhrase(cat), true); };
+    box.querySelectorAll('.sf-food').forEach(b=>b.onclick=()=>petFeed(b.dataset.food));
+    box.querySelectorAll('[data-act]').forEach(b=>b.onclick=()=>petAction(b.dataset.act));
+    const say=$('sfPetSayAgain'); if(say) say.onclick=()=>{ if(_lastSay) petSpeak(_lastSay[0]); };
+    const L=$('sfPetLearn'); if(L) L.onclick=()=>{ const o=box.closest('.sf-ov'); if(o) o.classList.remove('show'); goLearn(); };
+    const rename=()=>{ const cur=petLoad()||s; const nm=prompt('Imię pupila:', cur.name||PETS[cur.type].n); if(nm && nm.trim()){ cur.name=nm.trim().slice(0,20); delete cur.needName; petSave(cur); petRefresh(); renderPetCard(); openPet(); } };
+    const R=$('sfPetRename'); if(R) R.onclick=rename;
+    const NN=$('sfPetNameNew'); if(NN) NN.onclick=rename;
+    const H=$('sfPetHouse'); if(H) H.onclick=openHouse;
+    const TH=$('sfPetToHouse'); if(TH) TH.onclick=()=>{ if(confirm('Twój dorosły pupil zamieszka w 🏡 Domku pupili (zostanie tam na zawsze), a Ty dostaniesz nowe jajko-niespodziankę. Kontynuować?')) petToHouse(); };
+    const SW=$('sfPetSwap'); if(SW) SW.onclick=()=>{
+      if(!confirm('Wymienić na inne jajko-niespodziankę? Ten pupil wróci do gniazda (nie trafi do Domku), a wzrost zacznie się od nowa. Smakołyki i Domek zostają.')) return;
+      const cur=petLoad(); if(!cur) return; petNewEgg(cur,false); petSave(cur); petRefresh(); renderPetCard(); openPet(); safeToast('🥚 Nowe jajko-niespodzianka! Ciekawe, co się wykluje…');
+    };
+    const RM=$('sfPetRemind'); if(RM) RM.onclick=()=>{
+      const o=box.closest('.sf-ov'); if(o) o.classList.remove('show');
+      if(typeof openAccountModal==='function'){ openAccountModal(); setTimeout(()=>{ const r=$('reminderEnabled'); if(r && r.scrollIntoView) r.scrollIntoView({block:'center'}); }, 150); }
+    };
+    // Pierwszy dymek: zdarzenie (wyklucie, wzrost, serduszka) albo to, czego pupil teraz potrzebuje.
+    const cur=petLoad()||s;
+    const ev=cur.say; if(ev){ delete cur.say; petSave(cur); }
+    petBubble(pickPhrase(ev || needPhraseCat(cur)), true);
+    // Reakcje od kolegów zostały pokazane — wyczyść listę.
+    if(inboxList().length){ try{ localStorage.removeItem(inboxKey()); }catch(e){} }
+  }
+
+  /* ---- 🏡 DOMEK PUPILI (kolekcja) + ATLAS ---- */
+  function openHouse(){
+    const o=modal('sfHouseModal'); const box=$('sfHouseModal_box'); const s=petLoad()||{};
+    const col=Array.isArray(s.col)?s.col:[]; const have=new Set(col.map(c=>c.t)); const total=Object.keys(PETS).length;
+    let h=`<button class="sf-x" data-close>✕</button><h2 class="sf-h">🏡 Domek pupili</h2>
+      <p class="sf-sub">Zebrane: <b>${have.size}/${total}</b>. Gdy pupil dorośnie, przenieś go tutaj i weź nowe jajko-niespodziankę. Zbierz wszystkie! 🏆</p>`;
+    h+=col.length
+      ? '<div class="sf-pet-grid">'+col.slice().reverse().map(c=>`<div class="sf-pet-pick" style="cursor:default"><span class="sf-pet-em">${PETS[c.t]?PETS[c.t].s[3]:'❔'}</span><span>${escTxt(c.n)}</span><span style="font-size:.6rem;color:var(--muted)">${new Date(c.d).toLocaleDateString('pl-PL')}</span></div>`).join('')+'</div>'
+      : '<p class="sf-sub">Jeszcze pusto — wychowaj pierwszego pupila do etapu „Dorosły”. 🌱</p>';
+    h+='<label class="sf-lab">📖 Atlas postaci</label>';
+    PET_CATS.forEach(([c,label])=>{
+      const keys=Object.keys(PETS).filter(k=>PETS[k].c===c); const got=keys.filter(k=>have.has(k)).length;
+      h+=`<div class="sf-pet-cat">${label} · ${got}/${keys.length}</div><div class="sf-pet-grid">`
+        + keys.map(k=>have.has(k)
+            ? `<div class="sf-pet-pick" style="cursor:default"><span class="sf-pet-em">${PETS[k].s[3]}</span><span>${PETS[k].n}</span></div>`
+            : `<div class="sf-pet-pick" style="cursor:default;opacity:.55" title="Jeszcze nie odkryty"><span class="sf-pet-em" style="filter:brightness(0) opacity(.55)">${PETS[k].s[3]}</span><span>???</span></div>`).join('')
+        + '</div>';
+    });
+    box.innerHTML=h; bindClose(box); o.classList.add('show');
+  }
+
+  /* ---- ODWIEDZINY: pupile kolegów z klasy + gotowe reakcje (migracja #71) ---- */
+  const REACTS=[['heart','❤️','Serduszko'],['star','🌟','Gwiazdka'],['clap','👏','Brawa'],['party','🎉','Hurra'],['cookie','🍪','Ciasteczko']];
+  function friendGp(p){ const gp=+p.gp||0; return (+p.v>=2) ? gp : gp*5; }
+  function friendEmoji(p){ const P=PETS[p.type]; if(!P) return '❔'; const si=stageIdx(friendGp(p)); return si===0 ? '🥚' : P.s[si]; }
+  function friendStage(p){ const P=PETS[p.type]; if(!P) return ''; const si=stageIdx(friendGp(p)); return (P.plant && si>0 ? PLANT_STAGE_NAMES : STAGE_NAMES)[si]; }
+  window.sfPetMini=function(userId){
+    const f=(window.__srPets||{})[userId]; if(!f || !f.pet || !PETS[f.pet.type]) return '';
+    return '<span class="sf-petmini" onclick="event.stopPropagation();window.sfVisitPet(\''+userId+'\')" title="'+(userId===uid()?'Twój pupil':'Odwiedź pupila')+'">'+friendEmoji(f.pet)+'<small>'+friendStage(f.pet)+'</small></span>';
+  };
+  window.sfVisitPet=async function(userId){
+    if(userId===uid()){ openPet(); return; }
+    const f=(window.__srPets||{})[userId]; if(!f || !f.pet || !PETS[f.pet.type]) return;
+    const p=f.pet, P=PETS[p.type], si=stageIdx(friendGp(p)), egg=si===0;
+    const o=modal('sfVisitModal'); const box=$('sfVisitModal_box');
+    let sent=0; try{ sent=await DB.petReactSentToday(userId); }catch(e){}
+    box.innerHTML=`<button class="sf-x" data-close>✕</button>
+      <div class="sf-stage" id="sfVisitStage"><div class="sf-bubble" id="sfVisitBubble"></div><div><span class="sf-pet-big" id="sfVisitBig">${friendEmoji(p)}</span></div></div>
+      <h2 class="sf-h" style="text-align:center">${escTxt(egg ? 'Jajko-niespodzianka' : (p.name||P.n))}</h2>
+      <p class="sf-sub" style="text-align:center">🐾 Pupil: <b>${escTxt(f.name)}</b> · ${egg ? '🥚 jeszcze w jajku' : P.n+' · '+friendStage(p)} · 💕 <span id="sfVisitTotal">${f.reactions||0}</span></p>
+      <label class="sf-lab">Wyślij reakcję — bez wiadomości, ${escTxt(f.name)} zobaczy, ile dostał(a)</label>
+      <div class="sf-foods">${REACTS.map(([k,e,t])=>`<button class="sf-food" data-k="${k}" title="${t}">${e}</button>`).join('')}</div>
+      <p class="sf-sub" id="sfVisitSent" style="text-align:center">Dziś wysłano: ${sent}/10</p>`;
+    bindClose(box); o.classList.add('show');
+    petBubble(pickPhrase(egg ? 'egg' : 'visit'), true, 'sfVisitBubble');
+    box.querySelectorAll('[data-k]').forEach(b=>b.onclick=async()=>{
+      try{
+        const n=await DB.petReact(userId, b.dataset.k);
+        f.reactions=(f.reactions||0)+1;
+        const tot=$('sfVisitTotal'); if(tot) tot.textContent=f.reactions;
+        const st=$('sfVisitSent'); if(st) st.textContent='Dziś wysłano: '+n+'/10';
+        petAnim('love', b.textContent, 'sfVisitBig', 'sfVisitStage');
+        petBubble(pickPhrase(egg ? 'egg' : 'visit'), true, 'sfVisitBubble');
+      }catch(e){ safeToast('❌ '+e.message); }
+    });
+  };
+  window.sfOpenClassPets=function(){
+    const map=window.__srPets||{}; const ids=Object.keys(map).filter(id=>map[id].pet && PETS[map[id].pet.type]);
+    const o=modal('sfClassPetsModal'); const box=$('sfClassPetsModal_box');
+    box.innerHTML=`<button class="sf-x" data-close>✕</button><h2 class="sf-h">🐾 Pupile klasy</h2>
+      <p class="sf-sub">Kliknij pupila kolegi, żeby go odwiedzić i wysłać ❤️ (max 10 reakcji dziennie dla jednego pupila).</p>`
+      + (ids.length ? '<div class="sf-pet-grid">'+ids.sort((a,b)=>(map[a].name||'').localeCompare(map[b].name||'','pl')).map(id=>{ const f=map[id];
+          return `<button class="sf-pet-pick" onclick="window.sfVisitPet('${id}')"><span class="sf-pet-em">${friendEmoji(f.pet)}</span><span>${escTxt(f.name)}${id===uid()?' (Ty)':''}</span><span style="font-size:.6rem;color:var(--muted)">${friendStage(f.pet)} · 💕 ${f.reactions||0}</span></button>`; }).join('')+'</div>'
+        : '<p class="sf-sub">Nikt z klasy nie ma jeszcze pupila. Bądź pierwszy! 🥚</p>');
+    bindClose(box); o.classList.add('show');
+  };
+  // Skrzynka: kto odwiedził mojego pupila (co 60 s, przy oknie pupila i na ekranie głównym).
+  let _inboxAt=0;
+  async function petCheckInbox(force){
+    if(uid()==='guest' || !window.DB || !DB.loadPetInbox || !petAllowed()) return;
+    if(!force && Date.now()-_inboxAt<60000) return; _inboxAt=Date.now();
+    const sk='fiszki_pet_inbox_seen_'+uid();
+    let since=null; try{ since=localStorage.getItem(sk); }catch(e){}
+    let rows; try{ rows=await DB.loadPetInbox(since); }catch(e){ return; }
+    if(!rows || !rows.length) return;
+    const list=inboxList();
+    rows.forEach(r=>{ const k=r.from_name+'|'+r.kind; const ex=list.find(x=>x.n+'|'+x.k===k); if(ex) ex.c=r.cnt; else list.unshift({ n:r.from_name, k:r.kind, c:r.cnt }); });
+    try{ localStorage.setItem(inboxKey(), JSON.stringify(list.slice(0,20))); }catch(e){}
+    const maxAt=rows.reduce((m,r)=>(r.last_at>m ? r.last_at : m), since||'');
+    try{ localStorage.setItem(sk, maxAt); }catch(e){}
+    const total=rows.reduce((a,r)=>a+(r.cnt||0),0);
+    const s=petMigrate(petLoad());
+    if(s && s.type){ s.happy=clamp(nv(s.happy)+Math.min(30,total)); s.say='hearts'; petSave(s); }
+    const r0=rows[0];
+    safeToast('💕 '+r0.from_name+' przekazał(a) Twojemu pupilowi '+r0.cnt+' '+(KIND_EM[r0.kind]||'❤️'));
+    petRefresh(); renderPetCard();
   }
 
   /* ---- MAPA WIEDZY ---- */
@@ -31425,30 +31828,38 @@ ${bodyHtml}
   }
 
   /* ---- KARTA PUPILA na ekranie glownym (Wave 1, #2) ---- */
+  let _cardSay=null;
   function renderPetCard(){
     try{
       if(!petAllowed()){ const e0=$('sfPetCard'); if(e0) e0.innerHTML=''; return; }
       engageTop(); const el=$('sfPetCard'); if(!el) return;
       placePetCard(el);
       let s=petLoad();
-      if(!s || !s.type){
+      if(!s || !s.type || !PETS[s.type]){
         if(uid()==='guest'){ el.innerHTML=''; return; }  // gosc nie persistuje — bez zachety
-        el.innerHTML='<div style="background:linear-gradient(135deg,rgba(6,214,160,.14),rgba(124,77,255,.12));border:2px dashed rgba(6,214,160,.5);border-radius:16px;padding:13px 16px;margin-bottom:14px;display:flex;align-items:center;gap:12px;cursor:pointer" onclick="var b=document.getElementById(\'sfPetBtn\');b&&b.click()">'
-          +'<div style="font-size:1.9rem">🥚</div><div style="flex:1;min-width:0"><div style="font-weight:800;color:var(--text);font-size:.9rem">Adoptuj swojego pupila! 🐾</div><div style="font-size:.7rem;color:var(--muted);font-weight:600">Ucz się codziennie, a będzie rósł i będzie szczęśliwy.</div></div><div style="font-weight:800;color:var(--accent2,#06d6a0)">→</div></div>';
+        el.innerHTML='<div style="background:linear-gradient(135deg,rgba(6,214,160,.14),rgba(124,77,255,.12));border:2px dashed rgba(6,214,160,.5);border-radius:16px;padding:13px 16px;margin-bottom:14px;display:flex;align-items:center;gap:12px;cursor:pointer" onclick="window.sfOpenPet&&window.sfOpenPet()">'
+          +'<div style="font-size:1.9rem">🥚</div><div style="flex:1;min-width:0"><div style="font-weight:800;color:var(--text);font-size:.9rem">Weź jajko-niespodziankę! 🐾</div><div style="font-size:.7rem;color:var(--muted);font-weight:600">Co się wykluje? Jeden z '+Object.keys(PETS).length+' pupili. Ucz się, karm go i zbieraj wszystkie!</div></div><div style="font-weight:800;color:var(--accent2,#06d6a0)">→</div></div>';
         return;
       }
-      try{ petTick(); }catch(e){} s=petLoad();
-      const P=PETS[s.type]; const si=stageIdx(s.gp||0); const em=P.s[si];
-      const h=s.happy==null?70:s.happy; const m=petMood(h);
-      const stName=(P.plant?PLANT_STAGE_NAMES:STAGE_NAMES)[si];
-      const fed=studiedToday();
-      el.innerHTML='<div style="background:linear-gradient(135deg,rgba(124,77,255,.12),rgba(6,214,160,.10));border:2px solid rgba(124,77,255,.35);border-radius:16px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;gap:12px;cursor:pointer" onclick="var b=document.getElementById(\'sfPetBtn\');b&&b.click()">'
-        +'<div style="font-size:2.4rem;line-height:1">'+em+'</div>'
+      try{ petTick(); }catch(e){} s=petMigrate(petLoad());
+      const P=PETS[s.type]; const si=stageIdx(s.gp||0); const em=petEmoji(s);
+      const night=isNight(); const m=petMood(needsMin(s));
+      const stName=isEgg(s) ? 'Jajko' : (P.plant?PLANT_STAGE_NAMES:STAGE_NAMES)[si];
+      // Dymek na karcie (bez lektora) — ten sam przez 2 min, żeby nie migał przy każdym odświeżeniu.
+      const cat=needPhraseCat(s);
+      if(!_cardSay || _cardSay.cat!==cat || Date.now()-_cardSay.at>120000) _cardSay={ cat:cat, p:pickPhrase(cat), at:Date.now() };
+      const p=_cardSay.p;
+      const bar=(v,ic)=>'<div style="display:flex;align-items:center;gap:4px;font-size:.66rem" title="'+v+'%"><span>'+ic+'</span><div style="flex:1;height:6px;background:var(--surface2,rgba(255,255,255,.12));border-radius:4px;overflow:hidden"><div style="height:100%;width:'+v+'%;background:'+needCol(v)+'"></div></div></div>';
+      const hasInbox=inboxList().length>0;
+      el.innerHTML='<div style="background:linear-gradient(135deg,rgba(124,77,255,.12),rgba(6,214,160,.10));border:2px solid rgba(124,77,255,.35);border-radius:16px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;gap:12px;cursor:pointer" onclick="window.sfOpenPet&&window.sfOpenPet()">'
+        +'<div style="font-size:2.4rem;line-height:1;position:relative;'+(night?'filter:saturate(.6) brightness(.85)':'')+'">'+em+(night?'<span style="position:absolute;right:-12px;top:-10px;font-size:1rem">💤</span>':'')+'</div>'
         +'<div style="flex:1;min-width:0">'
-        +'<div style="font-weight:800;color:var(--text);font-size:.92rem">'+escTxt(s.name||P.n)+' '+m.em+'</div>'
-        +'<div style="font-size:.7rem;color:var(--muted);font-weight:600">'+P.n+' • '+stName+' • '+(fed?'✅ nakarmiony dziś':'🍽️ poucz się, żeby nakarmić')+'</div>'
-        +'<div style="height:8px;background:var(--surface2,rgba(255,255,255,.12));border-radius:6px;overflow:hidden;margin-top:5px"><div style="height:100%;width:'+h+'%;background:'+m.col+';transition:width .4s"></div></div>'
-        +'</div></div>';
+        +'<div style="font-weight:800;color:var(--text);font-size:.92rem">'+escTxt(petName(s))+' '+(night?'😴':m.em)+(hasInbox?' <span title="Odwiedziny kolegów">💕</span>':'')+'</div>'
+        +'<div style="font-size:.7rem;color:var(--text);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">💬 „'+escTxt(p[0])+'” <span style="color:var(--muted);font-weight:600">'+escTxt(p[1])+'</span></div>'
+        +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:5px">'+bar(nv(s.hunger),'🍎')+bar(nv(s.happy),'😊')+bar(nv(s.energy),'⚡')+'</div>'
+        +'<div style="font-size:.62rem;color:var(--muted);font-weight:700;margin-top:3px">'+(typeKnown(s)?P.n:'❓ Niespodzianka')+' • '+stName+'</div>'
+        +'</div>'
+        +'<div style="text-align:center;font-weight:800;font-size:.72rem;color:var(--text)">🍪<br>'+(s.treats||0)+'</div></div>';
     }catch(e){}
   }
 
@@ -31607,6 +32018,7 @@ ${bodyHtml}
       rows=[]; try{ rows=await DB.loadMyClassRankings(); }catch(e){}
       _srRows=rows;
       try{ window.__srAvatars = DB.loadClassAvatars ? await DB.loadClassAvatars() : {}; }catch(e){ window.__srAvatars={}; }
+      try{ window.__srPets = (DB.loadClassPets ? await DB.loadClassPets() : null) || {}; }catch(e){ window.__srPets={}; }
     }
     const cls=srPickPool(rows);
     if(!cls || !cls.members || !cls.members.length){
@@ -31617,7 +32029,7 @@ ${bodyHtml}
     let tabs='<div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-bottom:12px">';
     SR_CATS.forEach((c,i)=>{ tabs+='<button id="srTab'+i+'" class="sf-btn sf-btn-ghost" style="font-size:.72rem;padding:7px 10px" onclick="window.__sfRankCat('+i+')">'+c.ic+' '+c.t+'</button>'; });
     tabs+='</div>';
-    box.innerHTML='<button class="sf-x" data-close>✕</button><h2 class="sf-h">🏆 '+escTxt(_srData.title||'Ranking klasy')+'</h2><p class="sf-sub">Top 10 · wg liczby przyswojonych słów (zakładki = inne kategorie)<br>Miejsca 1–5 zdobywają kamienie: 💎 Diament · Szafir · Rubin · Szmaragd · Ametyst · 1. miejsce — złota korona 👑</p>'+srViewSwitch(cls.key,'window.__sfRankView',false)+tabs+'<div id="srList"></div>';
+    box.innerHTML='<button class="sf-x" data-close>✕</button><h2 class="sf-h">🏆 '+escTxt(_srData.title||'Ranking klasy')+'</h2><p class="sf-sub">Top 10 · wg liczby przyswojonych słów (zakładki = inne kategorie)<br>Miejsca 1–5 zdobywają kamienie: 💎 Diament · Szafir · Rubin · Szmaragd · Ametyst · 1. miejsce — złota korona 👑</p>'+srViewSwitch(cls.key,'window.__sfRankView',false)+(Object.keys(window.__srPets||{}).length?'<div style="text-align:center;margin-bottom:10px"><button class="sf-btn sf-btn-ghost" style="font-size:.74rem;padding:7px 12px" onclick="window.sfOpenClassPets()">🐾 Pupile klasy — odwiedź i wyślij ❤️</button></div>':'')+tabs+'<div id="srList"></div>';
     bindClose(box); window.__sfRankCat(_srCat||0);
   };
   window.__sfRankCat=function(idx){
@@ -31632,7 +32044,7 @@ ${bodyHtml}
       const md=(val>0 && place<=5) ? srPlaceBadge(place) : ('#'+place);
       const gem=(val>0 && place<=3) ? SR_GEMS[place-1] : null;   // „diamentowe konto" top 3
       // Podlinijka: [klasa ucznia przy rankingu międzyklasowym] · poziom · XP · przyswojone słówka
-      const sub=(_srData.multi && u.member_class_name ? '🏫 '+escTxt(u.member_class_name)+' · ' : '')+'⭐ '+(u.level||1)+' · '+(u.xp_total||0)+' XP · 📚 '+(u.well_learned||0);
+      const sub=window.sfPetMini(u.user_id)+(_srData.multi && u.member_class_name ? '🏫 '+escTxt(u.member_class_name)+' · ' : '')+'⭐ '+(u.level||1)+' · '+(u.xp_total||0)+' XP · 📚 '+(u.well_learned||0);
       const rowBg=gem ? 'background:'+gem.bg+';border:1.5px solid '+gem.bd+';border-radius:10px;margin:3px 0' : (isMe?'background:rgba(124,77,255,.18);border-radius:8px':'');
       const nameGem=gem ? '<span style="display:inline-block;vertical-align:-3px;margin-left:5px">'+srGem(place,15)+'</span>' : '';
       const meRing=(gem && isMe) ? ';box-shadow:0 0 0 2px rgba(124,77,255,.75)' : '';
@@ -31657,7 +32069,7 @@ ${bodyHtml}
     try{
       if(typeof window.showScreen==='function' && !window.__sfShowWrap){
         const _os=window.showScreen;
-        window.showScreen=function(){ const r=_os.apply(this,arguments); try{ petSyncServer(); ensureButtons(); petRefresh(); renderPetCard(); }catch(e){} return r; };
+        window.showScreen=function(){ const r=_os.apply(this,arguments); try{ petSyncServer(); ensureButtons(); petRefresh(); renderPetCard(); petCheckInbox(); }catch(e){} return r; };
         window.__sfShowWrap=true;
       }
     }catch(e){}
@@ -31665,8 +32077,8 @@ ${bodyHtml}
   function init(){ wrapShowScreen(); try{petSyncServer();}catch(e){} ensureButtons(); tryWrap(); try{petTick();}catch(e){} petRefresh(); renderPetCard(); renderChallengeBanner(); renderStudentRank(); }
   if(document.readyState!=='loading') init(); else document.addEventListener('DOMContentLoaded', init);
   // Profil może się ładować dłużej — dopóki pupil nie jest zsynchronizowany z serwerem, sprawdzaj co 2 s (do 60 s).
-  let n=0, chDone=false; const iv=setInterval(()=>{ n++; let synced=false; try{ synced=petSyncServer(); }catch(e){} if(synced){ try{petTick();}catch(e){} } ensureButtons(); tryWrap(); petRefresh(); renderPetCard(); if(!chDone && uid()!=='guest'){ chDone=true; renderChallengeBanner(); renderStudentRank(); } if(n>=30 || (n>=12 && _petSyncedFor)) clearInterval(iv); }, 2000);
-  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden){ try{petSyncServer();}catch(e){} try{petTick();}catch(e){} petRefresh(); renderPetCard(); renderChallengeBanner(); renderStudentRank(); } });
+  let n=0, chDone=false; const iv=setInterval(()=>{ n++; let synced=false; try{ synced=petSyncServer(); }catch(e){} if(synced){ try{petTick();}catch(e){} } ensureButtons(); tryWrap(); petRefresh(); renderPetCard(); if(!chDone && uid()!=='guest' && _petSyncedFor){ chDone=true; renderChallengeBanner(); renderStudentRank(); petCheckInbox(true); } if(n>=30 || (n>=12 && _petSyncedFor)) clearInterval(iv); }, 2000);
+  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden){ try{petSyncServer();}catch(e){} try{petTick();}catch(e){} petRefresh(); renderPetCard(); petCheckInbox(); renderChallengeBanner(); renderStudentRank(); } });
 })();
 </script>
 <script src="consent.js"></script>

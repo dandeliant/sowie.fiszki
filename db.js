@@ -2105,6 +2105,41 @@ const DB = (() => {
     }, 800);
   }
 
+  // ── Pupile kolegów i odwiedziny (migracja #71) ── null = brak migracji
+  function _petSocialMissing(error) {
+    return !!error && /class_pets|pet_react|pet_reactions|PGRST202|42883|Could not find the function/i.test((error.code || '') + ' ' + (error.message || ''));
+  }
+  async function loadClassPets() {
+    if (!_userId) return {};
+    const { data, error } = await supabase.rpc('class_pets');
+    if (_petSocialMissing(error)) return null;
+    if (error) throw new Error(error.message);
+    const map = {};
+    (data || []).forEach(r => { map[r.user_id] = { name: r.display_name, pet: r.pet || {}, reactions: r.reactions || 0 }; });
+    return map;
+  }
+  async function petReact(toUserId, kind) {
+    const { data, error } = await supabase.rpc('pet_react', { p_to: toUserId, p_kind: kind });
+    if (error) {
+      if (/LIMIT/.test(error.message)) throw new Error('Dziś wysłano już 10 reakcji temu pupilowi — wróć jutro! 🌙');
+      if (/NOT_IN_CLASS/.test(error.message)) throw new Error('Możesz odwiedzać tylko pupile kolegów z klasy.');
+      throw new Error(error.message);
+    }
+    return data || 0;
+  }
+  async function petReactSentToday(toUserId) {
+    const { data, error } = await supabase.rpc('pet_react_sent_today', { p_to: toUserId });
+    if (error) return 0;
+    return data || 0;
+  }
+  async function loadPetInbox(sinceIso) {
+    if (!_userId) return [];
+    const { data, error } = await supabase.rpc('pet_reactions_inbox', { p_since: sinceIso || null });
+    if (_petSocialMissing(error)) return null;
+    if (error) throw new Error(error.message);
+    return data || [];
+  }
+
   // Zapisz aktualna liczbe slow opanowanych BARDZO DOBRZE (interval > 7 dni) —
   // do rankingu klasowego wg przyswojonych slow (migracja #54). Klient liczy
   // to z lokalnych word_states i wola tutaj. Zapis tylko gdy kolumna istnieje
@@ -4636,6 +4671,10 @@ const DB = (() => {
     loadBookNotesBoth,
     getPetServer,
     savePetServer,
+    loadClassPets,
+    petReact,
+    petReactSentToday,
+    loadPetInbox,
     loadStudentNotes,
     loadMyStudentNotes,
     saveStudentNote,

@@ -112,8 +112,20 @@
     }
   }
 
+  // Wirtualny pupil (app.html): sekundy aktywnej gry poprawiają mu humor.
+  // Licznik per login; app.html zamienia go na punkty humoru i zeruje.
+  function petPlay() {
+    if (!cur || !cur.petSec) return;
+    try {
+      const k = 'fiszki_pet_play_' + cur.user;
+      localStorage.setItem(k, String((+localStorage.getItem(k) || 0) + cur.petSec));
+    } catch (e) {}
+    cur.petSec = 0;
+  }
+
   function persist(final) {
     if (!cur) return;
+    petPlay();
     const q = readQ().filter(e => e.id !== cur.id);
     if (cur.sec >= MIN_SEC || cur.points > 0) {
       q.push({
@@ -146,7 +158,7 @@
     let n = 0;
     timer = setInterval(() => {
       if (!cur) return;
-      if (document.visibilityState === 'visible' && Date.now() - lastAct <= IDLE_MS) cur.sec++;
+      if (document.visibilityState === 'visible' && Date.now() - lastAct <= IDLE_MS) { cur.sec++; cur.petSec = (cur.petSec || 0) + 1; }
       sample();
       if (++n % 5 === 0) persist(false);
     }, 1000);
