@@ -31089,9 +31089,50 @@ ${bodyHtml}
   const PLANT_STAGE_NAMES = ['Kiełek','Listek','Roślinka','Drzewko'];
   const GP_THRESH = [3,8,20];
   function stageIdx(gp){ if(gp>=20)return 3; if(gp>=8)return 2; if(gp>=3)return 1; return 0; }
+  // Stan pupila: localStorage = szybka kopia na urządzeniu, profiles.pet (migracja #70) = wspólny zapis
+  // dla wszystkich urządzeń. Przy każdej zmianie zapisujemy oba miejsca; przy starcie wygrywa nowszy (ts).
   function petKey(){ return 'fiszki_pet_' + uid(); }
+  function petTsKey(){ return 'fiszki_pet_ts_' + uid(); }
   function petLoad(){ try{ return JSON.parse(localStorage.getItem(petKey())||'null'); }catch(e){ return null; } }
-  function petSave(s){ try{ localStorage.setItem(petKey(), JSON.stringify(s)); }catch(e){} }
+  function petOnLocal(){ let v=null; try{ v=localStorage.getItem('fiszki_pet_on_'+uid()); }catch(e){} return v==='1' ? true : (v==='0' ? false : null); }
+  function petPush(){
+    // Przed pierwszą synchronizacją nic nie wysyłamy — inaczej stary stan z tego urządzenia
+    // (np. codzienny petTick) nadpisałby nowszego pupila z serwera.
+    if(uid()==='guest' || _petSyncedFor!==uid()) return;
+    const ts=Date.now();
+    try{ localStorage.setItem(petTsKey(), String(ts)); }catch(e){}
+    try{ if(window.DB && DB.savePetServer) DB.savePetServer({ pet: petLoad(), on: petOnLocal(), ts: ts }); }catch(e){}
+  }
+  function petSave(s){
+    const before=localStorage.getItem(petKey());
+    const after=s ? JSON.stringify(s) : null;
+    if(before===after) return; // bez zmian — nie zapisuj na serwer
+    try{ if(after) localStorage.setItem(petKey(), after); else localStorage.removeItem(petKey()); }catch(e){}
+    petPush();
+  }
+  // Jednorazowo po załadowaniu profilu: pobierz pupila z serwera albo wyślij lokalnego (pierwsza synchronizacja).
+  let _petSyncedFor=null;
+  function petSyncServer(){
+    const id=uid(); if(id==='guest' || _petSyncedFor===id) return false;
+    let srv; try{ srv=(window.DB && DB.getPetServer) ? DB.getPetServer() : undefined; }catch(e){ srv=undefined; }
+    if(srv===undefined) return false;           // profil jeszcze się nie załadował — spróbuj później
+    _petSyncedFor=id;
+    if(!srv.available) return false;            // brak migracji #70 — zostaje tylko localStorage
+    const loc={ pet: petLoad(), on: petOnLocal(), ts: +(localStorage.getItem(petTsKey())||0) };
+    const s=srv.data;
+    if(s && (+s.ts||0) >= loc.ts){
+      try{
+        if(s.pet) localStorage.setItem(petKey(), JSON.stringify(s.pet)); else localStorage.removeItem(petKey());
+        if(s.on===true || s.on===false) localStorage.setItem('fiszki_pet_on_'+id, s.on?'1':'0'); else localStorage.removeItem('fiszki_pet_on_'+id);
+        localStorage.setItem(petTsKey(), String(+s.ts||0));
+      }catch(e){}
+      return true;
+    }
+    if(loc.pet || loc.on!==null){               // lokalny nowszy / serwer pusty → wyślij
+      try{ DB.savePetServer({ pet: loc.pet, on: loc.on, ts: loc.ts || Date.now() }); }catch(e){}
+    }
+    return false;
+  }
   function studiedToday(){ try{ return !!(window.DB && DB.getDailyXP && DB.getDailyXP(curUser())>0); }catch(e){ return false; } }
   function petMood(h){
     if(h>=80)return{em:'😻',txt:'przeszczęśliwy!',col:'var(--accent2,#06d6a0)'};
@@ -31140,6 +31181,7 @@ ${bodyHtml}
   window.sfPetSetEnabled=function(on){
     if(uid()==='guest') return;
     try{ localStorage.setItem('fiszki_pet_on_'+uid(), on?'1':'0'); }catch(e){}
+    petPush();
     ensureButtons(); petRefresh(); renderPetCard(); window.sfPetSyncToggle();
     safeToast(on?'🐾 Pupil włączony — znajdziesz go w nagłówku i na ekranie głównym.':'Pupil wyłączony (jego postęp zostaje zapisany).');
   };
@@ -31265,7 +31307,7 @@ ${bodyHtml}
     bindClose(box);
     const L=$('sfPetLearn'); if(L)L.onclick=()=>{ const o=box.closest('.sf-ov'); if(o)o.classList.remove('show'); goLearn(); };
     const R=$('sfPetRename'); if(R)R.onclick=()=>{ const nm=prompt('Nowe imię pupila:',s.name||''); if(nm&&nm.trim()){ s.name=nm.trim().slice(0,20); petSave(s); petRefresh(); openPet(); } };
-    const X=$('sfPetReset'); if(X)X.onclick=()=>{ if(confirm('Wybrać nowego pupila? Obecny zniknie i zaczniesz od nowa.')){ try{localStorage.removeItem(petKey());}catch(e){} petRefresh(); openPet(); } };
+    const X=$('sfPetReset'); if(X)X.onclick=()=>{ if(confirm('Wybrać nowego pupila? Obecny zniknie i zaczniesz od nowa.')){ petSave(null); petRefresh(); renderPetCard(); openPet(); } };
   }
 
   /* ---- MAPA WIEDZY ---- */
@@ -31368,11 +31410,26 @@ ${bodyHtml}
     return w;
   }
 
+  // Karta pupila stoi na ekranie startowym każdej roli: uczeń — sLang, nauczyciel/admin — sBooks
+  // (panel), opiekun — sParentPanel. Ten sam element przenoszony na aktywny ekran.
+  function placePetCard(el){
+    const act=document.querySelector('.screen.active'); const id=act && act.id;
+    if(id==='sBooks' || id==='sParentPanel'){
+      if(el.parentNode!==act){
+        const after=id==='sBooks' ? $('booksBackTopWrap') : null;
+        act.insertBefore(el, after ? after.nextSibling : act.firstChild);
+      }
+    } else if(id==='sLang'){
+      const w=engageTop(); if(w && el.parentNode!==w) w.insertBefore(el, w.firstChild);
+    }
+  }
+
   /* ---- KARTA PUPILA na ekranie glownym (Wave 1, #2) ---- */
   function renderPetCard(){
     try{
       if(!petAllowed()){ const e0=$('sfPetCard'); if(e0) e0.innerHTML=''; return; }
       engageTop(); const el=$('sfPetCard'); if(!el) return;
+      placePetCard(el);
       let s=petLoad();
       if(!s || !s.type){
         if(uid()==='guest'){ el.innerHTML=''; return; }  // gosc nie persistuje — bez zachety
@@ -31600,15 +31657,16 @@ ${bodyHtml}
     try{
       if(typeof window.showScreen==='function' && !window.__sfShowWrap){
         const _os=window.showScreen;
-        window.showScreen=function(){ const r=_os.apply(this,arguments); try{ ensureButtons(); petRefresh(); renderPetCard(); }catch(e){} return r; };
+        window.showScreen=function(){ const r=_os.apply(this,arguments); try{ petSyncServer(); ensureButtons(); petRefresh(); renderPetCard(); }catch(e){} return r; };
         window.__sfShowWrap=true;
       }
     }catch(e){}
   }
-  function init(){ wrapShowScreen(); ensureButtons(); tryWrap(); try{petTick();}catch(e){} petRefresh(); renderPetCard(); renderChallengeBanner(); renderStudentRank(); }
+  function init(){ wrapShowScreen(); try{petSyncServer();}catch(e){} ensureButtons(); tryWrap(); try{petTick();}catch(e){} petRefresh(); renderPetCard(); renderChallengeBanner(); renderStudentRank(); }
   if(document.readyState!=='loading') init(); else document.addEventListener('DOMContentLoaded', init);
-  let n=0, chDone=false; const iv=setInterval(()=>{ n++; ensureButtons(); tryWrap(); petRefresh(); renderPetCard(); if(!chDone && uid()!=='guest'){ chDone=true; renderChallengeBanner(); renderStudentRank(); } if(n>=12) clearInterval(iv); }, 2000);
-  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden){ try{petTick();}catch(e){} petRefresh(); renderPetCard(); renderChallengeBanner(); renderStudentRank(); } });
+  // Profil może się ładować dłużej — dopóki pupil nie jest zsynchronizowany z serwerem, sprawdzaj co 2 s (do 60 s).
+  let n=0, chDone=false; const iv=setInterval(()=>{ n++; let synced=false; try{ synced=petSyncServer(); }catch(e){} if(synced){ try{petTick();}catch(e){} } ensureButtons(); tryWrap(); petRefresh(); renderPetCard(); if(!chDone && uid()!=='guest'){ chDone=true; renderChallengeBanner(); renderStudentRank(); } if(n>=30 || (n>=12 && _petSyncedFor)) clearInterval(iv); }, 2000);
+  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden){ try{petSyncServer();}catch(e){} try{petTick();}catch(e){} petRefresh(); renderPetCard(); renderChallengeBanner(); renderStudentRank(); } });
 })();
 </script>
 <script src="consent.js"></script>

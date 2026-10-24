@@ -28,6 +28,8 @@ const DB = (() => {
   let _myPrivateNotes = {};     // Prywatna etykieta: targetUserId -> private_note (migracja #35)
   let _hasBestCombo   = false;  // czy istnieje kolumna profiles.best_correct_streak (migracja add-ranking-stats.sql)
   let _hasWellLearned = false;  // czy istnieje kolumna profiles.well_learned_words (migracja add-well-learned-ranking.sql #54)
+  let _hasPet         = false;  // czy istnieje kolumna profiles.pet (migracja pet-sync.sql #70)
+  let _petServer      = null;   // stan pupila z serwera {pet, on, ts}
 
   // ─── Domyślny profil ─────────────────────────────────────────
   function emptyProfile(username) {
@@ -145,6 +147,8 @@ const DB = (() => {
 
     _hasBestCombo = !!(profRes.data && Object.prototype.hasOwnProperty.call(profRes.data, 'best_correct_streak'));
     _hasWellLearned = !!(profRes.data && Object.prototype.hasOwnProperty.call(profRes.data, 'well_learned_words'));
+    _hasPet = !!(profRes.data && Object.prototype.hasOwnProperty.call(profRes.data, 'pet'));
+    _petServer = (_hasPet && profRes.data.pet && typeof profRes.data.pet === 'object') ? profRes.data.pet : null;
     _profile = _rowToProfile(profRes.data, unitRes.data || []);
 
     // Załaduj przypisane podręczniki (user_books) — z deduplikacja
@@ -2083,6 +2087,24 @@ const DB = (() => {
       _save();
     }
   }
+  // ── Wirtualny pupil na serwerze (migracja #70) ──
+  // undefined = profil jeszcze się nie załadował; {available:false} = brak migracji.
+  function getPetServer() {
+    if (!_profile || !_userId) return undefined;
+    return { available: _hasPet, data: _petServer };
+  }
+  let _petSaveTimer = null;
+  function savePetServer(obj) {
+    if (!_hasPet || !_userId || !obj) return;
+    _petServer = obj;
+    clearTimeout(_petSaveTimer);
+    _petSaveTimer = setTimeout(() => {
+      supabase.from('profiles').update({ pet: _petServer }).eq('id', _userId).then(({ error }) => {
+        if (error) console.warn('[DB] Błąd zapisu pupila:', error.message);
+      });
+    }, 800);
+  }
+
   // Zapisz aktualna liczbe slow opanowanych BARDZO DOBRZE (interval > 7 dni) —
   // do rankingu klasowego wg przyswojonych slow (migracja #54). Klient liczy
   // to z lokalnych word_states i wola tutaj. Zapis tylko gdy kolumna istnieje
@@ -4612,6 +4634,8 @@ const DB = (() => {
     // book notes (admin) — od migracji #39 wspierają argument visibility ('public'/'private')
     loadBookNote,
     loadBookNotesBoth,
+    getPetServer,
+    savePetServer,
     loadStudentNotes,
     loadMyStudentNotes,
     saveStudentNote,
