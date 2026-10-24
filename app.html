@@ -310,6 +310,8 @@ body.sf-focus-on{overflow:hidden;}
 
 /* ── CARD ── */
 .card-scene{width:100%;max-width:var(--card-w);height:var(--card-h);perspective:1200px;cursor:pointer;margin-bottom:14px;}
+.card-scene.has-sent{height:calc(var(--card-h) + 80px);}
+.card-scene.has-sent .card-hint{display:none;}
 .card-inner{width:100%;height:100%;position:relative;transform-style:preserve-3d;transition:transform .62s cubic-bezier(.45,.05,.15,1);border-radius:var(--r);}
 .card-scene.flipped .card-inner{transform:rotateY(180deg);}
 .card-face{position:absolute;width:100%;height:100%;backface-visibility:hidden;border-radius:var(--r);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px 32px;text-align:center;}
@@ -3105,7 +3107,7 @@ szkoła	school"></textarea>
       <div class="card-face card-front">
         <div class="card-label" id="cardFrontLabel">Polski</div>
         <div class="card-word" id="wPl">Kliknij „Generuj" 🎲</div>
-        <div id="cardFrontCtx" style="display:none;margin:8px 2px 0;font-size:1.02rem;font-weight:700;color:var(--muted);line-height:1.45;max-width:34ch"></div>
+        <div id="cardFrontCtx" style="display:none;margin:8px 2px 0;font-size:.95rem;font-weight:600;color:var(--muted);line-height:1.5;max-width:40ch"></div>
         <div id="cardImg" style="margin:4px 0;display:none"><img id="cardImgEl" style="max-width:80px;max-height:60px;border-radius:8px;object-fit:cover"></div>
         <div class="card-back-actions"><button class="btn-speak" id="btnSpeakPl" onclick="speakQCurr(event)" style="display:none">🔊 Posłuchaj</button></div>
         <div class="card-hint">Kliknij kartę lub naciśnij Spację</div>
@@ -7133,6 +7135,8 @@ function startStudy(key, forcedPool = null, reviewSort = false) {
   document.getElementById('btnGen').style.display = ''; // gotowy do startu — pokaż „Generuj"
   document.getElementById('wPl').textContent = 'Kliknij „Generuj" 🎲';
   document.getElementById('wEn').textContent = '—';
+  document.getElementById('cardScene').classList.remove('has-sent');
+  const _fcReset = document.getElementById('cardFrontCtx'); if (_fcReset) { _fcReset.innerHTML = ''; _fcReset.style.display = 'none'; }
   hideDiff();
   mode = 'card';
   document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
@@ -8435,16 +8439,23 @@ function renderCard() {
     const sc = document.getElementById('cardScene'); sc.style.display = '';
     document.getElementById('cardFrontLabel').textContent = getQLabel();
     document.getElementById('cardBackLabel').textContent = getALabel();
+    // Zdanie przykładowe pod hasłem na przodzie (jak w trybie Wpisz): zdanie w nawiasie + zdanie z luką
+    const _fc = document.getElementById('cardFrontCtx');
+    const _sh = _sentenceHintHtml();
+    sc.classList.toggle('has-sent', !!_sh);
+    const _showSent = () => { if (_fc) { _fc.innerHTML = _sh; _fc.style.display = _sh ? '' : 'none'; } };
     if (sc.classList.contains('flipped')) {
       document.getElementById('wPl').textContent = '';
       document.getElementById('wEn').textContent = '';
       document.getElementById('btnSpeakPl').style.display = 'none';
+      if (_fc) { _fc.innerHTML = ''; _fc.style.display = 'none'; }
       sc.classList.remove('flipped');
       setTimeout(() => {
         const em = getWordEmojiRaw(activeWords[curIdx][0]);
         document.getElementById('wPl').textContent = (em ? em + ' ' : '') + q;
         document.getElementById('wEn').textContent = a;
         document.getElementById('btnSpeakPl').style.display = '';
+        _showSent();
         showCardImage();
         reAnim(sc);
       }, 680);
@@ -8453,12 +8464,10 @@ function renderCard() {
       const em = getWordEmojiRaw(activeWords[curIdx][0]);
       document.getElementById('wPl').textContent = (em ? em + ' ' : '') + q;
       document.getElementById('wEn').textContent = a;
+      _showSent();
       showCardImage();
       document.getElementById('btnSpeakPl').style.display = '';
     }
-    // fiszka kontekstowa — zdanie z luką pod polskim hasłem (przód)
-    const _fc = document.getElementById('cardFrontCtx');
-    if (_fc){ if (currentCtx){ _fc.textContent = currentCtx.gap; _fc.style.display=''; } else { _fc.textContent=''; _fc.style.display='none'; } }
 
   } else if (mode === 'quiz') {
     const qa = document.getElementById('quizArea'); qa.style.display = 'block'; reAnim(qa);
@@ -9945,23 +9954,30 @@ function _typeSetupHints() {
   // Emoji (klucz = polskie slowo) — nad slowem do wpisania.
   const em = getWordEmojiRaw(wordPl);
   if (em) { emojiEl.textContent = em; emojiEl.style.display = ''; }
-  // Fiszka kontekstowa (#59): pokaż zdanie z luką (i tłumaczenie PL jako podpowiedź).
+  const html = _sentenceHintHtml();
+  if (html) { hintEl.innerHTML = html; hintEl.style.display = ''; }
+}
+
+// Zdanie przykładowe dla bieżącego słówka (tryb Wpisz i przód fiszki):
+// zdanie w języku pytania (pełne, w nawiasie) + zdanie w języku odpowiedzi z luką.
+// '' gdy brak zdania albo wyrażenie ma więcej niż 3 wyrazy.
+function _sentenceHintHtml() {
+  if (curIdx === null) return '';
+  // Fiszka kontekstowa (#59): zdanie z luką (i tłumaczenie PL jako podpowiedź).
   if (currentCtx) {
     let html = '';
     if (currentCtx.pl) html += '<div style="color:var(--muted,#8a8f98);font-style:italic">(' + esc(currentCtx.pl) + ')</div>';
-    html += '<div style="margin-top:4px;color:var(--text)">' + esc(currentCtx.gap) + '</div>';
-    hintEl.innerHTML = html; hintEl.style.display = ''; return;
+    return html + '<div style="margin-top:4px;color:var(--text)">' + esc(currentCtx.gap) + '</div>';
   }
-  // Zdania — pomijamy, gdy wyrazenie do wpisania ma wiecej niz 3 wyrazy.
+  const word = activeWords[curIdx], wordPl = word[0];
   const ans = getA(curIdx);
   const ansWords = String(ans || '').trim().split(/\s+/).filter(Boolean).length;
-  if (ansWords > 3) return;
+  if (ansWords > 3) return '';
   let sPl = '', sEn = '';
   const inline = getInlineSentences(word);
   if (inline.sentPl || inline.sentEn) { sPl = inline.sentPl; sEn = inline.sentEn; }
   else { const s = DB.getSentence(currentBookId, wordPl); if (s) { sPl = s.sentence_pl || ''; sEn = s.sentence_target || ''; } }
-  if (!sPl && !sEn) return;
-  // Zdanie w jezyku PROMPTU (pelne, w nawiasie) + zdanie w jezyku ODPOWIEDZI (z luka).
+  if (!sPl && !sEn) return '';
   const promptIsPl = (studyDir === 'pl_en');
   const hintSent   = promptIsPl ? sPl : sEn;
   const answerSent = promptIsPl ? sEn : sPl;
@@ -9971,7 +9987,7 @@ function _typeSetupHints() {
     const gapped = _gapSentence(answerSent, ans);
     if (gapped) html += '<div style="margin-top:4px;color:var(--text)">' + gapped + '</div>';
   }
-  if (html) { hintEl.innerHTML = html; hintEl.style.display = ''; }
+  return html;
 }
 
 // ══════════════════════════════════════════════
