@@ -3312,6 +3312,76 @@ const DB = (() => {
     if (error) throw new Error(error.message);
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  //  NOTATKI / PRACE DOMOWE DLA KONKRETNEGO UCZNIA (migracja #69)
+  // ═══════════════════════════════════════════════════════════════
+  // RLS: uczeń widzi swoje, autor — napisane przez siebie, admin — wszystko.
+  // null = brak migracji (UI chowa funkcję).
+  const _SN_COLS = 'id, book_id, unit_key, student_id, author_id, kind, content, due_date, done_at, created_at, updated_at';
+  function _snMissing(error) {
+    return !!error && /student_notes|PGRST205|42P01/i.test((error.code || '') + ' ' + (error.message || ''));
+  }
+
+  // Notatki przy podręczniku (unitKey '') lub unicie — moje (jako uczeń) i napisane przeze mnie.
+  async function loadStudentNotes(bookId, unitKey) {
+    if (!_userId || !bookId) return [];
+    const { data, error } = await supabase.from('student_notes').select(_SN_COLS)
+      .eq('book_id', bookId).eq('unit_key', unitKey || '')
+      .order('created_at', { ascending: false });
+    if (_snMissing(error)) return null;
+    if (error) throw new Error(error.message);
+    return data || [];
+  }
+
+  // Wszystkie notatki skierowane do mnie (baner ucznia na ekranie głównym).
+  async function loadMyStudentNotes() {
+    if (!_userId) return [];
+    const { data, error } = await supabase.from('student_notes').select(_SN_COLS)
+      .eq('student_id', _userId)
+      .order('created_at', { ascending: false }).limit(100);
+    if (_snMissing(error)) return null;
+    if (error) throw new Error(error.message);
+    return data || [];
+  }
+
+  // Nowa notatka dla jednego lub wielu uczniów (osobny wiersz na ucznia) albo edycja istniejącej (id).
+  async function saveStudentNote({ id, bookId, unitKey, studentIds, kind, content, dueDate }) {
+    if (!_profile?.isAdmin && !_profile?.isTeacher) throw new Error('Notatki dla ucznia może dodawać admin lub nauczyciel.');
+    const fields = {
+      kind: kind === 'homework' ? 'homework' : 'note',
+      content: String(content || '').trim(),
+      due_date: kind === 'homework' && dueDate ? dueDate : null,
+      updated_at: new Date().toISOString()
+    };
+    if (!fields.content) throw new Error('Wpisz treść notatki.');
+    if (id) {
+      const { data, error } = await supabase.from('student_notes').update(fields).eq('id', id).select(_SN_COLS);
+      if (error) throw new Error(error.message);
+      if (!data || !data.length) throw new Error('Brak uprawnień do edycji tej notatki.');
+      return data;
+    }
+    const ids = [...new Set(studentIds || [])].filter(Boolean);
+    if (!ids.length) throw new Error('Wybierz co najmniej jednego ucznia.');
+    const rows = ids.map(sid => ({ ...fields, book_id: bookId, unit_key: unitKey || '', student_id: sid, author_id: _userId }));
+    const { data, error } = await supabase.from('student_notes').insert(rows).select(_SN_COLS);
+    if (_snMissing(error)) throw new Error('Uruchom migrację #69 (student-notes.sql) w Supabase.');
+    if (error) throw new Error(/row-level security/i.test(error.message) ? 'Możesz pisać tylko do swoich uczniów.' : error.message);
+    return data || [];
+  }
+
+  async function deleteStudentNote(id) {
+    const { data, error } = await supabase.from('student_notes').delete().eq('id', id).select('id');
+    if (error) throw new Error(error.message);
+    if (!data || !data.length) throw new Error('Brak uprawnień do usunięcia tej notatki.');
+  }
+
+  // Uczeń oznacza pracę domową jako zrobioną / niezrobioną.
+  async function setStudentNoteDone(id, done) {
+    const { data, error } = await supabase.rpc('student_note_set_done', { p_id: id, p_done: !!done });
+    if (error) throw new Error(error.message);
+    return data;
+  }
+
   // Samodzielne usunięcie własnego konta („prawo do bycia zapomnianym" — RODO art. 17).
   // Wywołuje funkcję SQL delete_own_account(), która kasuje powiązane dane i auth.users.
   // Po tej operacji sesja przestaje być ważna — klient powinien wylogować użytkownika.
@@ -4542,6 +4612,11 @@ const DB = (() => {
     // book notes (admin) — od migracji #39 wspierają argument visibility ('public'/'private')
     loadBookNote,
     loadBookNotesBoth,
+    loadStudentNotes,
+    loadMyStudentNotes,
+    saveStudentNote,
+    deleteStudentNote,
+    setStudentNoteDone,
     saveBookNote,
     deleteBookNote,
     // book access requests
