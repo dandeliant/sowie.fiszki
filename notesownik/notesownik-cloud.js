@@ -9,8 +9,8 @@
   'use strict';
 
   const TABLE = 'notesownik_boards';
-  // Promocja Premium dla wszystkich do 31.10.2026 (spojne z db.js isPromoActive()).
-  const PROMO_END = Date.parse('2026-11-01T00:00:00');
+  // Promocja Premium dla wszystkich do 30.11.2026 (spojne z db.js isPromoActive()).
+  const PROMO_END = Date.parse('2026-12-01T00:00:00');
   let sb = null;        // klient Supabase (z supabase-config.js: window.supabase)
   let user = null;      // zalogowany uzytkownik lub null
   let profile = null;   // { is_admin, is_teacher, plan, plan_expires_at }
