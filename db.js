@@ -876,7 +876,7 @@ const DB = (() => {
       } else if (!row.is_deleted) {
         // Nowe słówko — dodaj jeśli nie duplikat
         if (!words.find(w => w[0] === row.word_pl)) {
-          words.push([row.word_pl, row.word_target]);
+          words.push(row.emoji ? [row.word_pl, row.word_target, row.emoji] : [row.word_pl, row.word_target]);
         }
       }
     });
@@ -884,15 +884,18 @@ const DB = (() => {
 
   // ── Słówka ──────────────────────────────────────────────────
 
-  async function adminAddWord(bookId, unitKey, wordPl, wordTarget) {
-    const { data, error } = await supabase.from('admin_words').insert({
+  // emoji (opcjonalne) — kolumna admin_words.emoji z migracji #73; bez niej zapis bez emoji.
+  async function adminAddWord(bookId, unitKey, wordPl, wordTarget, emoji) {
+    const row = {
       book_id: bookId, unit_key: unitKey, word_pl: wordPl, word_target: wordTarget,
       original_pl: null, is_deleted: false, created_by: _userId, updated_at: new Date().toISOString()
-    }).select().single();
+    };
+    let { data, error } = await supabase.from('admin_words').insert(emoji ? Object.assign({ emoji }, row) : row).select().single();
+    if (error && emoji && /emoji/i.test(error.message)) ({ data, error } = await supabase.from('admin_words').insert(row).select().single());
     if (error) throw new Error(error.message);
     _adminWords.push(data);
     const words = BOOKS[bookId]?.units[unitKey]?.words;
-    if (words && !words.find(w => w[0] === wordPl)) words.push([wordPl, wordTarget]);
+    if (words && !words.find(w => w[0] === wordPl)) words.push(emoji ? [wordPl, wordTarget, emoji] : [wordPl, wordTarget]);
   }
 
   async function adminEditWord(bookId, unitKey, originalPl, newPl, newTarget) {
@@ -2103,6 +2106,51 @@ const DB = (() => {
         if (error) console.warn('[DB] Błąd zapisu pupila:', error.message);
       });
     }, 800);
+  }
+
+  // ── AI (Supabase Edge Function „ai”, migracja #73) ──
+  // Klucz OpenAI jest wyłącznie w sekretach funkcji. Rzuca Error z polskim komunikatem.
+  async function aiCall(action, payload) {
+    if (!_userId) throw new Error('Zaloguj się, żeby korzystać z AI.');
+    const { data, error } = await supabase.functions.invoke('ai', { body: Object.assign({ action }, payload || {}) });
+    if (error) {
+      let msg = error.message || 'Błąd AI.';
+      try {
+        const body = error.context && typeof error.context.json === 'function' ? await error.context.json() : null;
+        if (body && body.message) msg = body.message;
+      } catch (e) { /* zostaje ogólny komunikat */ }
+      if (/Failed to send|FunctionsFetchError|not found|404/i.test(msg)) msg = 'Funkcja AI nie jest jeszcze wdrożona w Supabase (Edge Function „ai”).';
+      throw new Error(msg);
+    }
+    if (data && data.error) throw new Error(data.message || data.error);
+    return data || {};
+  }
+  // Zestawy zadań gramatycznych (grammar_sets) — null = brak migracji #73.
+  async function loadGrammarSets(bookId, unitKeys) {
+    let q = supabase.from('grammar_sets').select('id, book_id, unit_key, topic, items, source, created_by, created_at')
+      .eq('book_id', bookId).order('created_at', { ascending: true });
+    if (Array.isArray(unitKeys)) q = q.in('unit_key', unitKeys); else if (unitKeys) q = q.eq('unit_key', unitKeys);
+    const { data, error } = await q;
+    if (error) { if (/grammar_sets|PGRST205|42P01/i.test((error.code || '') + ' ' + error.message)) return null; throw new Error(error.message); }
+    return data || [];
+  }
+  async function saveGrammarSet({ id, bookId, unitKey, topic, items, source }) {
+    const row = { topic: String(topic || '').slice(0, 120), items, updated_at: new Date().toISOString() };
+    if (id) {
+      const { data, error } = await supabase.from('grammar_sets').update(row).eq('id', id).select();
+      if (error) throw new Error(error.message);
+      if (!data || !data.length) throw new Error('Brak uprawnień do edycji tego zestawu.');
+      return data[0];
+    }
+    const { data, error } = await supabase.from('grammar_sets')
+      .insert(Object.assign(row, { book_id: bookId, unit_key: unitKey, source: source || 'ai', created_by: _userId })).select().single();
+    if (error) throw new Error(/grammar_sets|PGRST205|42P01/i.test(error.message) ? 'Uruchom migrację #73 (ai-features.sql) w Supabase.' : error.message);
+    return data;
+  }
+  async function deleteGrammarSet(id) {
+    const { data, error } = await supabase.from('grammar_sets').delete().eq('id', id).select('id');
+    if (error) throw new Error(error.message);
+    if (!data || !data.length) throw new Error('Brak uprawnień do usunięcia tego zestawu.');
   }
 
   // ── Pupile kolegów i odwiedziny (migracja #71) ── null = brak migracji
@@ -4671,6 +4719,10 @@ const DB = (() => {
     loadBookNotesBoth,
     getPetServer,
     savePetServer,
+    aiCall,
+    loadGrammarSets,
+    saveGrammarSet,
+    deleteGrammarSet,
     loadClassPets,
     petReact,
     petReactSentToday,

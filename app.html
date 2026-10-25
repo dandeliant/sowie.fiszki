@@ -2961,6 +2961,8 @@ body.guest-mode .progress-wrap{opacity:.4;}
   </div>
   <!-- Notatki admina na poziomie unitu (publiczna + prywatna; renderowane jako .admin-note wewnątrz) -->
   <div id="bookNoteUnit" class="admin-note-wrap" style="display:none"></div>
+  <!-- 🧠 Utrwalaj gramatykę — zestawy zadań (grammar_sets, migracja #73; AI-moduł na końcu pliku) -->
+  <div id="grammarBox" style="display:none;width:100%"></div>
   <div class="wl-sel-bar" id="wlSelBar">
     <span class="wl-sel-count" id="wlSelCount">Wybrano: 0</span>
     <button class="btn-sel-all" onclick="wlSelectAll()">Zaznacz wszystkie</button>
@@ -2975,6 +2977,7 @@ body.guest-mode .progress-wrap{opacity:.4;}
     <button class="btn-sm" onclick="printFlashcardsChoose()" style="font-size:.68rem">🃏 Fiszki do druku</button>
     <button class="btn-sm" onclick="printScrambleSheet()" style="font-size:.68rem">🔀 Rozsypanka literowa</button>
     <button class="btn-sm" onclick="printSentScrSheet()" style="font-size:.68rem">📜 Rozsypanka zdaniowa</button>
+    <button class="btn-sm" id="btnAiSentences" onclick="openAiSentences()" style="font-size:.68rem;display:none" title="AI dopisze zdania przykładowe do słówek, które ich nie mają">🤖 Uzupełnij zdania (AI)</button>
     <button class="btn-sm" id="btnBulkAudio" onclick="openBulkAudioModal()" style="font-size:.68rem;display:none;background:linear-gradient(135deg,#ff6b6b,#ee5253);color:#fff">🎙️ Nagrania wymowy</button>
   </div>
   <button onclick="openWorksheetModal(currentBookId, currentUnitKey)" style="width:100%;margin-bottom:12px;padding:11px 14px;border:none;border-radius:12px;background:linear-gradient(135deg,var(--accent),var(--pink));color:#fff;font-weight:800;font-size:.85rem;cursor:pointer;font-family:inherit">🖨️ Do druku · karty pracy — Bingo, Domino, Koło, Labirynt, Zakładka i więcej…</button>
@@ -3054,6 +3057,7 @@ szkoła	school"></textarea>
       <button class="mode-btn" onclick="setMode('scramble')" id="mScramble">🔀 Rozsypanka</button>
       <button class="mode-btn" onclick="setMode('sentscr')" id="mSentScr">📜 Zdanie</button>
       <button class="mode-btn" onclick="setMode('typeSent')" id="mTypeSent">✏️ Wpisz zd.</button>
+      <button class="mode-btn" onclick="setMode('write')" id="mWrite" title="Ułóż własne zdanie ze słówkiem — AI je sprawdzi">🤖 Napisz zdanie</button>
     </div>
     <!-- Słuchanie i mówienie -->
     <div style="width:100%;font-size:.55rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;padding:3px 8px">🎧 Słuchanie i mówienie</div>
@@ -3188,6 +3192,24 @@ szkoła	school"></textarea>
     <div class="type-result" id="tRes"></div>
     <div class="alpha-keys" data-for="tInp"></div>
     <div class="type-speak-wrap" id="tSpeak"><button class="btn-speak" onclick="speakACurrDirect()">🔊 Posłuchaj</button></div>
+  </div>
+
+  <!-- Napisz zdanie (AI sprawdza zdanie ucznia) -->
+  <div class="type-area" id="writeArea">
+    <div class="type-question">
+      <div class="q-label">Ułóż własne zdanie z tym słowem</div>
+      <div id="wrEmoji" style="display:none;font-size:2.6rem;line-height:1;margin:2px 0 4px"></div>
+      <div class="q-word" id="wrWord">—</div>
+      <div id="wrPl" style="margin-top:4px;color:var(--muted);font-weight:700"></div>
+      <div style="margin-top:10px"><button class="btn-speak" onclick="writeSpeakWord()">🔊 Posłuchaj</button></div>
+    </div>
+    <div class="type-row">
+      <input type="text" class="type-input" id="wrInp" maxlength="200" placeholder="Napisz zdanie po angielsku…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" onkeydown="if(event.key==='Enter'){event.preventDefault();writeCheck();}">
+      <button class="btn-check" id="btnWrNext" onclick="writeNext()" style="display:none;background:var(--ok,#22a06b)">Dalej ▶</button>
+      <button class="btn-check" id="btnWrChk" onclick="writeCheck()">Sprawdź</button>
+    </div>
+    <div class="type-result" id="wrRes"></div>
+    <div id="wrInfo" style="text-align:center;font-size:.68rem;color:var(--muted);font-weight:700;margin-top:6px">🤖 Zdanie sprawdza sztuczna inteligencja — może się czasem pomylić.</div>
   </div>
 
   <!-- Brakujące litery -->
@@ -4830,7 +4852,8 @@ const XPV = { again: 2, hard: 5, medium: 9, good: 11, easy: 16 };
 // tryby wymagające WPISANIA poprawnej odpowiedzi (z pamięci) — najwięcej.
 const XP_MODE_MULT = {
   scramble: 1.0, sentscr: 1.0,                           // układanie (Rozsypanka, Zdanie)
-  type: 1.3, typeSent: 1.3, dictate: 1.2, dictSent: 1.2  // pełne wpisanie z pamięci — premia
+  type: 1.3, typeSent: 1.3, dictate: 1.2, dictSent: 1.2, // pełne wpisanie z pamięci — premia
+  write: 1.3                                             // własne zdanie sprawdzone przez AI
 };
 // Tryby „łatwe" (×0,5): samoocena, wybór z opcji, częściowe wpisywanie, mówienie.
 // Stałe punkty wg ustaleń: Łatwe/szybko 8 · poprawnie (Średnie) 5 · po błędzie (Trudne) 3 · błąd 0.
@@ -6174,6 +6197,12 @@ function refreshGrid() {
     d.innerHTML = '➕ Nowy rozdział';
     d.addEventListener('click', openAdminUnitModal);
     g.appendChild(d);
+    const ai = document.createElement('div');
+    ai.className = 'admin-unit-add-card';
+    ai.innerHTML = '🤖 Rozdział z AI';
+    ai.title = 'AI przygotuje listę słówek na wybrany temat (z tłumaczeniem, emoji i zdaniami)';
+    ai.addEventListener('click', () => window.openAiWordlist && window.openAiWordlist());
+    g.appendChild(ai);
   }
 
   // Spell Card buttons row
@@ -6864,6 +6893,7 @@ function openWordList(key) {
     bulkBtn.style.display = (canRecord && isRealUnit) ? '' : 'none';
   }
   showScreen('sWordList');
+  if (typeof window.aiRefreshUnitTools === 'function') window.aiRefreshUnitTools();
 }
 
 function startStudyFromList() {
@@ -8481,6 +8511,10 @@ function renderCard() {
     buildQuiz(curIdx);
     document.getElementById('qSpeak').style.display = 'none';
 
+  } else if (mode === 'write') {
+    const wa = document.getElementById('writeArea'); wa.style.display = 'block'; reAnim(wa);
+    if (typeof window.writeRender === 'function') window.writeRender();
+
   } else if (mode === 'type') {
     clearTimeout(_typeHoldTimer);
     const ta = document.getElementById('typeArea'); ta.style.display = 'block'; reAnim(ta);
@@ -8619,7 +8653,7 @@ function buildMasked(word) {
 
 function reAnim(el) { el.style.animation = 'none'; el.offsetHeight; el.style.animation = ''; }
 function hideAreas() {
-  ['cardScene','quizArea','typeArea','missingArea','dictateArea','tfArea','gapArea','scrambleArea','sentScrArea','matchArea','speedArea','butterflyArea','jumpArea','bridgeArea','speakArea','speakSentArea','typeSentArea','dictSentArea','sentencePanel']
+  ['cardScene','quizArea','typeArea','writeArea','missingArea','dictateArea','tfArea','gapArea','scrambleArea','sentScrArea','matchArea','speedArea','butterflyArea','jumpArea','bridgeArea','speakArea','speakSentArea','typeSentArea','dictSentArea','sentencePanel']
     .forEach(id => { const e = document.getElementById(id); if(e) e.style.display = 'none'; });
   // Zatrzymaj grę motylkową
   if (typeof bfRunning !== 'undefined' && bfRunning) {
@@ -10208,7 +10242,7 @@ function setMode(m) {
   clearInterval(studySpeedTimer);
   mode = m;
   document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
-  const modeMap = {card:'mCard',quiz:'mQuiz',type:'mType',missing:'mMissing',dictate:'mDictate',tf:'mTF',gap:'mGap',scramble:'mScramble',sentscr:'mSentScr',match:'mMatch',speed:'mSpeed',butterfly:'mButterfly',jump:'mJump',bridge:'mBridge',speak:'mSpeak',speakSent:'mSpeakSent',typeSent:'mTypeSent',dictSent:'mDictSent'};
+  const modeMap = {write:'mWrite',card:'mCard',quiz:'mQuiz',type:'mType',missing:'mMissing',dictate:'mDictate',tf:'mTF',gap:'mGap',scramble:'mScramble',sentscr:'mSentScr',match:'mMatch',speed:'mSpeed',butterfly:'mButterfly',jump:'mJump',bridge:'mBridge',speak:'mSpeak',speakSent:'mSpeakSent',typeSent:'mTypeSent',dictSent:'mDictSent'};
   document.getElementById(modeMap[m]).classList.add('active');
   document.getElementById('livesBar').classList.toggle('visible', m === 'quiz');
   hideAreas(); revealed = false; hideDiff();
@@ -10218,6 +10252,7 @@ function setMode(m) {
     if (m === 'card') document.getElementById('cardScene').style.display = '';
     else if (m === 'quiz') document.getElementById('quizArea').style.display = 'block';
     else if (m === 'type') document.getElementById('typeArea').style.display = 'block';
+    else if (m === 'write') document.getElementById('writeArea').style.display = 'block';
     else if (m === 'missing') document.getElementById('missingArea').style.display = 'block';
     else if (m === 'dictate') document.getElementById('dictateArea').style.display = 'block';
     else if (m === 'tf') document.getElementById('tfArea').style.display = 'block';
@@ -10257,7 +10292,7 @@ function setMode(m) {
 }
 
 // ── Tryb skupienia: wybrany tryb nauki na pełnym ekranie ──
-const FOCUS_MODE_LABELS = {card:'🃏 Fiszki',quiz:'🎯 Quiz',speed:'⚡ Speed Quiz',match:'🧩 Znajdź parę',tf:'✅ Prawda/Fałsz',type:'✏️ Wpisz',missing:'🔤 Litery',gap:'📝 Luka',scramble:'🔀 Rozsypanka',sentscr:'📜 Zdanie',typeSent:'✏️ Wpisz zdania',dictate:'🎧 Dyktando',dictSent:'🎧 Dyktando (zdania)',speak:'🎤 Mów',speakSent:'🎤 Mów (zdania)'};
+const FOCUS_MODE_LABELS = {write:'🤖 Napisz zdanie',card:'🃏 Fiszki',quiz:'🎯 Quiz',speed:'⚡ Speed Quiz',match:'🧩 Znajdź parę',tf:'✅ Prawda/Fałsz',type:'✏️ Wpisz',missing:'🔤 Litery',gap:'📝 Luka',scramble:'🔀 Rozsypanka',sentscr:'📜 Zdanie',typeSent:'✏️ Wpisz zdania',dictate:'🎧 Dyktando',dictSent:'🎧 Dyktando (zdania)',speak:'🎤 Mów',speakSent:'🎤 Mów (zdania)'};
 let _lastFocusMode = null;
 function setStudyPick() {
   const s = document.getElementById('sStudy');
@@ -22372,6 +22407,7 @@ if ('serviceWorker' in navigator) {
       <ol style="margin:4px 0 10px 20px;padding:0">
         <li>Operator nie ponosi odpowiedzialności za treści dodane przez Użytkowników.</li>
         <li>Operator dokłada należytej staranności, aby Platforma działała prawidłowo, nie gwarantuje jednak jej nieprzerwanej dostępności (przerwy techniczne, awarie dostawców infrastruktury).</li>
+        <li>Funkcje oznaczone 🤖 (AI) korzystają ze sztucznej inteligencji (OpenAI). Wygenerowane treści — zadania, zdania przykładowe, listy słówek, poprawki zdań — mogą zawierać błędy; mają charakter pomocniczy i nie zastępują nauczyciela. Treści przygotowane przez AI dla innych Użytkowników publikuje nauczyciel lub Administrator po ich przejrzeniu. Do AI nie należy wpisywać danych osobowych.</li>
       </ol>
 
       <h3 style="font-family:'Playfair Display',serif;font-size:.92rem;color:var(--accent)">§9 Zgłaszanie naruszeń (notice &amp; takedown)</h3>
@@ -22469,12 +22505,13 @@ if ('serviceWorker' in navigator) {
       <ul style="margin:4px 0 10px 20px;padding:0">
         <li><strong>Vercel Inc.</strong> (hosting aplikacji frontendowej, dystrybucja przez sieć CDN). Vercel przetwarza standardowe logi serwera (adres IP, user-agent, ścieżka żądania, kod odpowiedzi) na potrzeby dostarczenia treści i bezpieczeństwa — RODO art. 6 ust. 1 lit. f (prawnie uzasadniony interes). Polityka: <a href="https://vercel.com/legal/privacy-policy" style="color:var(--accent)" target="_blank" rel="noopener">vercel.com/legal/privacy-policy</a>.</li>
         <li><strong>Supabase Inc.</strong> (hosting bazy danych i uwierzytelniania, infrastruktura AWS). Polityka: <a href="https://supabase.com/privacy" style="color:var(--accent)" target="_blank" rel="noopener">supabase.com/privacy</a>.</li>
+        <li><strong>OpenAI, L.L.C.</strong> — funkcje oznaczone 🤖 (AI): sprawdzanie zdań napisanych przez ucznia w trybie „Napisz zdanie” oraz narzędzia nauczyciela (zdania przykładowe, listy słówek, zadania gramatyczne). Do OpenAI trafia <strong>wyłącznie treść potrzebna do zadania</strong> (słówko, temat, zdanie ucznia) — bez loginu, imienia ani innych danych konta; zapytania przechodzą przez serwer Platformy. Treści pisane przez uczniów są dodatkowo sprawdzane filtrem bezpieczeństwa. Polityka: <a href="https://openai.com/policies/privacy-policy" style="color:var(--accent)" target="_blank" rel="noopener">openai.com/policies/privacy-policy</a>.</li>
         <li><strong>Google Cloud / Microsoft</strong> — dostawcy zewnętrznych usług TTS (synteza mowy) używanych przez przeglądarkę użytkownika; dane głosowe nie są przekazywane Administratorowi.</li>
       </ul>
       <p style="margin:4px 0 10px">Administrator nie sprzedaje ani nie udostępnia danych osobowych osobom trzecim w celach marketingowych.</p>
 
       <h3 style="font-family:'Playfair Display',serif;font-size:.92rem;color:var(--accent)">5. Przekazywanie danych poza EOG</h3>
-      <p style="margin:4px 0 10px">Vercel Inc. ma siedzibę w USA — przekazanie danych odbywa się na podstawie standardowych klauzul umownych (SCC) Komisji Europejskiej oraz uczestnictwa Vercel w EU-U.S. Data Privacy Framework. Supabase może przechowywać dane na serwerach poza EOG na tych samych zasadach (SCC).</p>
+      <p style="margin:4px 0 10px">Vercel Inc. ma siedzibę w USA — przekazanie danych odbywa się na podstawie standardowych klauzul umownych (SCC) Komisji Europejskiej oraz uczestnictwa Vercel w EU-U.S. Data Privacy Framework. Supabase może przechowywać dane na serwerach poza EOG na tych samych zasadach (SCC). OpenAI, L.L.C. (funkcje 🤖 AI) ma siedzibę w USA — przekazanie odbywa się na podstawie standardowych klauzul umownych (SCC) oraz EU-U.S. Data Privacy Framework.</p>
 
       <h3 style="font-family:'Playfair Display',serif;font-size:.92rem;color:var(--accent)">6. Okres przechowywania</h3>
       <ul style="margin:4px 0 10px 20px;padding:0">
@@ -32079,6 +32116,577 @@ ${bodyHtml}
   // Profil może się ładować dłużej — dopóki pupil nie jest zsynchronizowany z serwerem, sprawdzaj co 2 s (do 60 s).
   let n=0, chDone=false; const iv=setInterval(()=>{ n++; let synced=false; try{ synced=petSyncServer(); }catch(e){} if(synced){ try{petTick();}catch(e){} } ensureButtons(); tryWrap(); petRefresh(); renderPetCard(); if(!chDone && uid()!=='guest' && _petSyncedFor){ chDone=true; renderChallengeBanner(); renderStudentRank(); petCheckInbox(true); } if(n>=30 || (n>=12 && _petSyncedFor)) clearInterval(iv); }, 2000);
   document.addEventListener('visibilitychange', ()=>{ if(!document.hidden){ try{petSyncServer();}catch(e){} try{petTick();}catch(e){} petRefresh(); renderPetCard(); petCheckInbox(); renderChallengeBanner(); renderStudentRank(); } });
+})();
+</script>
+<script>
+/* ============================================================
+   FUNKCJE AI — OpenAI przez Supabase Edge Function „ai” (supabase/functions/ai),
+   migracja #73 (ai-features.sql). Klucz OpenAI wyłącznie w sekretach Supabase.
+   - 🧠 Utrwalaj gramatykę (#grammarBox na stronie rozdziału): zestawy zadań
+     A/B/C + luki (grammar_sets), ćwiczenie, druk kartkówki / karty pracy,
+     generator AI (słownictwo z bieżącego i wcześniejszych rozdziałów).
+     Te same zestawy są misjami 🧠 w Grammar City (vocab-missions.js).
+   - 🤖 Uzupełnij zdania (AI) — zdania przykładowe do słówek bez zdań (word_sentences).
+   - 🤖 Rozdział z AI — lista słówek na temat → nowy rozdział własnego podręcznika.
+   - Tryb nauki „🤖 Napisz zdanie” — uczeń pisze własne zdanie, AI je poprawia.
+============================================================ */
+(function(){
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const E = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  const isStaff = () => !isGuest && (isCurrentUserAdmin() || isCurrentUserTeacher());
+  const book = () => (typeof BOOKS !== 'undefined' && currentBookId) ? BOOKS[currentBookId] : null;
+  const bookLang = () => (book() && book().language) || 'en';
+  const LANG_PL = { en:'angielsku', fr:'francusku', de:'niemiecku', es:'hiszpańsku', it:'włosku', ru:'rosyjsku' };
+  const TTS = { en:'en-GB', fr:'fr-FR', de:'de-DE', es:'es-ES', it:'it-IT', ru:'ru-RU' };
+  const LEVELS = ['A1 (młodsze dzieci)','A1','A1–A2','A2','A2–B1','B1','B1–B2'];
+  function levelGuess(b){
+    const g = +((b && b.grade) || 0);
+    if (b && b.schoolType === 'secondary') return 'B1–B2';
+    if (g && g <= 3) return 'A1 (młodsze dzieci)';
+    if (g && g <= 6) return 'A1–A2';
+    if (g >= 7) return 'A2–B1';
+    return 'A1–A2';
+  }
+  const speak = text => { try { if (text && typeof spk === 'function') spk(String(text), TTS[bookLang()] || 'en-GB', 0.9); } catch(e) {} };
+
+  /* ---- style ---- */
+  const st = document.createElement('style');
+  st.textContent = `
+  .gram-box{background:var(--surface);border:1.5px solid rgba(6,214,160,.35);border-left:4px solid var(--accent2,#06d6a0);border-radius:12px;padding:10px 14px;margin:6px 0 12px;}
+  .gram-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;font-weight:800;color:var(--text);margin-bottom:6px;}
+  .gram-empty,.gram-foot{font-size:.74rem;color:var(--muted);font-weight:600;line-height:1.45;}
+  .gram-foot{margin-top:6px;} .gram-foot a{color:var(--accent);font-weight:800;}
+  .gram-set{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 0;border-top:1px dashed var(--border);}
+  .gram-set:first-of-type{border-top:none;}
+  .gram-set-info{flex:1;min-width:160px;} .gram-set-info b{display:block;font-size:.88rem;color:var(--text);} .gram-set-info small{font-size:.68rem;color:var(--muted);font-weight:700;}
+  .gram-set-act{display:flex;gap:6px;flex-wrap:wrap;}
+  .ai-help{font-size:.74rem;color:var(--muted);font-weight:600;line-height:1.45;margin:4px 0 10px;}
+  .ai-lab{display:block;font-size:.68rem;font-weight:800;color:var(--accent2,#06d6a0);text-transform:uppercase;letter-spacing:.04em;margin:10px 0 4px;}
+  .ai-inp{width:100%;padding:8px 10px;border-radius:9px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-family:inherit;font-size:.85rem;font-weight:600;outline:none;box-sizing:border-box;}
+  .ai-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .ai-chk{display:flex;align-items:center;gap:8px;font-size:.8rem;font-weight:600;color:var(--text);margin:5px 0;cursor:pointer;}
+  .ai-msg{font-size:.76rem;font-weight:700;min-height:16px;margin-top:8px;line-height:1.4;}
+  .gram-list{display:flex;flex-direction:column;gap:6px;margin-top:8px;}
+  .gram-item{position:relative;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:8px 34px 8px 10px;font-size:.84rem;line-height:1.5;color:var(--text);}
+  .gram-gap{display:inline-block;min-width:44px;border-bottom:2px solid var(--accent);color:transparent;}
+  .gram-ans{font-size:.76rem;color:var(--muted);font-weight:700;margin-top:2px;} .gram-ans span{margin-right:12px;} .gram-ok{color:var(--accent2,#06d6a0);}
+  .gram-exp{font-size:.72rem;color:var(--muted);margin-top:2px;}
+  .gram-del{position:absolute;top:6px;right:6px;background:transparent;border:none;color:var(--danger);cursor:pointer;font-size:.95rem;}
+  .gp-q{font-size:1.15rem;font-weight:800;line-height:1.6;text-align:center;margin:14px 0;color:var(--text);}
+  .gp-opts{display:grid;gap:8px;} .gp-opt{text-align:left;padding:11px 14px;border-radius:12px;border:2px solid var(--border);background:var(--surface2);color:var(--text);font-weight:700;font-size:.95rem;cursor:pointer;font-family:inherit;}
+  .gp-opt:hover{border-color:var(--accent);} .gp-opt.ok{border-color:var(--accent2,#06d6a0);background:rgba(6,214,160,.15);} .gp-opt.bad{border-color:var(--danger);background:rgba(255,118,117,.12);}
+  .gp-res{margin-top:12px;padding:10px 12px;border-radius:12px;font-size:.84rem;font-weight:700;line-height:1.5;}
+  .gp-res.ok{background:rgba(6,214,160,.12);color:var(--accent2,#06d6a0);} .gp-res.bad{background:rgba(255,118,117,.1);color:var(--danger);}
+  .gp-res .gp-exp{color:var(--text);font-weight:600;margin-top:4px;}
+  .gp-prog{height:6px;border-radius:4px;background:var(--surface2);overflow:hidden;margin:6px 0;} .gp-prog i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2,#06d6a0));}
+  .aw-table{width:100%;border-collapse:collapse;font-size:.78rem;margin-top:8px;}
+  .aw-table td{padding:3px;border-bottom:1px solid var(--border);vertical-align:top;}
+  .aw-table input[type=text]{width:100%;padding:5px 6px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-family:inherit;font-size:.78rem;box-sizing:border-box;}
+  .as-item{display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px dashed var(--border);font-size:.8rem;}
+  .as-item input[type=text]{width:100%;padding:4px 6px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-family:inherit;font-size:.78rem;box-sizing:border-box;margin-top:3px;}
+  `;
+  document.head.appendChild(st);
+
+  /* ---- okno pomocnicze (modal-overlay jak reszta aplikacji) ---- */
+  function aiModal(id, html, wide){
+    let o = $(id);
+    if (!o) {
+      o = document.createElement('div'); o.className = 'modal-overlay'; o.id = id; o.style.display = 'none';
+      o.addEventListener('click', e => { if (e.target === o) o.style.display = 'none'; });
+      const b = document.createElement('div'); b.className = 'modal-box'; b.id = id + 'Box';
+      o.appendChild(b); document.body.appendChild(o);
+    }
+    const box = $(id + 'Box');
+    box.style.maxWidth = wide ? '780px' : '560px'; box.style.maxHeight = '88vh'; box.style.overflowY = 'auto'; box.style.width = '100%';
+    box.innerHTML = html; o.style.display = 'flex';
+    return box;
+  }
+  const closeBtn = id => `<button class="btn-modal-cancel" onclick="document.getElementById('${id}').style.display='none'" style="float:right;padding:4px 10px;font-size:.72rem">✕</button>`;
+  const hide = id => { const o = $(id); if (o) o.style.display = 'none'; };
+  function setMsg(id, text, kind){ const m = $(id); if (!m) return; m.style.color = kind === 'err' ? 'var(--danger)' : (kind === 'ok' ? 'var(--accent2,#06d6a0)' : 'var(--muted)'); m.textContent = text; }
+
+  /* ---- słownictwo rozdziałów ---- */
+  function unitKeys(bId){ return Object.keys(getUnitsWithCustom(bId)).filter(k => k !== 'all' && k !== 'mistakes'); }
+  const pairs = list => (list || []).map(w => [String(w[0] || '').trim(), String(w[1] || '').trim()])
+    .filter(([p, t]) => p && t && p.length <= 40 && t.length <= 40);
+  // Unit 3 → słownictwo z Unit 3 (najpierw) + Unit 1 i 2.
+  function cumulativeVocab(bId, uKey, max){
+    max = max || 90;
+    const units = getUnitsWithCustom(bId), keys = unitKeys(bId);
+    let idx = keys.indexOf(uKey); if (idx < 0) idx = keys.length - 1;
+    const cur = pairs(units[keys[idx]] && units[keys[idx]].words);
+    const prev = shuffle(pairs(keys.slice(0, idx).flatMap(k => (units[k] && units[k].words) || [])));
+    const seen = new Set(), out = [];
+    cur.slice(0, 60).concat(prev).forEach(([pl, t]) => { const k = t.toLowerCase(); if (!seen.has(k) && out.length < max) { seen.add(k); out.push({ pl, t }); } });
+    return { words: out, unitNames: keys.slice(0, idx + 1).map(k => (units[k] && units[k].name) || k) };
+  }
+  const zadan = n => n + ' ' + (n === 1 ? 'zadanie' : (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14)) ? 'zadania' : 'zadań');
+  const unitName = k => { const u = getUnitsWithCustom(currentBookId)[k]; return (u && u.name) || k; };
+
+  /* ════════ 🧠 UTRWALAJ GRAMATYKĘ — sekcja na stronie rozdziału ════════ */
+  let _gsCache = [], _gsReq = 0;
+  function canFillSentences(b){ return !isGuest && !!b && (isCurrentUserAdmin() || canEditBook(b)); }
+  window.aiRefreshUnitTools = function(){
+    const b = book(), uk = currentUnitKey;
+    const btn = $('btnAiSentences');
+    if (btn) btn.style.display = (b && uk && uk !== 'mistakes' && canFillSentences(b)) ? '' : 'none';
+    renderGrammarBox();
+  };
+  async function renderGrammarBox(){
+    const box = $('grammarBox'); if (!box) return;
+    const b = book(), uk = currentUnitKey;
+    if (!b || !uk || uk === 'mistakes' || !(DB && DB.loadGrammarSets)) { box.style.display = 'none'; return; }
+    const req = ++_gsReq;
+    let sets;
+    try { sets = await DB.loadGrammarSets(currentBookId, uk === 'all' ? null : uk); } catch(e) { sets = []; }
+    if (req !== _gsReq) return;
+    if (sets === null) {
+      if (isCurrentUserAdmin()) { box.innerHTML = '<div class="gram-box"><div class="gram-empty">🧠 Utrwalaj gramatykę: uruchom migrację #73 (ai-features.sql) w Supabase.</div></div>'; box.style.display = ''; }
+      else box.style.display = 'none';
+      return;
+    }
+    _gsCache = sets;
+    const staff = isStaff();
+    if (!sets.length && !staff) { box.style.display = 'none'; return; }
+    const me = DB.getUserId ? DB.getUserId() : null;
+    let h = '<div class="gram-box"><div class="gram-head"><span>🧠 Utrwalaj gramatykę</span>'
+      + (staff ? (uk === 'all' ? '<span class="gram-empty">Nowe zadania dodasz w konkretnym rozdziale.</span>' : '<button class="btn-sm accent" onclick="openGrammarGen()">🤖 Nowe zadania (AI)</button>') : '')
+      + '</div>';
+    if (!sets.length) h += '<div class="gram-empty">Brak zadań gramatycznych w tym rozdziale. Kliknij „🤖 Nowe zadania (AI)”, wpisz temat (np. Present Simple), a AI ułoży zadania A/B/C i luki ze słownictwem z tego i wcześniejszych rozdziałów.</div>';
+    sets.forEach(s => {
+      const items = Array.isArray(s.items) ? s.items : [];
+      const nA = items.filter(i => i.type === 'abc').length, nG = items.length - nA;
+      const canDel = isCurrentUserAdmin() || (me && s.created_by === me);
+      h += '<div class="gram-set"><div class="gram-set-info"><b>' + E(s.topic) + '</b><small>' + zadan(items.length) + ' · A/B/C: ' + nA + ' · luki: ' + nG
+        + (uk === 'all' ? ' · ' + E(unitName(s.unit_key)) : '') + (s.source === 'ai' ? ' · 🤖 AI' : '') + '</small></div><div class="gram-set-act">'
+        + '<button class="btn-sm accent" onclick="openGrammarPractice(\'' + s.id + '\')">▶ Ćwicz</button>'
+        + (staff ? '<button class="btn-sm" onclick="printGrammarSetUi(\'' + s.id + '\')">🖨️ Kartkówka</button>' : '')
+        + (canDel ? '<button class="btn-sm" onclick="deleteGrammarSetUi(\'' + s.id + '\')" title="Usuń zestaw">🗑️</button>' : '')
+        + '</div></div>';
+    });
+    if (sets.length) h += '<div class="gram-foot">🏙️ Te zadania są też misjami 🧠 w <a href="#" onclick="event.preventDefault();openGrammarCityUnit()">Grammar City</a> dla tego rozdziału.</div>';
+    box.innerHTML = h + '</div>'; box.style.display = '';
+  }
+  window.deleteGrammarSetUi = async function(id){
+    const s = _gsCache.find(x => x.id === id); if (!s) return;
+    if (!confirm('Usunąć zestaw „' + s.topic + '”? Zniknie także z Grammar City dla wszystkich uczniów.')) return;
+    try { await DB.deleteGrammarSet(id); toast('🗑️ Zestaw usunięty.', 2000); renderGrammarBox(); }
+    catch(e) { toast('❌ ' + e.message, 3200); }
+  };
+
+  /* ---- generator zadań gramatycznych (AI) ---- */
+  let _ag = null;
+  window.openGrammarGen = function(){
+    if (!isStaff() || !book() || currentUnitKey === 'all') return;
+    const voc = cumulativeVocab(currentBookId, currentUnitKey);
+    const f = _ag && _ag.form || {};
+    aiModal('aiGramModal', closeBtn('aiGramModal') + `<div class="modal-title">🤖 Nowe zadania gramatyczne</div>
+      <div class="ai-help">AI ułoży zadania do wybranego tematu ze słownictwem z rozdziałów: <b>${E(voc.unitNames.join(', '))}</b> (${voc.words.length} słówek).
+      Po sprawdzeniu zapiszesz je dla wszystkich — pojawią się w „🧠 Utrwalaj gramatykę” i jako misje w Grammar City.</div>
+      <label class="ai-lab">Temat gramatyczny</label>
+      <input id="agTopic" class="ai-inp" maxlength="100" placeholder="np. Present Simple — zdania twierdzące i przeczące" value="${E(f.topic || '')}">
+      <div class="ai-row">
+        <div><label class="ai-lab">Liczba zadań</label><select id="agCount" class="ai-inp">${[10,15,20,30].map(n => `<option${n === (f.count || 15) ? ' selected' : ''}>${n}</option>`).join('')}</select></div>
+        <div><label class="ai-lab">Poziom</label><select id="agLevel" class="ai-inp">${LEVELS.map(l => `<option${l === (f.level || levelGuess(book())) ? ' selected' : ''}>${l}</option>`).join('')}</select></div>
+      </div>
+      <label class="ai-lab">Rodzaje zadań</label>
+      <label class="ai-chk"><input type="checkbox" id="agAbc" ${f.abc === false ? '' : 'checked'}> A/B/C — wybór poprawnej odpowiedzi</label>
+      <label class="ai-chk"><input type="checkbox" id="agGap" ${f.gap === false ? '' : 'checked'}> Luki — uzupełnij poprawną formą wyrazu z nawiasu</label>
+      <label class="ai-lab">Uwagi dla AI (opcjonalnie)</label>
+      <input id="agNotes" class="ai-inp" maxlength="250" placeholder="np. tylko he / she / it, bez pytań" value="${E(f.notes || '')}">
+      <div id="agMsg" class="ai-msg"></div>
+      <div class="modal-btns"><button class="btn-modal-cancel" onclick="document.getElementById('aiGramModal').style.display='none'">Anuluj</button>
+      <button class="btn-modal-save" id="agGo" onclick="grammarGenRun()">🤖 Generuj</button></div>`);
+    setTimeout(() => { const t = $('agTopic'); if (t) t.focus(); }, 60);
+  };
+  window.grammarGenRun = async function(){
+    const form = { topic: $('agTopic').value.trim(), count: +$('agCount').value, level: $('agLevel').value, notes: $('agNotes').value.trim(), abc: $('agAbc').checked, gap: $('agGap').checked };
+    if (!form.topic) { setMsg('agMsg', 'Wpisz temat gramatyczny (np. Present Simple).', 'err'); return; }
+    const types = [form.abc && 'abc', form.gap && 'gap'].filter(Boolean);
+    if (!types.length) { setMsg('agMsg', 'Zaznacz co najmniej jeden rodzaj zadań.', 'err'); return; }
+    const voc = cumulativeVocab(currentBookId, currentUnitKey);
+    const btn = $('agGo'); btn.disabled = true;
+    setMsg('agMsg', '⏳ AI układa zadania… to może potrwać do pół minuty.');
+    try {
+      const r = await DB.aiCall('grammar', { topic: form.topic, count: form.count, level: form.level, notes: form.notes, types, words: voc.words, lang: bookLang() });
+      if (!r.items || r.items.length < 3) throw new Error('AI nie zwróciło poprawnych zadań — spróbuj jeszcze raz albo doprecyzuj temat.');
+      _ag = { form, topic: form.topic, items: r.items, bookId: currentBookId, unitKey: currentUnitKey };
+      renderGrammarPreview();
+    } catch(e) { setMsg('agMsg', '❌ ' + e.message, 'err'); btn.disabled = false; }
+  };
+  function itemHtml(it, i, del){
+    const q = E(it.q).replace(/___/g, '<span class="gram-gap">___</span>');
+    const ans = it.type === 'abc'
+      ? (it.o || []).map((o, j) => `<span class="${j === it.a ? 'gram-ok' : ''}">${'ABC'[j]}) ${E(o)}${j === it.a ? ' ✓' : ''}</span>`).join('')
+      : '✍️ ' + (it.a || []).map(E).join(' / ');
+    return `<div class="gram-item"><div><b>${i + 1}.</b> ${q}</div><div class="gram-ans">${ans}</div>${it.e ? `<div class="gram-exp">💡 ${E(it.e)}</div>` : ''}${del ? `<button class="gram-del" onclick="grammarDraftDel(${i})" title="Usuń to zadanie">✕</button>` : ''}</div>`;
+  }
+  function renderGrammarPreview(){
+    const d = _ag;
+    aiModal('aiGramModal', closeBtn('aiGramModal') + `<div class="modal-title">👀 Sprawdź zadania przed zapisem</div>
+      <div class="ai-help">AI może się czasem pomylić — przejrzyj zadania i usuń złe (✕). Zapisane zadania zobaczą wszyscy uczniowie tego rozdziału.</div>
+      <label class="ai-lab">Nazwa zestawu</label><input id="agTopic2" class="ai-inp" maxlength="100" value="${E(d.topic)}">
+      <div class="gram-list">${d.items.map((it, i) => itemHtml(it, i, true)).join('')}</div>
+      <div id="agMsg" class="ai-msg"></div>
+      <div class="modal-btns"><button class="btn-modal-cancel" onclick="openGrammarGen()">↩ Zmień ustawienia</button>
+      <button class="btn-modal-save" id="agSave" onclick="grammarDraftSave()">💾 Zapisz dla wszystkich (${d.items.length})</button></div>`, true);
+  }
+  window.grammarDraftDel = i => { if (!_ag) return; const t = $('agTopic2'); if (t) _ag.topic = t.value; _ag.items.splice(i, 1); renderGrammarPreview(); };
+  window.grammarDraftSave = async function(){
+    if (!_ag) return;
+    const topic = ($('agTopic2').value || '').trim() || _ag.topic;
+    if (_ag.items.length < 3) { setMsg('agMsg', 'Zostaw co najmniej 3 zadania.', 'err'); return; }
+    const btn = $('agSave'); btn.disabled = true; setMsg('agMsg', '⏳ Zapisuję…');
+    try {
+      await DB.saveGrammarSet({ bookId: _ag.bookId, unitKey: _ag.unitKey, topic, items: _ag.items, source: 'ai' });
+      hide('aiGramModal'); _ag = null;
+      toast('✅ Zadania zapisane — uczniowie zobaczą je w „🧠 Utrwalaj gramatykę” i w Grammar City.', 3600);
+      renderGrammarBox();
+    } catch(e) { setMsg('agMsg', '❌ ' + e.message, 'err'); btn.disabled = false; }
+  };
+
+  /* ---- ćwiczenie zestawu (uczeń) ---- */
+  const normAns = s => String(s || '').toLowerCase().replace(/[’‘`´]/g, "'").replace(/[.!?,;:]+$/g, '').replace(/\s+/g, ' ').trim()
+    .replace(/\bcan't\b/g, 'cannot').replace(/\bwon't\b/g, 'will not').replace(/\bcan not\b/g, 'cannot').replace(/(\w+)n't\b/g, '$1 not')
+    .replace(/\bi'm\b/g, 'i am').replace(/\b(you|we|they)'re\b/g, '$1 are');
+  const fullSentence = (q, ans) => { const s = String(q); return /___\s*\([^)]*\)/.test(s) ? s.replace(/___\s*\([^)]*\)/, ans) : s.replace('___', ans).replace(/\s*\([^)]*\)\s*$/, ''); };
+  let _gp = null;
+  window.openGrammarPractice = function(id){
+    const s = _gsCache.find(x => x.id === id); if (!s) return;
+    const items = shuffle((s.items || []).map(it => {
+      if (it.type !== 'abc') return it;
+      const idx = shuffle(it.o.map((_, i) => i));
+      return Object.assign({}, it, { o: idx.map(i => it.o[i]), a: idx.indexOf(it.a) });
+    }));
+    _gp = { s, items, i: 0, ok: 0, done: false };
+    gpRender();
+  };
+  function gpRender(){
+    const g = _gp; const it = g.items[g.i];
+    if (!it) {
+      const pct = Math.round(g.ok / g.items.length * 100);
+      aiModal('gramPracModal', closeBtn('gramPracModal') + `<div class="modal-title">🧠 ${E(g.s.topic)}</div>
+        <div style="text-align:center;font-size:3rem;margin:10px 0">${pct >= 90 ? '🏆' : pct >= 70 ? '🎉' : pct >= 50 ? '👍' : '💪'}</div>
+        <div style="text-align:center;font-size:1.3rem;font-weight:800;color:var(--text)">${g.ok} / ${g.items.length} · ${pct}%</div>
+        <div class="ai-help" style="text-align:center">${pct >= 70 ? 'Świetnie! Gramatyka siedzi. 🦉' : 'Poćwicz jeszcze raz — za każdym razem zadania są w innej kolejności.'}</div>
+        <div class="modal-btns"><button class="btn-modal-cancel" onclick="document.getElementById('gramPracModal').style.display='none'">Zamknij</button>
+        <button class="btn-modal-save" onclick="openGrammarPractice('${g.s.id}')">🔁 Jeszcze raz</button></div>`);
+      return;
+    }
+    const q = E(it.q).replace(/___/g, '<span class="gram-gap">___</span>');
+    const body = it.type === 'abc'
+      ? '<div class="gp-opts">' + it.o.map((o, i) => `<button class="gp-opt" data-i="${i}" onclick="gpAnswer(${i})"><b>${'ABC'[i]})</b> ${E(o)}</button>`).join('') + '</div>'
+      : `<div class="type-row"><input type="text" class="type-input" id="gpInp" placeholder="Wpisz brakujący wyraz…" autocomplete="off" autocapitalize="off" spellcheck="false" onkeydown="if(event.key==='Enter'){event.preventDefault();gpAnswer(this.value);}"><button class="btn-check" id="gpChk" onclick="gpAnswer(document.getElementById('gpInp').value)">Sprawdź</button></div>`;
+    aiModal('gramPracModal', closeBtn('gramPracModal') + `<div class="modal-title">🧠 ${E(g.s.topic)}</div>
+      <div style="display:flex;justify-content:space-between;font-size:.72rem;font-weight:800;color:var(--muted)"><span>Zadanie ${g.i + 1} z ${g.items.length}</span><span>✓ ${g.ok}</span></div>
+      <div class="gp-prog"><i style="width:${Math.round(g.i / g.items.length * 100)}%"></i></div>
+      <div class="ai-help" style="text-align:center;margin:8px 0 0">${it.type === 'abc' ? 'Wybierz poprawną odpowiedź' : 'Uzupełnij lukę poprawną formą wyrazu z nawiasu'}</div>
+      <div class="gp-q">${q}</div>${body}<div id="gpRes"></div>`);
+    setTimeout(() => { const i = $('gpInp'); if (i) i.focus(); }, 60);
+  }
+  window.gpAnswer = function(val){
+    const g = _gp; if (!g || g.done) return;
+    const it = g.items[g.i];
+    let ok, correct;
+    if (it.type === 'abc') {
+      ok = val === it.a; correct = it.o[it.a];
+      document.querySelectorAll('#gramPracModal .gp-opt').forEach(b => { const i = +b.dataset.i; b.disabled = true; if (i === it.a) b.classList.add('ok'); else if (i === val) b.classList.add('bad'); });
+    } else {
+      const v = String(val || '').trim(); if (!v) return;
+      ok = (it.a || []).some(a => normAns(a) === normAns(v)); correct = it.a[0];
+      const inp = $('gpInp'); if (inp) { inp.disabled = true; inp.classList.add(ok ? 'correct-inp' : 'wrong-inp'); }
+      const chk = $('gpChk'); if (chk) chk.style.display = 'none';
+    }
+    g.done = true; if (ok) g.ok++;
+    try { if (ok && typeof playOk === 'function') playOk(); else if (!ok && typeof playBad === 'function') playBad(); } catch(e) {}
+    try { if (ok && !isGuest && typeof addXP === 'function') addXP(4); } catch(e) {}
+    try { if (window.sfPet) window.sfPet.onAnswer('grammar', ok ? 'good' : 'hard', false); } catch(e) {}
+    speak(fullSentence(it.q, correct));
+    $('gpRes').innerHTML = `<div class="gp-res ${ok ? 'ok' : 'bad'}">${ok ? '✓ Dobrze!' : '✗ Poprawnie: <b>' + E(correct) + '</b>'}
+      <div class="gp-exp">${E(fullSentence(it.q, correct))}${it.e ? '<br>💡 ' + E(it.e) : ''}</div></div>
+      <div class="modal-btns"><button class="btn-modal-save" id="gpNext" onclick="gpNext()">Dalej ▶</button></div>`;
+    setTimeout(() => { const n = $('gpNext'); if (n) n.focus(); }, 40);
+  };
+  window.gpNext = function(){ if (!_gp) return; _gp.i++; _gp.done = false; gpRender(); };
+
+  /* ---- druk: kartkówka / karta pracy z kluczem ---- */
+  window.printGrammarSetUi = function(id){
+    const s = _gsCache.find(x => x.id === id); if (!s) return;
+    openGenericModal('🖨️ Kartkówka / karta pracy', `<div class="ai-help"><b>${E(s.topic)}</b> · ${zadan((s.items || []).length)}</div>
+      <label class="ai-chk"><input type="checkbox" id="gpVerB"> Dwie wersje (A i B — inna kolejność zadań i odpowiedzi)</label>
+      <label class="ai-chk"><input type="checkbox" id="gpKey" checked> Klucz odpowiedzi na osobnej stronie</label>
+      <label class="ai-chk"><input type="checkbox" id="gpExp"> Wyjaśnienia w kluczu</label>
+      <div class="modal-btns"><button class="btn-modal-cancel" onclick="closeGenericModal()">Anuluj</button>
+      <button class="btn-modal-save" onclick="printGrammarSetGo('${s.id}')">🖨️ Drukuj / PDF</button></div>`);
+  };
+  function seeded(seed){ return () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; }; }
+  function variant(items, seed){
+    if (!seed) return items.map(it => Object.assign({}, it));
+    const rnd = seeded(seed);
+    const sh = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+    return sh(items.map(it => {
+      if (it.type !== 'abc') return Object.assign({}, it);
+      const idx = sh(it.o.map((_, i) => i));
+      return Object.assign({}, it, { o: idx.map(i => it.o[i]), a: idx.indexOf(it.a) });
+    }));
+  }
+  window.printGrammarSetGo = function(id){
+    const s = _gsCache.find(x => x.id === id); if (!s) return;
+    const two = $('gpVerB').checked, withKey = $('gpKey').checked, withExp = $('gpExp').checked;
+    closeGenericModal();
+    const b = book() || {}; const where = (b.name || '') + (s.unit_key ? ' · ' + unitName(s.unit_key) : '');
+    const versions = two ? [['A', variant(s.items, 0)], ['B', variant(s.items, 7919)]] : [['', variant(s.items, 0)]];
+    const qHtml = q => E(q).replace(/___/g, '<span class="gap"></span>');
+    const total = s.items.length;
+    // Progi jak w kartkówkach online (#64): 98% → 6, 90% → 5, 75% → 4, 50% → 3, 30% → 2.
+    const mins = { 1: 0, 2: Math.ceil(total * 0.30), 3: Math.ceil(total * 0.50), 4: Math.ceil(total * 0.75), 5: Math.ceil(total * 0.90), 6: Math.ceil(total * 0.98) };
+    const scale = [6, 5, 4, 3, 2, 1].map(g => { const lo = mins[g], hi = g === 6 ? total : mins[g + 1] - 1; return lo > hi ? '' : g + ': ' + (lo === hi ? lo : lo + '–' + hi); }).filter(Boolean).join(' · ');
+    let pages = '';
+    versions.forEach(([v, items]) => {
+      const abc = items.filter(i => i.type === 'abc'), gap = items.filter(i => i.type === 'gap');
+      let n = 0, task = 0;
+      pages += `<div class="page"><h1>📝 Kartkówka: ${E(s.topic)}${v ? ' — wersja ' + v : ''}</h1><div class="sub">${E(where)}</div>
+        <div class="meta"><div>Imię i nazwisko</div><div>Klasa</div><div>Data</div></div>
+        <div class="pts">Punkty: ______ / ${total} &nbsp;&nbsp;&nbsp; Ocena: ______</div>`;
+      if (abc.length) { task++; pages += `<h2>Zadanie ${task}. Wybierz poprawną odpowiedź (A, B lub C). <span class="p">(${abc.length} pkt)</span></h2><ol start="${n + 1}">` + abc.map(it => `<li>${qHtml(it.q)}<div class="opts">${it.o.map((o, j) => `<span>${'ABC'[j]}) ${E(o)}</span>`).join('')}</div></li>`).join('') + '</ol>'; n += abc.length; }
+      if (gap.length) { task++; pages += `<h2>Zadanie ${task}. Uzupełnij luki poprawną formą wyrazu z nawiasu. <span class="p">(${gap.length} pkt)</span></h2><ol start="${n + 1}">` + gap.map(it => `<li>${qHtml(it.q)}</li>`).join('') + '</ol>'; }
+      pages += '<div class="foot">© 2026 Sowie Fiszki</div></div>';
+    });
+    if (withKey) versions.forEach(([v, items]) => {
+      const ordered = items.filter(i => i.type === 'abc').concat(items.filter(i => i.type === 'gap'));
+      pages += `<div class="page key"><h1>🔑 Klucz odpowiedzi${v ? ' — wersja ' + v : ''}</h1><div class="sub">${E(s.topic)} · ${E(where)}</div><ol>`
+        + ordered.map(it => `<li><b>${it.type === 'abc' ? 'ABC'[it.a] + ') ' + E(it.o[it.a]) : E(it.a.join(' / '))}</b>${withExp && it.e ? ' — ' + E(it.e) : ''}</li>`).join('')
+        + `</ol><div class="scale">Progi (${total} pkt): ${scale}</div><div class="foot">© 2026 Sowie Fiszki</div></div>`;
+    });
+    const w = window.open('', '_blank');
+    if (!w) { toast('Przeglądarka zablokowała nowe okno — zezwól na wyskakujące okna dla tej strony.', 3600); return; }
+    w.document.write(`<!doctype html><html lang="pl"><head><meta charset="utf-8"><title>Kartkówka — ${E(s.topic)}</title><style>
+      @page{size:A4;margin:14mm} body{font-family:Arial,Helvetica,sans-serif;color:#111;font-size:13px;margin:0}
+      .page{page-break-after:always;padding:4px} .page:last-child{page-break-after:auto}
+      h1{font-size:18px;margin:0 0 2px} .sub{font-size:11px;color:#555;margin-bottom:10px}
+      .meta{display:grid;grid-template-columns:2fr 1fr 1fr;gap:12px;margin:8px 0} .meta div{border-bottom:1px solid #888;padding-top:18px;font-size:10px;color:#666}
+      .pts{text-align:right;font-size:12px;margin:6px 0 4px} h2{font-size:13.5px;margin:14px 0 6px} h2 .p{font-weight:normal;color:#666;font-size:11px}
+      ol{padding-left:24px;margin:0} li{margin:8px 0;line-height:1.7;break-inside:avoid} .opts{margin-top:2px} .opts span{display:inline-block;margin-right:26px}
+      .gap{display:inline-block;min-width:95px;border-bottom:1px solid #000;margin:0 3px}
+      .key li{margin:4px 0;line-height:1.45} .scale{margin-top:12px;font-size:11px;color:#444} .foot{text-align:center;font-size:10px;color:#888;margin-top:18px}
+    </style></head><body>${pages}<script>window.onload=function(){setTimeout(function(){window.print();},300);};<\/script></body></html>`);
+    w.document.close();
+  };
+
+  /* ════════ 🤖 UZUPEŁNIJ ZDANIA PRZYKŁADOWE ════════ */
+  function missingSentences(bId, keys){
+    const units = getUnitsWithCustom(bId), seen = new Set(), out = [];
+    keys.forEach(k => ((units[k] && units[k].words) || []).forEach(w => {
+      const pl = String(w[0] || '').trim(), t = String(w[1] || '').trim();
+      if (!pl || !t || seen.has(pl) || t.split(/\s+/).length > 6) return;
+      seen.add(pl);
+      const inl = getInlineSentences(w);
+      if (inl.sentPl || inl.sentEn || DB.getSentence(bId, pl)) return;
+      out.push({ pl, t });
+    }));
+    return out;
+  }
+  let _as = null;
+  window.openAiSentences = function(){
+    const b = book(); if (!canFillSentences(b)) return;
+    const uk = currentUnitKey, keysAll = unitKeys(currentBookId);
+    const unitMiss = uk === 'all' ? [] : missingSentences(currentBookId, [uk]);
+    const bookMiss = missingSentences(currentBookId, keysAll);
+    aiModal('aiSentModal', closeBtn('aiSentModal') + `<div class="modal-title">🤖 Uzupełnij zdania przykładowe</div>
+      <div class="ai-help">AI dopisze krótkie zdania (po ${LANG_PL[bookLang()] || 'angielsku'} i po polsku) do słówek, które jeszcze nie mają zdania. Przed zapisem zobaczysz wszystkie zdania i możesz je poprawić. Na raz maks. 120 słówek.</div>
+      ${uk !== 'all' ? `<label class="ai-chk"><input type="radio" name="asScope" value="unit" checked> Ten rozdział — brakuje zdań: <b>${unitMiss.length}</b></label>` : ''}
+      <label class="ai-chk"><input type="radio" name="asScope" value="book" ${uk === 'all' ? 'checked' : ''}> Cały podręcznik — brakuje zdań: <b>${bookMiss.length}</b></label>
+      <label class="ai-lab">Poziom zdań</label><select id="asLevel" class="ai-inp">${LEVELS.map(l => `<option${l === levelGuess(b) ? ' selected' : ''}>${l}</option>`).join('')}</select>
+      <div id="asMsg" class="ai-msg"></div>
+      <div class="modal-btns"><button class="btn-modal-cancel" onclick="document.getElementById('aiSentModal').style.display='none'">Anuluj</button>
+      <button class="btn-modal-save" id="asGo" onclick="aiSentencesRun()">🤖 Generuj zdania</button></div>`);
+  };
+  window.aiSentencesRun = async function(){
+    const scope = (document.querySelector('input[name="asScope"]:checked') || {}).value || 'unit';
+    const list = (scope === 'book' ? missingSentences(currentBookId, unitKeys(currentBookId)) : missingSentences(currentBookId, [currentUnitKey])).slice(0, 120);
+    if (!list.length) { setMsg('asMsg', '✓ Wszystkie słówka mają już zdania przykładowe.', 'ok'); return; }
+    const level = $('asLevel').value, btn = $('asGo'); btn.disabled = true;
+    const got = [];
+    try {
+      for (let i = 0; i < list.length; i += 30) {
+        setMsg('asMsg', '⏳ AI pisze zdania… ' + Math.min(i + 30, list.length) + ' / ' + list.length);
+        const part = list.slice(i, i + 30);
+        const r = await DB.aiCall('sentences', { words: part, level, lang: bookLang() });
+        (r.items || []).forEach(x => { if (part.some(w => w.pl === x.pl)) got.push(x); });
+      }
+    } catch(e) { if (!got.length) { setMsg('asMsg', '❌ ' + e.message, 'err'); btn.disabled = false; return; } }
+    if (!got.length) { setMsg('asMsg', '❌ AI nie zwróciło zdań — spróbuj ponownie.', 'err'); btn.disabled = false; return; }
+    _as = { bookId: currentBookId, items: got.map(x => Object.assign({ on: true }, x)) };
+    renderSentPreview();
+  };
+  function renderSentPreview(){
+    aiModal('aiSentModal', closeBtn('aiSentModal') + `<div class="modal-title">👀 Sprawdź zdania (${_as.items.length})</div>
+      <div class="ai-help">Popraw, jeśli trzeba, i odznacz zdania, których nie chcesz zapisać.</div>
+      <div>${_as.items.map((x, i) => `<div class="as-item"><input type="checkbox" ${x.on ? 'checked' : ''} onchange="aiSentToggle(${i},this.checked)" style="margin-top:4px">
+        <div style="flex:1"><b>${E(x.pl)}</b><input type="text" value="${E(x.sentT)}" onchange="aiSentEdit(${i},'sentT',this.value)"><input type="text" value="${E(x.sentPl)}" onchange="aiSentEdit(${i},'sentPl',this.value)"></div></div>`).join('')}</div>
+      <div id="asMsg" class="ai-msg"></div>
+      <div class="modal-btns"><button class="btn-modal-cancel" onclick="document.getElementById('aiSentModal').style.display='none'">Anuluj</button>
+      <button class="btn-modal-save" id="asSave" onclick="aiSentencesSave()">💾 Zapisz zaznaczone</button></div>`, true);
+  }
+  window.aiSentToggle = (i, on) => { if (_as) _as.items[i].on = on; };
+  window.aiSentEdit = (i, f, v) => { if (_as) _as.items[i][f] = String(v || '').trim(); };
+  window.aiSentencesSave = async function(){
+    if (!_as) return;
+    const todo = _as.items.filter(x => x.on && x.sentPl && x.sentT);
+    const btn = $('asSave'); btn.disabled = true;
+    let ok = 0, err = '';
+    for (const x of todo) {
+      setMsg('asMsg', '⏳ Zapisuję… ' + (ok + 1) + ' / ' + todo.length);
+      try { await DB.saveSentence(_as.bookId, x.pl, x.sentPl, x.sentT); ok++; } catch(e) { err = e.message; }
+    }
+    if (!ok) { setMsg('asMsg', '❌ ' + (err || 'Nie udało się zapisać.'), 'err'); btn.disabled = false; return; }
+    hide('aiSentModal'); _as = null;
+    toast('✅ Zapisano ' + ok + ' zdań przykładowych.' + (err ? ' Część się nie zapisała: ' + err : ''), 3600);
+    const wl = $('sWordList'); if (wl && wl.classList.contains('active') && currentUnitKey) openWordList(currentUnitKey);
+  };
+
+  /* ════════ 🤖 ROZDZIAŁ Z AI — generator listy słówek ════════ */
+  let _aw = null;
+  window.openAiWordlist = function(){
+    const b = book(); if (!b || !canEditBook(b)) return;
+    const f = (_aw && _aw.form) || {};
+    const grade = b.grade ? 'klasa ' + b.grade + (b.schoolType === 'secondary' ? ' (szkoła średnia)' : ' (szkoła podstawowa)') : '';
+    aiModal('aiWordModal', closeBtn('aiWordModal') + `<div class="modal-title">🤖 Nowy rozdział z AI</div>
+      <div class="ai-help">AI przygotuje listę słówek na wybrany temat — z tłumaczeniem, emoji i zdaniami przykładowymi. Przed zapisem możesz wszystko poprawić. Słówka trafią do podręcznika „${E(b.name)}”.</div>
+      <label class="ai-lab">Temat</label><input id="awTopic" class="ai-inp" maxlength="100" placeholder="np. pogoda, w sklepie, moja rodzina" value="${E(f.topic || '')}">
+      <div class="ai-row">
+        <div><label class="ai-lab">Liczba słówek</label><select id="awCount" class="ai-inp">${[10,15,20,25,30,40].map(n => `<option${n === (f.count || 20) ? ' selected' : ''}>${n}</option>`).join('')}</select></div>
+        <div><label class="ai-lab">Poziom</label><select id="awLevel" class="ai-inp">${LEVELS.map(l => `<option${l === (f.level || levelGuess(b)) ? ' selected' : ''}>${l}</option>`).join('')}</select></div>
+      </div>
+      <label class="ai-lab">Klasa / grupa (opcjonalnie)</label><input id="awGrade" class="ai-inp" maxlength="40" value="${E(f.grade != null ? f.grade : grade)}">
+      <label class="ai-lab">Uwagi dla AI (opcjonalnie)</label><input id="awNotes" class="ai-inp" maxlength="250" placeholder="np. tylko rzeczowniki, bez czasowników" value="${E(f.notes || '')}">
+      <div id="awMsg" class="ai-msg"></div>
+      <div class="modal-btns"><button class="btn-modal-cancel" onclick="document.getElementById('aiWordModal').style.display='none'">Anuluj</button>
+      <button class="btn-modal-save" id="awGo" onclick="aiWordlistRun()">🤖 Generuj</button></div>`);
+    setTimeout(() => { const t = $('awTopic'); if (t) t.focus(); }, 60);
+  };
+  window.aiWordlistRun = async function(){
+    const form = { topic: $('awTopic').value.trim(), count: +$('awCount').value, level: $('awLevel').value, grade: $('awGrade').value.trim(), notes: $('awNotes').value.trim() };
+    if (!form.topic) { setMsg('awMsg', 'Wpisz temat (np. pogoda).', 'err'); return; }
+    const btn = $('awGo'); btn.disabled = true; setMsg('awMsg', '⏳ AI przygotowuje słówka…');
+    try {
+      const r = await DB.aiCall('wordlist', Object.assign({ lang: bookLang() }, form));
+      if (!r.words || !r.words.length) throw new Error('AI nie zwróciło słówek — spróbuj jeszcze raz.');
+      _aw = { form, bookId: currentBookId, words: r.words.map(w => Object.assign({ on: true }, w)) };
+      renderWordPreview();
+    } catch(e) { setMsg('awMsg', '❌ ' + e.message, 'err'); btn.disabled = false; }
+  };
+  function renderWordPreview(){
+    const units = getUnitsWithCustom(_aw.bookId), keys = unitKeys(_aw.bookId);
+    aiModal('aiWordModal', closeBtn('aiWordModal') + `<div class="modal-title">👀 Sprawdź słówka (${_aw.words.length})</div>
+      <div class="ai-help">Popraw, co trzeba, i odznacz słówka, których nie chcesz. Kolumny: emoji · po polsku · po ${LANG_PL[bookLang()] || 'angielsku'} · zdanie (${(TTS[bookLang()] || 'en').slice(0, 2).toUpperCase()}) · zdanie (PL).</div>
+      <table class="aw-table">${_aw.words.map((w, i) => `<tr><td><input type="checkbox" ${w.on ? 'checked' : ''} onchange="aiWordSet(${i},'on',this.checked)"></td>
+        <td style="width:46px"><input type="text" value="${E(w.emoji)}" onchange="aiWordSet(${i},'emoji',this.value)"></td>
+        <td><input type="text" value="${E(w.pl)}" onchange="aiWordSet(${i},'pl',this.value)"></td>
+        <td><input type="text" value="${E(w.t)}" onchange="aiWordSet(${i},'t',this.value)"></td>
+        <td><input type="text" value="${E(w.sentT)}" onchange="aiWordSet(${i},'sentT',this.value)"></td>
+        <td><input type="text" value="${E(w.sentPl)}" onchange="aiWordSet(${i},'sentPl',this.value)"></td></tr>`).join('')}</table>
+      <label class="ai-lab">Gdzie dodać</label>
+      <label class="ai-chk"><input type="radio" name="awTarget" value="new" checked> Nowy rozdział: <input id="awUnitName" class="ai-inp" style="flex:1" maxlength="60" value="${E(_aw.form.topic.charAt(0).toUpperCase() + _aw.form.topic.slice(1))}"></label>
+      ${keys.length ? `<label class="ai-chk"><input type="radio" name="awTarget" value="old"> Istniejący rozdział: <select id="awUnitOld" class="ai-inp" style="flex:1">${keys.map(k => `<option value="${E(k)}">${E((units[k] && units[k].name) || k)}</option>`).join('')}</select></label>` : ''}
+      <div id="awMsg" class="ai-msg"></div>
+      <div class="modal-btns"><button class="btn-modal-cancel" onclick="openAiWordlist()">↩ Zmień ustawienia</button>
+      <button class="btn-modal-save" id="awSave" onclick="aiWordlistSave()">💾 Dodaj do podręcznika</button></div>`, true);
+  }
+  window.aiWordSet = (i, f, v) => { if (_aw) _aw.words[i][f] = f === 'on' ? !!v : String(v || '').trim(); };
+  window.aiWordlistSave = async function(){
+    if (!_aw) return;
+    const bId = _aw.bookId, words = _aw.words.filter(w => w.on && w.pl && w.t);
+    if (!words.length) { setMsg('awMsg', 'Zaznacz co najmniej jedno słówko.', 'err'); return; }
+    const target = (document.querySelector('input[name="awTarget"]:checked') || {}).value || 'new';
+    const btn = $('awSave'); btn.disabled = true;
+    try {
+      let key;
+      if (target === 'old') key = $('awUnitOld').value;
+      else {
+        const name = ($('awUnitName').value || '').trim() || _aw.form.topic;
+        const units = getUnitsWithCustom(bId);
+        let n = unitKeys(bId).length + 1; while (units['unit' + n] || (BOOKS[bId].units || {})['unit' + n]) n++;
+        key = 'unit' + n;
+        const COLORS = ['#a29bfe', '#06d6a0', '#ffd166', '#ff6b9d', '#4fb3ff', '#ff9f43'];
+        setMsg('awMsg', '⏳ Tworzę rozdział…');
+        await DB.adminAddUnit(bId, key, name, (words.find(w => w.emoji) || {}).emoji || '🤖', COLORS[n % COLORS.length]);
+      }
+      const existing = new Set((((BOOKS[bId].units || {})[key] || {}).words || []).map(w => String(w[0])));
+      let ok = 0, err = '';
+      for (const w of words) {
+        if (existing.has(w.pl)) continue;
+        setMsg('awMsg', '⏳ Dodaję słówka… ' + (ok + 1) + ' / ' + words.length);
+        try {
+          await DB.adminAddWord(bId, key, w.pl, w.t, w.emoji || '');
+          existing.add(w.pl); ok++;
+          if (w.sentPl && w.sentT) { try { await DB.saveSentence(bId, w.pl, w.sentPl, w.sentT); } catch(e) {} }
+        } catch(e) { err = e.message; }
+      }
+      hide('aiWordModal'); _aw = null;
+      toast('✅ Dodano ' + ok + ' słówek.' + (err ? ' Część się nie zapisała: ' + err : ''), 3600);
+      if (typeof refreshGrid === 'function') refreshGrid();
+      if (typeof openWordList === 'function') openWordList(key);
+    } catch(e) { setMsg('awMsg', '❌ ' + e.message, 'err'); btn.disabled = false; }
+  };
+
+  /* ════════ 🤖 TRYB „NAPISZ ZDANIE” ════════ */
+  let _wr = null;
+  window.writeRender = function(){
+    const w = activeWords[curIdx]; if (!w) return;
+    const lang = bookLang();
+    _wr = { t: String(w[1] || ''), pl: String(w[0] || ''), grade: null };
+    $('wrWord').textContent = _wr.t;
+    $('wrPl').textContent = 'po polsku: ' + _wr.pl;
+    const em = typeof getWordEmojiRaw === 'function' ? getWordEmojiRaw(_wr.pl) : '';
+    const ee = $('wrEmoji'); ee.textContent = em || ''; ee.style.display = em ? '' : 'none';
+    const inp = $('wrInp'); inp.value = ''; inp.disabled = !!isGuest; inp.className = 'type-input';
+    inp.placeholder = 'Napisz zdanie po ' + (LANG_PL[lang] || 'angielsku') + ' ze słowem „' + _wr.t + '”…';
+    const chk = $('btnWrChk'); chk.style.display = ''; chk.disabled = !!isGuest;
+    $('btnWrNext').style.display = 'none';
+    const res = $('wrRes'); res.className = 'type-result'; res.innerHTML = isGuest ? '🔒 Sprawdzanie zdań przez AI działa po zalogowaniu.' : '';
+    if (!isGuest) setTimeout(() => inp.focus(), 60);
+  };
+  window.writeSpeakWord = () => { if (_wr) speak(_wr.t); };
+  window.writeCheck = async function(){
+    if (!_wr || _wr.grade || isGuest) return;
+    const inp = $('wrInp'), txt = inp.value.trim(), res = $('wrRes');
+    if (txt.split(/\s+/).filter(Boolean).length < 3) { res.className = 'type-result err'; res.textContent = '✍️ Napisz całe zdanie (co najmniej 3 słowa).'; return; }
+    const chk = $('btnWrChk'); chk.disabled = true;
+    res.className = 'type-result'; res.textContent = '⏳ AI sprawdza Twoje zdanie…';
+    try {
+      const r = await DB.aiCall('check_sentence', { word: _wr.t, wordPl: _wr.pl, sentence: txt, lang: bookLang() });
+      if (r.blocked) { res.className = 'type-result err'; res.textContent = '🙈 Tego zdania nie sprawdzę. Napisz zdanie o czymś miłym i szkolnym.'; chk.disabled = false; return; }
+      const good = r.ok && r.usesWord;
+      _wr.grade = good ? 'good' : (r.usesWord ? 'medium' : 'hard');
+      revealed = true; inp.disabled = true; inp.classList.add(good ? 'correct-inp' : 'wrong-inp');
+      const head = good ? '✓ Świetnie! 🎉' : (r.usesWord ? '✏️ Prawie dobrze!' : '⚠️ W zdaniu brakuje słowa „' + E(_wr.t) + '”.');
+      const shown = good ? txt : (r.corrected || txt);
+      res.className = 'type-result ' + (good ? 'ok' : 'err');
+      res.innerHTML = head
+        + (!good && r.corrected ? '<div style="margin-top:4px">Poprawnie: <span class="ar">' + E(r.corrected) + '</span></div>' : '')
+        + (r.explanation ? '<div style="margin-top:4px;font-weight:600;color:var(--text)">💡 ' + E(r.explanation) + '</div>' : '')
+        + (r.translation ? '<div style="margin-top:2px;font-weight:600;color:var(--muted)">🇵🇱 ' + E(r.translation) + '</div>' : '')
+        + '<div style="margin-top:6px"><button class="btn-speak" onclick="writeSpeakSentence()">🔊 Posłuchaj</button></div>';
+      _wr.say = shown;
+      try { if (good && typeof playOk === 'function') playOk(); else if (!good && typeof playBad === 'function') playBad(); } catch(e) {}
+      try { if (typeof owlR === 'function') owlR(good ? 'easy' : (r.usesWord ? 'medium' : 'hard')); } catch(e) {}
+      speak(shown);
+      chk.style.display = 'none';
+      const nx = $('btnWrNext'); nx.style.display = ''; setTimeout(() => nx.focus(), 40);
+      if (r.max) $('wrInfo').textContent = '🤖 Zdanie sprawdza sztuczna inteligencja — może się czasem pomylić. Sprawdzenia dziś: ' + r.used + ' / ' + r.max + '.';
+    } catch(e) {
+      res.className = 'type-result err'; res.textContent = '❌ ' + e.message; chk.disabled = false;
+    }
+  };
+  window.writeSpeakSentence = () => { if (_wr && _wr.say) speak(_wr.say); };
+  window.writeNext = function(){
+    if (!_wr || !_wr.grade || _wr.grade === 'done') return;
+    const g = _wr.grade; _wr.grade = 'done';
+    rate(g);
+  };
 })();
 </script>
 <script src="consent.js"></script>

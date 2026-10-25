@@ -5043,6 +5043,8 @@ async function boot() {
     ]);
   } catch (e) { /* fonts optional */ }
   await Promise.race([syncP, new Promise(r => setTimeout(r, 4000))]);
+  // Tryb słówek: misje gramatyczne z bazy (vocab-missions.js) — przed rozstawieniem misji w mieście.
+  if (window.GC_MISSIONS_READY) await Promise.race([window.GC_MISSIONS_READY, new Promise(r => setTimeout(r, 4000))]);
   if (REALMAP) {
     btn.textContent = `Ładowanie mapy: ${MAPDEF.label}…`;
     try { WD = await (await fetch(MAPDEF.file)).json(); }
