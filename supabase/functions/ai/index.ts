@@ -11,7 +11,7 @@
 //    wordlist        (admin/nauczyciel) — nowa lista słówek na temat (z tłumaczeniem, emoji, zdaniami)
 //    grammar         (admin/nauczyciel) — zadania gramatyczne A/B/C i luki ze słownictwem rozdziałów
 //    check_sentence  (każdy zalogowany)  — sprawdzenie zdania ucznia ze słówkiem (z moderacją)
-//    story           (admin/nauczyciel) — czytanka: opowiadanie ze słówkami rozdziału + tłumaczenie + pytania A/B/C
+//    story           (admin/nauczyciel) — czytanka: opowiadanie ze słówkami rozdziału + pytania A/B/C (bez tłumaczenia)
 //    chat            (każdy zalogowany)  — rozmowa po angielsku z pupilem / Sową / postacią z Grammar City,
 //                                          tylko o słówkach i gramatyce rozdziału (z moderacją wypowiedzi ucznia)
 //
@@ -177,9 +177,8 @@ async function doStory(b: any, acc: Usage) {
     (grammar ? ` Use mainly this grammar: ${grammar}.` : '') +
     ` Use as many of these words as naturally possible (at least 8 of them, in the given form or a correct grammatical form): ${words.join(', ')}.` +
     ` Use short, clear sentences and only simple vocabulary besides the given words. Give it a short title in ${lang}.` +
-    ` Then write a faithful Polish translation of the whole story.` +
     ` Then write exactly ${n} reading comprehension questions in ${lang} about the story, each with exactly 3 options and exactly one correct answer that can be found in the text.` +
-    ` Return {"title":"…","text":"…","textPl":"…","questions":[{"q":"…","o":["…","…","…"],"a":0}]}`, 4000);
+    ` Return {"title":"…","text":"…","questions":[{"q":"…","o":["…","…","…"],"a":0}]}`, 4000);
   const questions = (Array.isArray(out.questions) ? out.questions : []).map((x: any) => {
     const q = str(x.q, 240), o = (Array.isArray(x.o) ? x.o : []).map((s: unknown) => str(s, 120)).filter(Boolean).slice(0, 3), a = Number(x.a);
     if (!q || o.length !== 3 || !(a >= 0 && a <= 2) || new Set(o.map((s: string) => s.toLowerCase())).size !== 3) return null;
@@ -187,7 +186,7 @@ async function doStory(b: any, acc: Usage) {
   }).filter(Boolean).slice(0, 5);
   const clean = (v: unknown, max: number) => String(v ?? '').split(String.fromCharCode(13)).join('').trim().slice(0, max);
   const text = clean(out.text, 4000);
-  return { title: str(out.title, 120), text, textPl: clean(out.textPl, 5000), questions };
+  return { title: str(out.title, 120), text, questions };
 }
 
 // ── chat (rozmowa) ──

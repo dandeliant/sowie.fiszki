@@ -33038,7 +33038,7 @@ ${bodyHtml}
     const voc = unitVocab(currentBookId, currentUnitKey);
     const f = _sg && _sg.form || {};
     aiModal('aiStoryModal', closeBtn('aiStoryModal') + `<div class="modal-title">🤖 Nowa czytanka</div>
-      <div class="ai-help">AI napisze krótkie opowiadanie z <b>${voc.length}</b> słówkami rozdziału „${E(unitName(currentUnitKey))}” i pytania do tekstu (A/B/C). Uczniowie przeczytają je w „📖 Czytanki” — z lektorem, tłumaczeniem i podpowiedziami słówek.</div>
+      <div class="ai-help">AI napisze krótkie opowiadanie z <b>${voc.length}</b> słówkami rozdziału „${E(unitName(currentUnitKey))}” i pytania do tekstu (A/B/C). Uczniowie przeczytają je w „📖 Czytanki” — z lektorem i podpowiedziami słówek (bez tłumaczenia całego tekstu).</div>
       <label class="ai-lab">O czym ma być? (opcjonalnie)</label>
       <input id="sgTopic" class="ai-inp" maxlength="120" placeholder="np. wycieczka klasowa do zoo, urodziny babci" value="${E(f.topic || '')}">
       <div class="ai-row">
@@ -33063,7 +33063,7 @@ ${bodyHtml}
       const r = await DB.aiCall('story', { topic: form.topic, length: form.len, level: form.level, questions: form.q, grammar: form.grammar,
         words: shuffle(voc.slice()).slice(0, 30), lang: bookLang() });
       if (!r.text || !(r.questions || []).length) throw new Error('AI nie zwróciło poprawnej czytanki — spróbuj jeszcze raz.');
-      _sg = { form, title: r.title || 'Czytanka', body: r.text, bodyPl: r.textPl || '', questions: r.questions, bookId: currentBookId, unitKey: currentUnitKey, level: form.level };
+      _sg = { form, title: r.title || 'Czytanka', body: r.text, questions: r.questions, bookId: currentBookId, unitKey: currentUnitKey, level: form.level };
       renderStoryPreview();
     } catch(e) { setMsg('sgMsg', '❌ ' + e.message, 'err'); btn.disabled = false; }
   };
@@ -33073,16 +33073,15 @@ ${bodyHtml}
   function renderStoryPreview(){
     const d = _sg;
     aiModal('aiStoryModal', closeBtn('aiStoryModal') + `<div class="modal-title">👀 Sprawdź czytankę przed zapisem</div>
-      <div class="ai-help">Możesz poprawić tytuł, tekst i tłumaczenie, a złe pytania usunąć (✕).</div>
+      <div class="ai-help">Możesz poprawić tytuł i tekst, a złe pytania usunąć (✕).</div>
       <label class="ai-lab">Tytuł</label><input id="sgTitle" class="ai-inp" maxlength="120" value="${E(d.title)}">
       <label class="ai-lab">Tekst</label><textarea id="sgBody" class="ai-inp" rows="8" style="resize:vertical;line-height:1.6">${E(d.body)}</textarea>
-      <label class="ai-lab">Tłumaczenie po polsku</label><textarea id="sgBodyPl" class="ai-inp" rows="5" style="resize:vertical;line-height:1.5">${E(d.bodyPl)}</textarea>
       <label class="ai-lab">Pytania do tekstu</label><div class="gram-list">${d.questions.map((q, i) => storyQHtml(q, i, true)).join('')}</div>
       <div id="sgMsg" class="ai-msg"></div>
       <div class="modal-btns"><button class="btn-modal-cancel" onclick="openStoryGen()">↩ Zmień ustawienia</button>
       <button class="btn-modal-save" id="sgSave" onclick="storyDraftSave()">💾 Zapisz czytankę</button></div>`, true);
   }
-  function storyKeepEdits(){ if (!_sg) return; const t = $('sgTitle'), b = $('sgBody'), p = $('sgBodyPl'); if (t) _sg.title = t.value; if (b) _sg.body = b.value; if (p) _sg.bodyPl = p.value; }
+  function storyKeepEdits(){ if (!_sg) return; const t = $('sgTitle'), b = $('sgBody'); if (t) _sg.title = t.value; if (b) _sg.body = b.value; }
   window.storyDraftDelQ = i => { storyKeepEdits(); _sg.questions.splice(i, 1); renderStoryPreview(); };
   window.storyDraftSave = async function(){
     if (!_sg) return; storyKeepEdits();
@@ -33092,7 +33091,7 @@ ${bodyHtml}
     const btn = $('sgSave'); btn.disabled = true; setMsg('sgMsg', '⏳ Zapisuję…');
     try {
       const row = await DB.saveReadingSet({ bookId: _sg.bookId, unitKey: _sg.unitKey, title: _sg.title.trim() || 'Czytanka', level: _sg.level,
-        body, bodyPl: _sg.bodyPl.trim(), words: wordsInText(body, unitVocab(_sg.bookId, _sg.unitKey)), questions: _sg.questions, source: 'ai' });
+        body, bodyPl: null, words: wordsInText(body, unitVocab(_sg.bookId, _sg.unitKey)), questions: _sg.questions, source: 'ai' });
       hide('aiStoryModal'); _sg = null;
       toast(savedMsg(row, 'Czytanka zapisana — uczniowie znajdą ją w „📖 Czytanki”.'), 4200);
       renderStoryBox();
@@ -33104,7 +33103,6 @@ ${bodyHtml}
   function storyReaderHtml(s, withQuiz){
     const qs = Array.isArray(s.questions) ? s.questions : [];
     return `<div class="rd-text">${highlightText(s.body, s.words)}</div>
-      ${s.body_pl ? `<div class="rd-pl" id="rdPl" style="display:none">${E(s.body_pl)}</div>` : ''}
       ${withQuiz ? qs.map((q, i) => `<div class="rd-q">${i + 1}. ${E(q.q)}</div><div class="gp-opts" id="rdQ${i}">${q.o.map((o, j) => `<button class="gp-opt" onclick="storyAnswer(${i},${j})"><b>${'ABCD'[j]})</b> ${E(o)}</button>`).join('')}</div>`).join('') : ''}`;
   }
   window.openStoryRead = function(id){
@@ -33115,7 +33113,6 @@ ${bodyHtml}
       <div class="gram-set-act" style="margin:4px 0">
         <button class="btn-sm accent" onclick="storySpeak()">🔊 Przeczytaj</button>
         <button class="btn-sm" onclick="try{speechSynthesis.cancel()}catch(e){}">⏹ Stop</button>
-        ${s.body_pl ? '<button class="btn-sm" onclick="var p=document.getElementById(\'rdPl\');p.style.display=p.style.display===\'none\'?\'\':\'none\'">🇵🇱 Tłumaczenie</button>' : ''}
       </div>
       <div class="ai-help" style="margin:2px 0 0">Kliknij <span class="rd-w">podświetlone słówko</span>, żeby zobaczyć tłumaczenie i je usłyszeć.</div>
       ${storyReaderHtml(s, true)}
@@ -33169,7 +33166,7 @@ ${bodyHtml}
       <h2>Odpowiedz na pytania (zaznacz A, B lub C).</h2><ol>${qs.map(q => `<li>${E(q.q)}<div class="opts">${q.o.map((o, j) => `<span>${'ABCD'[j]}) ${E(o)}</span>`).join('')}</div></li>`).join('')}</ol>
       <div class="foot">© 2026 Sowie Fiszki</div></div>
       <div class="page"><h1>🔑 Klucz — ${E(s.title)}</h1><ol>${qs.map(q => `<li><b>${'ABCD'[q.a]}) ${E(q.o[q.a])}</b></li>`).join('')}</ol>
-      ${s.body_pl ? `<h2>Tłumaczenie</h2><div class="txt" style="font-size:12.5px">${E(s.body_pl)}</div>` : ''}<div class="foot">© 2026 Sowie Fiszki</div></div>
+      <div class="foot">© 2026 Sowie Fiszki</div></div>
       <script>window.onload=function(){setTimeout(function(){window.print();},300);};<\/script></body></html>`);
     w.document.close();
   };
@@ -33219,7 +33216,7 @@ ${bodyHtml}
     try {
       const row = r.kind === 'grammar'
         ? await DB.saveGrammarSet({ bookId: t.bookId, unitKey: t.unitKey, topic: r.topic, items: r.items, source: 'bank', copiedFrom: r.id })
-        : await DB.saveReadingSet({ bookId: t.bookId, unitKey: t.unitKey, title: r.title, level: r.level, body: r.body, bodyPl: r.body_pl,
+        : await DB.saveReadingSet({ bookId: t.bookId, unitKey: t.unitKey, title: r.title, level: r.level, body: r.body, bodyPl: null,
             words: wordsInText(r.body, unitVocab(t.bookId, t.unitKey)).concat(r.words || []).filter((w, i, a) => a.findIndex(x => x.t === w.t) === i),
             questions: r.questions, source: 'bank', copiedFrom: r.id });
       toast(savedMsg(row, 'Skopiowane do rozdziału „' + unitName(t.unitKey) + '”.'), 4200);
@@ -33250,7 +33247,7 @@ ${bodyHtml}
       return `<div class="bk-row"><div class="bk-info"><b>${isG ? '🧠' : '📖'} ${E(r.topic || r.title)}</b>
         <small>${E(bookUnitName(r))} · ${isG ? zadan(n) : pytan(n)} · autor: ${E(r.author || '—')} · ${new Date(r.updated_at || r.created_at).toLocaleDateString('pl-PL')}</small>
         <div class="rv-badge rv-pend">${why}</div>
-        ${v.open === r.id ? '<div class="bk-prev">' + (isG ? '<div class="gram-list">' + (r.items || []).map((it, i) => itemHtml(it, i, false)).join('') + '</div>' : storyReaderHtml(r, false) + (r.body_pl ? '<div class="rd-pl">' + E(r.body_pl) + '</div>' : '') + '<div class="gram-list">' + (r.questions || []).map((qq, i) => storyQHtml(qq, i, false)).join('') + '</div>') + '</div>' : ''}</div>
+        ${v.open === r.id ? '<div class="bk-prev">' + (isG ? '<div class="gram-list">' + (r.items || []).map((it, i) => itemHtml(it, i, false)).join('') + '</div>' : storyReaderHtml(r, false) + '<div class="gram-list">' + (r.questions || []).map((qq, i) => storyQHtml(qq, i, false)).join('') + '</div>') + '</div>' : ''}</div>
         <div class="gram-set-act" style="flex-direction:column;align-items:stretch"><button class="btn-sm" onclick="reviewToggle('${r.id}')">${v.open === r.id ? '🔼 Zwiń' : '👀 Podgląd'}</button>
         <button class="btn-sm accent" onclick="reviewDecide('${r.id}',true)">✅ Zatwierdź</button>
         <button class="btn-sm" onclick="reviewDecide('${r.id}',false)">❌ Odrzuć</button></div></div>`;
