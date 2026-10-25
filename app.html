@@ -21846,6 +21846,8 @@ if ('serviceWorker' in navigator) {
         quizzes:          () => (typeof openQuizzes==='function')          && openQuizzes(),
         stats:            () => (typeof openAdminStats==='function')       && openAdminStats(),
         admins:           () => (typeof openAdminsModal==='function')      && openAdminsModal(),
+        review:           () => (typeof openContentReview==='function')    && openContentReview(),
+        bank:             () => (typeof openTaskBank==='function')         && openTaskBank(),
         newBook:          () => (typeof openAdminBookModal==='function')   && openAdminBookModal(),
         premium:          () => (typeof openPremiumPricingModal==='function') && openPremiumPricingModal(),
       };
@@ -26827,13 +26829,14 @@ if ('serviceWorker' in navigator) {
     // Pobierz liczniki równolegle (każdy z fallback do 0 przy błędzie / braku uprawnień)
     const safe = (p) => p.then(n => Number(n) || 0).catch(() => 0);
     const isAdmin = isCurrentUserAdmin();
-    const [contactN, accessN, errorN, msgN] = await Promise.all([
+    const [contactN, accessN, errorN, msgN, reviewN] = await Promise.all([
       isAdmin && typeof DB.countUnreadContactMessages    === 'function' ? safe(DB.countUnreadContactMessages())    : Promise.resolve(0),
       isAdmin && typeof DB.countPendingBookAccessRequests === 'function' ? safe(DB.countPendingBookAccessRequests()) : Promise.resolve(0),
       isAdmin && typeof DB.countPendingWordErrorReports  === 'function' ? safe(DB.countPendingWordErrorReports())  : Promise.resolve(0),
-      isAdmin && typeof DB.countOpenConversations        === 'function' ? safe(DB.countOpenConversations())        : Promise.resolve(0)
+      isAdmin && typeof DB.countOpenConversations        === 'function' ? safe(DB.countOpenConversations())        : Promise.resolve(0),
+      isAdmin && typeof DB.contentReviewCounts           === 'function' ? safe(DB.contentReviewCounts().then(c => c ? c.grammar + c.reading + c.bank : 0)) : Promise.resolve(0)
     ]);
-    const total = contactN + accessN + errorN + msgN;
+    const total = contactN + accessN + errorN + msgN + reviewN;
     if (total === 0) {
       banner.style.display = 'none';
       return;
@@ -26850,6 +26853,7 @@ if ('serviceWorker' in navigator) {
     if (msgN > 0)     parts.push(chip('💬', msgN,     msgN === 1     ? 'rozmowa z użytkownikiem' : 'rozmowy z użytkownikami', "openMessagesScreen()"));
     if (accessN > 0)  parts.push(chip('📩', accessN,  accessN === 1  ? 'prośba o dostęp' : 'prośby o dostęp',                "openAccessRequests()"));
     if (errorN > 0)   parts.push(chip('🐛', errorN,   errorN === 1   ? 'zgłoszenie błędu' : 'zgłoszenia błędów',             "openWordErrors()"));
+    if (reviewN > 0)  parts.push(chip('🛡️', reviewN,  'do zatwierdzenia (treści nauczycieli)', "openContentReview()"));
     items.innerHTML = parts.join('');
     banner.style.display = '';
   }
@@ -32318,6 +32322,33 @@ ${bodyHtml}
     const btn = $('btnAiSentences');
     if (btn) btn.style.display = (b && uk && uk !== 'mistakes' && canFillSentences(b)) ? '' : 'none';
     renderGrammarBox();
+    renderStoryBox();
+  };
+  /* ---- status publikacji i bank zadań (migracja #78) ---- */
+  // Odznaka widoczna dla autora i admina: czeka na zatwierdzenie / odrzucony.
+  function reviewBadge(s){
+    if (s.status === 'pending') return '<div class="rv-badge rv-pend">⏳ Czeka na zatwierdzenie przez administratora — uczniowie jeszcze tego nie widzą.</div>';
+    if (s.status === 'rejected') return '<div class="rv-badge rv-rej">❌ Odrzucone przez administratora' + (s.review_note ? ': ' + E(s.review_note) : '') + '. Popraw i zapisz ponownie albo usuń.</div>';
+    return '';
+  }
+  function shareBtn(kind, s){
+    if (s.shared === undefined) return '';                   // brak migracji #78
+    const call = 'toggleShareUi(\'' + kind + '\',\'' + s.id + '\',' + (s.shared ? 'false' : 'true') + ')';
+    if (!s.shared) return '<button class="btn-sm" onclick="' + call + '" title="Udostępnij innym nauczycielom (po zatwierdzeniu przez admina)">🤝 Do banku</button>';
+    const lab = s.share_status === 'approved' ? '🤝 W banku ✓' : s.share_status === 'rejected' ? '🤝 Bank: odrzucone' : '🤝 Bank: czeka';
+    return '<button class="btn-sm" onclick="' + call + '" title="Kliknij, aby wycofać z banku zadań">' + lab + '</button>';
+  }
+  function savedMsg(row, okText){
+    if (row && row.status === 'pending') return '⏳ Zapisane. To podręcznik ogólnodostępny, więc najpierw zatwierdzi to administrator — do tego czasu widzisz to tylko Ty.';
+    return '✅ ' + okText;
+  }
+  window.toggleShareUi = async function(kind, id, on){
+    if (on && !confirm('Udostępnić w „📚 Banku zadań”? Po zatwierdzeniu przez administratora inni nauczyciele będą mogli skopiować to do swoich rozdziałów.')) return;
+    try {
+      const st = await DB.setContentShared(kind, id, on);
+      toast(on ? (st === 'approved' ? '🤝 Udostępnione w banku zadań.' : '⏳ Wysłane do banku — czeka na zatwierdzenie.') : '↩️ Wycofane z banku zadań.', 3200);
+    } catch(e) { toast('❌ ' + e.message, 3500); }
+    kind === 'grammar' ? renderGrammarBox() : renderStoryBox();
   };
   async function renderGrammarBox(){
     const box = $('grammarBox'); if (!box) return;
@@ -32337,17 +32368,21 @@ ${bodyHtml}
     if (!sets.length && !staff) { box.style.display = 'none'; return; }
     const me = DB.getUserId ? DB.getUserId() : null;
     let h = '<div class="gram-box"><div class="gram-head"><span>🧠 Utrwalaj gramatykę</span>'
-      + (staff ? (uk === 'all' ? '<span class="gram-empty">Nowe zadania dodasz w konkretnym rozdziale.</span>' : '<button class="btn-sm accent" onclick="openGrammarGen()">🤖 Nowe zadania (AI)</button>') : '')
+      + (staff ? '<span class="gram-set-act">' + (uk === 'all' ? '<span class="gram-empty">Nowe zadania dodasz w konkretnym rozdziale.</span>' : '<button class="btn-sm accent" onclick="openGrammarGen()">🤖 Nowe zadania (AI)</button>')
+        + '<button class="btn-sm" onclick="openTaskBank()" title="Zestawy i czytanki udostępnione przez innych nauczycieli">📚 Bank zadań</button></span>' : '')
       + '</div>';
     if (!sets.length) h += '<div class="gram-empty">Brak zadań gramatycznych w tym rozdziale. Kliknij „🤖 Nowe zadania (AI)”, wpisz temat (np. Present Simple), a AI ułoży zadania A/B/C i luki ze słownictwem z tego i wcześniejszych rozdziałów.</div>';
     sets.forEach(s => {
       const items = Array.isArray(s.items) ? s.items : [];
       const nA = items.filter(i => i.type === 'abc').length, nG = items.length - nA;
-      const canDel = isCurrentUserAdmin() || (me && s.created_by === me);
+      const mine = !!(me && s.created_by === me);
+      const canDel = isCurrentUserAdmin() || mine;
       h += '<div class="gram-set"><div class="gram-set-info"><b>' + E(s.topic) + '</b><small>' + zadan(items.length) + ' · A/B/C: ' + nA + ' · luki: ' + nG
-        + (uk === 'all' ? ' · ' + E(unitName(s.unit_key)) : '') + (s.source === 'ai' ? ' · 🤖 AI' : '') + '</small></div><div class="gram-set-act">'
+        + (uk === 'all' ? ' · ' + E(unitName(s.unit_key)) : '') + (s.source === 'ai' ? ' · 🤖 AI' : s.source === 'bank' ? ' · 📚 z banku' : '') + '</small>'
+        + reviewBadge(s) + '</div><div class="gram-set-act">'
         + '<button class="btn-sm accent" onclick="openGrammarPractice(\'' + s.id + '\')">▶ Ćwicz</button>'
         + (staff ? '<button class="btn-sm" onclick="printGrammarSetUi(\'' + s.id + '\')">🖨️ Kartkówka</button>' : '')
+        + (mine && staff ? shareBtn('grammar', s) : '')
         + (canDel ? '<button class="btn-sm" onclick="deleteGrammarSetUi(\'' + s.id + '\')" title="Usuń zestaw">🗑️</button>' : '')
         + '</div></div>';
     });
@@ -32425,9 +32460,9 @@ ${bodyHtml}
     if (_ag.items.length < 3) { setMsg('agMsg', 'Zostaw co najmniej 3 zadania.', 'err'); return; }
     const btn = $('agSave'); btn.disabled = true; setMsg('agMsg', '⏳ Zapisuję…');
     try {
-      await DB.saveGrammarSet({ bookId: _ag.bookId, unitKey: _ag.unitKey, topic, items: _ag.items, source: 'ai' });
+      const row = await DB.saveGrammarSet({ bookId: _ag.bookId, unitKey: _ag.unitKey, topic, items: _ag.items, source: 'ai' });
       hide('aiGramModal'); _ag = null;
-      toast('✅ Zadania zapisane — uczniowie zobaczą je w „🧠 Utrwalaj gramatykę” i w Grammar City.', 3600);
+      toast(savedMsg(row, 'Zadania zapisane — uczniowie zobaczą je w „🧠 Utrwalaj gramatykę” i w Grammar City.'), 4200);
       renderGrammarBox();
     } catch(e) { setMsg('agMsg', '❌ ' + e.message, 'err'); btn.disabled = false; }
   };
@@ -32771,6 +32806,353 @@ ${bodyHtml}
     if (!_wr || !_wr.grade || _wr.grade === 'done') return;
     const g = _wr.grade; _wr.grade = 'done';
     rate(g);
+  };
+
+  /* ════════ 📖 CZYTANKI (reading_sets, migracja #78) ════════ */
+  const stStyle = document.createElement('style');
+  stStyle.textContent = `
+  .rv-badge{font-size:.7rem;font-weight:700;border-radius:8px;padding:4px 8px;margin-top:4px;line-height:1.4;}
+  .rv-pend{background:rgba(255,209,102,.14);color:var(--accent);} .rv-rej{background:rgba(255,118,117,.12);color:var(--danger);}
+  .rd-box{border-left-color:#7c4dff !important;border-color:rgba(124,77,255,.35) !important;}
+  .rd-text{font-size:1.02rem;line-height:1.8;color:var(--text);background:var(--surface2);border-radius:12px;padding:12px 14px;margin:8px 0;white-space:pre-wrap;}
+  .rd-w{background:rgba(124,77,255,.18);border-bottom:2px solid #7c4dff;border-radius:4px;padding:0 2px;cursor:pointer;}
+  .rd-pl{font-size:.86rem;line-height:1.6;color:var(--muted);background:var(--surface2);border-radius:12px;padding:10px 14px;margin:6px 0;white-space:pre-wrap;}
+  .rd-q{margin:12px 0 4px;font-weight:800;color:var(--text);font-size:.92rem;}
+  .rd-tip{position:fixed;z-index:10050;background:var(--surface);border:2px solid #7c4dff;border-radius:10px;padding:6px 10px;font-size:.82rem;font-weight:700;color:var(--text);box-shadow:0 6px 20px rgba(0,0,0,.35);pointer-events:none;}
+  .bk-row{display:flex;gap:10px;align-items:flex-start;padding:9px 4px;border-top:1px dashed var(--border);}
+  .bk-row:first-child{border-top:none;} .bk-info{flex:1;min-width:0;} .bk-info b{display:block;color:var(--text);font-size:.88rem;}
+  .bk-info small{font-size:.68rem;color:var(--muted);font-weight:700;} .bk-prev{margin-top:6px;}
+  .bk-tabs{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 10px;}
+  `;
+  document.head.appendChild(stStyle);
+
+  let _rsCache = [], _rsReq = 0;
+  function storyBoxEl(){
+    let el = $('storyBox');
+    if (!el) { const g = $('grammarBox'); if (!g) return null; el = document.createElement('div'); el.id = 'storyBox'; el.style.width = '100%'; g.insertAdjacentElement('afterend', el); }
+    return el;
+  }
+  const pytan = n => n + ' ' + (n === 1 ? 'pytanie' : (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14)) ? 'pytania' : 'pytań');
+  async function renderStoryBox(){
+    const box = storyBoxEl(); if (!box) return;
+    const b = book(), uk = currentUnitKey;
+    if (!b || !uk || uk === 'mistakes' || !(DB && DB.loadReadingSets)) { box.style.display = 'none'; return; }
+    const req = ++_rsReq;
+    let sets;
+    try { sets = await DB.loadReadingSets(currentBookId, uk === 'all' ? null : uk); } catch(e) { sets = []; }
+    if (req !== _rsReq) return;
+    const staff = isStaff();
+    if (sets === null) {
+      if (isCurrentUserAdmin()) { box.innerHTML = '<div class="gram-box rd-box"><div class="gram-empty">📖 Czytanki: uruchom migrację #78 (content-review-bank.sql) w Supabase.</div></div>'; box.style.display = ''; }
+      else box.style.display = 'none';
+      return;
+    }
+    _rsCache = sets;
+    if (!sets.length && !staff) { box.style.display = 'none'; return; }
+    const me = DB.getUserId ? DB.getUserId() : null;
+    let h = '<div class="gram-box rd-box"><div class="gram-head"><span>📖 Czytanki</span>'
+      + (staff && uk !== 'all' ? '<button class="btn-sm accent" onclick="openStoryGen()">🤖 Nowa czytanka (AI)</button>' : '') + '</div>';
+    if (!sets.length) h += '<div class="gram-empty">Brak czytanek w tym rozdziale. Kliknij „🤖 Nowa czytanka (AI)” — AI napisze krótkie opowiadanie ze słówkami tego rozdziału i pytania do tekstu.</div>';
+    sets.forEach(s => {
+      const mine = !!(me && s.created_by === me), canDel = isCurrentUserAdmin() || mine;
+      const nq = Array.isArray(s.questions) ? s.questions.length : 0;
+      h += '<div class="gram-set"><div class="gram-set-info"><b>' + E(s.title) + '</b><small>' + (s.level ? E(s.level) + ' · ' : '') + pytan(nq)
+        + (uk === 'all' ? ' · ' + E(unitName(s.unit_key)) : '') + (s.source === 'ai' ? ' · 🤖 AI' : s.source === 'bank' ? ' · 📚 z banku' : '') + '</small>'
+        + reviewBadge(s) + '</div><div class="gram-set-act">'
+        + '<button class="btn-sm accent" onclick="openStoryRead(\'' + s.id + '\')">▶ Czytaj</button>'
+        + (staff ? '<button class="btn-sm" onclick="printStory(\'' + s.id + '\')">🖨️ Drukuj</button>' : '')
+        + (mine && staff ? shareBtn('reading', s) : '')
+        + (canDel ? '<button class="btn-sm" onclick="deleteStoryUi(\'' + s.id + '\')" title="Usuń czytankę">🗑️</button>' : '')
+        + '</div></div>';
+    });
+    box.innerHTML = h + '</div>'; box.style.display = '';
+  }
+  window.renderStoryBox = renderStoryBox;
+  window.deleteStoryUi = async function(id){
+    const s = _rsCache.find(x => x.id === id); if (!s) return;
+    if (!confirm('Usunąć czytankę „' + s.title + '”?')) return;
+    try { await DB.deleteReadingSet(id); toast('🗑️ Czytanka usunięta.', 2000); renderStoryBox(); }
+    catch(e) { toast('❌ ' + e.message, 3200); }
+  };
+
+  // słówka rozdziału, które występują w tekście (do podświetlenia i podpowiedzi)
+  function unitVocab(bId, uKey){ return pairs(((getUnitsWithCustom(bId)[uKey] || {}).words) || []).map(([pl, t]) => ({ pl, t })); }
+  const reEsc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // Odmiany słówka w tekście: bez „to / a / an / the”, z końcówkami -s, -es, -ed, -d, -ing (make → making).
+  function formsOf(t){
+    const base = String(t).toLowerCase().trim().replace(/^(to|a|an|the)\s+/, '');
+    const f = new Set([String(t).toLowerCase().trim(), base]);
+    if (base && !/\s/.test(base) && base.length > 2) {
+      ['s', 'es', 'ed', 'd', 'ing'].forEach(e => f.add(base + e));
+      if (/e$/.test(base)) f.add(base.slice(0, -1) + 'ing');
+      if (/y$/.test(base)) { f.add(base.slice(0, -1) + 'ies'); f.add(base.slice(0, -1) + 'ied'); }
+    }
+    return [...f].filter(x => x.length > 1);
+  }
+  function wordsInText(text, vocab){
+    const low = ' ' + String(text).toLowerCase() + ' ';
+    return vocab.filter(w => formsOf(w.t).some(f => new RegExp('(^|[^\\p{L}])' + reEsc(f) + '(?=[^\\p{L}]|$)', 'u').test(low)));
+  }
+  function highlightText(text, words){
+    const list = (words || []).filter(w => w && w.t);
+    if (!list.length) return E(text);
+    const byForm = new Map();
+    list.forEach(w => formsOf(w.t).forEach(f => { if (!byForm.has(f)) byForm.set(f, w); }));
+    const forms = [...byForm.keys()].sort((a, b) => b.length - a.length);
+    const re = new RegExp('(^|[^\\p{L}])(' + forms.map(reEsc).join('|') + ')(?=[^\\p{L}]|$)', 'giu');
+    let out = '', last = 0, m;
+    const src = String(text);
+    while ((m = re.exec(src))) {
+      const start = m.index + m[1].length, word = m[2];
+      const w = byForm.get(word.toLowerCase());
+      out += E(src.slice(last, start)) + '<span class="rd-w" data-t="' + E(w ? w.t : word) + '" data-pl="' + E(w ? w.pl : '') + '">' + E(word) + '</span>';
+      last = start + word.length;
+    }
+    return out + E(src.slice(last));
+  }
+
+  /* ---- generator czytanki (AI) ---- */
+  let _sg = null;
+  const LENS = { short: 'krótka (ok. 80–100 słów)', medium: 'średnia (ok. 150 słów)', long: 'dłuższa (ok. 250 słów)' };
+  window.openStoryGen = function(){
+    if (!isStaff() || !book() || currentUnitKey === 'all') return;
+    const voc = unitVocab(currentBookId, currentUnitKey);
+    const f = _sg && _sg.form || {};
+    aiModal('aiStoryModal', closeBtn('aiStoryModal') + `<div class="modal-title">🤖 Nowa czytanka</div>
+      <div class="ai-help">AI napisze krótkie opowiadanie z <b>${voc.length}</b> słówkami rozdziału „${E(unitName(currentUnitKey))}” i pytania do tekstu (A/B/C). Uczniowie przeczytają je w „📖 Czytanki” — z lektorem, tłumaczeniem i podpowiedziami słówek.</div>
+      <label class="ai-lab">O czym ma być? (opcjonalnie)</label>
+      <input id="sgTopic" class="ai-inp" maxlength="120" placeholder="np. wycieczka klasowa do zoo, urodziny babci" value="${E(f.topic || '')}">
+      <div class="ai-row">
+        <div><label class="ai-lab">Długość</label><select id="sgLen" class="ai-inp">${Object.entries(LENS).map(([k, v]) => `<option value="${k}"${k === (f.len || 'short') ? ' selected' : ''}>${v}</option>`).join('')}</select></div>
+        <div><label class="ai-lab">Poziom</label><select id="sgLevel" class="ai-inp">${LEVELS.map(l => `<option${l === (f.level || levelGuess(book())) ? ' selected' : ''}>${l}</option>`).join('')}</select></div>
+      </div>
+      <div class="ai-row">
+        <div><label class="ai-lab">Liczba pytań</label><select id="sgQ" class="ai-inp">${[3, 4, 5].map(n => `<option${n === (f.q || 4) ? ' selected' : ''}>${n}</option>`).join('')}</select></div>
+        <div><label class="ai-lab">Gramatyka (opcjonalnie)</label><input id="sgGram" class="ai-inp" maxlength="80" placeholder="np. Past Simple" value="${E(f.grammar || '')}"></div>
+      </div>
+      <div id="sgMsg" class="ai-msg"></div>
+      <div class="modal-btns"><button class="btn-modal-cancel" onclick="document.getElementById('aiStoryModal').style.display='none'">Anuluj</button>
+      <button class="btn-modal-save" id="sgGo" onclick="storyGenRun()">🤖 Napisz czytankę</button></div>`);
+  };
+  window.storyGenRun = async function(){
+    const form = { topic: $('sgTopic').value.trim(), len: $('sgLen').value, level: $('sgLevel').value, q: +$('sgQ').value, grammar: $('sgGram').value.trim() };
+    const voc = unitVocab(currentBookId, currentUnitKey);
+    if (voc.length < 3) { setMsg('sgMsg', 'W tym rozdziale jest za mało słówek.', 'err'); return; }
+    const btn = $('sgGo'); btn.disabled = true;
+    setMsg('sgMsg', '⏳ AI pisze czytankę… to może potrwać do pół minuty.');
+    try {
+      const r = await DB.aiCall('story', { topic: form.topic, length: form.len, level: form.level, questions: form.q, grammar: form.grammar,
+        words: shuffle(voc.slice()).slice(0, 30), lang: bookLang() });
+      if (!r.text || !(r.questions || []).length) throw new Error('AI nie zwróciło poprawnej czytanki — spróbuj jeszcze raz.');
+      _sg = { form, title: r.title || 'Czytanka', body: r.text, bodyPl: r.textPl || '', questions: r.questions, bookId: currentBookId, unitKey: currentUnitKey, level: form.level };
+      renderStoryPreview();
+    } catch(e) { setMsg('sgMsg', '❌ ' + e.message, 'err'); btn.disabled = false; }
+  };
+  function storyQHtml(q, i, del){
+    return `<div class="gram-item"><div><b>${i + 1}.</b> ${E(q.q)}</div><div class="gram-ans">${q.o.map((o, j) => `<span class="${j === q.a ? 'gram-ok' : ''}">${'ABCD'[j]}) ${E(o)}${j === q.a ? ' ✓' : ''}</span>`).join('')}</div>${del ? `<button class="gram-del" onclick="storyDraftDelQ(${i})" title="Usuń pytanie">✕</button>` : ''}</div>`;
+  }
+  function renderStoryPreview(){
+    const d = _sg;
+    aiModal('aiStoryModal', closeBtn('aiStoryModal') + `<div class="modal-title">👀 Sprawdź czytankę przed zapisem</div>
+      <div class="ai-help">Możesz poprawić tytuł, tekst i tłumaczenie, a złe pytania usunąć (✕).</div>
+      <label class="ai-lab">Tytuł</label><input id="sgTitle" class="ai-inp" maxlength="120" value="${E(d.title)}">
+      <label class="ai-lab">Tekst</label><textarea id="sgBody" class="ai-inp" rows="8" style="resize:vertical;line-height:1.6">${E(d.body)}</textarea>
+      <label class="ai-lab">Tłumaczenie po polsku</label><textarea id="sgBodyPl" class="ai-inp" rows="5" style="resize:vertical;line-height:1.5">${E(d.bodyPl)}</textarea>
+      <label class="ai-lab">Pytania do tekstu</label><div class="gram-list">${d.questions.map((q, i) => storyQHtml(q, i, true)).join('')}</div>
+      <div id="sgMsg" class="ai-msg"></div>
+      <div class="modal-btns"><button class="btn-modal-cancel" onclick="openStoryGen()">↩ Zmień ustawienia</button>
+      <button class="btn-modal-save" id="sgSave" onclick="storyDraftSave()">💾 Zapisz czytankę</button></div>`, true);
+  }
+  function storyKeepEdits(){ if (!_sg) return; const t = $('sgTitle'), b = $('sgBody'), p = $('sgBodyPl'); if (t) _sg.title = t.value; if (b) _sg.body = b.value; if (p) _sg.bodyPl = p.value; }
+  window.storyDraftDelQ = i => { storyKeepEdits(); _sg.questions.splice(i, 1); renderStoryPreview(); };
+  window.storyDraftSave = async function(){
+    if (!_sg) return; storyKeepEdits();
+    const body = _sg.body.trim();
+    if (body.length < 20) { setMsg('sgMsg', 'Tekst jest za krótki.', 'err'); return; }
+    if (!_sg.questions.length) { setMsg('sgMsg', 'Zostaw przynajmniej jedno pytanie.', 'err'); return; }
+    const btn = $('sgSave'); btn.disabled = true; setMsg('sgMsg', '⏳ Zapisuję…');
+    try {
+      const row = await DB.saveReadingSet({ bookId: _sg.bookId, unitKey: _sg.unitKey, title: _sg.title.trim() || 'Czytanka', level: _sg.level,
+        body, bodyPl: _sg.bodyPl.trim(), words: wordsInText(body, unitVocab(_sg.bookId, _sg.unitKey)), questions: _sg.questions, source: 'ai' });
+      hide('aiStoryModal'); _sg = null;
+      toast(savedMsg(row, 'Czytanka zapisana — uczniowie znajdą ją w „📖 Czytanki”.'), 4200);
+      renderStoryBox();
+    } catch(e) { setMsg('sgMsg', '❌ ' + e.message, 'err'); btn.disabled = false; }
+  };
+
+  /* ---- czytanie (uczeń) ---- */
+  let _rd = null;
+  function storyReaderHtml(s, withQuiz){
+    const qs = Array.isArray(s.questions) ? s.questions : [];
+    return `<div class="rd-text">${highlightText(s.body, s.words)}</div>
+      ${s.body_pl ? `<div class="rd-pl" id="rdPl" style="display:none">${E(s.body_pl)}</div>` : ''}
+      ${withQuiz ? qs.map((q, i) => `<div class="rd-q">${i + 1}. ${E(q.q)}</div><div class="gp-opts" id="rdQ${i}">${q.o.map((o, j) => `<button class="gp-opt" onclick="storyAnswer(${i},${j})"><b>${'ABCD'[j]})</b> ${E(o)}</button>`).join('')}</div>`).join('') : ''}`;
+  }
+  window.openStoryRead = function(id){
+    const s = _rsCache.find(x => x.id === id); if (!s) return;
+    _rd = { s, answered: {}, ok: 0 };
+    const qs = Array.isArray(s.questions) ? s.questions : [];
+    aiModal('storyReadModal', closeBtn('storyReadModal') + `<div class="modal-title">📖 ${E(s.title)}</div>
+      <div class="gram-set-act" style="margin:4px 0">
+        <button class="btn-sm accent" onclick="storySpeak()">🔊 Przeczytaj</button>
+        <button class="btn-sm" onclick="try{speechSynthesis.cancel()}catch(e){}">⏹ Stop</button>
+        ${s.body_pl ? '<button class="btn-sm" onclick="var p=document.getElementById(\'rdPl\');p.style.display=p.style.display===\'none\'?\'\':\'none\'">🇵🇱 Tłumaczenie</button>' : ''}
+      </div>
+      <div class="ai-help" style="margin:2px 0 0">Kliknij <span class="rd-w">podświetlone słówko</span>, żeby zobaczyć tłumaczenie i je usłyszeć.</div>
+      ${storyReaderHtml(s, true)}
+      <div id="rdRes" class="ai-msg" style="font-size:.95rem">${qs.length ? '' : ''}</div>`, true);
+    wireWordTips($('storyReadModalBox'));
+  };
+  function wireWordTips(root){
+    if (!root) return;
+    root.querySelectorAll('.rd-w[data-t]').forEach(el => el.addEventListener('click', () => {
+      speak(el.dataset.t);
+      const tip = document.createElement('div'); tip.className = 'rd-tip';
+      tip.textContent = el.dataset.t + (el.dataset.pl ? ' — ' + el.dataset.pl : '');
+      const r = el.getBoundingClientRect(); tip.style.left = Math.max(8, r.left) + 'px'; tip.style.top = (r.top - 40) + 'px';
+      document.body.appendChild(tip); setTimeout(() => tip.remove(), 2200);
+    }));
+  }
+  window.storySpeak = function(){ if (_rd) speak(_rd.s.body); };
+  window.storyAnswer = function(i, j){
+    if (!_rd || _rd.answered[i] != null) return;
+    const q = _rd.s.questions[i]; if (!q) return;
+    _rd.answered[i] = j; const ok = j === q.a; if (ok) _rd.ok++;
+    const box = $('rdQ' + i);
+    if (box) box.querySelectorAll('.gp-opt').forEach((b, k) => { b.disabled = true; if (k === q.a) b.classList.add('ok'); else if (k === j) b.classList.add('bad'); });
+    try { if (ok && typeof playOk === 'function') playOk(); else if (!ok && typeof playBad === 'function') playBad(); } catch(e) {}
+    try { if (ok && !isGuest && typeof addXP === 'function') addXP(3); } catch(e) {}
+    try { if (window.sfPet) window.sfPet.onAnswer('reading', ok ? 'good' : 'hard', false); } catch(e) {}
+    const total = _rd.s.questions.length, done = Object.keys(_rd.answered).length;
+    if (done === total) {
+      const pct = Math.round(_rd.ok / total * 100);
+      $('rdRes').innerHTML = `<div class="gp-res ${pct >= 60 ? 'ok' : 'bad'}">${pct >= 80 ? '🏆' : pct >= 60 ? '🎉' : '💪'} Wynik: ${_rd.ok} / ${total} (${pct}%) ${pct >= 60 ? '— świetnie przeczytane!' : '— przeczytaj jeszcze raz i spróbuj ponownie.'}</div>
+        <div class="modal-btns"><button class="btn-modal-save" onclick="openStoryRead('${_rd.s.id}')">🔁 Jeszcze raz</button></div>`;
+    }
+  };
+
+  /* ---- druk czytanki ---- */
+  window.printStory = function(id){
+    const s = _rsCache.find(x => x.id === id) || (_bk && _bk.rows.find(x => x.id === id)); if (!s) return;
+    const qs = Array.isArray(s.questions) ? s.questions : [];
+    const b = BOOKS[s.book_id] || {}; const where = (b.name || '') + ' · ' + ((getUnitsWithCustom(s.book_id)[s.unit_key] || {}).name || s.unit_key);
+    const w = window.open('', '_blank');
+    if (!w) { toast('Przeglądarka zablokowała nowe okno — zezwól na wyskakujące okna dla tej strony.', 3600); return; }
+    w.document.write(`<!doctype html><html lang="pl"><head><meta charset="utf-8"><title>${E(s.title)}</title><style>
+      @page{size:A4;margin:14mm} body{font-family:Arial,Helvetica,sans-serif;color:#111;font-size:13.5px;margin:0}
+      .page{page-break-after:always} .page:last-child{page-break-after:auto} h1{font-size:19px;margin:0 0 2px} .sub{font-size:11px;color:#555;margin-bottom:10px}
+      .meta{display:grid;grid-template-columns:2fr 1fr 1fr;gap:12px;margin:8px 0 12px} .meta div{border-bottom:1px solid #888;padding-top:18px;font-size:10px;color:#666}
+      .txt{font-size:14.5px;line-height:1.8;white-space:pre-wrap;border:1px solid #ccc;border-radius:8px;padding:10px 14px} h2{font-size:14px;margin:16px 0 6px}
+      ol{padding-left:24px} li{margin:9px 0;break-inside:avoid} .opts span{display:inline-block;margin-right:24px} .foot{text-align:center;font-size:10px;color:#888;margin-top:18px}
+    </style></head><body><div class="page"><h1>📖 ${E(s.title)}</h1><div class="sub">${E(where)}${s.level ? ' · ' + E(s.level) : ''}</div>
+      <div class="meta"><div>Imię i nazwisko</div><div>Klasa</div><div>Data</div></div>
+      <div class="txt">${E(s.body)}</div>
+      <h2>Odpowiedz na pytania (zaznacz A, B lub C).</h2><ol>${qs.map(q => `<li>${E(q.q)}<div class="opts">${q.o.map((o, j) => `<span>${'ABCD'[j]}) ${E(o)}</span>`).join('')}</div></li>`).join('')}</ol>
+      <div class="foot">© 2026 Sowie Fiszki</div></div>
+      <div class="page"><h1>🔑 Klucz — ${E(s.title)}</h1><ol>${qs.map(q => `<li><b>${'ABCD'[q.a]}) ${E(q.o[q.a])}</b></li>`).join('')}</ol>
+      ${s.body_pl ? `<h2>Tłumaczenie</h2><div class="txt" style="font-size:12.5px">${E(s.body_pl)}</div>` : ''}<div class="foot">© 2026 Sowie Fiszki</div></div>
+      <script>window.onload=function(){setTimeout(function(){window.print();},300);};<\/script></body></html>`);
+    w.document.close();
+  };
+
+  /* ════════ 📚 BANK ZADAŃ (nauczyciele) ════════ */
+  let _bk = null;
+  window.openTaskBank = async function(){
+    if (!isStaff()) { toast('Bank zadań jest dla nauczycieli i administratora.', 2800); return; }
+    const onUnit = !!(currentBookId && currentUnitKey && currentUnitKey !== 'all' && currentUnitKey !== 'mistakes' && document.getElementById('sWordList') && document.getElementById('sWordList').classList.contains('active'));
+    _bk = { rows: [], tab: 'all', q: '', target: onUnit ? { bookId: currentBookId, unitKey: currentUnitKey } : null, open: null };
+    aiModal('bankModal', closeBtn('bankModal') + '<div class="modal-title">📚 Bank zadań</div><div class="ai-help">⏳ Wczytuję…</div>', true);
+    try {
+      const rows = await DB.loadTaskBank();
+      if (rows === null) { aiModal('bankModal', closeBtn('bankModal') + '<div class="modal-title">📚 Bank zadań</div><div class="ai-help">Uruchom migrację #78 (content-review-bank.sql) w Supabase.</div>', true); return; }
+      _bk.rows = rows; bankRender();
+    } catch(e) { aiModal('bankModal', closeBtn('bankModal') + '<div class="modal-title">📚 Bank zadań</div><div class="ai-help">❌ ' + E(e.message) + '</div>', true); }
+  };
+  const bookUnitName = r => { const b = BOOKS[r.book_id]; return (b ? b.name : r.book_id) + ' · ' + (((b && getUnitsWithCustom(r.book_id)[r.unit_key]) || {}).name || r.unit_key); };
+  function bankRender(){
+    const k = _bk, q = k.q.toLowerCase();
+    const rows = k.rows.filter(r => (k.tab === 'all' || r.kind === k.tab) && (!q || ((r.topic || r.title || '') + ' ' + bookUnitName(r) + ' ' + (r.author || '')).toLowerCase().includes(q)));
+    const tgt = k.target ? '„' + E(unitName(k.target.unitKey)) + '”' : '';
+    let h = closeBtn('bankModal') + '<div class="modal-title">📚 Bank zadań</div>'
+      + '<div class="ai-help">Zestawy gramatyczne i czytanki udostępnione przez nauczycieli i zatwierdzone przez administratora. '
+      + (k.target ? 'Kliknij „➕ Dodaj”, aby skopiować do rozdziału ' + tgt + '.' : 'Aby coś dodać, otwórz rozdział podręcznika i kliknij tam „📚 Bank zadań”.')
+      + ' Swoje zestawy udostępnisz przyciskiem „🤝 Do banku”.</div>'
+      + '<div class="bk-tabs">' + [['all', 'Wszystko'], ['grammar', '🧠 Zestawy'], ['reading', '📖 Czytanki']].map(([t, l]) => `<button class="btn-sm${k.tab === t ? ' accent' : ''}" onclick="bankTab('${t}')">${l}</button>`).join('')
+      + `<input class="ai-inp" style="flex:1;min-width:160px;width:auto" placeholder="🔎 Szukaj (temat, podręcznik, autor)…" value="${E(k.q)}" oninput="bankSearch(this.value)" id="bkSearch"></div>`;
+    if (!rows.length) h += '<div class="gram-empty">' + (k.rows.length ? 'Nic nie pasuje do wyszukiwania.' : 'Bank jest jeszcze pusty — udostępnij pierwszy zestaw przyciskiem „🤝 Do banku”.') + '</div>';
+    h += '<div>' + rows.map(r => {
+      const isG = r.kind === 'grammar', n = isG ? (r.items || []).length : (r.questions || []).length;
+      return `<div class="bk-row"><div class="bk-info"><b>${isG ? '🧠' : '📖'} ${E(r.topic || r.title)}</b><small>${E(bookUnitName(r))} · ${isG ? zadan(n) : pytan(n)} · autor: ${E(r.author || '—')}</small>
+        ${k.open === r.id ? '<div class="bk-prev">' + (isG ? '<div class="gram-list">' + (r.items || []).map((it, i) => itemHtml(it, i, false)).join('') + '</div>' : storyReaderHtml(r, false) + '<div class="gram-list">' + (r.questions || []).map((qq, i) => storyQHtml(qq, i, false)).join('') + '</div>') + '</div>' : ''}</div>
+        <div class="gram-set-act"><button class="btn-sm" onclick="bankToggle('${r.id}')">${k.open === r.id ? '🔼 Zwiń' : '👀 Podgląd'}</button>
+        ${k.target ? `<button class="btn-sm accent" onclick="bankCopy('${r.id}')">➕ Dodaj</button>` : ''}</div></div>`;
+    }).join('') + '</div>';
+    const box = aiModal('bankModal', h, true);
+    wireWordTips(box);
+    const si = $('bkSearch'); if (si && k._focus) { si.focus(); si.setSelectionRange(si.value.length, si.value.length); k._focus = false; }
+  }
+  window.bankTab = t => { _bk.tab = t; bankRender(); };
+  window.bankSearch = v => { _bk.q = v; _bk._focus = true; bankRender(); };
+  window.bankToggle = id => { _bk.open = _bk.open === id ? null : id; bankRender(); };
+  window.bankCopy = async function(id){
+    const r = _bk && _bk.rows.find(x => x.id === id), t = _bk && _bk.target; if (!r || !t) return;
+    if (!confirm('Skopiować „' + (r.topic || r.title) + '” do rozdziału „' + unitName(t.unitKey) + '”?')) return;
+    try {
+      const row = r.kind === 'grammar'
+        ? await DB.saveGrammarSet({ bookId: t.bookId, unitKey: t.unitKey, topic: r.topic, items: r.items, source: 'bank', copiedFrom: r.id })
+        : await DB.saveReadingSet({ bookId: t.bookId, unitKey: t.unitKey, title: r.title, level: r.level, body: r.body, bodyPl: r.body_pl,
+            words: wordsInText(r.body, unitVocab(t.bookId, t.unitKey)).concat(r.words || []).filter((w, i, a) => a.findIndex(x => x.t === w.t) === i),
+            questions: r.questions, source: 'bank', copiedFrom: r.id });
+      toast(savedMsg(row, 'Skopiowane do rozdziału „' + unitName(t.unitKey) + '”.'), 4200);
+      renderGrammarBox(); renderStoryBox();
+    } catch(e) { toast('❌ ' + e.message, 3500); }
+  };
+
+  /* ════════ 🛡️ DO ZATWIERDZENIA (admin) ════════ */
+  let _rv = null;
+  window.openContentReview = async function(){
+    if (!isCurrentUserAdmin()) { toast('Tylko dla administratora.', 2500); return; }
+    _rv = { rows: [], open: null };
+    aiModal('reviewModal', closeBtn('reviewModal') + '<div class="modal-title">🛡️ Do zatwierdzenia</div><div class="ai-help">⏳ Wczytuję…</div>', true);
+    try {
+      const rows = await DB.loadReviewQueue();
+      if (rows === null) { aiModal('reviewModal', closeBtn('reviewModal') + '<div class="modal-title">🛡️ Do zatwierdzenia</div><div class="ai-help">Uruchom migrację #78 (content-review-bank.sql) w Supabase.</div>', true); return; }
+      _rv.rows = rows; reviewRender();
+    } catch(e) { aiModal('reviewModal', closeBtn('reviewModal') + '<div class="modal-title">🛡️ Do zatwierdzenia</div><div class="ai-help">❌ ' + E(e.message) + '</div>', true); }
+  };
+  function reviewRender(){
+    const v = _rv;
+    let h = closeBtn('reviewModal') + '<div class="modal-title">🛡️ Do zatwierdzenia (' + v.rows.length + ')</div>'
+      + '<div class="ai-help">Zestawy i czytanki nauczycieli w podręcznikach ogólnodostępnych (zobaczą je wszyscy uczniowie) oraz zgłoszenia do „📚 Banku zadań”. Treści we własnych podręcznikach nauczycieli publikują się od razu.</div>';
+    if (!v.rows.length) h += '<div class="gram-empty">✅ Nic nie czeka na decyzję.</div>';
+    h += v.rows.map(r => {
+      const isG = r.kind === 'grammar', n = isG ? (r.items || []).length : (r.questions || []).length;
+      const why = [r.status === 'pending' && '📢 publikacja dla uczniów', r.share_status === 'pending' && '🤝 bank zadań'].filter(Boolean).join(' + ');
+      return `<div class="bk-row"><div class="bk-info"><b>${isG ? '🧠' : '📖'} ${E(r.topic || r.title)}</b>
+        <small>${E(bookUnitName(r))} · ${isG ? zadan(n) : pytan(n)} · autor: ${E(r.author || '—')} · ${new Date(r.updated_at || r.created_at).toLocaleDateString('pl-PL')}</small>
+        <div class="rv-badge rv-pend">${why}</div>
+        ${v.open === r.id ? '<div class="bk-prev">' + (isG ? '<div class="gram-list">' + (r.items || []).map((it, i) => itemHtml(it, i, false)).join('') + '</div>' : storyReaderHtml(r, false) + (r.body_pl ? '<div class="rd-pl">' + E(r.body_pl) + '</div>' : '') + '<div class="gram-list">' + (r.questions || []).map((qq, i) => storyQHtml(qq, i, false)).join('') + '</div>') + '</div>' : ''}</div>
+        <div class="gram-set-act" style="flex-direction:column;align-items:stretch"><button class="btn-sm" onclick="reviewToggle('${r.id}')">${v.open === r.id ? '🔼 Zwiń' : '👀 Podgląd'}</button>
+        <button class="btn-sm accent" onclick="reviewDecide('${r.id}',true)">✅ Zatwierdź</button>
+        <button class="btn-sm" onclick="reviewDecide('${r.id}',false)">❌ Odrzuć</button></div></div>`;
+    }).join('');
+    aiModal('reviewModal', h, true);
+  }
+  window.reviewToggle = id => { _rv.open = _rv.open === id ? null : id; reviewRender(); };
+  window.reviewDecide = async function(id, ok){
+    const r = _rv && _rv.rows.find(x => x.id === id); if (!r) return;
+    let note = null;
+    if (!ok) { note = prompt('Krótko: co trzeba poprawić? (zobaczy to autor)', ''); if (note === null) return; }
+    const f = {};
+    if (r.status === 'pending') { f.status = ok ? 'published' : 'rejected'; f.review_note = ok ? null : (note || null); }
+    if (r.share_status === 'pending') f.share_status = ok ? 'approved' : 'rejected';
+    try {
+      await DB.reviewContent(r.kind, r.id, f);
+      _rv.rows = _rv.rows.filter(x => x.id !== id); reviewRender();
+      toast(ok ? '✅ Zatwierdzone.' : '❌ Odrzucone.', 2200);
+      try { if (typeof refreshAdminAttentionBanner === 'function') refreshAdminAttentionBanner(); } catch(e) {}
+      if (currentBookId === r.book_id) { renderGrammarBox(); renderStoryBox(); }
+    } catch(e) { toast('❌ ' + e.message, 3500); }
   };
 })();
 </script>

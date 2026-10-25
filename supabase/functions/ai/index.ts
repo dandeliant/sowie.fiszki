@@ -11,6 +11,7 @@
 //    wordlist        (admin/nauczyciel) — nowa lista słówek na temat (z tłumaczeniem, emoji, zdaniami)
 //    grammar         (admin/nauczyciel) — zadania gramatyczne A/B/C i luki ze słownictwem rozdziałów
 //    check_sentence  (każdy zalogowany)  — sprawdzenie zdania ucznia ze słówkiem (z moderacją)
+//    story           (admin/nauczyciel) — czytanka: opowiadanie ze słówkami rozdziału + tłumaczenie + pytania A/B/C
 //
 //  Sekrety (Supabase → Edge Functions → Secrets):
 //    OPENAI_API_KEY  — wymagany
@@ -36,6 +37,7 @@ const LIMITS: Record<string, [number, number]> = {
   wordlist: [40, 0],
   grammar: [40, 0],
   check_sentence: [200, 40],
+  story: [40, 0],
 };
 const LANGS: Record<string, string> = { en: 'British English', fr: 'French', de: 'German', es: 'Spanish', it: 'Italian', ru: 'Russian' };
 
@@ -151,6 +153,36 @@ async function doGrammar(b: any) {
   return { items };
 }
 
+// ── story (czytanka) ──
+const STORY_LEN: Record<string, string> = { short: '80–100', medium: '130–160', long: '220–260' };
+async function doStory(b: any) {
+  const lang = LANGS[b.lang] || LANGS.en;
+  const len = STORY_LEN[str(b.length, 10)] || STORY_LEN.short;
+  const level = str(b.level, 40) || 'A1–A2';
+  const n = Math.max(3, Math.min(5, Number(b.questions) || 4));
+  const topic = str(b.topic, 120), grammar = str(b.grammar, 80);
+  const words = (Array.isArray(b.words) ? b.words : []).slice(0, 30)
+    .map((w: any) => `${str(w.t, 60)} (${str(w.pl, 60)})`).filter((s: string) => s.length > 3);
+  if (words.length < 3) throw new Error('Za mało słówek w rozdziale.');
+  const out = await chatJSON(RULES,
+    `Write a short, engaging story in ${lang} for Polish children, CEFR level ${level}, length ${len} words.` +
+    (topic ? ` Topic: ${topic}.` : ' Choose a fun everyday topic that fits the words.') +
+    (grammar ? ` Use mainly this grammar: ${grammar}.` : '') +
+    ` Use as many of these words as naturally possible (at least 8 of them, in the given form or a correct grammatical form): ${words.join(', ')}.` +
+    ` Use short, clear sentences and only simple vocabulary besides the given words. Give it a short title in ${lang}.` +
+    ` Then write a faithful Polish translation of the whole story.` +
+    ` Then write exactly ${n} reading comprehension questions in ${lang} about the story, each with exactly 3 options and exactly one correct answer that can be found in the text.` +
+    ` Return {"title":"…","text":"…","textPl":"…","questions":[{"q":"…","o":["…","…","…"],"a":0}]}`, 4000);
+  const questions = (Array.isArray(out.questions) ? out.questions : []).map((x: any) => {
+    const q = str(x.q, 240), o = (Array.isArray(x.o) ? x.o : []).map((s: unknown) => str(s, 120)).filter(Boolean).slice(0, 3), a = Number(x.a);
+    if (!q || o.length !== 3 || !(a >= 0 && a <= 2) || new Set(o.map((s: string) => s.toLowerCase())).size !== 3) return null;
+    return { q, o, a };
+  }).filter(Boolean).slice(0, 5);
+  const clean = (v: unknown, max: number) => String(v ?? '').split(String.fromCharCode(13)).join('').trim().slice(0, max);
+  const text = clean(out.text, 4000);
+  return { title: str(out.title, 120), text, textPl: clean(out.textPl, 5000), questions };
+}
+
 // ── check_sentence ──
 async function doCheck(b: any) {
   const lang = LANGS[b.lang] || LANGS.en;
@@ -197,6 +229,7 @@ Deno.serve(async (req) => {
     const result = action === 'sentences' ? await doSentences(body)
       : action === 'wordlist' ? await doWordlist(body)
       : action === 'grammar' ? await doGrammar(body)
+      : action === 'story' ? await doStory(body)
       : await doCheck(body);
     return json({ ...result, used, max });
   } catch (e) {

@@ -2151,15 +2151,17 @@ const DB = (() => {
   }
   // Zestawy zadań gramatycznych (grammar_sets) — null = brak migracji #73.
   async function loadGrammarSets(bookId, unitKeys) {
-    let q = supabase.from('grammar_sets').select('id, book_id, unit_key, topic, items, source, created_by, created_at')
+    // '*' — po migracji #78 dochodzą status / shared / share_status / review_note
+    let q = supabase.from('grammar_sets').select('*')
       .eq('book_id', bookId).order('created_at', { ascending: true });
     if (Array.isArray(unitKeys)) q = q.in('unit_key', unitKeys); else if (unitKeys) q = q.eq('unit_key', unitKeys);
     const { data, error } = await q;
     if (error) { if (/grammar_sets|PGRST205|42P01/i.test((error.code || '') + ' ' + error.message)) return null; throw new Error(error.message); }
     return data || [];
   }
-  async function saveGrammarSet({ id, bookId, unitKey, topic, items, source }) {
+  async function saveGrammarSet({ id, bookId, unitKey, topic, items, source, copiedFrom }) {
     const row = { topic: String(topic || '').slice(0, 120), items, updated_at: new Date().toISOString() };
+    if (copiedFrom) row.copied_from = copiedFrom;
     if (id) {
       const { data, error } = await supabase.from('grammar_sets').update(row).eq('id', id).select();
       if (error) throw new Error(error.message);
@@ -2175,6 +2177,87 @@ const DB = (() => {
     const { data, error } = await supabase.from('grammar_sets').delete().eq('id', id).select('id');
     if (error) throw new Error(error.message);
     if (!data || !data.length) throw new Error('Brak uprawnień do usunięcia tego zestawu.');
+  }
+
+  // ── Czytanki, kontrola treści i bank zadań (migracja #78) ──
+  const _NEED78 = 'Uruchom migrację #78 (content-review-bank.sql) w Supabase.';
+  const _missing78 = e => /reading_sets|share_status|shared|content_review_counts|PGRST20[02]|42P01|42703|42883/i.test(((e && e.code) || '') + ' ' + ((e && e.message) || ''));
+  const CONTENT_TABLES = { grammar: 'grammar_sets', reading: 'reading_sets' };
+  // null = brak migracji #78
+  async function loadReadingSets(bookId, unitKeys) {
+    let q = supabase.from('reading_sets').select('*').eq('book_id', bookId).order('created_at', { ascending: true });
+    if (Array.isArray(unitKeys)) q = q.in('unit_key', unitKeys); else if (unitKeys) q = q.eq('unit_key', unitKeys);
+    const { data, error } = await q;
+    if (error) { if (_missing78(error)) return null; throw new Error(error.message); }
+    return data || [];
+  }
+  async function saveReadingSet({ id, bookId, unitKey, title, level, body, bodyPl, words, questions, source, copiedFrom }) {
+    const row = { title: String(title || '').slice(0, 120), level: level || null, body: String(body || '').slice(0, 4000),
+      body_pl: bodyPl ? String(bodyPl).slice(0, 5000) : null, words: words || [], questions: questions || [] };
+    if (copiedFrom) row.copied_from = copiedFrom;
+    if (id) {
+      const { data, error } = await supabase.from('reading_sets').update(row).eq('id', id).select();
+      if (error) throw new Error(error.message);
+      if (!data || !data.length) throw new Error('Brak uprawnień do edycji tej czytanki.');
+      return data[0];
+    }
+    const { data, error } = await supabase.from('reading_sets')
+      .insert(Object.assign(row, { book_id: bookId, unit_key: unitKey, source: source || 'ai', created_by: _userId })).select().single();
+    if (error) throw new Error(_missing78(error) ? _NEED78 : error.message);
+    return data;
+  }
+  async function deleteReadingSet(id) {
+    const { data, error } = await supabase.from('reading_sets').delete().eq('id', id).select('id');
+    if (error) throw new Error(error.message);
+    if (!data || !data.length) throw new Error('Brak uprawnień do usunięcia tej czytanki.');
+  }
+  // Udostępnij / wycofaj z banku zadań (kind: 'grammar' | 'reading'). Zwraca share_status.
+  async function setContentShared(kind, id, shared) {
+    const { data, error } = await supabase.from(CONTENT_TABLES[kind]).update({ shared: !!shared }).eq('id', id).select('shared, share_status');
+    if (error) throw new Error(_missing78(error) ? _NEED78 : error.message);
+    if (!data || !data.length) throw new Error('Brak uprawnień.');
+    return data[0].share_status;
+  }
+  async function _withAuthors(rows) {
+    const ids = [...new Set(rows.map(r => r.created_by).filter(Boolean))];
+    if (!ids.length) return rows;
+    const { data } = await supabase.from('profiles').select('id, username').in('id', ids);
+    const by = Object.fromEntries((data || []).map(p => [p.id, p.username]));
+    rows.forEach(r => { r.author = by[r.created_by] || '—'; });
+    return rows;
+  }
+  // Admin: wszystko, co czeka na decyzję (status pending albo share_status pending). null = brak migracji.
+  async function loadReviewQueue() {
+    const out = [];
+    for (const [kind, table] of Object.entries(CONTENT_TABLES)) {
+      const { data, error } = await supabase.from(table).select('*').or('status.eq.pending,share_status.eq.pending').order('created_at', { ascending: true });
+      if (error) { if (_missing78(error)) return null; throw new Error(error.message); }
+      (data || []).forEach(r => out.push(Object.assign(r, { kind })));
+    }
+    return _withAuthors(out);
+  }
+  // Admin: decyzja — fields: { status?, share_status?, review_note? }
+  async function reviewContent(kind, id, fields) {
+    const { data, error } = await supabase.from(CONTENT_TABLES[kind]).update(fields).eq('id', id).select('id, status, share_status');
+    if (error) throw new Error(error.message);
+    if (!data || !data.length) throw new Error('Brak uprawnień administratora.');
+    return data[0];
+  }
+  async function contentReviewCounts() {
+    const { data, error } = await supabase.rpc('content_review_counts');
+    if (error) return null;
+    const r = (data && data[0]) || {};
+    return { grammar: r.grammar_pending || 0, reading: r.reading_pending || 0, bank: r.bank_pending || 0 };
+  }
+  // Bank zadań: zatwierdzone udostępnione zestawy i czytanki (nauczyciel/admin). null = brak migracji.
+  async function loadTaskBank() {
+    const out = [];
+    for (const [kind, table] of Object.entries(CONTENT_TABLES)) {
+      const { data, error } = await supabase.from(table).select('*').eq('share_status', 'approved').order('created_at', { ascending: false }).limit(300);
+      if (error) { if (_missing78(error)) return null; throw new Error(error.message); }
+      (data || []).forEach(r => out.push(Object.assign(r, { kind })));
+    }
+    return _withAuthors(out);
   }
 
   // ── Pupile kolegów i odwiedziny (migracja #71) ── null = brak migracji
@@ -4748,6 +4831,8 @@ const DB = (() => {
     loadGrammarSets,
     saveGrammarSet,
     deleteGrammarSet,
+    loadReadingSets, saveReadingSet, deleteReadingSet, setContentShared,
+    loadReviewQueue, reviewContent, contentReviewCounts, loadTaskBank,
     loadClassPets,
     petReact,
     petReactSentToday,
