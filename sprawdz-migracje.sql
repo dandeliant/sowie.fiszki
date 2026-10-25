@@ -135,7 +135,7 @@ with c(nr, plik, ok) as (values
   ('76', 'parent-link-codes.sql',                 pg_temp.tab('public.parent_link_codes')),
   ('77', 'book-content-write-scope.sql',          pg_temp.fn('_can_edit_book_content')),
   -- poza numeracją CLAUDE.md
-  ('x1', 'content-review-bank.sql (inna sesja, w toku)', pg_temp.col('grammar_sets', 'status') and pg_temp.tab('public.reading_sets')),
+  ('78', 'content-review-bank.sql',                 pg_temp.col('grammar_sets', 'status') and pg_temp.tab('public.reading_sets')),
   ('x2', 'add-live-games.sql',                    pg_temp.fn('create_live_game')),
   ('x3', 'add-live-time-limit-and-score-rpc.sql', pg_temp.fn('update_live_player_score')),
   ('x4', 'fix-live-join-token.sql + fix-live-join-ambiguous.sql', pg_temp.fn('join_live_game')),
