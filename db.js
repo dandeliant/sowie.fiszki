@@ -781,13 +781,37 @@ const DB = (() => {
   /**
    * Admin: zatwierdź prośbę. Używa funkcji RPC z SECURITY DEFINER.
    */
-  async function approveAdminRequest(username) {
+  async function approveAdminRequest(username, confirmName) {
     const req = _adminRequests.find(r => r.username === username && r.status === 'pending');
-    if (!req) return;
-    const { error } = await supabase.rpc('approve_admin_request', { p_request_id: req.id });
-    if (error) { console.warn('[DB] approveAdminRequest:', error.message); return; }
+    if (!req) throw new Error('Prośba nie istnieje lub już rozpatrzona.');
+    // Migracja #74: baza wymaga wpisanego loginu (p_confirm); stara wersja funkcji go ignoruje.
+    const { error } = await supabase.rpc('approve_admin_request', { p_request_id: req.id, p_confirm: confirmName || null });
+    if (error) throw _adminSafetyErr(error);
     // Zaktualizuj bufor
     req.status = 'approved';
+  }
+
+  // ── Administratorzy (migracja #74) ──
+  function _adminSafetyErr(error) {
+    const m = (error && error.message) || '';
+    if (/admin_list_admins|admin_set_admin|approve_admin_request|PGRST202|42883/.test((error.code || '') + ' ' + m)) return new Error('Uruchom migrację #74 (admin-safety.sql) w Supabase.');
+    if (/CONFIRM_REQUIRED/.test(m)) return new Error('Wpisany login nie zgadza się z loginem użytkownika.');
+    return new Error(m);
+  }
+  async function adminListAdmins() {
+    const { data, error } = await supabase.rpc('admin_list_admins');
+    if (error) throw _adminSafetyErr(error);
+    return data || [];
+  }
+  async function adminSetAdmin(userId, value, confirmName) {
+    const { error } = await supabase.rpc('admin_set_admin', { p_user_id: userId, p_value: !!value, p_confirm: confirmName || '' });
+    if (error) throw _adminSafetyErr(error);
+  }
+  async function loadAdminAudit(limit = 30) {
+    const { data, error } = await supabase.from('admin_audit')
+      .select('actor_name, target_name, action, created_at').order('created_at', { ascending: false }).limit(limit);
+    if (error) return null;
+    return data || [];
   }
 
   /**
@@ -4655,6 +4679,7 @@ const DB = (() => {
     addAdminRequest,
     getAdminRequests,
     approveAdminRequest,
+    adminListAdmins, adminSetAdmin, loadAdminAudit,
     rejectAdminRequest,
     getPendingRequestsCount,
     // zdania przykładowe

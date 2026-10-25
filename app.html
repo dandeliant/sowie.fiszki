@@ -12243,7 +12243,7 @@ function renderAdminPanel() {
   }
   const list = document.getElementById('adminRequestsList');
   if (reqs.length === 0) {
-    list.innerHTML = '<span style="font-size:.75rem;color:var(--muted)">Brak oczekujących próśb.</span>';
+    list.innerHTML = '<span style="font-size:.75rem;color:var(--muted)">Brak oczekujących próśb.</span>' + _adminsLinkHtml();
     return;
   }
   list.innerHTML = '';
@@ -12259,12 +12259,96 @@ function renderAdminPanel() {
       </div>`;
     list.appendChild(d);
   });
+  list.insertAdjacentHTML('beforeend', _adminsLinkHtml());
+}
+function _adminsLinkHtml() {
+  return isCurrentUserAdmin() ? ' <a href="#" onclick="openAdminsModal();return false" style="font-size:.75rem;color:var(--accent);font-weight:700;margin-left:6px">👑 Administratorzy</a>' : '';
 }
 
 async function adminApprove(username) {
-  await DB.approveAdminRequest(username);
-  toast('✅ Użytkownik ' + username + ' otrzymał uprawnienia admina!', 3000);
+  const typed = await sfTypedConfirm({
+    title: '⚠️ Nadać uprawnienia administratora?',
+    html: 'Użytkownik <b>' + escHtml(username) + '</b> dostanie <b>pełny dostęp</b>: wszystkie konta i hasła uczniów, usuwanie kont, plany Premium, podręczniki, wiadomości.<br><br>' +
+      'Zatwierdzaj tylko osoby, które znasz osobiście. Uprawnienia możesz później odebrać w „👑 Administratorzy”.',
+    expect: username, okLabel: '👑 Nadaj admina', danger: true
+  });
+  if (!typed) return;
+  try {
+    await DB.approveAdminRequest(username, typed);
+    toast('✅ Użytkownik ' + username + ' otrzymał uprawnienia admina.', 3000);
+  } catch (e) { toast('❌ ' + (e.message || e), 4500); }
   renderAdminPanel();
+}
+
+// Okno potwierdzenia z wpisaniem tekstu (np. loginu). Zwraca wpisany tekst albo null.
+function sfTypedConfirm({ title, html, expect, okLabel, danger }) {
+  return new Promise(resolve => {
+    const ov = document.createElement('div');
+    ov.className = 'modal-overlay';
+    ov.innerHTML = '<div class="modal-box" style="max-width:440px">' +
+      '<div style="font-family:\'Playfair Display\',serif;font-size:1.12rem;color:' + (danger ? 'var(--red,#ef476f)' : 'var(--accent)') + ';margin-bottom:8px">' + escHtml(title) + '</div>' +
+      '<div style="font-size:.8rem;line-height:1.5;margin-bottom:12px">' + html + '</div>' +
+      '<label style="font-size:.7rem;font-weight:700;color:var(--muted)">Wpisz login <b>' + escHtml(expect) + '</b>, aby potwierdzić:</label>' +
+      '<input class="sf-tc-in" autocomplete="off" spellcheck="false" style="width:100%;margin:6px 0 12px;padding:9px 11px;border-radius:10px;border:2px solid var(--border);background:var(--card);color:var(--text);font-size:.9rem">' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn-sm sf-tc-no">Anuluj</button>' +
+      '<button class="btn-sm sf-tc-ok" disabled style="opacity:.45">' + escHtml(okLabel || 'Potwierdź') + '</button></div></div>';
+    document.body.appendChild(ov);
+    const inp = ov.querySelector('.sf-tc-in'), ok = ov.querySelector('.sf-tc-ok');
+    const match = () => inp.value.trim().toLowerCase() === String(expect).toLowerCase();
+    const done = v => { ov.remove(); resolve(v); };
+    inp.addEventListener('input', () => { ok.disabled = !match(); ok.style.opacity = match() ? 1 : .45; });
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter' && match()) done(inp.value.trim()); if (e.key === 'Escape') done(null); });
+    ok.onclick = () => match() && done(inp.value.trim());
+    ov.querySelector('.sf-tc-no').onclick = () => done(null);
+    ov.addEventListener('click', e => { if (e.target === ov) done(null); });
+    setTimeout(() => inp.focus(), 50);
+  });
+}
+
+// 👑 Administratorzy: lista, odbieranie uprawnień, historia zmian (migracja #74)
+async function openAdminsModal() {
+  if (!isCurrentUserAdmin()) { toast('Tylko dla administratora.', 2500); return; }
+  let ov = document.getElementById('adminsModal');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'adminsModal'; ov.className = 'modal-overlay';
+    ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+    document.body.appendChild(ov);
+  }
+  ov.innerHTML = '<div class="modal-box" style="max-width:520px"><div style="text-align:center;padding:20px;color:var(--muted)">⏳ Wczytuję…</div></div>';
+  const fmt = d => d ? new Date(d).toLocaleString('pl-PL', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+  let admins, audit;
+  try { [admins, audit] = await Promise.all([DB.adminListAdmins(), DB.loadAdminAudit(30)]); }
+  catch (e) {
+    ov.innerHTML = '<div class="modal-box" style="max-width:520px"><div style="padding:14px">❌ ' + escHtml(e.message || String(e)) + '</div>' +
+      '<div style="text-align:right"><button class="btn-sm" onclick="document.getElementById(\'adminsModal\').remove()">Zamknij</button></div></div>';
+    return;
+  }
+  const ACT = { grant_admin: '👑 nadał(a) admina', revoke_admin: '🚫 odebrał(a) admina', reject_request: '❌ odrzucił(a) prośbę' };
+  const rows = admins.map(a => '<div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border:1px solid var(--border);border-radius:12px;margin-bottom:6px">' +
+    '<div style="flex:1;min-width:0"><div style="font-weight:800">👑 ' + escHtml(a.username) + (a.is_me ? ' <span style="color:var(--muted);font-weight:600">(Ty)</span>' : '') + '</div>' +
+    '<div style="font-size:.68rem;color:var(--muted)">konto od ' + fmt(a.created_at) + ' · ostatnie logowanie: ' + fmt(a.last_sign_in_at) + '</div></div>' +
+    (a.is_me ? '' : '<button class="btn-sm" style="background:rgba(239,71,111,.15);border-color:rgba(239,71,111,.5)" onclick="adminRevoke(\'' + a.id + '\',\'' + escHtml(a.username).replace(/'/g, '&#39;') + '\')">🚫 Odbierz</button>') +
+    '</div>').join('');
+  const log = audit == null ? '' : (audit.length ? audit.map(r => '<div style="font-size:.72rem;padding:4px 0;border-bottom:1px dashed var(--border)">' + fmt(r.created_at) + ' · <b>' + escHtml(r.actor_name || '?') + '</b> ' + (ACT[r.action] || r.action) + ' · <b>' + escHtml(r.target_name || '?') + '</b></div>').join('')
+    : '<div style="font-size:.72rem;color:var(--muted)">Brak zmian od uruchomienia migracji #74.</div>');
+  ov.innerHTML = '<div class="modal-box" style="max-width:520px;max-height:88vh;overflow:auto">' +
+    '<div style="font-family:\'Playfair Display\',serif;font-size:1.15rem;color:var(--accent);margin-bottom:4px">👑 Administratorzy (' + admins.length + ')</div>' +
+    '<div style="font-size:.72rem;color:var(--muted);margin-bottom:12px;line-height:1.45">Admin ma pełny dostęp do platformy. Nowego admina nadaje się tylko przez zatwierdzenie prośby (z wpisaniem loginu). Siebie nie można odwołać, a zawsze zostaje co najmniej jeden admin.</div>' +
+    rows +
+    '<div style="font-weight:800;margin:14px 0 6px">📜 Historia zmian</div>' + log +
+    '<div style="text-align:right;margin-top:12px"><button class="btn-sm" onclick="document.getElementById(\'adminsModal\').remove()">Zamknij</button></div></div>';
+}
+async function adminRevoke(userId, username) {
+  const typed = await sfTypedConfirm({
+    title: '🚫 Odebrać uprawnienia administratora?',
+    html: 'Konto <b>' + escHtml(username) + '</b> zostanie zwykłym kontem (rola nauczyciela / opiekuna, jeśli ją ma, zostaje).',
+    expect: username, okLabel: '🚫 Odbierz', danger: true
+  });
+  if (!typed) return;
+  try { await DB.adminSetAdmin(userId, false, typed); toast('✅ Odebrano uprawnienia admina: ' + username, 3000); }
+  catch (e) { toast('❌ ' + (e.message || e), 4500); }
+  openAdminsModal();
 }
 
 async function adminReject(username) {
@@ -21761,6 +21845,7 @@ if ('serviceWorker' in navigator) {
         tests:            () => (typeof openTestGenerator==='function')    && openTestGenerator(),
         quizzes:          () => (typeof openQuizzes==='function')          && openQuizzes(),
         stats:            () => (typeof openAdminStats==='function')       && openAdminStats(),
+        admins:           () => (typeof openAdminsModal==='function')      && openAdminsModal(),
         newBook:          () => (typeof openAdminBookModal==='function')   && openAdminBookModal(),
         premium:          () => (typeof openPremiumPricingModal==='function') && openPremiumPricingModal(),
       };
