@@ -293,6 +293,8 @@ const mat = c => MATS[c] || (MATS[c] = new THREE.MeshLambertMaterial({ color: c 
 
 // Static geometry merging: many small coloured parts -> one draw call.
 const vcMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+// postacie: Phong (oświetlenie na piksel) — twarz i ciało cieniowane miękko, delikatny połysk skóry
+const personMat = new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 14, specular: 0x1c1712 });
 function mergeColored(parts) {
   let count = 0;
   const gs = parts.map(p => { const g = p.g.index ? p.g.toNonIndexed() : p.g.clone(); g.applyMatrix4(p.m); count += g.attributes.position.count; return [g, p.c]; });
@@ -301,7 +303,11 @@ function mergeColored(parts) {
   for (const [g, c] of gs) {
     const n = g.attributes.position.count;
     pos.set(g.attributes.position.array, o * 3); nor.set(g.attributes.normal.array, o * 3);
-    for (let i = 0; i < n; i++) { col[(o + i) * 3] = c.r; col[(o + i) * 3 + 1] = c.g; col[(o + i) * 3 + 2] = c.b; }
+    const ca = g.attributes.color;   // własne kolory wierzchołków (np. twarz) = odcień mnożony przez kolor części
+    for (let i = 0; i < n; i++) {
+      const t = ca ? ca.array : null, k = i * 3;
+      col[(o + i) * 3] = c.r * (t ? t[k] : 1); col[(o + i) * 3 + 1] = c.g * (t ? t[k + 1] : 1); col[(o + i) * 3 + 2] = c.b * (t ? t[k + 2] : 1);
+    }
     o += n; g.dispose();
   }
   const out = new THREE.BufferGeometry();
@@ -1083,7 +1089,7 @@ const PANTS = [0x2d3a5a, 0x222222, 0x5a4a3a, 0x3b5a8a, 0x6b6b6b, 0x2f4a3a];
 const PG = {
   // Tors: cylinder szerszy w barkach (góra), węższy w pasie, spłaszczony przód-tył.
   torso: () => geo('torso', () => new THREE.CylinderGeometry(0.30, 0.245, 0.74, 16).scale(1.18, 1, 0.62).translate(0, 0.37, 0)),
-  neck: () => geo('neck', () => new THREE.CylinderGeometry(0.085, 0.1, 0.2, 12).translate(0, 0.1, 0)),
+  neck: () => geo('neck', () => new THREE.CylinderGeometry(0.072, 0.088, 0.24, 14).translate(0, 0.12, 0)),
   head: () => geo('head', () => new THREE.SphereGeometry(0.2, 18, 14).scale(0.95, 1.06, 0.96)),
   hair: () => geo('hair', () => new THREE.SphereGeometry(0.215, 18, 10, 0, Math.PI * 2, 0, Math.PI * 0.56).scale(0.99, 1.05, 1.02)),
   brim: () => geo('brim', () => new THREE.CylinderGeometry(0.17, 0.17, 0.035, 16).scale(1, 1, 1.35)),
@@ -1127,8 +1133,178 @@ Object.assign(PG, {
   knee: () => geo('knee', () => new THREE.SphereGeometry(0.094, 12, 8)),
   elbow: () => geo('elbow', () => new THREE.SphereGeometry(0.068, 10, 8)),
   shoulder: () => geo('shoulder', () => new THREE.SphereGeometry(0.092, 12, 8).scale(1, 0.85, 1)),
+  // zaokrąglone barki i kark (góra tułowia)
+  shoulders: () => geo('shoulders', () => new THREE.SphereGeometry(0.288, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.5).scale(1.18, 0.26, 0.62)),
   pelvis: () => geo('pelvis', () => new THREE.CylinderGeometry(0.262, 0.25, 0.2, 16).scale(1.18, 1, 0.66)),
 });
+
+// ---------------------------------------------------------------- twarz i włosy
+// Głowa rzeźbiona z kuli (współrzędne głowy: środek = 0, +y w górę, +z = twarz, promień HEAD_R): pełniejsza
+// potylica, węższa żuchwa i zaokrąglona broda, kości policzkowe, oczodoły, łuk brwiowy. Elementy twarzy (oczy
+// z tęczówką i powieką, nos z grzbietem i skrzydełkami, wargi, uszy z małżowiną, piegi) stoją na tej powierzchni.
+// Włosy: czapka na skórze głowy + rozwichrzone pasma (stożki) rosnące od czubka, z grzywką na czoło.
+const HEAD_R = 0.2;
+const gauss = (ax, ay, az, bx, by, bz, sg) => { const dx = ax - bx, dy = ay - by, dz = az - bz; return Math.exp(-(dx * dx + dy * dy + dz * dz) / (2 * sg * sg)); };
+function headShape(x, y, z, out = new THREE.Vector3()) {
+  const l = Math.hypot(x, y, z) || 1; x /= l; y /= l; z /= l;
+  let X = x * 0.9, Y = y * 1.08, Z = z;
+  const low = smoothstep(0.05, -0.9, y);                       // 0 nad linią oczu → 1 przy brodzie
+  X *= 1 - 0.15 * low * low - 0.05 * low;                                   // żuchwa zwęża się do brody
+  if (Z < 0) Z *= 1 + 0.1 * smoothstep(-0.5, 0.4, y) - 0.6 * low;   // potylica pełniejsza, pod nią szyja
+  else if (Z > 0.55) Z = 0.55 + (Z - 0.55) * 0.72;             // spłaszczona twarz
+  let d = 0.035 * gauss(x, y, z, 0, -0.8, 0.58, 0.2)           // broda lekko do przodu
+    + 0.06 * (gauss(x, y, z, 0.5, -0.35, 0.72, 0.25) + gauss(x, y, z, -0.5, -0.35, 0.72, 0.25))   // pełne policzki
+    - 0.03 * (gauss(x, y, z, 0.36, 0.03, 0.93, 0.1) + gauss(x, y, z, -0.36, 0.03, 0.93, 0.1))      // oczodoły
+    + 0.02 * (gauss(x, y, z, 0.3, 0.22, 0.93, 0.13) + gauss(x, y, z, -0.3, 0.22, 0.93, 0.13))        // łuk brwiowy
+    + (z > 0 ? 0.095 * Math.exp(-x * x / 0.0045) * smoothstep(0.12, -0.05, y) * smoothstep(-0.42, -0.3, y) : 0)   // grzbiet nosa
+    + 0.1 * gauss(x, y, z, 0, -0.34, 0.94, 0.075)                                                     // czubek nosa
+    + 0.03 * (gauss(x, y, z, 0.1, -0.37, 0.93, 0.05) + gauss(x, y, z, -0.1, -0.37, 0.93, 0.05));     // skrzydełka nosa
+  return out.set(X, Y, Z).multiplyScalar(HEAD_R * (1 + d));
+}
+const surf = (x, y, z) => headShape(x, y, z);
+const M4 = (x, y, z, rx = 0, ry = 0, rz = 0, sx = 1, sy = 1, sz = 1) => new THREE.Matrix4().compose(_p.set(x, y, z), _q.setFromEuler(_e.set(rx, ry, rz)), _s.set(sx, sy, sz));
+const SPH = (r, w = 10, h = 8) => geo('sph' + r + '_' + w + '_' + h, () => new THREE.SphereGeometry(r, w, h));
+// kolor oczu i piegi z karnacji i włosów (stałe dla danego wyglądu)
+function faceTraits(skin, hair) {
+  const hsl = {}; new THREE.Color(skin).getHSL(hsl);
+  const light = hsl.l > 0.66, i = HAIRS.indexOf(hair);
+  return { eye: light ? [0x5f7a92, 0x6d7d5c, 0x6a4a2c, 0x56708c][(i < 0 ? 0 : i) % 4] : 0x3a2414,
+    freckles: light && (hair === 0x8a4b24 || hair === 0x5a3a1e || hair === 0xc9a25a) };
+}
+function headGeo(skin, hair, lo = false) {
+  const tr = faceTraits(skin, hair);
+  return geo('head2_' + skin + '_' + hair + (lo ? '_lo' : ''), () => {
+    const parts = [];
+    const P = (g, m, c) => parts.push({ g, m, c: new THREE.Color(c) });
+    // czaszka z odcieniem skóry: rumieńce na policzkach, cień pod żuchwą i w oczodołach
+    const sk = lo ? new THREE.SphereGeometry(1, 20, 14) : new THREE.SphereGeometry(1, 44, 34), pa = sk.attributes.position, tint = new Float32Array(pa.count * 3), v = new THREE.Vector3();
+    for (let i = 0; i < pa.count; i++) {
+      const x = pa.getX(i), y = pa.getY(i), z = pa.getZ(i);
+      headShape(x, y, z, v); pa.setXYZ(i, v.x, v.y, v.z);
+      const blush = 0.6 * (gauss(x, y, z, 0.5, -0.3, 0.8, 0.18) + gauss(x, y, z, -0.5, -0.3, 0.8, 0.18));
+      const shade = 0.16 * smoothstep(-0.55, -0.95, y) * smoothstep(0.6, 0.0, z) + 0.08 * gauss(x, y, z, 0, -0.44, 0.92, 0.05) + 0.07 * (gauss(x, y, z, 0.36, 0.03, 0.93, 0.1) + gauss(x, y, z, -0.36, 0.03, 0.93, 0.1));
+      tint[i * 3] = (1 + 0.05 * blush) * (1 - shade); tint[i * 3 + 1] = (1 - 0.09 * blush) * (1 - shade); tint[i * 3 + 2] = (1 - 0.09 * blush) * (1 - shade);
+    }
+    sk.setAttribute('color', new THREE.BufferAttribute(tint, 3)); sk.computeVertexNormals();
+    P(sk, new THREE.Matrix4(), skin);
+    const skC = new THREE.Color(skin), lip = skC.clone().lerp(new THREE.Color(0xc0665e), 0.3), dark = skC.clone().multiplyScalar(0.72);
+    const brow = new THREE.Color(hair).lerp(skC, 0.2);
+    for (const sd of [-1, 1]) {
+      // oko: białko, tęczówka, źrenica, odblask; powieka górna (spokojne, lekko przymknięte oczy)
+      const e = surf(sd * 0.34, 0.02, 0.94), ex = e.x, ey = e.y, ez = e.z - 0.022;
+      P(SPH(0.027, lo ? 8 : 14, lo ? 6 : 10), M4(ex, ey, ez, 0, 0, 0, 1.15, 0.8, 1), 0xeeeae4);
+      P(SPH(0.0175, lo ? 8 : 14, lo ? 6 : 10), M4(ex, ey - 0.001, ez + 0.0215, 0, 0, 0, 1, 1, 0.45), lo ? new THREE.Color(tr.eye).multiplyScalar(0.6) : tr.eye);
+      if (!lo) {
+      P(SPH(0.0075, 10, 8), M4(ex, ey - 0.001, ez + 0.0285, 0, 0, 0, 1, 1, 0.35), 0x0b0b0b);
+      P(SPH(0.0024, 6, 4), M4(ex + 0.005, ey + 0.005, ez + 0.03), 0xffffff);
+      P(geo('lid4', () => new THREE.SphereGeometry(0.0293, 14, 6, 0, Math.PI * 2, 0, Math.PI * 0.46)), M4(ex, ey + 0.001, ez, 0.82, 0, 0, 1.15, 0.85, 1), skin);
+      P(geo('lash', () => new THREE.TorusGeometry(0.0285, 0.0022, 4, 14, Math.PI)), M4(ex, ey - 0.001, ez + 0.016, -0.7, 0, 0, 1.12, 0.55, 1), new THREE.Color(hair).lerp(new THREE.Color(0x150d08), 0.6));
+      P(geo('lidLow4', () => new THREE.SphereGeometry(0.0288, 14, 5, 0, Math.PI * 2, Math.PI * 0.7, Math.PI * 0.3)), M4(ex, ey, ez, -0.62, 0, 0, 1.15, 0.8, 1), skin);
+      }
+      // brew: lekko łukowata, z dwóch części
+      const b = surf(sd * 0.36, 0.25, 0.92);
+      P(SPH(1, 10, 6), M4(b.x - sd * 0.01, b.y + 0.001, b.z + 0.001, 0, sd * 0.25, sd * 0.05, 0.027, 0.0055, 0.006), brow);
+      if (!lo) P(SPH(1, 10, 6), M4(b.x + sd * 0.02, b.y - 0.002, b.z - 0.006, 0, sd * 0.6, -sd * 0.18, 0.022, 0.0048, 0.005), brow);
+      // ucho: małżowina (zewnętrzna obręcz + jaśniejsze wnętrze), płatek
+      const u = surf(sd, -0.04, -0.08);
+      P(SPH(1, lo ? 8 : 12, lo ? 6 : 10), M4(u.x + sd * 0.004, u.y + 0.006, u.z - 0.004, 0, sd * 0.25, sd * 0.12, 0.014, 0.056, 0.036), skin);
+      if (!lo) P(SPH(1, 10, 8), M4(u.x + sd * 0.012, u.y + 0.008, u.z + 0.002, 0, sd * 0.25, 0, 0.007, 0.034, 0.021), skC.clone().multiplyScalar(0.84));
+      if (!lo) P(SPH(1, 8, 6), M4(u.x + sd * 0.007, u.y - 0.04, u.z + 0.004, 0, 0, 0, 0.01, 0.014, 0.012), skin);
+      // skrzydełko nosa
+    }
+    // nos: grzbiet od nasady do czubka + czubek + dziurki
+    const nt = surf(0, -0.385, 0.93);
+    if (!lo) for (const sd of [-1, 1]) P(SPH(1, 8, 6), M4(sd * 0.008, nt.y, nt.z - 0.004, 0, 0, 0, 0.0045, 0.0022, 0.004), dark.clone().multiplyScalar(0.7));
+    // usta: warga górna i dolna, kącik ust
+    const up = surf(0, -0.53, 1), dn = surf(0, -0.61, 1);
+    P(SPH(1, lo ? 8 : 14, lo ? 5 : 8), M4(up.x, up.y, up.z - 0.003, 0, 0, 0, 0.03, 0.008, 0.011), lip);
+    P(SPH(1, lo ? 8 : 14, lo ? 5 : 8), M4(dn.x, dn.y, dn.z - 0.003, 0, 0, 0, 0.026, 0.01, 0.012), lip.clone().multiplyScalar(1.04));
+    if (!lo) P(BOX(0.046, 0.0025, 0.006), M4(0, (up.y + dn.y) / 2 + 0.002, (up.z + dn.z) / 2 + 0.004), lip.clone().multiplyScalar(0.6));
+    // piegi na nosie i policzkach
+    if (tr.freckles && !lo) {
+      const rnd = mulberry(skin ^ hair);
+      for (let i = 0; i < 26; i++) {
+        const sd = i % 2 ? 1 : -1, p = surf(sd * (0.12 + rnd() * 0.42), -0.12 - rnd() * 0.3, 0.95);
+        P(SPH(0.0024, 6, 4), M4(p.x, p.y, p.z - 0.0012, 0, 0, 0, 1, 1, 0.5), skC.clone().lerp(new THREE.Color(0x8a4a2a), 0.32));
+      }
+    }
+    return mergeColored(parts);
+  });
+}
+// Włosy: mode 'none' (pełna fryzura) | 'hat' (czapka/kapelusz/korona — tylko boki i tył) | 'beanie' (tylko kark)
+function hairGeo(style, mode, lo = false) {
+  return geo('hair2_' + style + '_' + mode + (lo ? '_lo' : ''), () => {
+    const earZ = d => Math.exp(-((Math.abs(d.x) - 0.95) ** 2 + (d.y + 0.02) ** 2 + (d.z + 0.08) ** 2) / 0.09);
+    const scalp = d => d.y > 0.38 * d.z - 0.02 + 0.3 * earZ(d);   // linia włosów: wysoko na czole, nisko na karku, nad uszami
+    const pos = [], nor = [], col = [];
+    const v = new THREE.Vector3(), n = new THREE.Vector3();
+    const push = (g, m, t) => {
+      const gg = (g.index ? g.toNonIndexed() : g.clone()); gg.applyMatrix4(m);
+      const a = gg.attributes.position.array, b = gg.attributes.normal.array;
+      for (let i = 0; i < a.length; i++) { pos.push(a[i]); nor.push(b[i]); }
+      for (let i = 0; i < a.length / 3; i++) { const k = t.length === 3 ? t : t(a[i * 3], a[i * 3 + 1], a[i * 3 + 2]); col.push(k[0], k[1], k[2]); }
+      gg.dispose();
+    };
+    // czapka włosów na skórze głowy (bez twarzy), lekko ponad skórą
+    if (mode !== 'beanie') {
+      const cap = new THREE.SphereGeometry(1, lo ? 14 : 24, lo ? 10 : 16).toNonIndexed(), a = cap.attributes.position;
+      const keep = [];
+      for (let t = 0; t < a.count; t += 3) {
+        const cx = (a.getX(t) + a.getX(t + 1) + a.getX(t + 2)) / 3, cy = (a.getY(t) + a.getY(t + 1) + a.getY(t + 2)) / 3, cz = (a.getZ(t) + a.getZ(t + 1) + a.getZ(t + 2)) / 3;
+        if (scalp({ x: cx, y: cy, z: cz })) for (let k = 0; k < 3; k++) { headShape(a.getX(t + k), a.getY(t + k), a.getZ(t + k), v); keep.push(v.x * 1.045, v.y * 1.045, v.z * 1.045); }
+      }
+      const cg = new THREE.BufferGeometry(); cg.setAttribute('position', new THREE.Float32BufferAttribute(keep, 3)); cg.computeVertexNormals();
+      push(cg, new THREE.Matrix4(), (x, y) => { const k = 0.88 + 0.12 * smoothstep(-0.15, 0.2, y / HEAD_R); return [k, k, k]; });
+      cap.dispose();
+    }
+    // pasma: stożki rosnące od czubka (wir z tyłu u góry), opadające pod własnym ciężarem; grzywka na czoło
+    const rnd = mulberry(4242 + style.length * 31 + mode.length * 7);
+    const N = Math.round((style === 'bun' ? 40 : style === 'long' ? 110 : 100) * (lo ? 0.35 : 1)), crown = new THREE.Vector3(0, 0.82, -0.57).normalize();
+    const tuft = (r, h) => geo('tuft' + r + '_' + h, () => new THREE.ConeGeometry(r, h, 5, 1, true).translate(0, h / 2, 0));
+    let made = 0;
+    for (let tries = 0; made < N && tries < 4000; tries++) {
+      const d = new THREE.Vector3(rnd() * 2 - 1, rnd() * 2 - 1, rnd() * 2 - 1); if (d.lengthSq() > 1 || d.lengthSq() < 0.05) continue; d.normalize();
+      if (!scalp(d)) continue;
+      if (mode === 'hat' && (d.y > 0.12 || d.z > 0.45)) continue;
+      if (mode === 'beanie' && (d.y > -0.22 || d.z > 0.3)) continue;
+      made++;
+      headShape(d.x, d.y, d.z, v); const root = v.clone().multiplyScalar(1.04);
+      n.copy(d);
+      const fringe = d.z > 0.35 && d.y > 0.2;
+      // kierunek: od czubka po powierzchni + grawitacja; grzywka do przodu i w dół na czoło
+      const flow = d.clone().sub(crown.clone().multiplyScalar(d.dot(crown))).normalize();
+      if (!isFinite(flow.x)) flow.set(0, 0, 1);
+      const grav = style === 'long' ? 0.9 : style === 'bun' ? 0.15 : 0.55;
+      flow.add(new THREE.Vector3(0, -grav * (1 - Math.max(0, d.y) * 0.6), 0));
+      if (fringe) flow.set(rnd() * 0.5 - 0.25, -0.9, 0.55);
+      const nn = v.clone().normalize();                                   // przybliżona normalna skóry
+      flow.normalize(); flow.sub(nn.clone().multiplyScalar(flow.dot(nn))).normalize();   // styczny do głowy
+      const axis = flow.clone().add(nn.clone().multiplyScalar(style === 'bun' ? 0.02 : 0.1 + rnd() * 0.12)).normalize();
+      let L = style === 'bun' ? 0.05 + rnd() * 0.03 : (0.075 + rnd() * 0.06) * (style === 'long' && d.y < 0.3 ? 2 : 1);
+      if (fringe) L = Math.min(L, Math.max(0.04, (root.y - 0.06) / Math.max(0.3, -axis.y)));
+      if (style !== 'long' && (earZ(d) > 0.25 || d.y < -0.1)) L *= 0.55;   // nad uszami i na karku krótko
+      const r = style === 'bun' ? 0.04 : 0.036 + rnd() * 0.02;
+      const zA = nn.clone().sub(axis.clone().multiplyScalar(nn.dot(axis))).normalize(), xA = new THREE.Vector3().crossVectors(axis, zA);
+      const m = new THREE.Matrix4().makeBasis(xA, axis, zA).scale(new THREE.Vector3(1, L / 0.12, 0.32)).setPosition(root.clone().sub(axis.clone().multiplyScalar(0.012)));
+      const k = 0.82 + rnd() * 0.3 + (d.y > 0.5 ? 0.08 : 0);
+      push(tuft(Math.round(r * 1000) / 1000, 0.12), m, [k, k * 0.98, k * 0.95]);
+    }
+    const out = new THREE.BufferGeometry();
+    out.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    out.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    out.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    return out;
+  });
+}
+// czapki dopasowane do kształtu głowy: kopuła (górna połowa głowy, powiększona), przechylona tak, by z przodu
+// kończyła się nad brwiami, a z tyłu niżej na potylicy; czapka zimowa — wyższa
+const headDome = (key, sc, sy, tilt) => geo(key, () => {
+  const g = new THREE.SphereGeometry(1, 24, 12, 0, Math.PI * 2, 0, Math.PI * 0.5), a = g.attributes.position, v = new THREE.Vector3();
+  for (let i = 0; i < a.count; i++) { headShape(a.getX(i), a.getY(i), a.getZ(i), v); a.setXYZ(i, v.x * sc, v.y * sc * sy, v.z * sc); }
+  g.rotateX(tilt); g.computeVertexNormals(); return g;
+});
+PG.capDome = () => headDome('capDome2', 1.1, 1, -0.2);
+PG.beanie2 = () => headDome('beanie2', 1.12, 1.12, -0.3);
 // Pikselowe okulary „thug life" (Cash Glasses): X = czarny piksel, W = biały odblask.
 const CASH_GLASSES = [
   'XXXXXXXXXXXXXXXXXXX',
@@ -1141,28 +1317,24 @@ function coloredGeo(key, parts) {
 }
 // o: { skin, hair, shirt, pants, shoes, hairStyle:'short'|'long'|'bun'|'bald', hat:'none'|'cap'|'beanie'|'fedora'|'crown',
 //      hatColor, glasses:'none'|'sun'|'cash', sleeves:'short'|'long', jacket:color|null, skirt:bool, shadow }
+const PERSON_LOD_M = 18;
 function makePerson(o) {
   const g = new THREE.Group();
   g.rotation.order = 'YXZ';
   const hs = o.hairStyle || 'short', hat = o.hat || (o.cap ? 'cap' : 'none'), hatC = o.hatColor != null ? o.hatColor : o.hair;
   const shoes = o.shoes != null ? o.shoes : 0x1c1c1c;
-  const body = [[PG.torso, 0, 0.98, 0, o.shirt], [PG.neck, 0, 1.7, 0, o.skin], [PG.head, 0, 1.98, 0, o.skin], [PG.belt, 0, 0.99, 0, 0x2a2420],
+  const body = [[PG.torso, 0, 0.98, 0, o.shirt], [PG.shoulders, 0, 1.70, 0, o.jacket != null ? o.jacket : o.shirt], [PG.neck, 0, 1.68, 0, o.skin], Object.assign([() => headGeo(o.skin, o.hair), 0, 1.98, 0, 0xffffff], { lo: () => headGeo(o.skin, o.hair, true) }), [PG.belt, 0, 0.99, 0, 0x2a2420],
     [PG.pelvis, 0, 0.92, 0, o.skirt ? o.shirt : o.pants]];
   if (o.jacket != null) body.push([PG.jacket, 0, 0.98, 0, o.jacket], [PG.shirtFront, 0, 1.36, 0.205, o.shirt]);
   if (o.skirt) body.push([PG.skirt, 0, 0.78, 0, o.pants]);
-  // twarz
-  for (const s of [-1, 1]) {
-    body.push([PG.eye, s * 0.072, 2.0, 0.165, 0xffffff], [PG.pupil, s * 0.072, 2.0, 0.186, 0x2b1d14],
-      [PG.brow, s * 0.075, 2.06, 0.18, o.hair], [PG.ear, s * 0.19, 1.98, 0, o.skin]);
-  }
-  body.push([PG.nose, 0, 1.955, 0.195, o.skin], [PG.mouth, 0, 1.895, 0.18, 0x8a3b3b]);
-  // włosy
-  if (hs !== 'bald' && hat !== 'beanie') body.push([PG.hair, 0, 2.0, 0, o.hair]);
+  // włosy (twarz jest w headGeo)
+  const hairMode = hat === 'beanie' ? 'beanie' : hat === 'none' ? 'none' : 'hat';
+  if (hs !== 'bald') body.push(Object.assign([() => hairGeo(hs, hairMode), 0, 1.98, 0, o.hair], { lo: () => hairGeo(hs, hairMode, true) }));
   if (hs === 'long') body.push([PG.hairLong, 0, 1.8, -0.02, o.hair]);
   if (hs === 'bun') body.push([PG.bun, 0, 2.17, -0.14, o.hair]);
   // nakrycie głowy
-  if (hat === 'cap') body.push([PG.hair, 0, 2.02, 0, hatC], [PG.brim, 0, 2.05, 0.26, hatC]);
-  else if (hat === 'beanie') body.push([PG.beanie, 0, 1.98, 0, hatC]);
+  if (hat === 'cap') body.push([PG.capDome, 0, 2.0, 0, hatC], [PG.brim, 0, 2.075, 0.27, hatC]);
+  else if (hat === 'beanie') body.push([PG.beanie2, 0, 2.01, 0, hatC]);
   else if (hat === 'fedora') body.push([PG.hatBrim, 0, 2.14, 0, hatC], [PG.hatCrown, 0, 2.25, 0, hatC], [PG.hatBand, 0, 2.18, 0, 0x1b1b1b]);
   else if (hat === 'crown') {
     body.push([PG.crownBase, 0, 2.2, 0, 0xf5c518]);
@@ -1177,11 +1349,14 @@ function makePerson(o) {
       body.push([PG.pix, (c - (w - 1) / 2) * px, 2.025 - r * px, 0.215, ch === 'W' ? 0xffffff : 0x050505]);
     }));
   }
-  const add = (geom, parent) => { const m = new THREE.Mesh(geom, vcMat); m.castShadow = !!o.shadow; parent.add(m); return m; };
+  const add = (geom, parent) => { const m = new THREE.Mesh(geom, personMat); m.castShadow = !!o.shadow; parent.add(m); return m; };
   const key = [o.shirt, o.skin, o.hair, o.pants, hs, hat, hatC, o.glasses || 'none', o.jacket, !!o.skirt].join('_');
   // rig: całe ciało (pozycję i obrót ustawia się na g) — kołysanie w pionie i pochylenie przy biegu
   const rig = new THREE.Group(); g.add(rig);
-  add(coloredGeo('pb' + key, body), rig);
+  // pełna twarz z bliska, uproszczona od PERSON_LOD_M metrów (THREE.LOD przełącza wg odległości od kamery)
+  const lod = new THREE.LOD(); rig.add(lod);
+  lod.addLevel(add(coloredGeo('pb' + key, body), lod), 0);
+  lod.addLevel(add(coloredGeo('pbl' + key, body.map(e => (e.lo ? [e.lo, ...e.slice(1)] : e))), lod), PERSON_LOD_M);
   // kończyna z dwóch członów: staw górny (bark/biodro) → człon górny + staw środkowy (łokieć/kolano) → człon dolny
   const limb = (upG, lowG, px, py, jy) => {
     const top = new THREE.Group(); top.position.set(px, py, 0); add(upG, top); rig.add(top);
@@ -2366,10 +2541,10 @@ function updatePlane(v, dt) {
 // (brak pościgów, trwający pościg się kończy); postać gracza staje się półprzezroczysta.
 const hasInvis = () => !!wardrobe.owned.invis;
 const invisibleOn = () => hasInvis() && !wardrobe.invisOff;
-const ghostMat = vcMat.clone(); ghostMat.transparent = true; ghostMat.opacity = 0.38; ghostMat.depthWrite = false;
+const ghostMat = personMat.clone(); ghostMat.transparent = true; ghostMat.opacity = 0.38; ghostMat.depthWrite = false;
 function applyGhost() {
   const on = invisibleOn();
-  player.g.traverse(o => { if (o.isMesh && (o.material === vcMat || o.material === ghostMat)) o.material = on ? ghostMat : vcMat; });
+  player.g.traverse(o => { if (o.isMesh && (o.material === personMat || o.material === ghostMat)) o.material = on ? ghostMat : personMat; });
   if (P.car) ghostVehicle(P.car, on);
 }
 // Pojazd, którym jedzie niewidzialny gracz, też jest półprzezroczysty (po wyjściu wraca do normy).
