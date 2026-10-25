@@ -1798,24 +1798,66 @@ const DB = (() => {
     return data[0];
   }
 
-  async function addChild(childUserId) {
+  // ── Kody połączenia opiekun ↔ dziecko (migracja #76) ──
+  // Opiekun nie dodaje już dziecka po loginie — tylko jednorazowym kodem,
+  // który generuje uczeń (dla siebie) albo jego nauczyciel / admin.
+  function _pcMissing(error) {
+    return !!error && /parent_code_|parent_add_child_by_code|my_parents|PGRST202|42883/i.test((error.code || '') + ' ' + (error.message || ''));
+  }
+  const _PC_MIGRATION = 'Uruchom migrację #76 (parent-link-codes.sql) w Supabase.';
+
+  // childId null = kod dla siebie (uczeń). Zwraca { code, expiresAt }.
+  async function parentCodeCreate(childId) {
     if (!_userId) throw new Error('Nie zalogowany.');
-    if (!_profile?.isParent) throw new Error('Tylko opiekun moze dodawac dzieci.');
-    if (childUserId === _userId) throw new Error('Nie mozesz dodac siebie jako dziecka.');
-    // Uzywamy RPC parent_add_child (SECURITY DEFINER) — omija problem
-    // rekurencji RLS profiles<->parent_children. Migracja: fix-parent-add-child.sql
-    const { error } = await supabase.rpc('parent_add_child', { p_child_id: childUserId });
-    if (error) {
-      // Fallback: stary direct insert (gdyby RPC jeszcze nie zostalo zainstalowane)
-      const { error: insErr } = await supabase
-        .from('parent_children')
-        .insert({ parent_id: _userId, child_id: childUserId });
-      if (insErr) {
-        if (insErr.code === '23505') throw new Error('To dziecko juz jest przypisane.');
-        // Zwracamy oryginalny blad RPC (zwykle bardziej opisowy)
-        throw new Error(error.message || insErr.message);
-      }
-    }
+    const { data, error } = await supabase.rpc('parent_code_create', { p_child: childId || null });
+    if (_pcMissing(error)) throw new Error(_PC_MIGRATION);
+    if (error) throw new Error(error.message);
+    const r = Array.isArray(data) ? data[0] : data;
+    return r ? { code: r.code, expiresAt: r.expires_at } : null;
+  }
+
+  // Aktywny kod ucznia albo null. undefined = brak migracji (UI chowa sekcję).
+  async function parentCodeGet(childId) {
+    if (!_userId) return null;
+    const { data, error } = await supabase.rpc('parent_code_get', { p_child: childId || null });
+    if (_pcMissing(error)) return undefined;
+    if (error) throw new Error(error.message);
+    const r = Array.isArray(data) ? data[0] : data;
+    return r ? { code: r.code, expiresAt: r.expires_at } : null;
+  }
+
+  async function parentCodeRevoke(childId) {
+    const { data, error } = await supabase.rpc('parent_code_revoke', { p_child: childId || null });
+    if (error) throw new Error(error.message);
+    return data || 0;
+  }
+
+  // Opiekun wpisuje kod. Zwraca { childId, username }.
+  async function addChildByCode(code) {
+    if (!_userId) throw new Error('Nie zalogowany.');
+    if (!_profile?.isParent) throw new Error('Tylko opiekun może dodawać dzieci.');
+    const { data, error } = await supabase.rpc('parent_add_child_by_code', { p_code: String(code || '') });
+    if (_pcMissing(error)) throw new Error(_PC_MIGRATION);
+    if (error) throw new Error(error.message);
+    if (data && data.ok) return { childId: data.child_id, username: data.username };
+    const MSG = {
+      BAD_CODE: 'Nieprawidłowy, wykorzystany lub wygasły kod. Poproś o nowy.',
+      LIMIT: 'Za dużo błędnych prób. Spróbuj ponownie za godzinę.',
+      ALREADY: 'To dziecko jest już na Twojej liście.',
+      NOT_STUDENT: 'Tego konta nie można dodać jako podopiecznego.',
+      NOT_PARENT: 'Tylko opiekun może dodawać dzieci.',
+      AUTH: 'Nie zalogowany.'
+    };
+    throw new Error(MSG[data && data.error] || 'Nie udało się dodać dziecka.');
+  }
+
+  // Uczeń: lista opiekunów podpiętych do jego konta. null = brak migracji.
+  async function loadMyParents() {
+    if (!_userId) return [];
+    const { data, error } = await supabase.rpc('my_parents');
+    if (_pcMissing(error)) return null;
+    if (error) throw new Error(error.message);
+    return data || [];
   }
 
   async function removeChild(relationId) {
@@ -4824,7 +4866,11 @@ const DB = (() => {
     listMyChildren,
     fetchProfileById,
     findUserByUsername,
-    addChild,
+    addChildByCode,
+    parentCodeCreate,
+    parentCodeGet,
+    parentCodeRevoke,
+    loadMyParents,
     removeChild,
     loadParentChildLinksForChildren,
     loadClassLeaderboard,

@@ -4161,25 +4161,31 @@ szkoła	school"></textarea>
   </div>
 </div>
 
-<!-- ══ SCREEN: ADD CHILD (opiekun dodaje dziecko po loginie) ══ -->
+<!-- ══ SCREEN: ADD CHILD (opiekun dodaje dziecko kodem — migracja #76) ══ -->
 <div class="screen" id="sAddChild">
   <div style="width:100%">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">
       <div>
         <div style="font-family:'Playfair Display',serif;font-size:1.3rem;color:var(--pink)">👶 Dodaj dziecko</div>
-        <div style="font-size:.72rem;color:var(--muted);font-weight:600;margin-top:2px">Wyszukaj ucznia po jego loginie i dodaj do listy podopiecznych</div>
+        <div style="font-size:.72rem;color:var(--muted);font-weight:600;margin-top:2px">Wpisz kod od dziecka lub jego nauczyciela</div>
       </div>
       <button class="btn-sm" onclick="showScreen('sParentPanel')">← Panel opiekuna</button>
     </div>
 
     <div style="background:var(--surface);border:1.5px solid var(--border);border-radius:14px;padding:16px 14px;max-width:520px;margin:0 auto">
-      <label style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px">Login ucznia</label>
+      <label for="addChildCode" style="font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px">Kod dla opiekuna</label>
       <div style="display:flex;gap:8px;margin-bottom:10px">
-        <input type="text" id="addChildLogin" placeholder="np. janek123" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" style="flex:1;padding:8px 10px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:.9rem;font-weight:600;outline:none;font-family:'Courier New',monospace">
-        <button class="btn-sm accent" onclick="searchChildByLogin()">🔎 Szukaj</button>
+        <input type="text" id="addChildCode" placeholder="np. K7MP-2XQD" maxlength="12" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" onkeydown="if(event.key==='Enter')addChildByCode()" style="flex:1;min-width:0;padding:8px 10px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:1rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;outline:none;font-family:'Courier New',monospace">
+        <button class="btn-sm accent" onclick="addChildByCode()">➕ Dodaj</button>
       </div>
       <div id="addChildResult" style="font-size:.82rem;color:var(--muted);padding:12px 10px;border-radius:10px;background:var(--surface2);border:1px dashed var(--border);text-align:center;font-weight:600">
-        Wpisz login i kliknij „Szukaj".
+        Wpisz kod i kliknij „Dodaj".
+      </div>
+      <div style="font-size:.7rem;color:var(--muted);font-weight:600;line-height:1.55;margin-top:12px">
+        <b>Skąd wziąć kod?</b><br>
+        • Dziecko loguje się na swoje konto → <b>👤 Moje konto → 👨‍👩‍👧 Kod dla opiekuna → Wygeneruj kod</b>.<br>
+        • Albo kod daje nauczyciel dziecka.<br>
+        Kod jest jednorazowy i ważny 7 dni. Dzięki temu nikt obcy nie doda dziecka po samym loginie.
       </div>
     </div>
   </div>
@@ -22313,6 +22319,14 @@ if ('serviceWorker' in navigator) {
       <div id="nicknameMsg" style="font-size:.7rem;font-weight:700;margin-top:6px;min-height:14px"></div>
     </div>
 
+    <!-- Kod dla rodzica/opiekuna (migracja #76) — tylko uczeń -->
+    <div id="parentCodeSection" style="display:none;background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:12px 16px;margin-bottom:14px">
+      <div style="font-size:.82rem;font-weight:800;color:var(--text);margin-bottom:4px">👨‍👩‍👧 Kod dla opiekuna</div>
+      <div style="font-size:.68rem;color:var(--muted);font-weight:600;line-height:1.45;margin-bottom:8px">Rodzic lub opiekun wpisuje ten kod w swoim panelu („👶 Dodaj dziecko”), żeby widzieć Twoje postępy. Kod jest jednorazowy i ważny 7 dni — dawaj go tylko swoim rodzicom.</div>
+      <div id="parentCodeBoxMine"></div>
+      <div id="myParentsList" style="font-size:.68rem;color:var(--muted);font-weight:600;line-height:1.45;margin-top:8px"></div>
+    </div>
+
     <!-- Wirtualny pupil (Tamagotchi) — wlacz/wylacz -->
     <div id="petToggleSection" style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:12px 16px;margin-bottom:14px">
       <label style="display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer">
@@ -22833,6 +22847,13 @@ if ('serviceWorker' in navigator) {
       <button type="button" class="btn-sm accent" id="userSettingsGrantTrialBtn" onclick="grantTrialFromSettings()" style="padding:7px 12px;font-size:.74rem">🎁 Aktywuj 30 dni Premium</button>
     </div>
 
+    <!-- Kod dla opiekuna ucznia (migracja #76) — admin / nauczyciel tego ucznia -->
+    <div id="userSettingsParentCodeSection" style="display:none;margin-top:10px;padding:10px 12px;background:var(--surface2);border:1.5px solid var(--border);border-radius:10px">
+      <div style="font-size:.82rem;font-weight:700;color:var(--text);margin-bottom:4px">👨‍👩‍👧 Kod dla opiekuna</div>
+      <div style="font-size:.66rem;color:var(--muted);font-weight:600;line-height:1.45;margin-bottom:8px">Przekaż kod rodzicowi — wpisze go w „👶 Dodaj dziecko” i zobaczy postępy ucznia. Jednorazowy, ważny 7 dni.</div>
+      <div id="parentCodeBoxStudent"></div>
+    </div>
+
     <div id="userSettingsMsg" style="font-size:.7rem;margin-top:10px;min-height:14px;font-weight:600"></div>
 
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;flex-wrap:wrap">
@@ -22891,6 +22912,77 @@ if ('serviceWorker' in navigator) {
   window.openPrivacyModal = function(){ document.getElementById('privacyModal').style.display='flex'; };
   window.closePrivacyModal = function(){ document.getElementById('privacyModal').style.display='none'; };
 
+  // ── Kod dla opiekuna (migracja #76) ──
+  // Wspólny widok: uczeń w „Moje konto” (childId null) i nauczyciel/admin
+  // w „⚙️ Ustawienia konta” ucznia. onMissing — gdy brak migracji (chowamy sekcję).
+  const _pcFmt = c => c ? c.slice(0, 4) + '-' + c.slice(4) : '';
+  window.sfParentCodeBox = async function(el, childId, onMissing) {
+    if (!el) return;
+    const btn = 'class="btn-sm" style="font-size:.72rem"';
+    const paint = (st, msg) => {
+      if (st && st.code) {
+        const exp = new Date(st.expiresAt).toLocaleDateString('pl-PL');
+        el.innerHTML = `
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:8px 10px;background:var(--surface);border:1.5px dashed var(--accent);border-radius:10px">
+            <div>
+              <div style="font-family:'Courier New',monospace;font-size:1.25rem;font-weight:800;letter-spacing:.12em;color:var(--accent)">${_pcFmt(st.code)}</div>
+              <div style="font-size:.64rem;color:var(--muted);font-weight:700">ważny do ${exp} · jednorazowy</div>
+            </div>
+            <button type="button" ${btn} data-pc="copy">📋 Kopiuj</button>
+          </div>
+          <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
+            <button type="button" ${btn} data-pc="new">🔄 Nowy kod</button>
+            <button type="button" ${btn} data-pc="revoke">🚫 Unieważnij</button>
+          </div>`;
+      } else {
+        el.innerHTML = `<button type="button" class="btn-sm accent" style="font-size:.74rem" data-pc="new">🔑 Wygeneruj kod</button>`;
+      }
+      if (msg) el.insertAdjacentHTML('beforeend', `<div style="font-size:.68rem;font-weight:700;margin-top:6px;color:var(--danger)">${escHtml(msg)}</div>`);
+      el.querySelectorAll('[data-pc]').forEach(b => b.onclick = () => act(b.getAttribute('data-pc'), st));
+    };
+    const act = async (what, st) => {
+      try {
+        if (what === 'copy') {
+          try { await navigator.clipboard.writeText(_pcFmt(st.code)); toast('📋 Skopiowano kod', 1600); }
+          catch(e) { prompt('Skopiuj kod:', _pcFmt(st.code)); }
+          return;
+        }
+        if (what === 'revoke') {
+          if (!confirm('Unieważnić kod? Opiekun nie będzie mógł go już użyć.')) return;
+          await DB.parentCodeRevoke(childId);
+          return paint(null);
+        }
+        if (what === 'new' && st && st.code && !confirm('Wygenerować nowy kod? Poprzedni przestanie działać.')) return;
+        paint(await DB.parentCodeCreate(childId));
+      } catch(e) { paint(st, e.message); }
+    };
+    el.innerHTML = '<span style="font-size:.7rem;color:var(--muted)">⏳ …</span>';
+    try {
+      const st = await DB.parentCodeGet(childId);
+      if (st === undefined) { el.innerHTML = ''; if (onMissing) onMissing(); return; }
+      paint(st);
+    } catch(e) { paint(null, e.message); }
+  };
+
+  async function _renderMyParentCode() {
+    const sec = document.getElementById('parentCodeSection');
+    if (!sec) return;
+    const isStudent = !isGuest && !isCurrentUserAdmin() && !isCurrentUserTeacher() && !isCurrentUserParent();
+    sec.style.display = isStudent ? '' : 'none';
+    if (!isStudent) return;
+    const hide = () => { sec.style.display = 'none'; };
+    window.sfParentCodeBox(document.getElementById('parentCodeBoxMine'), null, hide);
+    const listEl = document.getElementById('myParentsList');
+    listEl.textContent = '';
+    try {
+      const ps = await DB.loadMyParents();
+      if (ps === null) return hide();
+      listEl.innerHTML = ps.length
+        ? 'Twoi opiekunowie: ' + ps.map(p => '<b>' + escHtml(p.username) + '</b>').join(', ') + '. Jeśli kogoś nie znasz — powiedz nauczycielowi lub napisz do administratora.'
+        : 'Nie masz jeszcze podpiętego opiekuna.';
+    } catch(e) {}
+  }
+
   // ── Moje konto ──
   window.openAccountModal = function(){
     if (typeof isGuest !== 'undefined' && isGuest) {
@@ -22916,6 +23008,7 @@ if ('serviceWorker' in navigator) {
       const as = document.getElementById('avatarSection'); if (as) as.style.display = isGuest ? 'none' : '';
       if (typeof _renderAvatarPreview === 'function') _renderAvatarPreview();
       if (typeof window.sfPetSyncToggle === 'function') window.sfPetSyncToggle();
+      _renderMyParentCode();
     } catch(e) {}
     document.getElementById('deleteExpectedName').textContent = uname;
     // Resetuj UI usuwania
@@ -25595,6 +25688,16 @@ if ('serviceWorker' in navigator) {
         }
       }
     }
+    // Kod dla opiekuna (migracja #76) — tylko gdy cel to uczeń
+    const pcSec = document.getElementById('userSettingsParentCodeSection');
+    if (pcSec) {
+      const targetIsStudent = !_tProf || (!_tProf.is_admin && !_tProf.is_teacher && !_tProf.is_parent);
+      const canPc = targetIsStudent && (isAdmin || isCurrentUserTeacher());
+      pcSec.style.display = canPc ? '' : 'none';
+      if (canPc && window.sfParentCodeBox) {
+        window.sfParentCodeBox(document.getElementById('parentCodeBoxStudent'), userId, () => { pcSec.style.display = 'none'; });
+      }
+    }
     document.getElementById('userSettingsMsg').textContent = '';
     document.getElementById('userSettingsModal').style.display = 'flex';
   };
@@ -27781,7 +27884,7 @@ if ('serviceWorker' in navigator) {
     try {
       const kids = await DB.listMyChildren();
       if (!kids.length) {
-        listEl.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:.85rem;padding:28px 14px;font-weight:600">Nie masz jeszcze żadnego podopiecznego.<br><br>Kliknij <b>„+ Dodaj dziecko"</b> i wyszukaj ucznia po jego loginie.</div>';
+        listEl.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:.85rem;padding:28px 14px;font-weight:600">Nie masz jeszcze żadnego podopiecznego.<br><br>Kliknij <b>„+ Dodaj dziecko"</b> i wpisz kod od dziecka lub jego nauczyciela.</div>';
         return;
       }
       listEl.innerHTML = '';
@@ -27825,46 +27928,29 @@ if ('serviceWorker' in navigator) {
   }
 
   window.openAddChildScreen = function(){
-    document.getElementById('addChildLogin').value = '';
-    document.getElementById('addChildResult').innerHTML = 'Wpisz login i kliknij „Szukaj".';
+    document.getElementById('addChildCode').value = '';
+    document.getElementById('addChildResult').innerHTML = 'Wpisz kod i kliknij „Dodaj".';
     showScreen('sAddChild');
-    setTimeout(()=>document.getElementById('addChildLogin').focus(), 100);
+    setTimeout(()=>document.getElementById('addChildCode').focus(), 100);
   };
 
-  window.searchChildByLogin = async function(){
-    const login = document.getElementById('addChildLogin').value.trim().toLowerCase();
+  let _addChildBusy = false;
+  window.addChildByCode = async function(){
+    const code = document.getElementById('addChildCode').value.replace(/[^a-z0-9]/gi, '').toUpperCase();
     const resultEl = document.getElementById('addChildResult');
-    if (!login) { resultEl.innerHTML = '<span style="color:var(--danger)">Wpisz login.</span>'; return; }
-    resultEl.innerHTML = '⏳ Szukam…';
+    if (code.length !== 8) { resultEl.innerHTML = '<span style="color:var(--danger)">Kod ma 8 znaków (np. K7MP-2XQD).</span>'; return; }
+    if (_addChildBusy) return;
+    _addChildBusy = true;
+    resultEl.innerHTML = '⏳ Sprawdzam kod…';
     try {
-      const found = await DB.findUserByUsername(login);
-      if (!found) {
-        resultEl.innerHTML = `<span style="color:var(--danger)">❌ Nie znaleziono użytkownika <b>${escHtml(login)}</b>.</span>`;
-        return;
-      }
-      if (found.is_admin || found.is_teacher || found.is_parent) {
-        resultEl.innerHTML = `<span style="color:var(--danger)">Konto <b>${escHtml(login)}</b> nie jest uczniem — nie można go dodać jako podopiecznego.</span>`;
-        return;
-      }
-      resultEl.innerHTML = `
-        <div style="text-align:left">
-          <div style="font-size:.95rem;font-weight:800;color:var(--accent2);margin-bottom:6px">✅ Znaleziono ucznia: <b>${escHtml(found.username)}</b></div>
-          <button class="btn-sm accent" style="padding:7px 14px" onclick="confirmAddChild('${found.id}','${escHtml(found.username)}')">➕ Dodaj jako podopiecznego</button>
-        </div>
-      `;
-    } catch(e) {
-      resultEl.innerHTML = `<span style="color:var(--danger)">❌ ${escHtml(e.message)}</span>`;
-    }
-  };
-
-  window.confirmAddChild = async function(childId, username){
-    try {
-      await DB.addChild(childId);
-      if (typeof toast==='function') toast('✅ Dodano: ' + username, 2400);
+      const r = await DB.addChildByCode(code);
+      if (typeof toast==='function') toast('✅ Dodano: ' + r.username, 2400);
       showScreen('sParentPanel');
       await refreshMyChildren();
     } catch(e) {
-      alert(e.message);
+      resultEl.innerHTML = `<span style="color:var(--danger)">❌ ${escHtml(e.message)}</span>`;
+    } finally {
+      _addChildBusy = false;
     }
   };
 
