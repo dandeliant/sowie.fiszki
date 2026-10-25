@@ -49,7 +49,10 @@ const json = (body: unknown, status = 200) =>
 const fail = (code: string, message: string, status = 400) => json({ error: code, message }, status);
 const str = (v: unknown, max = 300) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 
-async function chatJSON(system: string, user: string, maxTokens = 4000): Promise<any> {
+// Zużycie tokenów jednego wywołania (zapisywane w ai_usage — migracja #79, panel kosztów AI).
+type Usage = { in: number; out: number };
+const addUsage = (acc: Usage | undefined, j: any) => { if (acc && j?.usage) { acc.in += Number(j.usage.prompt_tokens) || 0; acc.out += Number(j.usage.completion_tokens) || 0; } };
+async function chatJSON(acc: Usage, system: string, user: string, maxTokens = 4000): Promise<any> {
   const r = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: { Authorization: `Bearer ${OPENAI_KEY}`, 'Content-Type': 'application/json' },
@@ -62,6 +65,7 @@ async function chatJSON(system: string, user: string, maxTokens = 4000): Promise
   });
   if (!r.ok) throw new Error(`OpenAI ${r.status}: ${(await r.text()).slice(0, 300)}`);
   const j = await r.json();
+  addUsage(acc, j);
   return JSON.parse(j?.choices?.[0]?.message?.content || '{}');
 }
 // true = treść niebezpieczna (wulgaryzmy, przemoc, treści dla dorosłych…)
@@ -83,13 +87,13 @@ const RULES = 'You write learning materials for Polish school children learning 
   'Polish text must be correct and use Polish diacritics (ą, ć, ę, ł, ń, ó, ś, ź, ż). Answer ONLY with valid JSON.';
 
 // ── sentences ──
-async function doSentences(b: any) {
+async function doSentences(b: any, acc: Usage) {
   const lang = LANGS[b.lang] || LANGS.en;
   const words = (Array.isArray(b.words) ? b.words : []).slice(0, 40)
     .map((w: any) => ({ pl: str(w.pl, 80), t: str(w.t, 80) })).filter((w: any) => w.pl && w.t);
   if (!words.length) throw new Error('Brak słówek.');
   const level = str(b.level, 40) || 'A1–A2';
-  const out = await chatJSON(RULES,
+  const out = await chatJSON(acc, RULES,
     `For each word write ONE short, natural example sentence in ${lang} (level ${level}, 4–10 words) that uses the word exactly as given, ` +
     `and its Polish translation that uses the Polish word. Return {"items":[{"pl":"<polish word as given>","sentPl":"…","sentT":"…"}]} in the same order.\n` +
     `Words (Polish → ${lang}):\n` + words.map((w: any) => `${w.pl} → ${w.t}`).join('\n'));
@@ -99,14 +103,14 @@ async function doSentences(b: any) {
 }
 
 // ── wordlist ──
-async function doWordlist(b: any) {
+async function doWordlist(b: any, acc: Usage) {
   const lang = LANGS[b.lang] || LANGS.en;
   const topic = str(b.topic, 120); if (!topic) throw new Error('Podaj temat.');
   const count = Math.max(5, Math.min(40, Number(b.count) || 20));
   const level = str(b.level, 20) || 'A1';
   const grade = str(b.grade, 40);
   const notes = str(b.notes, 300);
-  const out = await chatJSON(RULES,
+  const out = await chatJSON(acc, RULES,
     `Create a vocabulary list of exactly ${count} useful words/phrases on the topic "${topic}" for Polish students` +
     (grade ? ` (${grade})` : '') + `, CEFR level ${level}, target language ${lang}.` + (notes ? ` Teacher's notes: ${notes}.` : '') +
     ` Use the base/dictionary form, nouns without articles unless natural. Avoid duplicates. For each: Polish meaning, ${lang} word, ` +
@@ -120,7 +124,7 @@ async function doWordlist(b: any) {
 }
 
 // ── grammar ──
-async function doGrammar(b: any) {
+async function doGrammar(b: any, acc: Usage) {
   const lang = LANGS[b.lang] || LANGS.en;
   const topic = str(b.topic, 120); if (!topic) throw new Error('Podaj temat gramatyczny.');
   const count = Math.max(5, Math.min(30, Number(b.count) || 15));
@@ -130,7 +134,7 @@ async function doGrammar(b: any) {
   const notes = str(b.notes, 300);
   const words = (Array.isArray(b.words) ? b.words : []).slice(0, 90)
     .map((w: any) => `${str(w.t, 60)} (${str(w.pl, 60)})`).filter((s: string) => s.length > 3);
-  const out = await chatJSON(RULES,
+  const out = await chatJSON(acc, RULES,
     `Create exactly ${count} grammar exercises on "${topic}" in ${lang} for Polish students, level ${level}.` +
     (notes ? ` Teacher's notes: ${notes}.` : '') +
     ` Use mainly this vocabulary from the textbook units (target word (Polish)): ${words.join(', ') || '(any simple everyday words)'}.` +
@@ -158,7 +162,7 @@ async function doGrammar(b: any) {
 
 // ── story (czytanka) ──
 const STORY_LEN: Record<string, string> = { short: '80–100', medium: '130–160', long: '220–260' };
-async function doStory(b: any) {
+async function doStory(b: any, acc: Usage) {
   const lang = LANGS[b.lang] || LANGS.en;
   const len = STORY_LEN[str(b.length, 10)] || STORY_LEN.short;
   const level = str(b.level, 40) || 'A1–A2';
@@ -167,7 +171,7 @@ async function doStory(b: any) {
   const words = (Array.isArray(b.words) ? b.words : []).slice(0, 30)
     .map((w: any) => `${str(w.t, 60)} (${str(w.pl, 60)})`).filter((s: string) => s.length > 3);
   if (words.length < 3) throw new Error('Za mało słówek w rozdziale.');
-  const out = await chatJSON(RULES,
+  const out = await chatJSON(acc, RULES,
     `Write a short, engaging story in ${lang} for Polish children, CEFR level ${level}, length ${len} words.` +
     (topic ? ` Topic: ${topic}.` : ' Choose a fun everyday topic that fits the words.') +
     (grammar ? ` Use mainly this grammar: ${grammar}.` : '') +
@@ -188,7 +192,7 @@ async function doStory(b: any) {
 
 // ── chat (rozmowa) ──
 type Turn = { role: 'user' | 'assistant'; content: string };
-async function doChat(b: any) {
+async function doChat(b: any, acc: Usage) {
   const lang = LANGS[b.lang] || LANGS.en;
   const level = str(b.level, 40) || 'A1–A2';
   const name = str(b.name, 40) || 'Owl';
@@ -235,6 +239,7 @@ async function doChat(b: any) {
   });
   if (!r.ok) throw new Error(`OpenAI ${r.status}: ${(await r.text()).slice(0, 300)}`);
   const j = await r.json();
+  addUsage(acc, j);
   const out = JSON.parse(j?.choices?.[0]?.message?.content || '{}');
   const c = out.correction && typeof out.correction === 'object' ? out.correction : null;
   return {
@@ -244,12 +249,12 @@ async function doChat(b: any) {
 }
 
 // ── check_sentence ──
-async function doCheck(b: any) {
+async function doCheck(b: any, acc: Usage) {
   const lang = LANGS[b.lang] || LANGS.en;
   const word = str(b.word, 80), wordPl = str(b.wordPl, 80), sentence = str(b.sentence, 240);
   if (!word || !sentence) throw new Error('Brak słówka albo zdania.');
   if (await flagged(sentence)) return { blocked: true };
-  const out = await chatJSON(RULES + ' You are a kind, encouraging teacher of a child.',
+  const out = await chatJSON(acc, RULES + ' You are a kind, encouraging teacher of a child.',
     `The student had to write their own sentence in ${lang} using the word "${word}" (Polish: "${wordPl}").\n` +
     `Student's sentence: """${sentence}"""\n` +
     `Check it. Ignore missing final punctuation and capital letters. Return {"ok":true|false (grammatically correct and natural),` +
@@ -280,18 +285,34 @@ Deno.serve(async (req) => {
     const svc = createClient(SB_URL, SB_SERVICE);
     const { data: prof } = await svc.from('profiles').select('is_admin, is_teacher').eq('id', user.id).maybeSingle();
     const staff = !!(prof && (prof.is_admin || prof.is_teacher));
-    const max = staff ? lim[0] : lim[1];
-    if (!max) return fail('FORBIDDEN', 'Ta funkcja jest dostępna dla nauczyciela i administratora.', 403);
+    // Ustawienia admina (migracja #79): wyłącznik AI i limity z bazy; bez migracji — wartości domyślne z kodu.
+    const roleKey = staff ? 'staff' : 'student';
+    let max = staff ? lim[0] : lim[1];
+    try {
+      const [{ data: sets }, { data: lims }] = await Promise.all([
+        svc.from('ai_settings').select('key, value').eq('key', 'enabled'),
+        svc.from('ai_limits').select('role, max').eq('action', action),
+      ]);
+      const en = sets && sets[0] && sets[0].value;
+      if (en && en[roleKey] === false) return fail('AI_OFF', 'Funkcje AI są chwilowo wyłączone przez administratora.', 403);
+      const row = (lims || []).find((x: any) => x.role === roleKey);
+      if (row && Number.isFinite(Number(row.max))) max = Number(row.max);
+    } catch { /* bez migracji #79 */ }
+    if (!max) return fail('FORBIDDEN', (staff || lim[1]) ? 'Ta funkcja AI jest chwilowo wyłączona przez administratora.' : 'Ta funkcja jest dostępna dla nauczyciela i administratora.', 403);
     const { data: used, error: limErr } = await svc.rpc('ai_usage_bump', { p_user: user.id, p_action: action, p_max: max });
     if (limErr) return fail('NO_MIGRATION', 'Uruchom migrację #73 (ai-features.sql) w Supabase.', 500);
     if (used === -1) return fail('LIMIT', `Dzienny limit AI dla tej funkcji (${max}) został wykorzystany — spróbuj jutro.`, 429);
 
-    const result = action === 'sentences' ? await doSentences(body)
-      : action === 'wordlist' ? await doWordlist(body)
-      : action === 'grammar' ? await doGrammar(body)
-      : action === 'story' ? await doStory(body)
-      : action === 'chat' ? await doChat(body)
-      : await doCheck(body);
+    const acc: Usage = { in: 0, out: 0 };
+    const result = action === 'sentences' ? await doSentences(body, acc)
+      : action === 'wordlist' ? await doWordlist(body, acc)
+      : action === 'grammar' ? await doGrammar(body, acc)
+      : action === 'story' ? await doStory(body, acc)
+      : action === 'chat' ? await doChat(body, acc)
+      : await doCheck(body, acc);
+    if (acc.in || acc.out) {
+      try { await svc.rpc('ai_usage_tokens', { p_user: user.id, p_action: action, p_in: acc.in, p_out: acc.out }); } catch { /* bez migracji #79 */ }
+    }
     return json({ ...result, used, max });
   } catch (e) {
     console.error('[ai]', e);

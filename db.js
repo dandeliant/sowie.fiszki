@@ -2192,6 +2192,39 @@ const DB = (() => {
     if (data && data.error) throw new Error(data.message || data.error);
     return data || {};
   }
+  // ── Panel kosztów AI (migracja #79, admin). null = brak migracji ──
+  const _missing79 = e => /ai_usage_daily|ai_usage_top|ai_limits|ai_settings|tokens_in|PGRST20[02]|42P01|42703|42883/i.test(((e && e.code) || '') + ' ' + ((e && e.message) || ''));
+  async function aiCostStats(days = 30) {
+    const [d, t] = await Promise.all([
+      supabase.rpc('ai_usage_daily', { p_days: days }),
+      supabase.rpc('ai_usage_top', { p_days: days, p_limit: 15 }),
+    ]);
+    const err = d.error || t.error;
+    if (err) { if (_missing79(err)) return null; throw new Error(err.message); }
+    return { daily: d.data || [], top: t.data || [] };
+  }
+  async function loadAiConfig() {
+    const [l, s] = await Promise.all([
+      supabase.from('ai_limits').select('action, role, max'),
+      supabase.from('ai_settings').select('key, value'),
+    ]);
+    const err = l.error || s.error;
+    if (err) { if (_missing79(err)) return null; throw new Error(err.message); }
+    const settings = Object.fromEntries((s.data || []).map(r => [r.key, r.value]));
+    return { limits: l.data || [], settings };
+  }
+  async function saveAiLimit(action, role, max) {
+    const { data, error } = await supabase.from('ai_limits')
+      .upsert({ action, role, max: Math.max(0, Math.min(100000, Math.round(+max || 0))), updated_by: _userId, updated_at: new Date().toISOString() }, { onConflict: 'action,role' }).select();
+    if (error) throw new Error(error.message);
+    if (!data || !data.length) throw new Error('Brak uprawnień administratora.');
+  }
+  async function saveAiSetting(key, value) {
+    const { data, error } = await supabase.from('ai_settings')
+      .upsert({ key, value, updated_by: _userId, updated_at: new Date().toISOString() }, { onConflict: 'key' }).select();
+    if (error) throw new Error(error.message);
+    if (!data || !data.length) throw new Error('Brak uprawnień administratora.');
+  }
   // Zestawy zadań gramatycznych (grammar_sets) — null = brak migracji #73.
   async function loadGrammarSets(bookId, unitKeys) {
     // '*' — po migracji #78 dochodzą status / shared / share_status / review_note
@@ -4879,6 +4912,7 @@ const DB = (() => {
     deleteGrammarSet,
     loadReadingSets, saveReadingSet, deleteReadingSet, setContentShared,
     loadReviewQueue, reviewContent, contentReviewCounts, loadTaskBank,
+    aiCostStats, loadAiConfig, saveAiLimit, saveAiSetting,
     loadClassPets,
     petReact,
     petReactSentToday,

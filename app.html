@@ -21864,6 +21864,7 @@ if ('serviceWorker' in navigator) {
         admins:           () => (typeof openAdminsModal==='function')      && openAdminsModal(),
         review:           () => (typeof openContentReview==='function')    && openContentReview(),
         bank:             () => (typeof openTaskBank==='function')         && openTaskBank(),
+        aicost:           () => (typeof openAiCostPanel==='function')      && openAiCostPanel(),
         newBook:          () => (typeof openAdminBookModal==='function')   && openAdminBookModal(),
         premium:          () => (typeof openPremiumPricingModal==='function') && openPremiumPricingModal(),
       };
@@ -33271,6 +33272,90 @@ ${bodyHtml}
       try { if (typeof refreshAdminAttentionBanner === 'function') refreshAdminAttentionBanner(); } catch(e) {}
       if (currentBookId === r.book_id) { renderGrammarBox(); renderStoryBox(); }
     } catch(e) { toast('❌ ' + e.message, 3500); }
+  };
+
+  /* ════════ 🤖 PANEL KOSZTÓW AI (admin, migracja #79) ════════ */
+  // Domyślne dzienne limity (jak LIMITS w supabase/functions/ai/index.ts): [nauczyciel/admin, uczeń/opiekun]
+  const AI_ACTIONS = [
+    ['chat', '💬 Rozmowa z AI', [200, 50]],
+    ['check_sentence', '✍️ Sprawdzanie zdań (Napisz zdanie)', [200, 40]],
+    ['grammar', '🧠 Zadania gramatyczne', [40, 0]],
+    ['story', '📖 Czytanki', [40, 0]],
+    ['sentences', '📝 Zdania przykładowe', [150, 0]],
+    ['wordlist', '🤖 Rozdział z AI (słówka)', [40, 0]],
+  ];
+  let _ac = null;
+  const usd = n => '$' + (n < 0.01 && n > 0 ? n.toFixed(4) : n.toFixed(2));
+  window.openAiCostPanel = async function(days){
+    if (!isCurrentUserAdmin()) { toast('Tylko dla administratora.', 2500); return; }
+    days = days || (_ac && _ac.days) || 30;
+    aiModal('aiCostModal', closeBtn('aiCostModal') + '<div class="modal-title">🤖 Koszty i limity AI</div><div class="ai-help">⏳ Wczytuję…</div>', true);
+    try {
+      const [stats, cfg] = await Promise.all([DB.aiCostStats(days), DB.loadAiConfig()]);
+      if (stats === null || cfg === null) { aiModal('aiCostModal', closeBtn('aiCostModal') + '<div class="modal-title">🤖 Koszty i limity AI</div><div class="ai-help">Uruchom migrację #79 (ai-cost-panel.sql) w Supabase i zaktualizuj funkcję AI (nowy plik supabase/functions/ai/index.ts).</div>', true); return; }
+      _ac = { days, stats, cfg };
+      aiCostRender();
+    } catch(e) { aiModal('aiCostModal', closeBtn('aiCostModal') + '<div class="modal-title">🤖 Koszty i limity AI</div><div class="ai-help">❌ ' + E(e.message) + '</div>', true); }
+  };
+  function aiCostRender(){
+    const { days, stats, cfg } = _ac;
+    const price = Object.assign({ in: 0.15, out: 0.6 }, cfg.settings.price || {});
+    const en = Object.assign({ staff: true, student: true }, cfg.settings.enabled || {});
+    const cost = r => (Number(r.tokens_in) || 0) / 1e6 * price.in + (Number(r.tokens_out) || 0) / 1e6 * price.out;
+    const today = new Date(); const iso = d => d.toISOString().slice(0, 10);
+    const todayIso = iso(new Date(today.getTime() - today.getTimezoneOffset() * 60000));
+    const byDay = {}, byAct = {};
+    stats.daily.forEach(r => {
+      const d = String(r.day).slice(0, 10);
+      const x = byDay[d] || (byDay[d] = { calls: 0, cost: 0 }); x.calls += +r.calls || 0; x.cost += cost(r);
+      const a = byAct[r.action] || (byAct[r.action] = { calls: 0, tin: 0, tout: 0, cost: 0 }); a.calls += +r.calls || 0; a.tin += +r.tokens_in || 0; a.tout += +r.tokens_out || 0; a.cost += cost(r);
+    });
+    const totCalls = Object.values(byDay).reduce((s, x) => s + x.calls, 0), totCost = Object.values(byDay).reduce((s, x) => s + x.cost, 0);
+    const t = byDay[todayIso] || { calls: 0, cost: 0 };
+    const dayList = []; for (let i = days - 1; i >= 0; i--) { const d = new Date(today.getTime() - i * 864e5 - today.getTimezoneOffset() * 60000); dayList.push(iso(d)); }
+    const maxCalls = Math.max(1, ...dayList.map(d => (byDay[d] || {}).calls || 0));
+    const card = (v, l) => `<div style="flex:1;min-width:110px;background:var(--surface2);border-radius:12px;padding:9px 10px;text-align:center"><div style="font-size:1.25rem;font-weight:800;color:var(--text)">${v}</div><div style="font-size:.66rem;color:var(--muted);font-weight:700">${l}</div></div>`;
+    const lim = (a, role) => { const r = cfg.limits.find(x => x.action === a && x.role === role); return r ? r.max : null; };
+    let h = closeBtn('aiCostModal') + '<div class="modal-title">🤖 Koszty i limity AI</div>'
+      + '<div class="gram-set-act" style="margin:4px 0 10px">' + [7, 30, 90].map(n => `<button class="btn-sm${n === days ? ' accent' : ''}" onclick="openAiCostPanel(${n})">${n} dni</button>`).join('') + '</div>'
+      + '<div style="display:flex;gap:8px;flex-wrap:wrap">' + card(t.calls, 'zapytań dziś') + card(usd(t.cost), 'koszt dziś (szac.)') + card(totCalls, 'zapytań — ' + days + ' dni') + card(usd(totCost), 'koszt — ' + days + ' dni')
+      + card(usd(totCost / days * 30), 'miesięcznie przy tym tempie') + '</div>'
+      + '<div class="ai-help" style="margin-top:6px">Szacunek z liczby tokenów × cena (poniżej). Dokładne rozliczenie: platform.openai.com → Usage. Tokeny są liczone od wdrożenia nowej wersji funkcji AI.</div>'
+      + '<label class="ai-lab">Zapytania dziennie</label><div style="display:flex;align-items:flex-end;gap:2px;height:90px;background:var(--surface2);border-radius:10px;padding:6px">'
+      + dayList.map(d => { const x = byDay[d] || { calls: 0, cost: 0 }; return `<div title="${d}: ${x.calls} zapytań · ${usd(x.cost)}" style="flex:1;min-width:2px;height:${Math.max(2, Math.round(x.calls / maxCalls * 78))}px;background:${d === todayIso ? 'var(--accent)' : 'var(--accent2,#06d6a0)'};border-radius:3px 3px 0 0;opacity:${x.calls ? 1 : .25}"></div>`; }).join('') + '</div>'
+      + '<label class="ai-lab">Funkcje — ' + days + ' dni</label><table class="aw-table"><tr style="font-weight:800;color:var(--muted)"><td>Funkcja</td><td>Zapytań</td><td>Tokeny (wejście / wyjście)</td><td>Koszt</td></tr>'
+      + AI_ACTIONS.map(([a, l]) => { const x = byAct[a] || { calls: 0, tin: 0, tout: 0, cost: 0 }; return `<tr><td>${l}</td><td>${x.calls}</td><td>${x.tin.toLocaleString('pl-PL')} / ${x.tout.toLocaleString('pl-PL')}</td><td>${usd(x.cost)}</td></tr>`; }).join('') + '</table>'
+      + '<label class="ai-lab">Najwięcej używają — ' + days + ' dni</label>'
+      + (stats.top.length ? '<table class="aw-table"><tr style="font-weight:800;color:var(--muted)"><td>Konto</td><td>Rola</td><td>Zapytań</td><td>Koszt</td></tr>' + stats.top.map(r => `<tr><td>${E(r.username || '—')}</td><td>${E(r.role)}</td><td>${r.calls}</td><td>${usd(cost(r))}</td></tr>`).join('') + '</table>' : '<div class="gram-empty">Brak użycia w tym okresie.</div>')
+      + '<label class="ai-lab">Włączone dla</label>'
+      + `<label class="ai-chk"><input type="checkbox" id="acEnStudent" ${en.student ? 'checked' : ''}> 🎒 Uczniów i opiekunów (rozmowa z AI, sprawdzanie zdań)</label>`
+      + `<label class="ai-chk"><input type="checkbox" id="acEnStaff" ${en.staff ? 'checked' : ''}> 👩‍🏫 Nauczycieli i administratora (generatory)</label>`
+      + '<label class="ai-lab">Dzienne limity na jedno konto</label><div class="ai-help" style="margin:0 0 4px">Puste pole = wartość domyślna (w nawiasie). 0 = funkcja wyłączona dla tej grupy.</div>'
+      + '<table class="aw-table"><tr style="font-weight:800;color:var(--muted)"><td>Funkcja</td><td>Nauczyciel / admin</td><td>Uczeń / opiekun</td></tr>'
+      + AI_ACTIONS.map(([a, l, d]) => `<tr><td>${l}</td><td><input type="text" inputmode="numeric" data-ac="${a}|staff" value="${lim(a, 'staff') ?? ''}" placeholder="(${d[0]})"></td><td><input type="text" inputmode="numeric" data-ac="${a}|student" value="${lim(a, 'student') ?? ''}" placeholder="(${d[1]})"></td></tr>`).join('') + '</table>'
+      + '<label class="ai-lab">Cena modelu (USD za 1 mln tokenów) — do szacunku</label><div class="ai-row">'
+      + `<div><input id="acPin" class="ai-inp" value="${price.in}" inputmode="decimal"><div class="ai-help" style="margin:2px 0">wejście (domyślnie 0.15 — gpt-4o-mini)</div></div>`
+      + `<div><input id="acPout" class="ai-inp" value="${price.out}" inputmode="decimal"><div class="ai-help" style="margin:2px 0">wyjście (domyślnie 0.60)</div></div></div>`
+      + '<div id="acMsg" class="ai-msg"></div><div class="modal-btns"><button class="btn-modal-cancel" onclick="document.getElementById(\'aiCostModal\').style.display=\'none\'">Zamknij</button>'
+      + '<button class="btn-modal-save" id="acSave" onclick="aiCostSave()">💾 Zapisz ustawienia</button></div>';
+    aiModal('aiCostModal', h, true);
+  }
+  window.aiCostSave = async function(){
+    const btn = $('acSave'); btn.disabled = true; setMsg('acMsg', '⏳ Zapisuję…');
+    try {
+      const pin = parseFloat(String($('acPin').value).replace(',', '.')), pout = parseFloat(String($('acPout').value).replace(',', '.'));
+      await DB.saveAiSetting('enabled', { student: $('acEnStudent').checked, staff: $('acEnStaff').checked });
+      if (isFinite(pin) && isFinite(pout) && pin >= 0 && pout >= 0) await DB.saveAiSetting('price', { in: pin, out: pout });
+      for (const inp of document.querySelectorAll('#aiCostModal [data-ac]')) {
+        const [a, role] = inp.dataset.ac.split('|'), v = String(inp.value).trim();
+        const cur = _ac.cfg.limits.find(x => x.action === a && x.role === role);
+        if (v === '' ) continue;
+        const n = Math.round(+v); if (!isFinite(n) || n < 0) throw new Error('Limit musi być liczbą ≥ 0 (' + a + ').');
+        if (!cur || cur.max !== n) await DB.saveAiLimit(a, role, n);
+      }
+      toast('✅ Ustawienia AI zapisane — działają od następnego zapytania.', 3000);
+      openAiCostPanel(_ac.days);
+    } catch(e) { setMsg('acMsg', '❌ ' + e.message, 'err'); btn.disabled = false; }
   };
 
   /* ════════ 💬 ROZMOWA Z AI (pupil / Sowa) — ai-chat.js + Edge Function „chat” ════════ */
