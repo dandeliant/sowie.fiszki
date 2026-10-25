@@ -12,6 +12,8 @@
 //    grammar         (admin/nauczyciel) — zadania gramatyczne A/B/C i luki ze słownictwem rozdziałów
 //    check_sentence  (każdy zalogowany)  — sprawdzenie zdania ucznia ze słówkiem (z moderacją)
 //    story           (admin/nauczyciel) — czytanka: opowiadanie ze słówkami rozdziału + tłumaczenie + pytania A/B/C
+//    chat            (każdy zalogowany)  — rozmowa po angielsku z pupilem / Sową / postacią z Grammar City,
+//                                          tylko o słówkach i gramatyce rozdziału (z moderacją wypowiedzi ucznia)
 //
 //  Sekrety (Supabase → Edge Functions → Secrets):
 //    OPENAI_API_KEY  — wymagany
@@ -38,6 +40,7 @@ const LIMITS: Record<string, [number, number]> = {
   grammar: [40, 0],
   check_sentence: [200, 40],
   story: [40, 0],
+  chat: [200, 50],
 };
 const LANGS: Record<string, string> = { en: 'British English', fr: 'French', de: 'German', es: 'Spanish', it: 'Italian', ru: 'Russian' };
 
@@ -183,6 +186,63 @@ async function doStory(b: any) {
   return { title: str(out.title, 120), text, textPl: clean(out.textPl, 5000), questions };
 }
 
+// ── chat (rozmowa) ──
+type Turn = { role: 'user' | 'assistant'; content: string };
+async function doChat(b: any) {
+  const lang = LANGS[b.lang] || LANGS.en;
+  const level = str(b.level, 40) || 'A1–A2';
+  const name = str(b.name, 40) || 'Owl';
+  const persona = b.persona === 'npc'
+    ? `You are ${name}, a friendly resident of Grammar City, a city in an English-learning game for children (your role, in Polish: ${str(b.role, 60) || 'mieszkaniec'}).`
+    : b.persona === 'pet'
+      ? `You are ${name}, the student's cute, playful virtual pet (species, in Polish: ${str(b.species, 40) || 'zwierzątko'}) in the learning app "Sowie Fiszki".`
+      : 'You are Fiszka, a wise, friendly owl who teaches in the learning app "Sowie Fiszki".';
+  const unit = str(b.unitName, 120);
+  const words = (Array.isArray(b.words) ? b.words : []).slice(0, 40)
+    .map((w: any) => `${str(w.t, 60)} (${str(w.pl, 60)})`).filter((s: string) => s.length > 3);
+  const grammar = (Array.isArray(b.grammar) ? b.grammar : []).slice(0, 6).map((g: unknown) => str(g, 80)).filter(Boolean);
+  const msg = str(b.message, 300);
+  if (msg && await flagged(msg)) return { blocked: true };
+  const system = RULES.replace('Answer ONLY with valid JSON.', '') + ' ' + persona +
+    ` You chat with a Polish child who is learning ${lang} at level ${level}.` +
+    (unit ? ` Topic of the conversation: the textbook unit "${unit}".` : ' Topic: simple everyday life in the city (shops, food, directions, weather, hobbies).') +
+    (words.length ? ` Unit vocabulary (target word (Polish)): ${words.join(', ')}.` : '') +
+    (grammar.length ? ` Grammar of this unit: ${grammar.join('; ')}.` : '') +
+    ` Rules: (1) "reply" ONLY in ${lang}, very simple for level ${level}: 1–3 short sentences, max 35 words.` +
+    ` (2) Stay on the unit topic: use the unit vocabulary and grammar; if the student goes off topic, kindly bring the talk back.` +
+    ` (3) Be warm, patient and encouraging, you love teaching; praise good answers specifically (e.g. "Great sentence!") and set "praise" true.` +
+    ` (4) Usually end with ONE simple question about the topic that uses unit words.` +
+    ` (5) If the student writes in Polish or mixes languages, do not answer in Polish: kindly ask them to try in ${lang} and give a short ${lang} sentence they can use.` +
+    ` (6) If the student's ${lang} has a mistake, fill "correction" (wrong fragment, corrected fragment, 1 short friendly explanation in Polish). Ignore capital letters, punctuation and typos in names.` +
+    ` (7) About every third turn ask the student to say a short useful phrase aloud (2–8 words, in ${lang}, with unit words): put it in "sayThis" and ask for it in "reply" (e.g. "Can you say: …?"). Otherwise "sayThis" is "".` +
+    ` (8) If the message says the student repeated the phrase aloud, praise it and continue.` +
+    ` (9) Never ask for personal data (surname, address, school name, phone, photos, passwords). No violence, romance, alcohol, brands or politics.` +
+    ` Answer ONLY with JSON: {"reply":"…","replyPl":"Polish translation of reply","correction":null or {"wrong":"…","right":"…","why":"…"},"praise":true|false,"sayThis":""}`;
+  const history: Turn[] = (Array.isArray(b.history) ? b.history : []).slice(-12)
+    .map((t: any) => ({ role: (t.role === 'assistant' ? 'assistant' : 'user') as Turn['role'], content: str(t.content, 400) }))
+    .filter((t: Turn) => t.content);
+  let user = msg;
+  if (!msg) user = '(The student has just opened the chat. Greet them by your name, say what we will talk about, and ask the first simple question.)';
+  else if (b.repeated) user = `(The student repeated aloud the phrase "${str(b.target, 120)}" and the speech recognizer heard: "${msg}".)`;
+  else if (b.spoken) user = msg + ' (said aloud — speech recognition text)';
+  const r = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${OPENAI_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: MODEL, max_completion_tokens: 600, response_format: { type: 'json_object' },
+      messages: [{ role: 'system', content: system }, ...history, { role: 'user', content: user }],
+    }),
+  });
+  if (!r.ok) throw new Error(`OpenAI ${r.status}: ${(await r.text()).slice(0, 300)}`);
+  const j = await r.json();
+  const out = JSON.parse(j?.choices?.[0]?.message?.content || '{}');
+  const c = out.correction && typeof out.correction === 'object' ? out.correction : null;
+  return {
+    reply: str(out.reply, 400), replyPl: str(out.replyPl, 500), praise: !!out.praise, sayThis: str(out.sayThis, 120),
+    correction: c && str(c.right, 200) ? { wrong: str(c.wrong, 200), right: str(c.right, 200), why: str(c.why, 300) } : null,
+  };
+}
+
 // ── check_sentence ──
 async function doCheck(b: any) {
   const lang = LANGS[b.lang] || LANGS.en;
@@ -230,6 +290,7 @@ Deno.serve(async (req) => {
       : action === 'wordlist' ? await doWordlist(body)
       : action === 'grammar' ? await doGrammar(body)
       : action === 'story' ? await doStory(body)
+      : action === 'chat' ? await doChat(body)
       : await doCheck(body);
     return json({ ...result, used, max });
   } catch (e) {

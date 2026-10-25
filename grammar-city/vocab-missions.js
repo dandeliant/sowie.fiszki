@@ -60,6 +60,13 @@
   const groups = unitEntries.map(([k, u]) => ({ key: k, name: u.name || k, words: cleanWords(u.words) })).filter(g => g.words.length);
   const pool = groups.flatMap(g => g.words);   // pula dystraktorów = całe słownictwo
   if (pool.length < 4) { showError('Ten rozdział ma za mało słówek (min. 4).'); return; }
+  // Kontekst rozmów z mieszkańcami (AI, ai-chat.js): słówka i gramatyka tego rozdziału.
+  const g = +(book.grade || 0);
+  window.GC_CHAT_CTX = {
+    lang, level: book.schoolType === 'secondary' ? 'B1–B2' : g && g <= 3 ? 'A1 (młodsze dzieci)' : g >= 7 ? 'A2–B1' : 'A1–A2',
+    unitName: (unitKey === 'all' ? 'cały podręcznik' : (unitEntries[0][1].name || unitKey)) + ' (' + (book.name || bookId) + ')',
+    words: shuffle(pool.slice()).slice(0, 40).map(([pl, t]) => ({ pl, t })), grammar: [],
+  };
 
   const GRAMMAR = (window.MISSIONS || []).filter(m => !m.final);
   const FINAL_SLOT = (window.MISSIONS || []).find(m => m.final) || {};
@@ -111,6 +118,7 @@
   // Buduje misje (słówka + gramatyka) i podmienia zawartość window.MISSIONS / window.TIERS w miejscu —
   // game.js trzyma referencje do tych tablic.
   function build(gsets) {
+    if (window.GC_CHAT_CTX) window.GC_CHAT_CTX.grammar = (gsets || []).map(s => s.topic).filter(Boolean).slice(0, 6);
     const gram = (gsets || []).map(s => ({ set: s, qs: (Array.isArray(s.items) ? s.items : []).map(grammarQuestion).filter(Boolean) }))
       .filter(g => g.qs.length >= 3).slice(0, MAX_GRAMMAR);
     const maxVocab = Math.max(1, MAX - gram.length);

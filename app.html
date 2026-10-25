@@ -31565,6 +31565,25 @@ ${bodyHtml}
         }
         petSave(s); petRefresh();
       }catch(e){}
+    },
+    // Dla rozmowy z AI: kim jest pupil (null = brak pupila / wyłączony).
+    info(){
+      try{
+        if(!petAllowed()) return null;
+        const s=petMigrate(petLoad()); if(!s || !s.type || !PETS[s.type]) return null;
+        return { emoji: petEmoji(s), name: petName(s), species: PETS[s.type].n, egg: isEgg(s), night: isNight() };
+      }catch(e){ return null; }
+    },
+    // Dobra wypowiedź po angielsku w rozmowie → humor (max +20 dziennie).
+    onChat(){
+      try{
+        if(!petAllowed()) return;
+        const s=petMigrate(petLoad()); if(!s || !s.type) return;
+        const td=today(); if(s.chatDay!==td){ s.chatDay=td; s.chatGain=0; }
+        if((s.chatGain||0)>=20) return;
+        s.happy=clamp(nv(s.happy)+2); s.chatGain=(s.chatGain||0)+2;
+        petSave(s); petRefresh();
+      }catch(e){}
     }
   };
   // Tekst przypomnienia (o 17:00) — gdy pupil czegoś potrzebuje; null = brak powodu.
@@ -31736,6 +31755,7 @@ ${bodyHtml}
         <button class="sf-btn sf-btn-ghost" data-act="play">🎾 Pobaw się</button>
         <button class="sf-btn sf-btn-ghost" data-act="talk">🗣️ Powiedz coś</button>
       </div>
+      ${egg ? '' : '<div class="sf-row"><button class="sf-btn sf-btn-main" id="sfPetChat">💬 Porozmawiaj ze mną po angielsku</button></div>'}
       <div class="sf-row">
         <button class="sf-btn sf-btn-main" id="sfPetLearn" style="flex:2">📚 Ucz się</button>
         <button class="sf-btn sf-btn-ghost" id="sfPetRename">✏️ Imię</button>
@@ -31826,6 +31846,7 @@ ${bodyHtml}
     box.querySelectorAll('[data-act]').forEach(b=>b.onclick=()=>petAction(b.dataset.act));
     const say=$('sfPetSayAgain'); if(say) say.onclick=()=>{ if(_lastSay) petSpeak(_lastSay[0]); };
     const L=$('sfPetLearn'); if(L) L.onclick=()=>{ const o=box.closest('.sf-ov'); if(o) o.classList.remove('show'); goLearn(); };
+    const CH=$('sfPetChat'); if(CH) CH.onclick=()=>{ const o=box.closest('.sf-ov'); if(o) o.classList.remove('show'); if(window.openAiChat) window.openAiChat(); };
     const rename=()=>{ const cur=petLoad()||s; const nm=prompt('Imię pupila:', cur.name||PETS[cur.type].n); if(nm && nm.trim()){ cur.name=nm.trim().slice(0,20); delete cur.needName; petSave(cur); petRefresh(); renderPetCard(); openPet(); } };
     const R=$('sfPetRename'); if(R) R.onclick=rename;
     const NN=$('sfPetNameNew'); if(NN) NN.onclick=rename;
@@ -32419,6 +32440,7 @@ ${bodyHtml}
     if (btn) btn.style.display = (b && uk && uk !== 'mistakes' && canFillSentences(b)) ? '' : 'none';
     renderGrammarBox();
     renderStoryBox();
+    renderChatEntry();
   };
   /* ---- status publikacji i bank zadań (migracja #78) ---- */
   // Odznaka widoczna dla autora i admina: czeka na zatwierdzenie / odrzucony.
@@ -33250,8 +33272,62 @@ ${bodyHtml}
       if (currentBookId === r.book_id) { renderGrammarBox(); renderStoryBox(); }
     } catch(e) { toast('❌ ' + e.message, 3500); }
   };
+
+  /* ════════ 💬 ROZMOWA Z AI (pupil / Sowa) — ai-chat.js + Edge Function „chat” ════════ */
+  const chatCtxKey = () => 'fiszki_chat_ctx_' + (typeof currentUser !== 'undefined' ? currentUser : '');
+  function chatEntryEl(){
+    let el = $('chatEntryBox');
+    if (!el) { const g = $('grammarBox'); if (!g) return null; el = document.createElement('div'); el.id = 'chatEntryBox'; el.style.width = '100%'; g.insertAdjacentElement('beforebegin', el); }
+    return el;
+  }
+  // Rozmówca: pupil ucznia (gdy jest wyklutym pupilem i nie śpi), inaczej Sowa Fiszka.
+  function chatPartner(){
+    const p = window.sfPet && window.sfPet.info ? window.sfPet.info() : null;
+    if (p && !p.egg && !p.night) return { persona: 'pet', name: p.name, emoji: p.emoji, species: p.species };
+    return { persona: 'owl', name: 'Sowa Fiszka', emoji: '🦉', sleeping: !!(p && !p.egg && p.night), pet: p };
+  }
+  function renderChatEntry(){
+    const box = chatEntryEl(); if (!box) return;
+    const b = book(), uk = currentUnitKey;
+    if (!b || !uk || uk === 'all' || uk === 'mistakes' || !window.SFChat) { box.style.display = 'none'; return; }
+    try { localStorage.setItem(chatCtxKey(), JSON.stringify({ bookId: currentBookId, unitKey: uk })); } catch(e) {}
+    const w = chatPartner();
+    box.innerHTML = '<div class="gram-box" style="border-left-color:#ff85c3;border-color:rgba(255,133,195,.4);display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
+      + '<div style="font-size:2rem;line-height:1">' + E(w.emoji) + '</div><div style="flex:1;min-width:180px"><b style="color:var(--text)">' + E(w.name) + ' chce porozmawiać po angielsku!</b>'
+      + '<div class="gram-empty">Rozmowa o słówkach i gramatyce rozdziału „' + E(unitName(uk)) + '” — pisz albo mów 🎤, z lektorem i poprawkami.'
+      + (w.sleeping ? ' (Twój pupil śpi 💤 — dziś porozmawia z Tobą Sowa.)' : '') + '</div></div>'
+      + '<button class="btn-sm accent" onclick="openAiChat()">' + (isGuest ? '🔒 ' : '') + '💬 Rozmawiaj</button></div>';
+    box.style.display = '';
+  }
+  window.renderChatEntry = renderChatEntry;
+  window.openAiChat = async function(){
+    if (!window.SFChat) { toast('Odśwież stronę, aby włączyć rozmowę.', 2500); return; }
+    // kontekst: bieżący rozdział albo ostatnio otwarty
+    let bId = currentBookId, uk = currentUnitKey;
+    if (!bId || !uk || uk === 'all' || uk === 'mistakes' || !BOOKS[bId]) {
+      let c = null; try { c = JSON.parse(localStorage.getItem(chatCtxKey()) || 'null'); } catch(e) {}
+      if (c && BOOKS[c.bookId] && getUnitsWithCustom(c.bookId)[c.unitKey]) { bId = c.bookId; uk = c.unitKey; }
+      else { toast('📖 Otwórz rozdział podręcznika — porozmawiamy o jego słówkach i gramatyce!', 3800); return; }
+    }
+    const bk = BOOKS[bId], lang = bk.language || 'en';
+    let grammar = [];
+    try { const sets = await DB.loadGrammarSets(bId, uk); grammar = (sets || []).filter(s => !s.status || s.status === 'published').map(s => s.topic); } catch(e) {}
+    const w = chatPartner();
+    if (w.sleeping) toast('💤 Twój pupil śpi (22:00–7:00) — porozmawia z Tobą Sowa Fiszka.', 3200);
+    window.SFChat.open({
+      persona: w.persona, name: w.name, emoji: w.emoji, species: w.species, guest: isGuest,
+      ctx: { lang, level: levelGuess(bk), unitName: ((getUnitsWithCustom(bId)[uk] || {}).name || uk) + ' (' + (bk.name || bId) + ')',
+        words: shuffle(unitVocab(bId, uk)).slice(0, 40), grammar },
+      invoke: body => DB.aiCall('chat', body),
+      onGood: () => {
+        try { if (!isGuest && typeof addXP === 'function') addXP(2); } catch(e) {}
+        try { if (window.sfPet && window.sfPet.onChat) window.sfPet.onChat(); } catch(e) {}
+      },
+    });
+  };
 })();
 </script>
+<script src="ai-chat.js"></script>
 <script src="consent.js"></script>
 </body>
 </html>

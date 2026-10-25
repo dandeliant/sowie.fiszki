@@ -2186,6 +2186,7 @@ const DB = (() => {
         if (body && body.message) msg = body.message;
       } catch (e) { /* zostaje ogólny komunikat */ }
       if (/Failed to send|FunctionsFetchError|not found|404/i.test(msg)) msg = 'Funkcja AI nie jest jeszcze wdrożona w Supabase (Edge Function „ai”).';
+      if (/Nieznana akcja/.test(msg)) msg = 'Zaktualizuj funkcję AI w Supabase — wklej nową wersję pliku supabase/functions/ai/index.ts.';
       throw new Error(msg);
     }
     if (data && data.error) throw new Error(data.message || data.error);

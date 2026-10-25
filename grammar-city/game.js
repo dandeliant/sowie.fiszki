@@ -5046,6 +5046,7 @@ function renderTalk(state) {
       <div id="talk-fb"></div>
       <div class="actions">
         <button class="btn ghost" id="talk-hint" type="button">💡 Podpowiedź</button>
+        ${window.SFChat ? '<button class="btn ghost" id="talk-ai" type="button" title="Swobodna rozmowa po angielsku z tą postacią (AI)">💬 Porozmawiaj swobodnie</button>' : ''}
         <button class="btn ghost" id="talk-close" type="button">Zakończ rozmowę</button>
         <span class="meta">Enter — odpowiedz · Esc — wyjdź</span>
       </div>
@@ -5054,7 +5055,43 @@ function renderTalk(state) {
   $('talk-form').onsubmit = e => { e.preventDefault(); if (talk.answered) nextTalk(); else if (inp.value.trim()) answerTalk(inp.value); };
   $('talk-hint').onclick = () => { const fb = $('talk-fb'); fb.className = 'feedback'; fb.innerHTML = `💡 Zacznij tak: <b>${esc(s.hint)}</b>`; inp.focus(); };
   $('talk-close').onclick = closeTalk;
+  const ai = $('talk-ai'); if (ai) ai.onclick = () => openAiTalk(talk.n);
   setTimeout(() => inp.focus(), 30);
+}
+// Swobodna rozmowa z mieszkańcem (AI, ../ai-chat.js + Edge Function „ai”, akcja chat): w trybie słówek
+// tylko o słówkach i gramatyce rozdziału (window.GC_CHAT_CTX z vocab-missions.js), w grze gramatycznej
+// o życiu w mieście. Gość — kłódka.
+function npcEmoji(t) {
+  const l = t.look || {};
+  if (/police|policj/i.test(t.role)) return '👮';
+  if (l.hair === 0xd8d8d8 || /starsz|babci|grandma|grandpa/i.test(t.role + ' ' + t.name)) return l.skirt ? '👵' : '👴';
+  return l.skirt || l.hairStyle === 'long' || l.hairStyle === 'bun' ? '👩' : '🧑';
+}
+async function aiInvoke(body) {
+  const sb = window.supabase;
+  if (!sb || !sb.functions) throw new Error('Brak połączenia z Sowimi Fiszkami — zaloguj się na sowiefiszki.com.');
+  const { data, error } = await sb.functions.invoke('ai', { body: Object.assign({ action: 'chat' }, body) });
+  if (error) {
+    let msg = error.message || 'Błąd AI.';
+    try { const b = error.context && typeof error.context.json === 'function' ? await error.context.json() : null; if (b && b.message) msg = b.message; } catch (e) { /* ogólny komunikat */ }
+    if (/Failed to send|FunctionsFetchError|not found|404/i.test(msg)) msg = 'Funkcja AI nie jest jeszcze wdrożona w Supabase.';
+    if (/Nieznana akcja/.test(msg)) msg = 'Zaktualizuj funkcję AI w Supabase (nowa wersja index.ts).';
+    throw new Error(msg);
+  }
+  if (data && data.error) throw new Error(data.message || data.error);
+  return data || {};
+}
+function openAiTalk(n) {
+  if (!window.SFChat || !n) return;
+  const t = n.t;
+  $('quiz-ov').hidden = true; ui = 'aichat'; keys.clear();
+  const ctx = window.GC_CHAT_CTX || { lang: 'en', level: 'A1–A2', unitName: '', words: [], grammar: [] };
+  window.SFChat.open({
+    persona: 'npc', name: t.name, role: t.role, emoji: npcEmoji(t), ctx, guest: GC_GUEST,
+    invoke: aiInvoke,
+    onGood: () => { save.xp += 2; persist(); },
+    onClose: () => { talk = null; ui = null; try { canvas.focus(); } catch (e) { /* ignore */ } },
+  });
 }
 function answerTalk(val) {
   const s = talk.n.t.steps[talk.i], fb = $('talk-fb'), inp = $('talk-in');
