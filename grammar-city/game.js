@@ -23,7 +23,7 @@ const norm = s => String(s).toLowerCase().replace(/[’‘`´]/g, "'").replace(/
 
 // ---------------------------------------------------------------- mapa
 // Mapy z prawdziwych danych (eksport topoexport.com: Overture Maps ODbL, GUGiK NMT CC BY 4.0;
-// konwersja grammar-city/warsaw/tools/convert-dxf.js): ?map=warsaw | ?map=jeleniec | ?map=london | ?map=lukow | ?map=wesolowka | ?map=kierzkow | ?map=sarnow | ?map=paris.
+// konwersja grammar-city/warsaw/tools/convert-dxf.js): ?map=warsaw | ?map=jeleniec | ?map=london | ?map=lukow | ?map=wesolowka | ?map=kierzkow | ?map=sarnow | ?map=rzymy | ?map=paris.
 // Bez parametru — klasyczne Grammar City (siatka kwartałów).
 const MAP_DEFS = {
   warsaw: { file: 'warsaw/warsaw.json', ext: 515, label: 'Warszawa — Śródmieście', of: 'Warszawy',
@@ -52,6 +52,10 @@ const MAP_DEFS = {
   sarnow: { file: 'sarnow/sarnow.json', ext: 515, label: 'Sarnów', of: 'Sarnowa',
     banner: ['SARNÓW', 'Witaj we wsi!'], finalePL: 'świetlica wiejska', finaleIn: 'w świetlicy wiejskiej', finaleEN: 'Village Hall',
     tagline: 'Prawdziwa wieś Sarnów w 3D', enter: 'Wejdź do wsi', ground: 'grass', gable: true, orbit: [170, 75, 4], fog: [220, 900] },
+  // Rzymy-Rzymki: mała wieś (187 budynków, w danych 6 m) — jak Jeleniec
+  rzymy: { file: 'rzymy/rzymy.json', ext: 519, label: 'Rzymy-Rzymki', of: 'Rzymów-Rzymek',
+    banner: ['RZYMY-RZYMKI', 'Witaj we wsi!'], finalePL: 'świetlica wiejska', finaleIn: 'w świetlicy wiejskiej', finaleEN: 'Village Hall',
+    tagline: 'Prawdziwa wieś Rzymy-Rzymki w 3D', enter: 'Wejdź do wsi', ground: 'grass', gable: true, orbit: [170, 75, 4], fog: [220, 900] },
   // Paryż: wieża Eiffla (kratownica zamiast brył z danych — eiffel: true), Pola Marsowe, Sekwana, Trocadéro
   paris: { file: 'paris/paris.json', ext: 493, label: 'Paryż — wieża Eiffla', of: 'Paryża',
     banner: ['PARIS', 'Welcome to Paris!'], finalePL: 'wieża Eiffla', finaleIn: 'pod wieżą Eiffla', finaleEN: 'Eiffel Tower',
@@ -1119,6 +1123,11 @@ Object.assign(PG, {
   lens: () => geo('lens', () => new THREE.BoxGeometry(0.13, 0.08, 0.02)),
   bridge: () => geo('bridge', () => new THREE.BoxGeometry(0.06, 0.018, 0.02)),
   pix: () => geo('pix', () => new THREE.BoxGeometry(0.024, 0.024, 0.03)),
+  // stawy (kolano, łokieć) i bark — kule zakrywają szczeliny przy zginaniu kończyn
+  knee: () => geo('knee', () => new THREE.SphereGeometry(0.094, 12, 8)),
+  elbow: () => geo('elbow', () => new THREE.SphereGeometry(0.068, 10, 8)),
+  shoulder: () => geo('shoulder', () => new THREE.SphereGeometry(0.092, 12, 8).scale(1, 0.85, 1)),
+  pelvis: () => geo('pelvis', () => new THREE.CylinderGeometry(0.262, 0.25, 0.2, 16).scale(1.18, 1, 0.66)),
 });
 // Pikselowe okulary „thug life" (Cash Glasses): X = czarny piksel, W = biały odblask.
 const CASH_GLASSES = [
@@ -1137,7 +1146,8 @@ function makePerson(o) {
   g.rotation.order = 'YXZ';
   const hs = o.hairStyle || 'short', hat = o.hat || (o.cap ? 'cap' : 'none'), hatC = o.hatColor != null ? o.hatColor : o.hair;
   const shoes = o.shoes != null ? o.shoes : 0x1c1c1c;
-  const body = [[PG.torso, 0, 0.98, 0, o.shirt], [PG.neck, 0, 1.7, 0, o.skin], [PG.head, 0, 1.98, 0, o.skin], [PG.belt, 0, 0.99, 0, 0x2a2420]];
+  const body = [[PG.torso, 0, 0.98, 0, o.shirt], [PG.neck, 0, 1.7, 0, o.skin], [PG.head, 0, 1.98, 0, o.skin], [PG.belt, 0, 0.99, 0, 0x2a2420],
+    [PG.pelvis, 0, 0.92, 0, o.skirt ? o.shirt : o.pants]];
   if (o.jacket != null) body.push([PG.jacket, 0, 0.98, 0, o.jacket], [PG.shirtFront, 0, 1.36, 0.205, o.shirt]);
   if (o.skirt) body.push([PG.skirt, 0, 0.78, 0, o.pants]);
   // twarz
@@ -1169,17 +1179,27 @@ function makePerson(o) {
   }
   const add = (geom, parent) => { const m = new THREE.Mesh(geom, vcMat); m.castShadow = !!o.shadow; parent.add(m); return m; };
   const key = [o.shirt, o.skin, o.hair, o.pants, hs, hat, hatC, o.glasses || 'none', o.jacket, !!o.skirt].join('_');
-  add(coloredGeo('pb' + key, body), g);
-  const limb = (geom, px, py) => { const pivot = new THREE.Group(); pivot.position.set(px, py, 0); add(geom, pivot); g.add(pivot); return pivot; };
+  // rig: całe ciało (pozycję i obrót ustawia się na g) — kołysanie w pionie i pochylenie przy biegu
+  const rig = new THREE.Group(); g.add(rig);
+  add(coloredGeo('pb' + key, body), rig);
+  // kończyna z dwóch członów: staw górny (bark/biodro) → człon górny + staw środkowy (łokieć/kolano) → człon dolny
+  const limb = (upG, lowG, px, py, jy) => {
+    const top = new THREE.Group(); top.position.set(px, py, 0); add(upG, top); rig.add(top);
+    const mid = new THREE.Group(); mid.position.set(0, jy, 0); add(lowG, mid); top.add(mid);
+    return [top, mid];
+  };
   const sleeve = o.jacket != null ? o.jacket : o.shirt;
   const longSleeve = o.sleeves === 'long' || o.jacket != null;
-  const armG = coloredGeo(`pa${sleeve}_${o.skin}_${longSleeve}`, [[PG.upperArm, 0, 0, 0, sleeve], [PG.foreArm, 0, -0.33, 0, longSleeve ? sleeve : o.skin], [PG.hand, 0, -0.72, 0, o.skin]]);
+  const foreC = longSleeve ? sleeve : o.skin;
+  const upArmG = coloredGeo(`pu${sleeve}`, [[PG.shoulder, 0, -0.06, 0, sleeve], [PG.upperArm, 0, 0, 0, sleeve]]);
+  const loArmG = coloredGeo(`pf${foreC}_${o.skin}`, [[PG.elbow, 0, 0, 0, foreC], [PG.foreArm, 0, 0, 0, foreC], [PG.hand, 0, -0.39, 0, o.skin]]);
   const legTop = o.skirt ? o.skin : o.pants;
-  const legG = coloredGeo(`pl${legTop}_${o.skirt ? o.skin : o.pants}_${shoes}`, [[PG.thigh, 0, 0, 0, legTop], [PG.shin, 0, -0.48, 0, o.skirt ? o.skin : o.pants],
-    [PG.shoe, 0, -0.93, 0.05, shoes], [PG.sole, 0, -1.0, 0.05, 0xeeeeee]]);
-  const la = limb(armG, -0.4, 1.68), ra = limb(armG, 0.4, 1.68);
-  const ll = limb(legG, -0.16, 1.0), rl = limb(legG, 0.16, 1.0);
-  return { g, la, ra, ll, rl, phase: Math.random() * 6 };
+  const thighG = coloredGeo(`pt${legTop}`, [[PG.thigh, 0, 0, 0, legTop]]);
+  const shinG = coloredGeo(`ps${legTop}_${shoes}`, [[PG.knee, 0, 0, 0, legTop], [PG.shin, 0, 0, 0, legTop],
+    [PG.shoe, 0, -0.45, 0.05, shoes], [PG.sole, 0, -0.52, 0.05, 0xeeeeee]]);
+  const [la, lf] = limb(upArmG, loArmG, -0.4, 1.68, -0.33), [ra, rf] = limb(upArmG, loArmG, 0.4, 1.68, -0.33);
+  const [ll, lk] = limb(thighG, shinG, -0.16, 1.0, -0.48), [rl, rk] = limb(thighG, shinG, 0.16, 1.0, -0.48);
+  return { g, rig, la, ra, ll, rl, lf, rf, lk, rk, phase: Math.random() * 6, idle: Math.random() * 6 };
 }
 // Losowy wygląd przechodnia / NPC.
 function randomLook(r = Math.random) {
@@ -1191,12 +1211,43 @@ function randomLook(r = Math.random) {
     hat: r() < 0.15 ? pk(['cap', 'beanie', 'fedora']) : 'none', hatColor: pk([0x1e3a5f, 0xb23a48, 0x2f2f2f, 0xd8c39a]),
     glasses: r() < 0.12 ? 'sun' : 'none', shoes: pk([0x1c1c1c, 0x5a3a1e, 0xf2f2f2]) };
 }
+// Chód i bieg: biodro wahadłowo, kolano zgina się w fazie przenoszenia nogi (najmocniej tuż po oderwaniu stopy,
+// prostuje się przed postawieniem pięty), ręce w przeciwfazie do nóg z ugiętym łokciem (w biegu ~90°).
+// Wysokość ciała z długości nogi podporowej — tułów naturalnie opada i unosi się z każdym krokiem; w biegu faza lotu
+// i pochylenie do przodu. Kąty: rotation.x > 0 = kończyna do tyłu, kolano > 0 = łydka do tyłu, łokieć < 0 = do przodu.
+const THIGH_L = 0.48, SHIN_L = 0.52;
+function resetPose(p) {
+  for (const j of [p.la, p.ra, p.ll, p.rl, p.lf, p.rf, p.lk, p.rk]) j.rotation.set(0, 0, 0);
+  p.rig.position.set(0, 0, 0); p.rig.rotation.set(0, 0, 0);
+}
 function animPerson(p, speed, dt, air) {
-  if (speed > 0.1) p.phase += dt * (2.4 + speed * 1.2);
-  const amp = air ? 0.5 : Math.min(1, speed / 4) * 0.8;
-  const s = air ? 0.6 : Math.sin(p.phase) * amp;
-  p.ll.rotation.x = s; p.rl.rotation.x = air ? -0.3 : -s;
-  p.la.rotation.x = -s * 0.9; p.ra.rotation.x = air ? -1.2 : s * 0.9;
+  p.idle += dt;
+  if (air) {
+    p.ll.rotation.set(-0.75, 0, 0); p.lk.rotation.x = 1.25; p.rl.rotation.set(0.25, 0, 0); p.rk.rotation.x = 0.55;
+    p.la.rotation.set(0.45, 0, -0.18); p.lf.rotation.x = -0.5; p.ra.rotation.set(-1.2, 0, 0.18); p.rf.rotation.x = -0.4;
+    p.rig.position.y = 0; p.rig.rotation.x = 0.05;
+    return;
+  }
+  if (speed > 0.1) p.phase += dt * (2.6 + speed * 1.05);
+  const mv = Math.min(1, speed / 3), run = clamp((speed - 5.8) / 3.5, 0, 1);
+  const A = mv * (0.4 + 0.32 * run), K = mv * (0.85 + 0.95 * run), lag = 0.35 + 0.3 * run;
+  let reach = 0;
+  for (const [hip, knee, ph] of [[p.ll, p.lk, p.phase], [p.rl, p.rk, p.phase + Math.PI]]) {
+    const h = -A * Math.sin(ph) - 0.12 * run * mv;
+    const k = K * Math.pow(Math.max(0, Math.cos(ph + lag)), 1.4) + 0.06 * mv + 0.22 * run * mv * Math.max(0, -Math.cos(ph));
+    hip.rotation.set(h, 0, 0); knee.rotation.x = k;
+    reach = Math.max(reach, THIGH_L * Math.cos(h) + SHIN_L * Math.cos(h + k));   // pionowy zasięg nogi
+  }
+  const breath = Math.sin(p.idle * 1.7) * 0.025 * (1 - mv);
+  for (const [sh, el, ph, sd] of [[p.la, p.lf, p.phase, -1], [p.ra, p.rf, p.phase + Math.PI, 1]]) {
+    const sw = Math.sin(ph);
+    sh.rotation.set(mv * (0.32 + 0.45 * run) * sw + 0.08 * run * mv + breath, 0, sd * (0.07 + 0.08 * run * mv));
+    el.rotation.x = -(0.1 + mv * (0.18 + 0.3 * Math.max(0, -sw)) + run * mv * 1.05);
+  }
+  p.rig.position.y = Math.min(0, reach - (THIGH_L + SHIN_L)) + run * mv * 0.09 * Math.abs(Math.cos(p.phase));
+  p.rig.rotation.x = run * mv * 0.2 + mv * 0.03;
+  p.rig.rotation.y = Math.sin(p.phase) * 0.06 * mv;                    // skręt bioder w rytm kroków
+  p.rig.rotation.z = Math.cos(p.phase) * 0.025 * mv * (1 - run * 0.5);  // przenoszenie ciężaru z nogi na nogę
 }
 
 // ---------------------------------------------------------------- vehicles
@@ -2185,8 +2236,14 @@ function posePlayerRider(v) {
   const lift = (sp.ride === 'moto' ? sp.seatY - 1.0 : sp.seatY) + wl;
   player.g.position.set(v.pos.x + f.x * sp.seatZ, v.pos.y + lift, v.pos.z + f.z * sp.seatZ);
   player.g.rotation.set((sp.ride === 'moto' ? 0.32 : 0.06) - wa * 0.8, v.heading, v.lean || 0);
-  if (sp.ride === 'moto') { player.ll.rotation.set(-1.15, 0, -0.18); player.rl.rotation.set(-1.15, 0, 0.18); player.la.rotation.set(-1.25, 0, 0.15); player.ra.rotation.set(-1.25, 0, -0.15); }
-  else { player.ll.rotation.set(0.12, 0, 0); player.rl.rotation.set(-0.15, 0, 0); player.la.rotation.set(-1.05, 0, 0.12); player.ra.rotation.set(-1.05, 0, -0.12); }
+  player.rig.position.set(0, 0, 0); player.rig.rotation.set(0, 0, 0);
+  if (sp.ride === 'moto') {
+    player.ll.rotation.set(-1.15, 0, -0.18); player.rl.rotation.set(-1.15, 0, 0.18); player.lk.rotation.x = player.rk.rotation.x = 1.45;
+    player.la.rotation.set(-1.0, 0, 0.15); player.ra.rotation.set(-1.0, 0, -0.15); player.lf.rotation.x = player.rf.rotation.x = -0.45;
+  } else {
+    player.ll.rotation.set(0.05, 0, 0); player.rl.rotation.set(-0.2, 0, 0); player.lk.rotation.x = 0.12; player.rk.rotation.x = 0.3;
+    player.la.rotation.set(-0.85, 0, 0.12); player.ra.rotation.set(-0.85, 0, -0.12); player.lf.rotation.x = player.rf.rotation.x = -0.35;
+  }
 }
 function poseCar(v, dt) {
   v.mesh.position.copy(v.pos);
@@ -2219,7 +2276,7 @@ function toggleCar() {
     if (v.ghost) ghostVehicle(v, false);
     P.car = null; player.g.visible = true; P.facing = v.heading; P.speed = 0;
     player.g.rotation.set(0, P.facing, 0);
-    for (const l of [player.ll, player.rl, player.la, player.ra]) l.rotation.set(0, 0, 0);
+    resetPose(player);
     Sound.door(); Sound.engine(false, 0, false);
     $('speedo').hidden = true; $('speed-unit').textContent = 'KM/H';
     return;
@@ -4079,7 +4136,7 @@ function timeUp() {
     nitroActive = false; if (v.flames) v.flames.visible = false; persistWardrobe();
     if (v.ghost) ghostVehicle(v, false);
     P.car = null; player.g.visible = true; $('speedo').hidden = true; Sound.engine(false, 0, false);
-    for (const l of [player.ll, player.rl, player.la, player.ra]) l.rotation.set(0, 0, 0);
+    resetPose(player);
   }
   if (chase) endChase();
   P.pos.set(SPAWN.x, groundAt(SPAWN.x, SPAWN.z), SPAWN.z); P.facing = SPAWN.facing; P.speed = 0; P.vy = 0;
@@ -4737,6 +4794,8 @@ function updateNPCs(dt) {
     const talking = ui === 'talk' && talk && talk.n === n;
     n.p.ra.rotation.x = talking ? -0.9 + Math.sin(elapsed * 6) * 0.25 : Math.sin(elapsed * 1.6 + n.x) * 0.05;
     n.p.la.rotation.x = -Math.sin(elapsed * 1.6 + n.x) * 0.05;
+    n.p.rf.rotation.x = talking ? -0.7 + Math.sin(elapsed * 6) * 0.2 : -0.08;
+    n.p.lf.rotation.x = -0.08;
     n.p.g.position.y = SIDE_H + Math.sin(elapsed * 2 + n.z) * 0.01;
   }
   // kolizja: gracz nie przenika przez rozmówcę
