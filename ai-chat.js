@@ -146,7 +146,7 @@
       addBot(r.reply || '…', r.replyPl || '');
       if (message && !(flags && flags.repeated) && (r.praise || !r.correction)) { try { st.o.onGood && st.o.onGood(!!r.praise); } catch (e) { /* ignore */ } }
       st.target = r.sayThis || ''; st.tries = 0; renderSay();
-      if (r.max) st.root.querySelector('.sfc-foot').textContent = '🤖 Rozmówcą jest sztuczna inteligencja — może się czasem pomylić. Wiadomości dziś: ' + r.used + ' / ' + r.max + '.';
+      if (r.max) st.root.querySelector('.sfc-foot').textContent = '🤖 Rozmówcą jest sztuczna inteligencja — może się czasem pomylić. Rozmowa jest zapisywana na 7 dni. Wiadomości dziś: ' + r.used + ' / ' + r.max + '.';
     } catch (e) {
       setBusy(false);
       if (st) addSys('❌ ' + (e.message || e));
@@ -231,7 +231,7 @@
       <div class="sfc-fixes"></div>
       <div class="sfc-in"><textarea placeholder="Napisz po angielsku… (Enter — wyślij)" maxlength="300"></textarea>
         ${SR ? '<button class="sfc-btn mic" title="Powiedz po angielsku">🎤</button>' : ''}<button class="sfc-btn send" title="Wyślij">➤</button></div>
-      <div class="sfc-foot">🤖 Rozmówcą jest sztuczna inteligencja — może się czasem pomylić. Nie podawaj nazwiska, adresu ani hasła.</div>
+      <div class="sfc-foot">🤖 Rozmówcą jest sztuczna inteligencja — może się czasem pomylić. Rozmowa jest zapisywana na 7 dni (widzi ją tylko administrator). Nie podawaj nazwiska, adresu ani hasła.</div>
     </div></div>`);
     st.root = root; document.body.appendChild(root);
     root.addEventListener('click', e => { if (e.target === root) close(); });

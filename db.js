@@ -2225,6 +2225,24 @@ const DB = (() => {
     if (error) throw new Error(error.message);
     if (!data || !data.length) throw new Error('Brak uprawnień administratora.');
   }
+  // ── Zapis rozmów z AI (migracja #80, admin, 7 dni). null = brak migracji ──
+  const _missing80 = e => /ai_chat_logs|ai_chat_flagged_count|PGRST20[02]|42P01|42883/i.test(((e && e.code) || '') + ' ' + ((e && e.message) || ''));
+  async function loadAiChatLogs(onlyFlagged = false, search = '') {
+    const { data, error } = await supabase.rpc('ai_chat_logs_list', { p_only_flagged: !!onlyFlagged, p_search: search || null, p_limit: 1000 });
+    if (error) { if (_missing80(error)) return null; throw new Error(error.message); }
+    return data || [];
+  }
+  async function deleteAiChatLogs(ids) {
+    if (!ids || !ids.length) return 0;
+    const { data, error } = await supabase.from('ai_chat_logs').delete().in('id', ids).select('id');
+    if (error) throw new Error(error.message);
+    return (data || []).length;
+  }
+  async function aiChatFlaggedCount() {
+    const { data, error } = await supabase.rpc('ai_chat_flagged_count');
+    if (error) return 0;
+    return Number(data) || 0;
+  }
   // Zestawy zadań gramatycznych (grammar_sets) — null = brak migracji #73.
   async function loadGrammarSets(bookId, unitKeys) {
     // '*' — po migracji #78 dochodzą status / shared / share_status / review_note
@@ -4913,6 +4931,7 @@ const DB = (() => {
     loadReadingSets, saveReadingSet, deleteReadingSet, setContentShared,
     loadReviewQueue, reviewContent, contentReviewCounts, loadTaskBank,
     aiCostStats, loadAiConfig, saveAiLimit, saveAiSetting,
+    loadAiChatLogs, deleteAiChatLogs, aiChatFlaggedCount,
     loadClassPets,
     petReact,
     petReactSentToday,

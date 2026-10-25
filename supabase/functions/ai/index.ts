@@ -68,18 +68,21 @@ async function chatJSON(acc: Usage, system: string, user: string, maxTokens = 40
   addUsage(acc, j);
   return JSON.parse(j?.choices?.[0]?.message?.content || '{}');
 }
-// true = treść niebezpieczna (wulgaryzmy, przemoc, treści dla dorosłych…)
-async function flagged(text: string): Promise<boolean> {
+// Moderacja OpenAI: flagged = treść niebezpieczna (wulgaryzmy, przemoc, treści dla dorosłych…),
+// cats = kategorie (zapisywane w ai_chat_logs — migracja #80).
+type Mod = { flagged: boolean; cats: string[] };
+async function moderate(text: string): Promise<Mod> {
   try {
     const r = await fetch('https://api.openai.com/v1/moderations', {
       method: 'POST',
       headers: { Authorization: `Bearer ${OPENAI_KEY}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: 'omni-moderation-latest', input: text }),
     });
-    if (!r.ok) return false;
-    const j = await r.json();
-    return !!j?.results?.[0]?.flagged;
-  } catch { return false; }
+    if (!r.ok) return { flagged: false, cats: [] };
+    const res = (await r.json())?.results?.[0] || {};
+    const cats = Object.entries(res.categories || {}).filter(([, v]) => v).map(([k]) => k);
+    return { flagged: !!res.flagged, cats };
+  } catch { return { flagged: false, cats: [] }; }
 }
 
 const RULES = 'You write learning materials for Polish school children learning a foreign language. ' +
@@ -205,7 +208,7 @@ async function doChat(b: any, acc: Usage) {
     .map((w: any) => `${str(w.t, 60)} (${str(w.pl, 60)})`).filter((s: string) => s.length > 3);
   const grammar = (Array.isArray(b.grammar) ? b.grammar : []).slice(0, 6).map((g: unknown) => str(g, 80)).filter(Boolean);
   const msg = str(b.message, 300);
-  if (msg && await flagged(msg)) return { blocked: true };
+  if (msg) { const m = await moderate(msg); if (m.flagged) return { blocked: true, _cats: m.cats }; }
   const system = RULES.replace('Answer ONLY with valid JSON.', '') + ' ' + persona +
     ` You chat with a Polish child who is learning ${lang} at level ${level}.` +
     (unit ? ` Topic of the conversation: the textbook unit "${unit}".` : ' Topic: simple everyday life in the city (shops, food, directions, weather, hobbies).') +
@@ -252,7 +255,7 @@ async function doCheck(b: any, acc: Usage) {
   const lang = LANGS[b.lang] || LANGS.en;
   const word = str(b.word, 80), wordPl = str(b.wordPl, 80), sentence = str(b.sentence, 240);
   if (!word || !sentence) throw new Error('Brak słówka albo zdania.');
-  if (await flagged(sentence)) return { blocked: true };
+  { const m = await moderate(sentence); if (m.flagged) return { blocked: true, _cats: m.cats }; }
   const out = await chatJSON(acc, RULES + ' You are a kind, encouraging teacher of a child.',
     `The student had to write their own sentence in ${lang} using the word "${word}" (Polish: "${wordPl}").\n` +
     `Student's sentence: """${sentence}"""\n` +
@@ -312,7 +315,22 @@ Deno.serve(async (req) => {
     if (acc.in || acc.out) {
       try { await svc.rpc('ai_usage_tokens', { p_user: user.id, p_action: action, p_in: acc.in, p_out: acc.out }); } catch { /* bez migracji #79 */ }
     }
-    return json({ ...result, used, max });
+    // Zapis rozmowy / zdania ucznia na 7 dni — tylko do wglądu admina (bezpieczeństwo, migracja #80).
+    const r: any = result;
+    const said = action === 'chat' ? str(body.message, 1000) : action === 'check_sentence' ? str(body.sentence, 1000) : '';
+    if (said) {
+      try {
+        await svc.rpc('ai_chat_log_add', {
+          p_user: user.id, p_kind: action === 'chat' ? 'chat' : 'sentence',
+          p_partner: action === 'chat' ? str(body.name, 80) : null,
+          p_topic: action === 'chat' ? str(body.unitName, 160) : str(body.word, 160),
+          p_message: said, p_reply: r.blocked ? null : (r.reply || r.corrected || null),
+          p_flagged: !!r.blocked, p_categories: r._cats && r._cats.length ? r._cats : null,
+        });
+      } catch { /* bez migracji #80 */ }
+    }
+    delete r._cats;
+    return json({ ...r, used, max });
   } catch (e) {
     console.error('[ai]', e);
     return fail('AI_ERROR', 'Błąd AI: ' + String((e as Error)?.message || e).slice(0, 300), 500);

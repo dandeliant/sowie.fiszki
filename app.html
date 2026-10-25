@@ -3209,7 +3209,7 @@ szkoła	school"></textarea>
       <button class="btn-check" id="btnWrChk" onclick="writeCheck()">Sprawdź</button>
     </div>
     <div class="type-result" id="wrRes"></div>
-    <div id="wrInfo" style="text-align:center;font-size:.68rem;color:var(--muted);font-weight:700;margin-top:6px">🤖 Zdanie sprawdza sztuczna inteligencja — może się czasem pomylić.</div>
+    <div id="wrInfo" style="text-align:center;font-size:.68rem;color:var(--muted);font-weight:700;margin-top:6px">🤖 Zdanie sprawdza sztuczna inteligencja — może się czasem pomylić. Zdania są zapisywane na 7 dni (widzi je tylko administrator).</div>
   </div>
 
   <!-- Brakujące litery -->
@@ -21865,6 +21865,7 @@ if ('serviceWorker' in navigator) {
         review:           () => (typeof openContentReview==='function')    && openContentReview(),
         bank:             () => (typeof openTaskBank==='function')         && openTaskBank(),
         aicost:           () => (typeof openAiCostPanel==='function')      && openAiCostPanel(),
+        aichats:          () => (typeof openAiChatLogs==='function')       && openAiChatLogs(),
         newBook:          () => (typeof openAdminBookModal==='function')   && openAdminBookModal(),
         premium:          () => (typeof openPremiumPricingModal==='function') && openPremiumPricingModal(),
       };
@@ -22617,7 +22618,7 @@ if ('serviceWorker' in navigator) {
       <ul style="margin:4px 0 10px 20px;padding:0">
         <li><strong>Vercel Inc.</strong> (hosting aplikacji frontendowej, dystrybucja przez sieć CDN). Vercel przetwarza standardowe logi serwera (adres IP, user-agent, ścieżka żądania, kod odpowiedzi) na potrzeby dostarczenia treści i bezpieczeństwa — RODO art. 6 ust. 1 lit. f (prawnie uzasadniony interes). Polityka: <a href="https://vercel.com/legal/privacy-policy" style="color:var(--accent)" target="_blank" rel="noopener">vercel.com/legal/privacy-policy</a>.</li>
         <li><strong>Supabase Inc.</strong> (hosting bazy danych i uwierzytelniania, infrastruktura AWS). Polityka: <a href="https://supabase.com/privacy" style="color:var(--accent)" target="_blank" rel="noopener">supabase.com/privacy</a>.</li>
-        <li><strong>OpenAI, L.L.C.</strong> — funkcje oznaczone 🤖 (AI): sprawdzanie zdań napisanych przez ucznia w trybie „Napisz zdanie” oraz narzędzia nauczyciela (zdania przykładowe, listy słówek, zadania gramatyczne). Do OpenAI trafia <strong>wyłącznie treść potrzebna do zadania</strong> (słówko, temat, zdanie ucznia) — bez loginu, imienia ani innych danych konta; zapytania przechodzą przez serwer Platformy. Treści pisane przez uczniów są dodatkowo sprawdzane filtrem bezpieczeństwa. Polityka: <a href="https://openai.com/policies/privacy-policy" style="color:var(--accent)" target="_blank" rel="noopener">openai.com/policies/privacy-policy</a>.</li>
+        <li><strong>OpenAI, L.L.C.</strong> — funkcje oznaczone 🤖 (AI): sprawdzanie zdań napisanych przez ucznia w trybie „Napisz zdanie” oraz narzędzia nauczyciela (zdania przykładowe, listy słówek, zadania gramatyczne). Do OpenAI trafia <strong>wyłącznie treść potrzebna do zadania</strong> (słówko, temat, zdanie ucznia) — bez loginu, imienia ani innych danych konta; zapytania przechodzą przez serwer Platformy. Treści pisane przez uczniów są dodatkowo sprawdzane filtrem bezpieczeństwa. <strong>Wypowiedzi uczniów w rozmowach z AI i w trybie „Napisz zdanie” (wraz z odpowiedzią AI) są przechowywane przez 7 dni</strong> wyłącznie do wglądu Administratora — w celu ochrony dzieci przed niestosownymi treściami — a następnie automatycznie usuwane. Polityka: <a href="https://openai.com/policies/privacy-policy" style="color:var(--accent)" target="_blank" rel="noopener">openai.com/policies/privacy-policy</a>.</li>
         <li><strong>Google Cloud / Microsoft</strong> — dostawcy zewnętrznych usług TTS (synteza mowy) używanych przez przeglądarkę użytkownika; dane głosowe nie są przekazywane Administratorowi.</li>
       </ul>
       <p style="margin:4px 0 10px">Administrator nie sprzedaje ani nie udostępnia danych osobowych osobom trzecim w celach marketingowych.</p>
@@ -26943,14 +26944,15 @@ if ('serviceWorker' in navigator) {
     // Pobierz liczniki równolegle (każdy z fallback do 0 przy błędzie / braku uprawnień)
     const safe = (p) => p.then(n => Number(n) || 0).catch(() => 0);
     const isAdmin = isCurrentUserAdmin();
-    const [contactN, accessN, errorN, msgN, reviewN] = await Promise.all([
+    const [contactN, accessN, errorN, msgN, reviewN, chatFlagN] = await Promise.all([
       isAdmin && typeof DB.countUnreadContactMessages    === 'function' ? safe(DB.countUnreadContactMessages())    : Promise.resolve(0),
       isAdmin && typeof DB.countPendingBookAccessRequests === 'function' ? safe(DB.countPendingBookAccessRequests()) : Promise.resolve(0),
       isAdmin && typeof DB.countPendingWordErrorReports  === 'function' ? safe(DB.countPendingWordErrorReports())  : Promise.resolve(0),
       isAdmin && typeof DB.countOpenConversations        === 'function' ? safe(DB.countOpenConversations())        : Promise.resolve(0),
-      isAdmin && typeof DB.contentReviewCounts           === 'function' ? safe(DB.contentReviewCounts().then(c => c ? c.grammar + c.reading + c.bank : 0)) : Promise.resolve(0)
+      isAdmin && typeof DB.contentReviewCounts           === 'function' ? safe(DB.contentReviewCounts().then(c => c ? c.grammar + c.reading + c.bank : 0)) : Promise.resolve(0),
+      isAdmin && typeof DB.aiChatFlaggedCount            === 'function' ? safe(DB.aiChatFlaggedCount()) : Promise.resolve(0)
     ]);
-    const total = contactN + accessN + errorN + msgN + reviewN;
+    const total = contactN + accessN + errorN + msgN + reviewN + chatFlagN;
     if (total === 0) {
       banner.style.display = 'none';
       return;
@@ -26968,6 +26970,7 @@ if ('serviceWorker' in navigator) {
     if (accessN > 0)  parts.push(chip('📩', accessN,  accessN === 1  ? 'prośba o dostęp' : 'prośby o dostęp',                "openAccessRequests()"));
     if (errorN > 0)   parts.push(chip('🐛', errorN,   errorN === 1   ? 'zgłoszenie błędu' : 'zgłoszenia błędów',             "openWordErrors()"));
     if (reviewN > 0)  parts.push(chip('🛡️', reviewN,  'do zatwierdzenia (treści nauczycieli)', "openContentReview()"));
+    if (chatFlagN > 0) parts.push(chip('🚩', chatFlagN, 'niestosowne wypowiedzi w rozmowach z AI', "openAiChatLogs()"));
     items.innerHTML = parts.join('');
     banner.style.display = '';
   }
@@ -32915,7 +32918,7 @@ ${bodyHtml}
       speak(shown);
       chk.style.display = 'none';
       const nx = $('btnWrNext'); nx.style.display = ''; setTimeout(() => nx.focus(), 40);
-      if (r.max) $('wrInfo').textContent = '🤖 Zdanie sprawdza sztuczna inteligencja — może się czasem pomylić. Sprawdzenia dziś: ' + r.used + ' / ' + r.max + '.';
+      if (r.max) $('wrInfo').textContent = '🤖 Zdanie sprawdza sztuczna inteligencja — może się czasem pomylić. Zdania są zapisywane na 7 dni (widzi je tylko administrator). Sprawdzenia dziś: ' + r.used + ' / ' + r.max + '.';
     } catch(e) {
       res.className = 'type-result err'; res.textContent = '❌ ' + e.message; chk.disabled = false;
     }
@@ -33317,6 +33320,7 @@ ${bodyHtml}
       + '<div class="gram-set-act" style="margin:4px 0 10px">' + [7, 30, 90].map(n => `<button class="btn-sm${n === days ? ' accent' : ''}" onclick="openAiCostPanel(${n})">${n} dni</button>`).join('') + '</div>'
       + '<div style="display:flex;gap:8px;flex-wrap:wrap">' + card(t.calls, 'zapytań dziś') + card(usd(t.cost), 'koszt dziś (szac.)') + card(totCalls, 'zapytań — ' + days + ' dni') + card(usd(totCost), 'koszt — ' + days + ' dni')
       + card(usd(totCost / days * 30), 'miesięcznie przy tym tempie') + '</div>'
+      + '<div class="gram-set-act" style="margin-top:8px"><button class="btn-sm" onclick="openAiChatLogs()">🛡️ Rozmowy z AI (7 dni)</button></div>'
       + '<div class="ai-help" style="margin-top:6px">Szacunek z liczby tokenów × cena (poniżej). Dokładne rozliczenie: platform.openai.com → Usage. Tokeny są liczone od wdrożenia nowej wersji funkcji AI.</div>'
       + '<label class="ai-lab">Zapytania dziennie</label><div style="display:flex;align-items:flex-end;gap:2px;height:90px;background:var(--surface2);border-radius:10px;padding:6px">'
       + dayList.map(d => { const x = byDay[d] || { calls: 0, cost: 0 }; return `<div title="${d}: ${x.calls} zapytań · ${usd(x.cost)}" style="flex:1;min-width:2px;height:${Math.max(2, Math.round(x.calls / maxCalls * 78))}px;background:${d === todayIso ? 'var(--accent)' : 'var(--accent2,#06d6a0)'};border-radius:3px 3px 0 0;opacity:${x.calls ? 1 : .25}"></div>`; }).join('') + '</div>'
@@ -33353,6 +33357,59 @@ ${bodyHtml}
       toast('✅ Ustawienia AI zapisane — działają od następnego zapytania.', 3000);
       openAiCostPanel(_ac.days);
     } catch(e) { setMsg('acMsg', '❌ ' + e.message, 'err'); btn.disabled = false; }
+  };
+
+  /* ════════ 🛡️ ZAPIS ROZMÓW Z AI (admin, 7 dni — migracja #80) ════════ */
+  let _cl = null;
+  const plN = (n, one, few, many) => n + ' ' + (n === 1 ? one : (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14)) ? few : many);
+  const CAT_PL = { harassment: 'nękanie', 'harassment/threatening': 'groźby', hate: 'nienawiść', 'hate/threatening': 'nienawiść z groźbami',
+    sexual: 'treści seksualne', 'sexual/minors': 'treści seksualne (nieletni)', violence: 'przemoc', 'violence/graphic': 'drastyczna przemoc',
+    'self-harm': 'samookaleczenie', 'self-harm/intent': 'zamiar samookaleczenia', 'self-harm/instructions': 'samookaleczenie (instrukcje)',
+    illicit: 'nielegalne', 'illicit/violent': 'nielegalne z przemocą' };
+  window.openAiChatLogs = async function(){
+    if (!isCurrentUserAdmin()) { toast('Tylko dla administratora.', 2500); return; }
+    _cl = _cl || { flagged: false, q: '', open: {} };
+    aiModal('aiLogModal', closeBtn('aiLogModal') + '<div class="modal-title">🛡️ Rozmowy z AI</div><div class="ai-help">⏳ Wczytuję…</div>', true);
+    try {
+      const rows = await DB.loadAiChatLogs(_cl.flagged, _cl.q);
+      if (rows === null) { aiModal('aiLogModal', closeBtn('aiLogModal') + '<div class="modal-title">🛡️ Rozmowy z AI</div><div class="ai-help">Uruchom migrację #80 (ai-chat-logs.sql) w Supabase i zaktualizuj funkcję AI (nowy plik supabase/functions/ai/index.ts).</div>', true); return; }
+      _cl.rows = rows; aiLogRender();
+    } catch(e) { aiModal('aiLogModal', closeBtn('aiLogModal') + '<div class="modal-title">🛡️ Rozmowy z AI</div><div class="ai-help">❌ ' + E(e.message) + '</div>', true); }
+  };
+  function aiLogRender(){
+    const c = _cl, fmt = d => new Date(d).toLocaleString('pl-PL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    const byUser = new Map();
+    c.rows.forEach(r => { const k = r.user_id || '—'; if (!byUser.has(k)) byUser.set(k, { name: r.username || '(usunięte konto)', role: r.role, rows: [] }); byUser.get(k).rows.push(r); });
+    const groups = [...byUser.entries()].map(([id, g]) => Object.assign(g, { id, flags: g.rows.filter(r => r.flagged).length }))
+      .sort((a, b) => b.flags - a.flags || b.rows.length - a.rows.length);
+    let h = closeBtn('aiLogModal') + '<div class="modal-title">🛡️ Rozmowy z AI (ostatnie 7 dni)</div>'
+      + '<div class="ai-help">Wypowiedzi uczniów w rozmowach z AI i w trybie „🤖 Napisz zdanie” razem z odpowiedzią AI. 🚩 = zatrzymane przez filtr bezpieczeństwa (AI na nie nie odpowiedziało). Zapisy starsze niż 7 dni usuwają się same. Widzi je tylko administrator.</div>'
+      + `<div class="bk-tabs"><button class="btn-sm${c.flagged ? '' : ' accent'}" onclick="aiLogFilter(false)">Wszystkie</button><button class="btn-sm${c.flagged ? ' accent' : ''}" onclick="aiLogFilter(true)">🚩 Tylko oznaczone</button>`
+      + `<input class="ai-inp" id="clSearch" style="flex:1;min-width:160px;width:auto" placeholder="🔎 Szukaj (słowo, login)… Enter" value="${E(c.q)}" onkeydown="if(event.key==='Enter')aiLogSearch(this.value)"></div>`;
+    if (!groups.length) h += '<div class="gram-empty">' + (c.flagged ? '✅ Brak oznaczonych wypowiedzi w ostatnich 7 dniach.' : 'Brak zapisanych rozmów w ostatnich 7 dniach.') + '</div>';
+    h += groups.map(g => `<div class="bk-row" style="flex-direction:column;align-items:stretch">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div class="bk-info"><b>${g.flags ? '🚩 ' : ''}${E(g.name)} <span style="font-weight:600;color:var(--muted);font-size:.72rem">(${E(g.role || '')})</span></b>
+        <small>${plN(g.rows.length, 'wypowiedź', 'wypowiedzi', 'wypowiedzi')}${g.flags ? ' · <span style="color:var(--danger)">' + plN(g.flags, 'oznaczona', 'oznaczone', 'oznaczonych') + '</span>' : ''} · ostatnia ${fmt(g.rows[0].created_at)}</small></div>
+        <div class="gram-set-act"><button class="btn-sm" onclick="aiLogToggle('${g.id}')">${c.open[g.id] ? '🔼 Zwiń' : '👀 Pokaż'}</button>
+        <button class="btn-sm" onclick="aiLogDelUser('${g.id}')" title="Usuń wszystkie zapisy tego konta">🗑️ Usuń</button></div></div>
+      ${c.open[g.id] ? '<div class="gram-list">' + g.rows.slice().reverse().map(r => `<div class="gram-item" style="${r.flagged ? 'border-color:var(--danger);background:rgba(255,118,117,.08)' : ''}">
+        <div style="font-size:.68rem;color:var(--muted);font-weight:700">${fmt(r.created_at)} · ${r.kind === 'sentence' ? '✍️ Napisz zdanie' + (r.topic ? ' („' + E(r.topic) + '”)' : '') : '💬 ' + E(r.partner || 'AI') + (r.topic ? ' · ' + E(r.topic) : '')}
+          ${r.flagged ? ' · <b style="color:var(--danger)">🚩 ' + E((r.categories || []).map(x => CAT_PL[x] || x).join(', ') || 'zatrzymane') + '</b>' : ''}</div>
+        <div><b>🧒</b> ${E(r.message)}</div>${r.reply ? `<div style="color:var(--muted)"><b>🤖</b> ${E(r.reply)}</div>` : ''}
+        <button class="gram-del" onclick="aiLogDel(${r.id})" title="Usuń ten wpis">✕</button></div>`).join('') + '</div>' : ''}</div>`).join('');
+    aiModal('aiLogModal', h, true);
+  }
+  window.aiLogFilter = f => { _cl.flagged = f; _cl.open = {}; openAiChatLogs(); };
+  window.aiLogSearch = q => { _cl.q = String(q || '').trim(); _cl.open = {}; openAiChatLogs(); };
+  window.aiLogToggle = id => { _cl.open[id] = !_cl.open[id]; aiLogRender(); };
+  window.aiLogDel = async function(id){
+    try { await DB.deleteAiChatLogs([id]); _cl.rows = _cl.rows.filter(r => r.id !== id); aiLogRender(); } catch(e) { toast('❌ ' + e.message, 3000); }
+  };
+  window.aiLogDelUser = async function(uid){
+    const ids = _cl.rows.filter(r => (r.user_id || '—') === uid).map(r => r.id);
+    if (!ids.length || !confirm('Usunąć ' + ids.length + ' zapisanych wypowiedzi tego konta?')) return;
+    try { await DB.deleteAiChatLogs(ids); _cl.rows = _cl.rows.filter(r => !ids.includes(r.id)); aiLogRender(); toast('🗑️ Usunięto.', 2000); }
+    catch(e) { toast('❌ ' + e.message, 3000); }
   };
 
   /* ════════ 💬 ROZMOWA Z AI (pupil / Sowa) — ai-chat.js + Edge Function „chat” ════════ */
