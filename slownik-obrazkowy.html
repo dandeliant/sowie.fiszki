@@ -484,7 +484,6 @@ async function detectUser(){
     else if(data && data.is_teacher){ myRole='teacher'; isStaff=true; }
     else if(data && data.is_parent){ myRole='parent'; }
     else { myRole='student'; }
-    if(isStaff){ document.getElementById('adminBtn').style.display=''; }
     if(myRole!=='admin'){ myBooks = await loadMyBooks(uid); }
   }catch(e){ myRole='guest'; }
 }
@@ -613,6 +612,9 @@ async function openBook(id){
   document.getElementById('bookView').style.display='';
   document.getElementById('bhIcon').textContent = curBook.icon||'📘';
   document.getElementById('bhName').textContent = curBook.name||id;
+  // Tryb edycji: admin — każdy podręcznik, nauczyciel — tylko własny (migracja #77)
+  if(!canEditCur() && adminMode) toggleAdmin(true);
+  document.getElementById('adminBtn').style.display = canEditCur() ? '' : 'none';
   window.scrollTo(0,0);
 
   overrides = await loadOverrides(id);
@@ -798,9 +800,13 @@ function backToPicker(){
 }
 
 /* ---------- ADMIN MODE ---------- */
-function toggleAdmin(){
-  if(!isStaff){ toast('Tylko dla konta admina/nauczyciela'); return; }
-  adminMode = !adminMode;
+function canEditCur(){
+  if(myRole==='admin') return true;
+  return myRole==='teacher' && !!curBook && !!curBook._isAdminBook && curBook.createdBy===uid;
+}
+function toggleAdmin(forceOff){
+  if(!forceOff && !canEditCur()){ toast('Edytować możesz tylko własne podręczniki'); return; }
+  adminMode = forceOff ? false : !adminMode;
   const b=document.getElementById('adminBtn');
   b.classList.toggle('on',adminMode);
   b.textContent = adminMode ? '✅ Edycja: ON' : '✏️ Tryb edycji';
