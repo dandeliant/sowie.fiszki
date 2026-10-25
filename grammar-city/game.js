@@ -23,7 +23,7 @@ const norm = s => String(s).toLowerCase().replace(/[’‘`´]/g, "'").replace(/
 
 // ---------------------------------------------------------------- mapa
 // Mapy z prawdziwych danych (eksport topoexport.com: Overture Maps ODbL, GUGiK NMT CC BY 4.0;
-// konwersja grammar-city/warsaw/tools/convert-dxf.js): ?map=warsaw | ?map=jeleniec | ?map=london | ?map=lukow | ?map=wesolowka | ?map=kierzkow | ?map=sarnow.
+// konwersja grammar-city/warsaw/tools/convert-dxf.js): ?map=warsaw | ?map=jeleniec | ?map=london | ?map=lukow | ?map=wesolowka | ?map=kierzkow | ?map=sarnow | ?map=paris.
 // Bez parametru — klasyczne Grammar City (siatka kwartałów).
 const MAP_DEFS = {
   warsaw: { file: 'warsaw/warsaw.json', ext: 515, label: 'Warszawa — Śródmieście', of: 'Warszawy',
@@ -52,6 +52,10 @@ const MAP_DEFS = {
   sarnow: { file: 'sarnow/sarnow.json', ext: 515, label: 'Sarnów', of: 'Sarnowa',
     banner: ['SARNÓW', 'Witaj we wsi!'], finalePL: 'świetlica wiejska', finaleIn: 'w świetlicy wiejskiej', finaleEN: 'Village Hall',
     tagline: 'Prawdziwa wieś Sarnów w 3D', enter: 'Wejdź do wsi', ground: 'grass', gable: true, orbit: [170, 75, 4], fog: [220, 900] },
+  // Paryż: wieża Eiffla (kratownica zamiast brył z danych — eiffel: true), Pola Marsowe, Sekwana, Trocadéro
+  paris: { file: 'paris/paris.json', ext: 493, label: 'Paryż — wieża Eiffla', of: 'Paryża',
+    banner: ['PARIS', 'Welcome to Paris!'], finalePL: 'wieża Eiffla', finaleIn: 'pod wieżą Eiffla', finaleEN: 'Eiffel Tower',
+    tagline: 'Prawdziwy Paryż (wieża Eiffla) w 3D', ground: 'pave', eiffel: true, orbit: [330, 120, 110], fog: [240, 950] },
 };
 const MAP_ID = (p => (MAP_DEFS[p] ? p : 'grid'))(new URLSearchParams(location.search).get('map'));
 const MAPDEF = MAP_DEFS[MAP_ID] || null;
@@ -545,7 +549,11 @@ function buildWarsaw() {
   wallPool.push(sand); const sandIdx = wallPool.length - 1;
   const Tl = { p: [], n: [], u: [] };                  // dachówka (dachy dwuspadowe na wsi)
   const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), e1 = new THREE.Vector3(), e2 = new THREE.Vector3(), nrm = new THREE.Vector3();
+  // Paryż: wieża Eiffla w danych to 4 pełne bryły jedna w drugiej — zamiast nich kratownica (buildEiffel)
+  const eiffel = MAPDEF.eiffel ? eiffelFrame(D) : null;
+  if (eiffel) buildEiffel(eiffel);
   D.buildings.forEach((bd, bi) => {
+    if (eiffel && eiffel.parts.has(bd)) return;
     const v = bd.v, f = bd.f;
     let cx = 0, cz = 0; const r0 = bd.r[0]; for (let i = 0; i < r0.length; i += 2) { cx += r0[i]; cz += r0[i + 1]; } cx /= r0.length / 2; cz /= r0.length / 2;
     const nearPkin = !!MAPDEF.landmarkTint && Math.hypot(cx - D.pkin[0], cz - D.pkin[1]) < MAPDEF.landmarkR;
@@ -602,6 +610,123 @@ function buildWarsaw() {
   buildLamps();
   const st = staticParts.length ? new THREE.Mesh(mergeColored(staticParts), vcMat) : null;
   if (st) { st.castShadow = st.receiveShadow = true; st.frustumCulled = false; scene.add(st); staticParts.length = 0; }
+}
+// Położenie wieży Eiffla z danych: części w promieniu 20 m od punktu orientacyjnego, podstawa (z łukami) ma
+// najwięcej punktów obrysu; kierunek boków = średnia kątów krawędzi modulo 90° (ważona długością).
+function eiffelFrame(D) {
+  const parts = new Set(); let base = null, top = 0;
+  for (const bd of D.buildings) {
+    const r = bd.r[0]; let cx = 0, cz = 0;
+    for (let i = 0; i < r.length; i += 2) { cx += r[i]; cz += r[i + 1]; }
+    if (Math.hypot(cx / (r.length / 2) - D.pkin[0], cz / (r.length / 2) - D.pkin[1]) > 20) continue;
+    parts.add(bd); top = Math.max(top, bd.h);
+    if (!base || r.length > base.r[0].length) base = bd;
+  }
+  if (!base) return null;
+  const r = base.r[0]; let sc = 0, ss = 0;
+  for (let i = 0, j = r.length - 2; i < r.length; j = i, i += 2) {
+    const dx = r[i] - r[j], dz = r[i + 1] - r[j + 1], L = Math.hypot(dx, dz), t = Math.atan2(dz, dx) * 4;
+    sc += Math.cos(t) * L; ss += Math.sin(t) * L;
+  }
+  const ang = Math.atan2(ss, sc) / 4, ca = Math.cos(ang), sa = Math.sin(ang);
+  let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+  for (let i = 0; i < r.length; i += 2) {
+    const u = r[i] * ca + r[i + 1] * sa, v = -r[i] * sa + r[i + 1] * ca;
+    u0 = Math.min(u0, u); u1 = Math.max(u1, u); v0 = Math.min(v0, v); v1 = Math.max(v1, v);
+  }
+  const uc = (u0 + u1) / 2, vc = (v0 + v1) / 2;
+  return { parts, ang, cx: uc * ca - vc * sa, cz: uc * sa + vc * ca, W0: (u1 - u0 + v1 - v0) / 4, H: Math.max(top, 200) };
+}
+// Kratownica wieży: 4 nogi (ażurowe ściany + belki w narożnikach) łączące się przy 2. piętrze, trzon do 3. piętra,
+// łuki między nogami, platformy, antena. Profil w(y) — wykładniczy jak w prawdziwej wieży. Kolizje tylko na nogach,
+// pod wieżą można przejść. Nocą wieża świeci na złoto (materiały w winMats).
+function buildEiffel(F) {
+  const S = F.H / 286, W0 = F.W0;
+  const y1 = 57 * S, y2 = 116 * S, y3 = 276 * S, yTop = 300 * S, yAnt = 324 * S;
+  const k = Math.log(W0 / 3.2) / yTop, w = y => W0 * Math.exp(-k * y);
+  const t0 = W0 * 0.38, tt = y => t0 + (w(y2) - t0) * Math.min(1, y / y2);   // szerokość nogi — przy 2. piętrze nogi się stykają
+  const c = makeCanvas(64, 64), g = c.getContext('2d');
+  g.strokeStyle = '#fff'; g.lineCap = 'square';
+  g.lineWidth = 9; g.strokeRect(0, 0, 64, 64);
+  g.lineWidth = 6; g.beginPath(); g.moveTo(0, 0); g.lineTo(64, 64); g.moveTo(64, 0); g.lineTo(0, 64); g.stroke();
+  g.lineWidth = 4; g.beginPath(); g.moveTo(0, 32); g.lineTo(64, 32); g.stroke();
+  const latMat = new THREE.MeshLambertMaterial({ color: 0x7a5d44, map: canvasTex(c, true), alphaTest: 0.3, side: THREE.DoubleSide, emissive: 0x7a4a12, emissiveIntensity: 0 });
+  const solMat = new THREE.MeshLambertMaterial({ color: 0x6b5140, side: THREE.DoubleSide, emissive: 0x7a4a12, emissiveIntensity: 0 });
+  winMats.push(latMat, solMat);
+  const Lat = { p: [], n: [], u: [] }, Sol = { p: [], n: [], u: [] };
+  const tri = new THREE.Vector3(), q1 = new THREE.Vector3(), q2 = new THREE.Vector3();
+  // ściana czworokątna p0-p1 (dół) / p3-p2 (góra); normalna z kolejności wierzchołków — DoubleSide oświetla obie strony
+  const quad = (A, p0, p1, p2, p3, s) => {
+    q1.set(p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]); q2.set(p3[0] - p0[0], p3[1] - p0[1], p3[2] - p0[2]);
+    tri.crossVectors(q1, q2); if (tri.lengthSq() < 1e-9) return; tri.normalize();
+    const lb = Math.hypot(p1[0] - p0[0], p1[2] - p0[2]) / 2 / s, lt = Math.hypot(p2[0] - p3[0], p2[2] - p3[2]) / 2 / s;
+    const P = [p0, p1, p2, p3], U = [[-lb, p0[1] / s], [lb, p1[1] / s], [lt, p2[1] / s], [-lt, p3[1] / s]];
+    for (const i of [0, 1, 2, 0, 2, 3]) { A.p.push(P[i][0], P[i][1], P[i][2]); A.n.push(tri.x, tri.y, tri.z); A.u.push(U[i][0], U[i][1]); }
+  };
+  // graniastosłup przez kolejne poziomy: corners(y) → 4 narożniki [u, v]
+  const tube = (A, levels, corners, s, caps) => {
+    for (let l = 1; l < levels.length; l++) {
+      const ya = levels[l - 1], yb = levels[l], ca = corners(ya), cb = corners(yb);
+      for (let i = 0; i < 4; i++) {
+        const j = (i + 1) % 4;
+        quad(A, [ca[i][0], ya, ca[i][1]], [ca[j][0], ya, ca[j][1]], [cb[j][0], yb, cb[j][1]], [cb[i][0], yb, cb[i][1]], s);
+      }
+    }
+    if (caps) for (const y of [levels[0], levels[levels.length - 1]]) { const q = corners(y); quad(A, [q[0][0], y, q[0][1]], [q[1][0], y, q[1][1]], [q[2][0], y, q[2][1]], [q[3][0], y, q[3][1]], 8); }
+  };
+  const sq = (u, v, h) => [[u - h, v - h], [u + h, v - h], [u + h, v + h], [u - h, v + h]];
+  const box = (A, ua, ub, va, vb, ya, yb) => tube(A, [ya, yb], () => [[ua, va], [ub, va], [ub, vb], [ua, vb]], 8, true);
+  const range = (a, b, n) => Array.from({ length: n + 1 }, (_, i) => a + (b - a) * i / n);
+  const legLv = [...range(0, y1, 6), ...range(y1, y2, 5).slice(1)], shaftLv = range(y2, y3, 10), topLv = range(y3 + 9 * S, yTop, 3);
+  const SIGNS = [[1, 1], [-1, 1], [-1, -1], [1, -1]];
+  for (const [sx, sz] of SIGNS) {
+    const corner = (y, ci) => { const o = w(y), i = w(y) - tt(y), cs = [[i, i], [o, i], [o, o], [i, o]][ci]; return [sx * cs[0], sz * cs[1]]; };
+    tube(Lat, legLv, y => [0, 1, 2, 3].map(ci => corner(y, ci)), 4.5 * S);
+    for (let ci = 0; ci < 4; ci++) tube(Sol, legLv, y => { const p = corner(y, ci); return sq(p[0], p[1], 0.9 * S); });
+  }
+  tube(Lat, shaftLv, y => sq(0, 0, w(y)), 4 * S);
+  for (const [sx, sz] of SIGNS) tube(Sol, shaftLv, y => { const h = w(y); return sq(sx * h, sz * h, 0.7 * S); });
+  tube(Lat, topLv, y => sq(0, 0, w(y)), 2.5 * S, false);
+  tube(Sol, [y3 - S, y3 + 9 * S], () => sq(0, 0, w(y3) + 1.5 * S), 8, true);                  // 3. piętro (kabina)
+  tube(Sol, [yTop - 2 * S, yTop + 4 * S], () => sq(0, 0, 3.4 * S), 8, true);
+  tube(Sol, [yTop + 4 * S, yAnt], y => sq(0, 0, (0.7 - 0.5 * (y - yTop) / (yAnt - yTop)) * S), 8, true);   // antena
+  // 1. piętro: rama wokół nóg (galeria) z otworem w środku; 2. piętro: pełna płyta
+  const p1o = w(y1) + 3 * S, p1i = w(y1) * 0.5, p1a = y1 - 7 * S;
+  box(Sol, -p1o, p1o, p1i, p1o, p1a, y1); box(Sol, -p1o, p1o, -p1o, -p1i, p1a, y1);
+  box(Sol, p1i, p1o, -p1i, p1i, p1a, y1); box(Sol, -p1o, -p1i, -p1i, p1i, p1a, y1);
+  box(Sol, -w(y1) - 3.6 * S, w(y1) + 3.6 * S, -w(y1) - 3.6 * S, -w(y1) - 3 * S, y1, y1 + 2.4 * S);   // barierki galerii
+  box(Sol, -w(y1) - 3.6 * S, w(y1) + 3.6 * S, w(y1) + 3 * S, w(y1) + 3.6 * S, y1, y1 + 2.4 * S);
+  box(Sol, -w(y1) - 3.6 * S, -w(y1) - 3 * S, -w(y1) - 3 * S, w(y1) + 3 * S, y1, y1 + 2.4 * S);
+  box(Sol, w(y1) + 3 * S, w(y1) + 3.6 * S, -w(y1) - 3 * S, w(y1) + 3 * S, y1, y1 + 2.4 * S);
+  box(Sol, -w(y2) - 2 * S, w(y2) + 2 * S, -w(y2) - 2 * S, w(y2) + 2 * S, y2 - 4 * S, y2);
+  const grp = new THREE.Group();
+  for (const [A, m] of [[Lat, latMat], [Sol, solMat]]) {
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.Float32BufferAttribute(A.p, 3));
+    geom.setAttribute('normal', new THREE.Float32BufferAttribute(A.n, 3));
+    geom.setAttribute('uv', new THREE.Float32BufferAttribute(A.u, 2));
+    geom.computeBoundingSphere();
+    const mesh = new THREE.Mesh(geom, m); mesh.castShadow = mesh.receiveShadow = true; grp.add(mesh);
+  }
+  // łuki między nogami — na zewnętrznej ścianie, od ok. 12 m do spodu 1. piętra
+  const ys = 12 * S, yc = p1a - 2 * S, span = w(ys) - tt(ys) + 1.5 * S;
+  for (let f = 0; f < 4; f++) {
+    const arc = new THREE.Curve();
+    arc.getPoint = (t, out = new THREE.Vector3()) => {
+      const th = Math.PI * t, x = span * Math.cos(th), y = ys + (yc - ys) * Math.sin(th), z = w(y) - 0.8 * S;
+      return f === 0 ? out.set(x, y, z) : f === 1 ? out.set(z, y, -x) : f === 2 ? out.set(-x, y, -z) : out.set(-z, y, x);
+    };
+    const m = new THREE.Mesh(new THREE.TubeGeometry(arc, 36, 1.5 * S, 6, false), solMat); m.castShadow = true; grp.add(m);
+  }
+  grp.position.set(F.cx, 0, F.cz); grp.rotation.y = -F.ang; scene.add(grp);
+  // kolizje i mapa 2D: tylko podstawy nóg
+  const ca = Math.cos(F.ang), sa = Math.sin(F.ang), o = w(0), i = w(0) - tt(0);
+  for (const [sx, sz] of SIGNS) {
+    const ring = [];
+    for (const [cu, cv] of [[i, i], [o, i], [o, o], [i, o]]) { const u = sx * cu, v = sz * cv; ring.push(F.cx + u * ca - v * sa, F.cz + u * sa + v * ca); }
+    addPolyCol([ring], y1); colliders[colliders.length - 1].tower = true;
+    mapPolys.push({ rings: [ring], c: '#8a6d4f' });
+  }
 }
 // Woda blokuje ruch (pieszo, pojazdy na ziemi, zwierzęta) — raster 1 m z trójkątów WD.water; jezdnie (mosty)
 // wycinają przejście. Grammar City ma staw z kolizją wielokątną, więc tam raster nie jest potrzebny.
@@ -2713,7 +2838,7 @@ function buildXmasLights() {
   let per = 0;
   for (const c of colliders) {
     if (c.rings) {
-      if (c.h < 3) continue;
+      if (c.h < 3 || c.tower) continue;
       const r = c.rings[0], y = Math.min(c.h - 0.4, 6);
       for (let i = 0, j = r.length - 2; i < r.length; j = i, i += 2) { const L = Math.hypot(r[i] - r[j], r[i + 1] - r[j + 1]); edges.push([r[j], r[j + 1], r[i], r[i + 1], y, c]); per += L; }
     } else if (c.x1 - c.x0 > 5 && c.z1 - c.z0 > 5 && c.h >= 3.5) {
