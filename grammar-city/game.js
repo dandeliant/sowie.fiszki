@@ -87,26 +87,169 @@ function onBlock(x, z) {
 const groundAt = (x, z) => (REALMAP ? 0 : onBlock(x, z) ? SIDE_H : 0);
 
 // ---------------------------------------------------------------- save
-// Tryb słówek (vocab-missions.js) podaje własny klucz — osobny postęp per rozdział.
-const SAVE_KEY = window.GC_SAVE_KEY || 'grammarCity.v1';
+// Zalogowany uczeń: zapis per konto — klucze lokalne z loginem + kopia na serwerze
+// (tabela grammar_city_saves, migracja #72; przy starcie wygrywa nowszy zapis).
+//  • „shared” — wspólne dla wszystkich trybów i rozdziałów: pieniądze, XP, diamenty, odkrycia
+//    (zwierzęta, urbex, ryby, grzyby), garderoba, pojazdy, paliwo, kolory, ustawienia;
+//  • osobny postęp misji dla trybu: 'grammar' albo 'vocab.<podręcznik>.<rozdział>' (vocab-missions.js).
+// Gość: jak dawniej — tylko ta przeglądarka (stare klucze).
+const LEGACY_SAVE_KEY = window.GC_SAVE_KEY || 'grammarCity.v1';
+const LEGACY_WARDROBE_KEY = 'grammarCity.wardrobe.v1';
+const GC_LOGIN = (() => { try { return sessionStorage.getItem('fiszki_user') || localStorage.getItem('fiszki_user_persist') || ''; } catch (e) { return ''; } })();
+const GC_GUEST = !GC_LOGIN || GC_LOGIN === '__guest__';
+const MODE_SLOT = window.GC_SAVE_KEY ? window.GC_SAVE_KEY.replace(/^grammarCity\./, '') : 'grammar';
+const SHARED_KEY = 'grammarCity.shared.' + GC_LOGIN;
+const PROG_KEY = 'grammarCity.prog.' + GC_LOGIN + '.' + MODE_SLOT;
+const SHARED_FIELDS = ['money', 'xp', 'gems', 'gemsFound', 'zoo', 'urbex', 'fish', 'mushrooms', 'wheelieBest'];
 const freshSave = () => ({ done: {}, best: {}, money: 0, xp: 0 });
-let save = freshSave();
-try { const s = JSON.parse(localStorage.getItem(SAVE_KEY)); if (s && s.done) save = Object.assign(freshSave(), s); } catch (e) { /* storage unavailable */ }
-function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) { /* ignore */ } }
-// Statystyki gier Sowie Fiszki (../game-stats.js): XP z misji i rozmów jako punkty gry.
-window.GC_STATS_XP = () => save.xp;
-// Garderoba i garaż są wspólne dla wszystkich trybów (gramatyka i słówka z każdego rozdziału);
-// pieniądze zostają w zapisie danego trybu.
-const WARDROBE_KEY = 'grammarCity.wardrobe.v1';
 const freshWardrobe = () => ({ owned: { outfit_classic: 1, hat_cap: 1, hat_none: 1, glasses_none: 1, hair_blond: 1, veh_kscooter: 1 },
   equip: { outfit: 'classic', hat: 'cap', glasses: 'none', hair: 'blond', vehicle: 'veh_kscooter' }, talked: {}, fuel: 1, vcolor: {}, smode: 'S' });
-let wardrobe = freshWardrobe();
-try {
-  const w = JSON.parse(localStorage.getItem(WARDROBE_KEY));
-  if (w && w.owned) { const f = freshWardrobe(); wardrobe = { owned: Object.assign(f.owned, w.owned), equip: Object.assign(f.equip, w.equip || {}), talked: w.talked || {}, fuel: typeof w.fuel === 'number' ? clamp(w.fuel, 0, 1) : 1,
-    vcolor: w.vcolor && typeof w.vcolor === 'object' ? w.vcolor : {}, smode: ['E', 'S', 'R'].includes(w.smode) ? w.smode : 'S' }; }
-} catch (e) { /* storage unavailable */ }
-function persistWardrobe() { try { localStorage.setItem(WARDROBE_KEY, JSON.stringify(wardrobe)); } catch (e) { /* ignore */ } }
+// Uzupełnia brakujące pola, zachowuje pozostałe (np. invisOff).
+function normWardrobe(w) {
+  const f = freshWardrobe();
+  if (!w || !w.owned) return f;
+  return Object.assign({}, w, { owned: Object.assign(f.owned, w.owned), equip: Object.assign(f.equip, w.equip || {}), talked: w.talked || {},
+    fuel: typeof w.fuel === 'number' ? clamp(w.fuel, 0, 1) : 1, vcolor: w.vcolor && typeof w.vcolor === 'object' ? w.vcolor : {},
+    smode: ['E', 'S', 'R'].includes(w.smode) ? w.smode : 'S' });
+}
+const readJSON = k => { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } };
+const writeJSON = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* ignore */ } };
+let save = freshSave(), wardrobe = freshWardrobe(), sharedTs = 0, progTs = 0;
+function applyShared(sh) {
+  if (!sh) return;
+  for (const f of SHARED_FIELDS) if (sh[f] !== undefined) save[f] = sh[f];
+  wardrobe = normWardrobe(sh.wardrobe);
+  sharedTs = +sh.ts || 0;
+}
+function applyProg(pr) { if (!pr) return; save.done = pr.done || {}; save.best = pr.best || {}; progTs = +pr.ts || 0; }
+function sharedData() { const sh = { wardrobe, ts: sharedTs }; for (const f of SHARED_FIELDS) if (save[f] !== undefined) sh[f] = save[f]; return sh; }
+function progData() { return { done: save.done, best: save.best, ts: progTs }; }
+// Jednorazowo: postęp zapisany w tej przeglądarce przed kontami (stare klucze, także wszystkie rozdziały)
+// trafia do PIERWSZEGO zalogowanego konta, które tu uruchomi grę. Pieniądze i znaleziska z wszystkich
+// trybów się sumują. Stare klucze zostają dla trybu gościa.
+function migrateLegacy() {
+  if (localStorage.getItem('grammarCity.legacyOwner')) return null;
+  const keys = Object.keys(localStorage).filter(k => k === 'grammarCity.v1' || k.startsWith('grammarCity.vocab.'));
+  const w = readJSON(LEGACY_WARDROBE_KEY);
+  if (!keys.length && !w) return null;
+  const sh = { money: 0, xp: 0, gems: 0, mushrooms: 0, fish: 0, wheelieBest: 0, zoo: {}, urbex: {}, gemsFound: {}, wardrobe: normWardrobe(w), ts: Date.now(), mig: true };
+  for (const k of keys) {
+    const s = readJSON(k); if (!s || !s.done) continue;
+    for (const f of ['money', 'xp', 'gems', 'mushrooms', 'fish']) sh[f] += +s[f] || 0;
+    sh.wheelieBest = Math.max(sh.wheelieBest, +s.wheelieBest || 0);
+    for (const f of ['zoo', 'urbex', 'gemsFound']) Object.assign(sh[f], s[f] || {});
+    const slot = k === 'grammarCity.v1' ? 'grammar' : k.replace(/^grammarCity\./, '');
+    writeJSON('grammarCity.prog.' + GC_LOGIN + '.' + slot, { done: s.done || {}, best: s.best || {}, ts: Date.now() });
+  }
+  writeJSON(SHARED_KEY, sh);
+  try { localStorage.setItem('grammarCity.legacyOwner', GC_LOGIN); } catch (e) { /* ignore */ }
+  return sh;
+}
+if (GC_GUEST) {
+  const s = readJSON(LEGACY_SAVE_KEY); if (s && s.done) save = Object.assign(freshSave(), s);
+  wardrobe = normWardrobe(readJSON(LEGACY_WARDROBE_KEY));
+} else {
+  applyShared(readJSON(SHARED_KEY) || migrateLegacy());
+  applyProg(readJSON(PROG_KEY));
+}
+
+// Serwer (migracja #72): wysyłka zmian po 4 s ciszy oraz przy schowaniu karty / wyjściu.
+const GCS = { ok: false, uid: null, timer: null, dirty: new Set(), extra: {}, changed: false };
+const PROG_PREFIX = 'grammarCity.prog.' + GC_LOGIN + '.';
+function gcsQueue(slot) {
+  if (!GCS.ok) return;
+  GCS.dirty.add(slot);
+  clearTimeout(GCS.timer); GCS.timer = setTimeout(gcsFlush, 4000);
+}
+function gcsFlush() {
+  clearTimeout(GCS.timer); GCS.timer = null;
+  if (!GCS.ok || !GCS.dirty.size) return;
+  const now = new Date().toISOString();
+  const rows = [...GCS.dirty].map(slot => ({ user_id: GCS.uid, slot, data: slot === 'shared' ? sharedData() : (slot === MODE_SLOT ? progData() : GCS.extra[slot]), updated_at: now }))
+    .filter(r => r.data);
+  GCS.dirty.clear();
+  window.supabase.from('grammar_city_saves').upsert(rows, { onConflict: 'user_id,slot' })
+    .then(({ error }) => { if (error) console.warn('[Grammar City] zapis na serwerze:', error.message); });
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') gcsFlush(); });
+window.addEventListener('pagehide', gcsFlush);
+function persist() {
+  if (GC_GUEST) { writeJSON(LEGACY_SAVE_KEY, save); return; }
+  sharedTs = progTs = Date.now();
+  writeJSON(SHARED_KEY, sharedData()); writeJSON(PROG_KEY, progData());
+  gcsQueue('shared'); gcsQueue(MODE_SLOT);
+}
+function persistWardrobe() {
+  if (GC_GUEST) { writeJSON(LEGACY_WARDROBE_KEY, wardrobe); return; }
+  sharedTs = Date.now();
+  writeJSON(SHARED_KEY, sharedData());
+  gcsQueue('shared');
+}
+// Stary zapis z tej przeglądarki + zapis z serwera z innego urządzenia: nic nie ginie (sumy, unie, więcej rzeczy).
+function mergeShared(srv, loc) {
+  const r = Object.assign({}, srv);
+  for (const f of ['money', 'xp', 'gems', 'mushrooms', 'fish']) r[f] = (+srv[f] || 0) + (+loc[f] || 0);
+  r.wheelieBest = Math.max(+srv.wheelieBest || 0, +loc.wheelieBest || 0);
+  for (const f of ['zoo', 'urbex', 'gemsFound']) r[f] = Object.assign({}, loc[f] || {}, srv[f] || {});
+  const ws = normWardrobe(srv.wardrobe), wl = normWardrobe(loc.wardrobe);
+  r.wardrobe = Object.assign({}, ws, { owned: Object.assign({}, wl.owned, ws.owned), talked: Object.assign({}, wl.talked, ws.talked), vcolor: Object.assign({}, wl.vcolor, ws.vcolor) });
+  r.ts = Date.now();
+  return r;
+}
+// Postęp misji: zaliczone gdziekolwiek = zaliczone (unia), najlepszy wynik = maksimum.
+function mergeProg(a, b) {
+  const best = Object.assign({}, a.best || {});
+  for (const [k, v] of Object.entries(b.best || {})) best[k] = Math.max(+best[k] || 0, +v || 0);
+  return { done: Object.assign({}, a.done || {}, b.done || {}), best, ts: Math.max(+a.ts || 0, +b.ts || 0) };
+}
+async function syncSaves() {
+  if (GC_GUEST) return;
+  const sb = window.supabase;
+  if (!sb || typeof sb.from !== 'function' || !sb.auth) return;
+  let uid = null;
+  try { const { data } = await sb.auth.getSession(); uid = data && data.session && data.session.user ? data.session.user.id : null; } catch (e) { return; }
+  if (!uid) return;
+  const { data, error } = await sb.from('grammar_city_saves').select('slot,data').eq('user_id', uid);
+  if (error) {   // bez migracji #72 — zapis zostaje tylko w tej przeglądarce
+    if (!/grammar_city_saves|PGRST205|42P01/i.test((error.code || '') + ' ' + (error.message || ''))) console.warn('[Grammar City] odczyt z serwera:', error.message);
+    return;
+  }
+  GCS.ok = true; GCS.uid = uid;
+  const srv = {}; (data || []).forEach(r => { srv[r.slot] = r.data; });
+  const locSh = readJSON(SHARED_KEY);
+  if (srv.shared) {
+    if (locSh && locSh.mig) { applyShared(mergeShared(srv.shared, locSh)); writeJSON(SHARED_KEY, sharedData()); gcsQueue('shared'); GCS.changed = true; }
+    else if (!locSh || (+srv.shared.ts || 0) > (+locSh.ts || 0)) { applyShared(srv.shared); writeJSON(SHARED_KEY, sharedData()); GCS.changed = true; }
+    else if ((+locSh.ts || 0) > (+srv.shared.ts || 0)) gcsQueue('shared');
+  } else if (locSh) {
+    if (locSh.mig) writeJSON(SHARED_KEY, sharedData());
+    gcsQueue('shared');
+  }
+  const locPr = readJSON(PROG_KEY), sp = srv[MODE_SLOT];
+  if (sp && locPr) {
+    const m = mergeProg(sp, locPr);
+    const sameLoc = JSON.stringify([m.done, m.best]) === JSON.stringify([locPr.done || {}, locPr.best || {}]);
+    const sameSrv = JSON.stringify([m.done, m.best]) === JSON.stringify([sp.done || {}, sp.best || {}]);
+    if (!sameLoc) { applyProg(m); writeJSON(PROG_KEY, progData()); GCS.changed = true; }
+    if (!sameSrv) gcsQueue(MODE_SLOT);
+  } else if (sp) { applyProg(sp); writeJSON(PROG_KEY, progData()); GCS.changed = true; }
+  else if (locPr) gcsQueue(MODE_SLOT);
+  // Pozostałe tryby (inne rozdziały) z tego urządzenia: unia z serwerem w obie strony.
+  for (const k of Object.keys(localStorage)) {
+    if (!k.startsWith(PROG_PREFIX)) continue;
+    const slot = k.slice(PROG_PREFIX.length); if (slot === MODE_SLOT) continue;
+    const loc = readJSON(k); if (!loc) continue;
+    const sv = srv[slot], m = sv ? mergeProg(sv, loc) : loc;
+    const key = x => JSON.stringify([x.done || {}, x.best || {}]);
+    if (sv && key(m) !== key(loc)) writeJSON(k, m);
+    if (!sv || key(m) !== key(sv)) { GCS.extra[slot] = m; GCS.dirty.add(slot); }
+  }
+  // …i tryby, które są tylko na serwerze — kopia lokalna na wypadek gry bez internetu.
+  for (const slot of Object.keys(srv)) if (slot !== 'shared' && slot !== MODE_SLOT && !localStorage.getItem(PROG_PREFIX + slot)) writeJSON(PROG_PREFIX + slot, srv[slot]);
+  gcsFlush();
+}
+// Statystyki gier Sowie Fiszki (../game-stats.js): XP z misji i rozmów jako punkty gry.
+window.GC_STATS_XP = () => save.xp;
 const doneCount = () => Object.keys(save.done).length;
 const isUnlocked = m => doneCount() >= TIERS[m.tier].need;
 const RANKS = [[0, 'Tourist'], [3, 'Newcomer'], [7, 'Local'], [10, 'Street Smart'], [15, 'City Boss'], [19, 'Grammar Legend']];
@@ -4734,15 +4877,17 @@ function renderSettings() {
 function refreshStartInfo() {
   const dc = doneCount();
   $('save-info').textContent = dc || save.money ? `Zapisany postęp: ${dc}/${MISSIONS.length} misji · ${fmtMoney(save.money)}` : '';
-  $('reset-wrap').hidden = !(dc || save.money);
+  $('reset-wrap').hidden = !(dc || (GC_GUEST && save.money));
 }
 function showResetLink() {
   const w = $('reset-wrap');
-  w.innerHTML = '<button class="linkbtn" id="btn-reset">Zacznij od nowa</button>';
+  w.innerHTML = '<button class="linkbtn" id="btn-reset">' + (GC_GUEST ? 'Zacznij od nowa' : 'Zacznij misje od nowa') + '</button>';
   $('btn-reset').onclick = () => {
-    w.innerHTML = '<span>Usunąć cały postęp?</span><button class="xbtn" id="reset-yes">Tak, usuń</button><button class="xbtn" id="reset-no">Anuluj</button>';
+    w.innerHTML = '<span>' + (GC_GUEST ? 'Usunąć cały postęp?' : 'Usunąć zaliczone misje w tym trybie? Pieniądze, diamenty i zakupy zostają.') + '</span><button class="xbtn" id="reset-yes">Tak, usuń</button><button class="xbtn" id="reset-no">Anuluj</button>';
     $('reset-yes').onclick = () => {
-      save = freshSave(); shownMoney = 0; persist(); refreshMarkers(); refreshStartInfo();
+      // Zalogowany: tylko misje tego trybu — pieniądze i zakupy są wspólne dla wszystkich rozdziałów.
+      if (GC_GUEST) { save = freshSave(); shownMoney = 0; } else { save.done = {}; save.best = {}; }
+      persist(); refreshMarkers(); refreshStartInfo();
       $('btn-start').textContent = (MAPDEF && MAPDEF.enter) || 'Wejdź do miasta';
     };
     $('reset-no').onclick = showResetLink;
@@ -4888,12 +5033,16 @@ function resizeMinimap() {
 async function boot() {
   const btn = $('btn-start');
   btn.disabled = true; btn.textContent = 'Ładowanie miasta…';
+  // Zapis z serwera (migracja #72) wczytujemy równolegle z czcionkami — przed zbudowaniem świata.
+  const syncP = syncSaves().then(() => { if (GCS.changed) rebuildPlayer(); })   // strój / fryzura z zapisu na serwerze
+    .catch(e => console.warn('[Grammar City] synchronizacja zapisu:', e));
   try {
     await Promise.race([
       Promise.all([document.fonts.load('40px Anton'), document.fonts.load('700 20px "Barlow Condensed"'), document.fonts.load('600 20px "Barlow Condensed"')]),
       new Promise(r => setTimeout(r, 2500)),
     ]);
   } catch (e) { /* fonts optional */ }
+  await Promise.race([syncP, new Promise(r => setTimeout(r, 4000))]);
   if (REALMAP) {
     btn.textContent = `Ładowanie mapy: ${MAPDEF.label}…`;
     try { WD = await (await fetch(MAPDEF.file)).json(); }
