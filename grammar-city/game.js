@@ -1211,43 +1211,59 @@ function randomLook(r = Math.random) {
     hat: r() < 0.15 ? pk(['cap', 'beanie', 'fedora']) : 'none', hatColor: pk([0x1e3a5f, 0xb23a48, 0x2f2f2f, 0xd8c39a]),
     glasses: r() < 0.12 ? 'sun' : 'none', shoes: pk([0x1c1c1c, 0x5a3a1e, 0xf2f2f2]) };
 }
-// Chód i bieg: biodro wahadłowo, kolano zgina się w fazie przenoszenia nogi (najmocniej tuż po oderwaniu stopy,
-// prostuje się przed postawieniem pięty), ręce w przeciwfazie do nóg z ugiętym łokciem (w biegu ~90°).
-// Wysokość ciała z długości nogi podporowej — tułów naturalnie opada i unosi się z każdym krokiem; w biegu faza lotu
-// i pochylenie do przodu. Kąty: rotation.x > 0 = kończyna do tyłu, kolano > 0 = łydka do tyłu, łokieć < 0 = do przodu.
+// Chód i bieg. Wzorzec ruchu nóg (biodro wahadłowo, kolano zgina się przy przenoszeniu nogi — najmocniej tuż po
+// oderwaniu stopy, prostuje się przed postawieniem pięty), a noga podporowa jest dociskana do ziemi odwrotną
+// kinematyką (IK dwuczłonowe: udo + łydka) — stopa nie wchodzi pod ziemię i nie wisi w powietrzu, a ciało porusza
+// się w pionie po łagodnej sinusoidzie (chód ~3 cm, bieg ~4 cm; w biegu najniżej w połowie podporu).
+// Ręce w przeciwfazie do nóg z ugiętym łokciem (w biegu ~90°). Kąty: rotation.x > 0 = kończyna do tyłu,
+// kolano > 0 = łydka do tyłu, łokieć < 0 = przedramię do przodu. Pozy wygładzane w czasie (bez szarpnięć).
 const THIGH_L = 0.48, SHIN_L = 0.52;
+const smoothstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 function resetPose(p) {
   for (const j of [p.la, p.ra, p.ll, p.rl, p.lf, p.rf, p.lk, p.rk]) j.rotation.set(0, 0, 0);
   p.rig.position.set(0, 0, 0); p.rig.rotation.set(0, 0, 0);
+  p.mvS = p.runS = p.airS = 0;
 }
 function animPerson(p, speed, dt, air) {
   p.idle += dt;
-  if (air) {
-    p.ll.rotation.set(-0.75, 0, 0); p.lk.rotation.x = 1.25; p.rl.rotation.set(0.25, 0, 0); p.rk.rotation.x = 0.55;
-    p.la.rotation.set(0.45, 0, -0.18); p.lf.rotation.x = -0.5; p.ra.rotation.set(-1.2, 0, 0.18); p.rf.rotation.x = -0.4;
-    p.rig.position.y = 0; p.rig.rotation.x = 0.05;
-    return;
-  }
-  if (speed > 0.1) p.phase += dt * (2.6 + speed * 1.05);
-  const mv = Math.min(1, speed / 3), run = clamp((speed - 5.8) / 3.5, 0, 1);
-  const A = mv * (0.4 + 0.32 * run), K = mv * (0.85 + 0.95 * run), lag = 0.35 + 0.3 * run;
-  let reach = 0;
-  for (const [hip, knee, ph] of [[p.ll, p.lk, p.phase], [p.rl, p.rk, p.phase + Math.PI]]) {
-    const h = -A * Math.sin(ph) - 0.12 * run * mv;
-    const k = K * Math.pow(Math.max(0, Math.cos(ph + lag)), 1.4) + 0.06 * mv + 0.22 * run * mv * Math.max(0, -Math.cos(ph));
-    hip.rotation.set(h, 0, 0); knee.rotation.x = k;
-    reach = Math.max(reach, THIGH_L * Math.cos(h) + SHIN_L * Math.cos(h + k));   // pionowy zasięg nogi
-  }
+  // płynne przejścia: stanie ↔ chód ↔ bieg ↔ skok
+  const kS = dt > 0 ? Math.min(1, dt * 8) : 1;
+  p.mvS = lerp(p.mvS || 0, Math.min(1, speed / 3), kS);
+  p.runS = lerp(p.runS || 0, clamp((speed - 5.8) / 3.5, 0, 1), kS);
+  p.airS = lerp(p.airS || 0, air ? 1 : 0, dt > 0 ? Math.min(1, dt * 14) : 1);
+  const mv = p.mvS, run = p.runS, ai = p.airS;
+  if (speed > 0.1 && !air) p.phase += dt * (2.6 + speed * 1.0);
+  const A = mv * (0.38 + 0.12 * run), K = mv * (0.8 + 0.8 * run), lag = 0.35 + 0.25 * run;
+  const lean = run * mv * 0.16 + mv * 0.03, c2 = Math.cos(2 * p.phase);
+  const y = mv * ((-0.035 + 0.015 * c2) * (1 - run) + (-0.05 - 0.022 * c2) * run);
+  const H = y + Math.cos(lean), bias = 0.3 - 0.5 * run;
+  const AIR = [[-0.75, 1.25], [0.25, 0.55]];
+  [[p.ll, p.lk, p.phase], [p.rl, p.rk, p.phase + Math.PI]].forEach(([hip, knee, ph], i) => {
+    const c = Math.cos(ph);
+    let h = -A * Math.sin(ph) - 0.05 * run * mv;
+    let k = K * Math.pow(Math.max(0, Math.cos(ph + lag)), 1.6) + 0.05 * mv;
+    if (mv > 0.01) {
+      const hw = h + lean, fz = -THIGH_L * Math.sin(hw) - SHIN_L * Math.sin(hw + k), fy = -THIGH_L * Math.cos(hw) - SHIN_L * Math.cos(hw + k);
+      const w = smoothstep(-0.3, 0.3, bias - c) * mv, footH = H + fy;
+      const ty = fy - (w * footH + (1 - w) * Math.min(0, footH));   // podpór: stopa na ziemi; przenoszenie: nie pod ziemią
+      const d = Math.min(THIGH_L + SHIN_L - 1e-4, Math.hypot(fz, ty));
+      k = Math.acos(clamp((d * d - THIGH_L * THIGH_L - SHIN_L * SHIN_L) / (2 * THIGH_L * SHIN_L), -1, 1));
+      h = Math.atan2(-fz, -ty) - Math.atan2(SHIN_L * Math.sin(k), THIGH_L + SHIN_L * Math.cos(k)) - lean;
+    }
+    hip.rotation.set(lerp(h, AIR[i][0], ai), 0, 0); knee.rotation.x = lerp(k, AIR[i][1], ai);
+  });
   const breath = Math.sin(p.idle * 1.7) * 0.025 * (1 - mv);
-  for (const [sh, el, ph, sd] of [[p.la, p.lf, p.phase, -1], [p.ra, p.rf, p.phase + Math.PI, 1]]) {
+  const AIRA = [[0.45, -0.18, -0.5], [-1.2, 0.18, -0.4]];
+  [[p.la, p.lf, p.phase, -1], [p.ra, p.rf, p.phase + Math.PI, 1]].forEach(([sh, el, ph, sd], i) => {
     const sw = Math.sin(ph);
-    sh.rotation.set(mv * (0.32 + 0.45 * run) * sw + 0.08 * run * mv + breath, 0, sd * (0.07 + 0.08 * run * mv));
-    el.rotation.x = -(0.1 + mv * (0.18 + 0.3 * Math.max(0, -sw)) + run * mv * 1.05);
-  }
-  p.rig.position.y = Math.min(0, reach - (THIGH_L + SHIN_L)) + run * mv * 0.09 * Math.abs(Math.cos(p.phase));
-  p.rig.rotation.x = run * mv * 0.2 + mv * 0.03;
-  p.rig.rotation.y = Math.sin(p.phase) * 0.06 * mv;                    // skręt bioder w rytm kroków
-  p.rig.rotation.z = Math.cos(p.phase) * 0.025 * mv * (1 - run * 0.5);  // przenoszenie ciężaru z nogi na nogę
+    const sx = mv * (0.32 + 0.4 * run) * sw + 0.06 * run * mv + breath, sz = sd * (0.07 + 0.06 * run * mv);
+    const ex = -(0.1 + mv * (0.18 + 0.25 * Math.max(0, -sw)) + run * mv * 1.05);
+    sh.rotation.set(lerp(sx, AIRA[i][0], ai), 0, lerp(sz, AIRA[i][1], ai)); el.rotation.x = lerp(ex, AIRA[i][2], ai);
+  });
+  p.rig.position.y = y * (1 - ai);
+  p.rig.rotation.x = lerp(lean, 0.05, ai);
+  p.rig.rotation.y = Math.sin(p.phase) * 0.05 * mv * (1 - ai);                   // skręt bioder w rytm kroków
+  p.rig.rotation.z = Math.cos(p.phase) * 0.02 * mv * (1 - run * 0.5) * (1 - ai);  // przenoszenie ciężaru z nogi na nogę
 }
 
 // ---------------------------------------------------------------- vehicles
@@ -2138,6 +2154,9 @@ function updateOnFoot(dt) {
   if (indoor) { P.pos.x = clamp(p.x, indoor.room.x - ROOM_W / 2 + 0.4, indoor.room.x + ROOM_W / 2 - 0.4); P.pos.z = clamp(p.z, indoor.room.z - ROOM_D / 2 + 0.4, indoor.room.z + ROOM_D / 2 - 0.4); }
   else { P.pos.x = clamp(p.x, -BOUND, BOUND); P.pos.z = clamp(p.z, -BOUND, BOUND); }
   player.g.position.copy(P.pos);
+  // krawężnik (do 0,5 m w górę): postać wchodzi płynnie zamiast przeskakiwać o całą wysokość w jednej klatce
+  P.visY = P.visY == null || P.pos.y < P.visY || P.pos.y - P.visY > 0.5 ? P.pos.y : lerp(P.visY, P.pos.y, Math.min(1, dt * 12));
+  player.g.position.y = P.visY;
   player.g.rotation.y = P.facing;
   animPerson(player, P.speed, dt, !P.onGround);
 }
