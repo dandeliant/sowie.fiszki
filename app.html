@@ -5544,6 +5544,14 @@ function canEditBook(book) {
   const myId = (typeof DB !== 'undefined' && DB.getUserId) ? DB.getUserId() : null;
   return !!(myId && book.createdBy && book.createdBy === myId);
 }
+// Czy aktualny uzytkownik moze zmieniac tresci podrecznika (nagrania wymowy,
+// zdania kontekstowe, slowniczek obrazkowy)? Admin — kazdy podrecznik,
+// nauczyciel — tylko wlasny (migracja #77 pilnuje tego tez w bazie).
+function canEditBookContent(bookId) {
+  if (isGuest) return false;
+  if (isCurrentUserAdmin()) return true;
+  return canEditBook(typeof BOOKS !== 'undefined' ? BOOKS[bookId] : null);
+}
 
 function getEffectiveBookAccess(book) {
   const overrides = (typeof DB !== 'undefined' && DB.getBookAccessOverrides)
@@ -6891,8 +6899,7 @@ function openWordList(key) {
   // Ukryj dla wirtualnych unitow (all, mistakes) i custom-* (slowka spoza BOOKS)
   const bulkBtn = document.getElementById('btnBulkAudio');
   if (bulkBtn) {
-    const canRecord = (typeof isCurrentUserAdmin === 'function' && isCurrentUserAdmin())
-                   || (typeof isCurrentUserTeacher === 'function' && isCurrentUserTeacher());
+    const canRecord = canEditBookContent(currentBookId);
     const realBook = BOOKS && BOOKS[currentBookId];
     const realUnit = realBook && realBook.units && realBook.units[key];
     const isRealUnit = !!realUnit && key !== 'all' && key !== 'mistakes';
@@ -8825,7 +8832,10 @@ async function saveSentenceEdit() {
 // ══════════════════════════════════════════════
 function openWordEditor(){
   if (curIdx === null) return;
-  if (!isCurrentUserAdmin() && !isCurrentUserTeacher()) return;
+  if (!canEditBookContent(currentBookId)) {
+    if (isCurrentUserTeacher() && typeof toast === 'function') toast('✏️ Edytować możesz tylko słówka we własnych podręcznikach.', 2800);
+    return;
+  }
   if (typeof DB.adminEditWord !== 'function') {
     if (typeof toast === 'function') toast('Edycja słówek niedostępna.', 2400);
     return;
@@ -8889,7 +8899,7 @@ function renderCtxRows(){
 }
 async function saveContextsEdit(){
   if (typeof DB.saveContexts !== 'function'){ _ctxMsg('❌ Brak migracji #59 (word_contexts).','var(--danger)'); return; }
-  if (!(isCurrentUserAdmin() || isCurrentUserTeacher())){ _ctxMsg('❌ Tylko admin/nauczyciel.','var(--danger)'); return; }
+  if (!canEditBookContent(currentBookId)){ _ctxMsg('❌ Tylko admin albo nauczyciel we własnym podręczniku.','var(--danger)'); return; }
   // Auto-uzupełnienie: gap↔full na podstawie answer
   const norm = _ctxEdit.map(c=>{
     let gap=(c.gap||'').trim(), full=(c.full||'').trim(), answer=(c.answer||'').trim(), pl=(c.pl||'').trim();
@@ -8978,12 +8988,12 @@ async function saveWordEdit(){
   }
 }
 
-// Pokaż/ukryj przycisk „✏️ Edytuj" na fiszce — tylko dla admina/nauczyciela
-// (i tylko gdy karta jest aktywna, nie placeholder „Kliknij Generuj").
+// Pokaż/ukryj przycisk „✏️ Edytuj" na fiszce — admin lub nauczyciel we własnym
+// podręczniku (i tylko gdy karta jest aktywna, nie placeholder „Kliknij Generuj").
 function refreshEditWordBtn(){
   const btn = document.getElementById('btnEditWord');
   if (!btn) return;
-  const canEdit = !isGuest && (isCurrentUserAdmin() || isCurrentUserTeacher());
+  const canEdit = canEditBookContent(currentBookId);
   const haveWord = (typeof curIdx !== 'undefined' && curIdx !== null
                     && typeof activeWords !== 'undefined' && Array.isArray(activeWords)
                     && activeWords[curIdx]);

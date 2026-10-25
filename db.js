@@ -4071,7 +4071,10 @@ const DB = (() => {
     const { error: upErr } = await supabase.storage
       .from('word-audio')
       .upload(path, blob, { contentType: blob.type || 'audio/webm', upsert: false });
-    if (upErr) throw new Error('Upload nieudany: ' + upErr.message);
+    if (upErr) {
+      if (/row-level security|unauthorized|403/i.test(upErr.message)) throw new Error('Nagrywać możesz tylko we własnych podręcznikach.');
+      throw new Error('Upload nieudany: ' + upErr.message);
+    }
 
     const { data: urlData } = supabase.storage.from('word-audio').getPublicUrl(path);
     const audioUrl = urlData?.publicUrl;
