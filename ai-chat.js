@@ -15,7 +15,9 @@
      persona: 'pet' | 'owl' | 'npc', name, emoji, species, role,
      ctx: { lang, level, unitName, words: [{t, pl}], grammar: [tematy] },
      invoke: async body => wynik Edge Function,   // body bez pola action (dodawane tutaj)
-     onGood(): pochwała / poprawna wypowiedź (XP, humor pupila), onClose(), guest: bool
+     onGood(): pochwała / poprawna wypowiedź (XP, humor pupila), onClose(), guest: bool,
+     onDiary(): otwiera Pamiętnik rozmów (przycisk 📔 w nagłówku; bez niego przycisku nie ma)
+   Każda rozmowa ma własny identyfikator (session) — tury zapisują się razem w Pamiętniku (migracja #82).
    })
 ============================================================ */
 (function () {
@@ -184,7 +186,7 @@
         persona: st.o.persona, name: st.o.name, species: st.o.species || '', role: st.o.role || '',
         lang: st.ctx.lang || 'en', level: st.ctx.level || '', unitName: st.ctx.unitName || '',
         words: (st.ctx.words || []).slice(0, 40), grammar: (st.ctx.grammar || []).slice(0, 6),
-        history: st.history.slice(-12), message: message || '',
+        history: st.history.slice(-12), message: message || '', session: st.session,
       }, flags || {}));
       setBusy(false);
       if (!st) return;
@@ -198,7 +200,7 @@
       addBot(r.reply || '…', r.replyPl || '');
       if (message && !(flags && flags.repeated) && (r.praise || !r.correction)) { try { st.o.onGood && st.o.onGood(!!r.praise); } catch (e) { /* ignore */ } }
       st.target = r.sayThis || ''; st.tries = 0; renderSay();
-      if (r.max) st.root.querySelector('.sfc-foot').textContent = '🤖 Rozmówcą jest sztuczna inteligencja — może się czasem pomylić. Rozmowa jest zapisywana na 7 dni. Wiadomości dziś: ' + r.used + ' / ' + r.max + '.' +
+      if (r.max) st.root.querySelector('.sfc-foot').textContent = '🤖 Rozmówcą jest sztuczna inteligencja — może się czasem pomylić. Rozmowa zapisuje się w Twoim 📔 Pamiętniku. Wiadomości dziś: ' + r.used + ' / ' + r.max + '.' +
         (st.voice ? ' 🎙️ Nagranie głosu jest zamieniane na tekst przez OpenAI i nie jest zapisywane.' : '');
     } catch (e) {
       setBusy(false);
@@ -328,23 +330,25 @@
     const ctx = o.ctx || {};
     st = { o, ctx, tts: TTS[ctx.lang] || 'en-GB', history: [], fixes: [], fixOpen: false, target: '', tries: 0, busy: false,
       autoRead: localStorage.getItem('sfc_autoread') !== '0', locked: !!o.guest,
-      voice: false, vo: null, cache: {}, sayId: 0, audio: new Audio() };
+      voice: false, vo: null, cache: {}, sayId: 0, audio: new Audio(),
+      session: Date.now().toString(36) + Math.random().toString(36).slice(2, 8) };
     try { st.audio.src = silentWav(); const p = st.audio.play(); if (p && p.catch) p.catch(() => { /* ignore */ }); } catch (e) { /* ignore */ }
     const root = el(`<div class="sfc-ov"><div class="sfc-box">
       <div class="sfc-head"><div class="sfc-ava">${E(o.emoji || '🦉')}</div>
         <div class="sfc-who"><b>${E(o.name)}</b><small>💬 Rozmowa po angielsku${ctx.unitName ? ' · ' + E(ctx.unitName) : ''}<span class="sfc-vtag"></span></small></div>
-        <button class="sfc-hb${st.autoRead ? '' : ' off'}" data-a="read" title="Lektor czyta odpowiedzi">🔈</button>
+        ${o.onDiary ? '<button class="sfc-hb" data-a="diary" title="Mój Pamiętnik rozmów">📔</button>' : ''}<button class="sfc-hb${st.autoRead ? '' : ' off'}" data-a="read" title="Lektor czyta odpowiedzi">🔈</button>
         <button class="sfc-hb" data-a="x" title="Zamknij (Esc)">✕</button></div>
       <div class="sfc-msgs"></div>
       <div class="sfc-say"></div>
       <div class="sfc-fixes"></div>
       <div class="sfc-in"><textarea placeholder="Napisz po angielsku… (Enter — wyślij)" maxlength="300"></textarea>
         ${SR ? '<button class="sfc-btn mic" title="Powiedz po angielsku">🎤</button>' : ''}<button class="sfc-btn send" title="Wyślij">➤</button></div>
-      <div class="sfc-foot">🤖 Rozmówcą jest sztuczna inteligencja — może się czasem pomylić. Rozmowa jest zapisywana na 7 dni (widzi ją tylko administrator). Nie podawaj nazwiska, adresu ani hasła.</div>
+      <div class="sfc-foot">🤖 Rozmówcą jest sztuczna inteligencja — może się czasem pomylić. Rozmowa zapisuje się w Twoim 📔 Pamiętniku. Nie podawaj nazwiska, adresu ani hasła.</div>
     </div></div>`);
     st.root = root; document.body.appendChild(root);
     root.addEventListener('click', e => { if (e.target === root) close(); });
     root.querySelector('[data-a="x"]').onclick = close;
+    const dia = root.querySelector('[data-a="diary"]'); if (dia) dia.onclick = () => { const f = o.onDiary; close(); f(); };
     root.querySelector('[data-a="read"]').onclick = e => { st.autoRead = !st.autoRead; e.target.classList.toggle('off', !st.autoRead); try { localStorage.setItem('sfc_autoread', st.autoRead ? '1' : '0'); } catch (x) { /* ignore */ } if (!st.autoRead) stopVoice(); };
     const ta = root.querySelector('textarea');
     root.querySelector('.send').onclick = () => send(ta.value, false);

@@ -9,6 +9,7 @@
 --  • wpisy starsze niż 7 dni są usuwane: przy każdym nowym zapisie, przy otwarciu panelu
 --    przez admina i codziennie o 3:30 (pg_cron, jeśli włączony)
 --  Opisane w Polityce prywatności (cel: bezpieczeństwo dzieci, okres: 7 dni).
+--  Po migracji #82 (Pamiętnik, kolumna session_id) ten plik niczego już nie usuwa — można go uruchomić ponownie bez utraty wpisów.
 --  Wymaga: #20 (_is_admin). Idempotentna.
 -- ═══════════════════════════════════════════════════════════════
 
@@ -38,7 +39,7 @@ grant select, delete on public.ai_chat_logs to authenticated;
 -- ── usuwanie wpisów starszych niż 7 dni ──
 create or replace function public.ai_chat_logs_cleanup()
 returns int language sql security definer set search_path = public as $$
-  with d as (delete from public.ai_chat_logs where created_at < now() - interval '7 days' returning 1)
+  with d as (delete from public.ai_chat_logs where created_at < now() - interval '7 days' and not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'ai_chat_logs' and column_name = 'session_id') returning 1)
   select count(*)::int from d
 $$;
 revoke all on function public.ai_chat_logs_cleanup() from public, anon, authenticated;
@@ -52,7 +53,7 @@ begin
   insert into public.ai_chat_logs(user_id, kind, partner, topic, message, reply, flagged, categories)
   values (p_user, case when p_kind = 'sentence' then 'sentence' else 'chat' end, left(p_partner, 80), left(p_topic, 160),
           left(coalesce(p_message, ''), 1000), left(p_reply, 2000), coalesce(p_flagged, false), p_categories);
-  delete from public.ai_chat_logs where created_at < now() - interval '7 days';
+  delete from public.ai_chat_logs where created_at < now() - interval '7 days' and not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'ai_chat_logs' and column_name = 'session_id');
 end $$;
 revoke all on function public.ai_chat_log_add(uuid, text, text, text, text, text, boolean, text[]) from public, anon, authenticated;
 grant execute on function public.ai_chat_log_add(uuid, text, text, text, text, text, boolean, text[]) to service_role;
@@ -64,7 +65,7 @@ returns table(id bigint, user_id uuid, username text, role text, created_at time
 language plpgsql security definer set search_path = public as $$
 begin
   if not public._is_admin() then raise exception 'Brak uprawnień administratora'; end if;
-  delete from public.ai_chat_logs l where l.created_at < now() - interval '7 days';
+  delete from public.ai_chat_logs l where l.created_at < now() - interval '7 days' and not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'ai_chat_logs' and column_name = 'session_id');
   return query
     select l.id, l.user_id, p.username,
            case when p.is_admin then 'admin' when p.is_teacher then 'nauczyciel' when p.is_parent then 'opiekun' else 'uczeń' end,
@@ -91,7 +92,8 @@ grant execute on function public.ai_chat_flagged_count() to authenticated;
 -- ── codzienne sprzątanie w bazie (jeśli włączone rozszerzenie pg_cron) ──
 do $$
 begin
-  if exists (select 1 from pg_extension where extname = 'pg_cron') then
+  if exists (select 1 from pg_extension where extname = 'pg_cron')
+     and not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'ai_chat_logs' and column_name = 'session_id') then
     begin
       perform cron.unschedule('sowie-ai-chat-logs');
     exception when others then null;

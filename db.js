@@ -2227,9 +2227,24 @@ const DB = (() => {
   }
   // ── Zapis rozmów z AI (migracja #80, admin, 7 dni). null = brak migracji ──
   const _missing80 = e => /ai_chat_logs|ai_chat_flagged_count|PGRST20[02]|42P01|42883/i.test(((e && e.code) || '') + ' ' + ((e && e.message) || ''));
-  async function loadAiChatLogs(onlyFlagged = false, search = '') {
-    const { data, error } = await supabase.rpc('ai_chat_logs_list', { p_only_flagged: !!onlyFlagged, p_search: search || null, p_limit: 1000 });
-    if (error) { if (_missing80(error)) return null; throw new Error(error.message); }
+  // filter: all | flagged | off_topic | polish | attention (migracja #82); bez #82 — stara wersja (tylko all / flagged).
+  async function loadAiChatLogs(filter = 'all', search = '', days = null, userId = null) {
+    const { data, error } = await supabase.rpc('ai_chat_logs_list', { p_filter: filter || 'all', p_search: search || null, p_limit: 3000, p_days: days || null, p_user: userId || null });
+    if (!error) return data || [];
+    const old = await supabase.rpc('ai_chat_logs_list', { p_only_flagged: filter === 'flagged' || filter === 'attention', p_search: search || null, p_limit: 1000 });
+    if (old.error) { if (_missing80(old.error)) return null; throw new Error(old.error.message); }
+    return (old.data || []).map(x => Object.assign({ _old: true }, x));
+  }
+  async function markAiChatLogsReviewed(ids) {
+    if (!ids || !ids.length) return 0;
+    const { data, error } = await supabase.from('ai_chat_logs').update({ reviewed: true }).in('id', ids).select('id');
+    if (error) throw new Error(/reviewed/.test(error.message) ? 'Uruchom migrację ai-diary.sql (#82) w Supabase.' : error.message);
+    return (data || []).length;
+  }
+  // Pamiętnik użytkownika (migracja #82): kind = chat | sentence | null, before = starsze niż (ISO). null = brak migracji.
+  async function loadMyAiDiary(kind = null, before = null, limit = 300) {
+    const { data, error } = await supabase.rpc('my_ai_diary', { p_kind: kind, p_before: before, p_limit: limit });
+    if (error) { if (/my_ai_diary|PGRST20[02]|42883/i.test((error.code || '') + ' ' + error.message)) return null; throw new Error(error.message); }
     return data || [];
   }
   async function deleteAiChatLogs(ids) {
@@ -4952,7 +4967,7 @@ const DB = (() => {
     loadReadingSets, saveReadingSet, deleteReadingSet, setContentShared,
     loadReviewQueue, reviewContent, contentReviewCounts, loadTaskBank,
     aiCostStats, loadAiConfig, saveAiLimit, saveAiSetting,
-    loadAiChatLogs, deleteAiChatLogs, aiChatFlaggedCount,
+    loadAiChatLogs, deleteAiChatLogs, aiChatFlaggedCount, markAiChatLogsReviewed, loadMyAiDiary,
     loadPetPhrases, savePetPhrases, deletePetPhrases,
     loadClassPets,
     petReact,
