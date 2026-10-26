@@ -2243,6 +2243,27 @@ const DB = (() => {
     if (error) return 0;
     return Number(data) || 0;
   }
+  // Wypowiedzi pupila edytowane przez admina (pet_phrases, #81): { kategoria: [[en, pl], …] }.
+  // null = brak migracji (zostają zwroty domyślne z app.html).
+  async function loadPetPhrases() {
+    const { data, error } = await supabase.from('pet_phrases').select('cat, items, updated_at');
+    if (error) { if (/pet_phrases|PGRST205|42P01/i.test((error.code || '') + ' ' + error.message)) return null; throw new Error(error.message); }
+    const out = {};
+    (data || []).forEach(r => { if (Array.isArray(r.items) && r.items.length) out[r.cat] = r.items; });
+    return out;
+  }
+  async function savePetPhrases(cat, items) {
+    if (!isAdmin()) throw new Error('Tylko administrator może zmieniać wypowiedzi pupila.');
+    const { data, error } = await supabase.from('pet_phrases').upsert({ cat, items }, { onConflict: 'cat' }).select('cat');
+    if (error) { if (/pet_phrases|PGRST205|42P01/i.test((error.code || '') + ' ' + error.message)) throw new Error('Uruchom migrację pet-phrases.sql (#81) w Supabase.'); throw new Error(error.message); }
+    if (!data || !data.length) throw new Error('Baza nie zapisała zmian (brak uprawnień).');
+    return true;
+  }
+  async function deletePetPhrases(cat) {
+    const { error } = await supabase.from('pet_phrases').delete().eq('cat', cat);
+    if (error) throw new Error(error.message);
+    return true;
+  }
   // Zestawy zadań gramatycznych (grammar_sets) — null = brak migracji #73.
   async function loadGrammarSets(bookId, unitKeys) {
     // '*' — po migracji #78 dochodzą status / shared / share_status / review_note
@@ -4932,6 +4953,7 @@ const DB = (() => {
     loadReviewQueue, reviewContent, contentReviewCounts, loadTaskBank,
     aiCostStats, loadAiConfig, saveAiLimit, saveAiSetting,
     loadAiChatLogs, deleteAiChatLogs, aiChatFlaggedCount,
+    loadPetPhrases, savePetPhrases, deletePetPhrases,
     loadClassPets,
     petReact,
     petReactSentToday,

@@ -138,6 +138,7 @@ with c(nr, plik, ok) as (values
   ('78', 'content-review-bank.sql',                 pg_temp.col('grammar_sets', 'status') and pg_temp.tab('public.reading_sets')),
   ('79', 'ai-cost-panel.sql',                     pg_temp.col('ai_usage', 'tokens_in') and pg_temp.tab('public.ai_limits')),
   ('80', 'ai-chat-logs.sql',                      pg_temp.tab('public.ai_chat_logs')),
+  ('81', 'pet-phrases.sql',                       pg_temp.tab('public.pet_phrases')),
   ('x2', 'add-live-games.sql',                    pg_temp.fn('create_live_game')),
   ('x3', 'add-live-time-limit-and-score-rpc.sql', pg_temp.fn('update_live_player_score')),
   ('x4', 'fix-live-join-token.sql + fix-live-join-ambiguous.sql', pg_temp.fn('join_live_game')),

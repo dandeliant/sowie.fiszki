@@ -21878,6 +21878,7 @@ if ('serviceWorker' in navigator) {
         bank:             () => (typeof openTaskBank==='function')         && openTaskBank(),
         aicost:           () => (typeof openAiCostPanel==='function')      && openAiCostPanel(),
         aichats:          () => (typeof openAiChatLogs==='function')       && openAiChatLogs(),
+        petphrases:       () => window.sfOpenPetPhrases && window.sfOpenPetPhrases(),
         newBook:          () => (typeof openAdminBookModal==='function')   && openAdminBookModal(),
         premium:          () => (typeof openPremiumPricingModal==='function') && openPremiumPricingModal(),
       };
@@ -31235,6 +31236,11 @@ ${bodyHtml}
   .sf-pet-pick:hover{background:rgba(255,255,255,.1);}
   .sf-pet-pick.sel{border-color:var(--accent2,#06d6a0);background:rgba(6,214,160,.14);}
   .sf-pet-em{font-size:2.2rem;line-height:1;}
+  .sf-ph-head,.sf-ph-row{display:grid;grid-template-columns:22px 1fr 1fr 28px 28px;gap:6px;align-items:center;margin-top:6px}
+  .sf-ph-head{font-size:.7rem;font-weight:900;color:var(--muted,#9b8ec4);margin-top:12px}
+  .sf-ph-row .sf-inp{padding:7px 9px;font-size:.85rem}
+  .sf-ph-n{font-size:.7rem;font-weight:900;color:var(--muted,#9b8ec4);text-align:right}
+  @media (max-width:560px){ .sf-ph-head{display:none} .sf-ph-row{grid-template-columns:1fr 28px 28px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.08)} .sf-ph-n{display:none} .sf-ph-row .sf-ph-pl{grid-column:1;grid-row:2} }
   .sf-lab{display:block;font-size:.74rem;font-weight:800;color:var(--accent2,#06d6a0);margin:10px 0 5px;text-transform:uppercase;letter-spacing:.05em;}
   .sf-inp{width:100%;padding:10px 12px;border-radius:10px;border:1.5px solid rgba(255,255,255,.2);background:rgba(0,0,0,.3);color:inherit;font-family:inherit;font-size:.95rem;font-weight:700;}
   .sf-btn{border:none;border-radius:100px;padding:12px 16px;font-weight:800;font-family:inherit;cursor:pointer;font-size:.92rem;}
@@ -31510,6 +31516,24 @@ ${bodyHtml}
     visit:[["Thank you! 💕","Dziękuję!"],["Hello, friend!","Cześć, przyjacielu!"],["You're so nice!","Jesteś taki miły!"],["Come again!","Przyjdź znowu!"],["Yay, a visitor!","Hura, gość!"]],
     home:[["Bye! I'll live in the Pet House now. 🏡","Pa! Teraz zamieszkam w Domku pupili."],["Take care of my new friend!","Zaopiekuj się moim nowym przyjacielem!"]]
   };
+  // Zwroty domyślne + zmiany administratora z bazy (pet_phrases, #81); kopia w localStorage na szybki start.
+  const PH_DEFAULT = JSON.parse(JSON.stringify(PH));
+  const PH_CACHE = 'fiszki_pet_phrases';
+  let _phLoaded = false;
+  function validPhrases(a){ return Array.isArray(a) && a.length>0 && a.every(p=>Array.isArray(p) && typeof p[0]==='string' && typeof p[1]==='string' && p[0].trim() && p[1].trim()); }
+  function applyPhrases(map){
+    Object.keys(PH_DEFAULT).forEach(cat=>{ PH[cat] = (map && validPhrases(map[cat])) ? map[cat] : PH_DEFAULT[cat]; });
+  }
+  try{ applyPhrases(JSON.parse(localStorage.getItem(PH_CACHE)||'null')); }catch(e){}
+  function loadPhrases(force){
+    if((_phLoaded && !force) || !window.DB || !DB.loadPetPhrases) return;
+    _phLoaded = true;
+    DB.loadPetPhrases().then(m=>{
+      if(!m) return;                              // brak migracji #81 — zostają domyślne
+      applyPhrases(m);
+      try{ localStorage.setItem(PH_CACHE, JSON.stringify(m)); }catch(e){}
+    }).catch(()=>{ _phLoaded = false; });
+  }
   function pickPhrase(cat, food){
     let a=PH[cat]||PH.greet;
     if(cat==='greet'){ const h=new Date().getHours(); a=a.concat(h<12?PH.morning:(h<18?PH.afternoon:PH.evening)); }
@@ -31687,6 +31711,97 @@ ${bodyHtml}
   }
   function bindClose(box){ box.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>{ const o=box.closest('.sf-ov'); if(o)o.classList.remove('show'); }); }
 
+  /* ---- EDYTOR WYPOWIEDZI PUPILA (admin, #81) ---- */
+  function isAdminUser(){ try{ return !!(window.DB && DB.isAdmin && DB.isAdmin()); }catch(e){ return false; } }
+  const PH_LABELS = {
+    greet:'👋 Powitania', morning:'☀️ Powitanie rano (do 12:00)', afternoon:'🌤️ Powitanie po południu (12–18)', evening:'🌆 Powitanie wieczorem (od 18:00)',
+    hungry:'🍎 Głodny', bored:'😕 Nudzi się / smutno mu', tired:'⚡ Zmęczony (mało energii)', happy:'😊 Szczęśliwy',
+    eat:'🍽️ Je smakołyk', fav:'😍 Je ulubiony smakołyk', full:'😋 Najedzony', notreat:'🍪 Brak smakołyków',
+    poke:'👉 Kliknięcie w pupila', pat:'🤗 Głaskanie', play:'🎾 Zabawa', sleep:'💤 Sen (22:00–7:00)', learn:'📚 Pochwały za naukę',
+    egg:'🥚 Jajko', hatch:'🐣 Wyklucie', grow:'🌱 Wzrost', hearts:'💕 Serduszka od kolegów', visit:'👋 Odwiedziny u kolegi', home:'🏡 Przeprowadzka do Domku'
+  };
+  let _phEd = null;   // { cat, items, dirty, saved:{} }
+  function openPetPhrases(cat){
+    if(!isAdminUser()){ safeToast('Edycja wypowiedzi pupila jest dostępna tylko dla administratora.'); return; }
+    const o=modal('sfPetPhModal'); const box=$('sfPetPhModal_box');
+    box.style.maxWidth='720px';
+    box.innerHTML='<button class="sf-x" data-close>✕</button><h2 class="sf-h">✏️ Wypowiedzi pupila</h2><p class="sf-sub">Wczytuję…</p>';
+    bindClose(box); o.classList.add('show');
+    const go=saved=>{ _phEd={ cat: cat || (_phEd && _phEd.cat) || 'greet', items:null, dirty:false, saved: saved||{} }; phLoadCat(_phEd.cat); phRender(); };
+    if(window.DB && DB.loadPetPhrases) DB.loadPetPhrases().then(m=>{
+      if(m===null){ box.innerHTML='<button class="sf-x" data-close>✕</button><h2 class="sf-h">✏️ Wypowiedzi pupila</h2><p class="sf-sub">Najpierw uruchom w Supabase migrację <b>pet-phrases.sql</b> (#81).</p>'; bindClose(box); return; }
+      applyPhrases(m); try{ localStorage.setItem(PH_CACHE, JSON.stringify(m)); }catch(e){}
+      go(m);
+    }).catch(e=>{ const sub=box.querySelector('.sf-sub'); if(sub) sub.textContent='Błąd: '+(e&&e.message||e); });
+  }
+  window.sfOpenPetPhrases = openPetPhrases;
+  function phLoadCat(cat){
+    _phEd.cat=cat; _phEd.dirty=false;
+    _phEd.items=JSON.parse(JSON.stringify(validPhrases(_phEd.saved[cat]) ? _phEd.saved[cat] : PH_DEFAULT[cat]));
+  }
+  function phRender(){
+    const box=$('sfPetPhModal_box'); const ed=_phEd; const cat=ed.cat;
+    const opts=Object.keys(PH_DEFAULT).map(k=>'<option value="'+k+'"'+(k===cat?' selected':'')+'>'+(PH_LABELS[k]||k)+' ('+((validPhrases(ed.saved[k])?ed.saved[k]:PH_DEFAULT[k]).length)+')'+(ed.saved[k]?' ✏️':'')+'</option>').join('');
+    const food=(cat==='eat'||cat==='fav');
+    const rows=ed.items.map((p,i)=>'<div class="sf-ph-row" data-i="'+i+'">'
+      +'<span class="sf-ph-n">'+(i+1)+'</span>'
+      +'<input class="sf-inp sf-ph-en" maxlength="120" placeholder="English" value="'+escTxt(p[0])+'">'
+      +'<input class="sf-inp sf-ph-pl" maxlength="160" placeholder="Po polsku" value="'+escTxt(p[1])+'">'
+      +'<button class="sf-mini" data-ph="say" title="Posłuchaj">🔊</button>'
+      +'<button class="sf-mini" data-ph="del" title="Usuń">🗑️</button></div>').join('');
+    box.innerHTML='<button class="sf-x">✕</button>'
+      +'<h2 class="sf-h">✏️ Wypowiedzi pupila</h2>'
+      +'<p class="sf-sub">Zmiany widzą wszyscy uczniowie. Pupil mówi zdanie po angielsku (lektor), a pod spodem pokazuje polskie tłumaczenie. Emoji w angielskim zdaniu lektor pomija.</p>'
+      +'<label class="sf-lab">Kiedy pupil to mówi</label><select id="sfPhCat" class="sf-inp">'+opts+'</select>'
+      +(food?'<div class="sf-inbox" style="margin-top:8px"><b>{en}</b> i <b>{pl}</b> zamieniają się na nazwę smakołyka, np. „Mmm, <b>{en}</b>!” → „Mmm, apple!”, „Pycha! Lubię: <b>{pl}</b>.” → „Pycha! Lubię: jabłko.”</div>':'')
+      +(ed.saved[cat]?'<div style="font-size:.72rem;color:var(--accent2,#06d6a0);font-weight:800;margin-top:6px">✏️ Ta kategoria jest zmieniona (inna niż domyślna).</div>':'')
+      +'<div class="sf-ph-head"><span></span><span>🇬🇧 English</span><span>🇵🇱 Tłumaczenie</span></div>'
+      +'<div id="sfPhRows">'+rows+'</div>'
+      +'<div class="sf-row"><button class="sf-btn sf-btn-ghost" id="sfPhAdd">➕ Dodaj zwrot</button>'
+      +(ed.saved[cat]?'<button class="sf-btn sf-btn-ghost" id="sfPhReset">↩️ Przywróć domyślne</button>':'')+'</div>'
+      +'<div class="sf-row"><button class="sf-btn sf-btn-main" id="sfPhSave">💾 Zapisz</button></div>'
+      +'<div id="sfPhMsg" style="font-size:.78rem;font-weight:800;text-align:center;min-height:1.2em"></div>';
+    box.querySelector('.sf-x').onclick=()=>{ if(_phEd.dirty && !confirm('Masz niezapisane zmiany. Zamknąć bez zapisu?')) return; box.closest('.sf-ov').classList.remove('show'); };
+    $('sfPhCat').onchange=e=>{
+      if(ed.dirty && !confirm('Masz niezapisane zmiany w tej kategorii. Przejść bez zapisu?')){ e.target.value=cat; return; }
+      phLoadCat(e.target.value); phRender();
+    };
+    const rowsEl=$('sfPhRows');
+    rowsEl.addEventListener('input',ev=>{
+      const r=ev.target.closest('.sf-ph-row'); if(!r) return;
+      const i=+r.dataset.i; ed.items[i][ev.target.classList.contains('sf-ph-en')?0:1]=ev.target.value; ed.dirty=true; $('sfPhMsg').textContent='';
+    });
+    rowsEl.addEventListener('click',ev=>{
+      const b=ev.target.closest('[data-ph]'); if(!b) return;
+      const i=+b.closest('.sf-ph-row').dataset.i;
+      if(b.dataset.ph==='say') petSpeak(ed.items[i][0].replace('{en}','apple'));
+      else { ed.items.splice(i,1); ed.dirty=true; phRender(); }
+    });
+    $('sfPhAdd').onclick=()=>{ ed.items.push(['','']); ed.dirty=true; phRender(); const ins=box.querySelectorAll('.sf-ph-en'); if(ins.length) ins[ins.length-1].focus(); };
+    const R=$('sfPhReset'); if(R) R.onclick=async()=>{
+      if(!confirm('Przywrócić domyślne zwroty w kategorii „'+(PH_LABELS[cat]||cat)+'”? Twoje zmiany w tej kategorii znikną.')) return;
+      try{ await DB.deletePetPhrases(cat); delete ed.saved[cat]; phAfterSave(); phLoadCat(cat); phRender(); $('sfPhMsg').textContent='↩️ Przywrócono domyślne zwroty.'; }
+      catch(e){ $('sfPhMsg').textContent='❌ '+(e&&e.message||e); }
+    };
+    $('sfPhSave').onclick=async()=>{
+      const items=ed.items.map(p=>[String(p[0]||'').trim(), String(p[1]||'').trim()]).filter(p=>p[0]||p[1]);
+      const bad=items.findIndex(p=>!p[0]||!p[1]);
+      if(bad>=0){ $('sfPhMsg').textContent='⚠️ Zwrot nr '+(bad+1)+': uzupełnij angielski i polski tekst.'; return; }
+      if(!items.length){ $('sfPhMsg').textContent='⚠️ Zostaw przynajmniej jeden zwrot (albo kliknij „Przywróć domyślne”).'; return; }
+      const btn=$('sfPhSave'); btn.disabled=true;
+      try{
+        const same=JSON.stringify(items)===JSON.stringify(PH_DEFAULT[cat]);
+        if(same){ if(ed.saved[cat]) await DB.deletePetPhrases(cat); delete ed.saved[cat]; }
+        else { await DB.savePetPhrases(cat, items); ed.saved[cat]=items; }
+        phAfterSave(); phLoadCat(cat); phRender(); $('sfPhMsg').textContent='✅ Zapisano — uczniowie zobaczą nowe zwroty po odświeżeniu aplikacji.';
+      }catch(e){ btn.disabled=false; $('sfPhMsg').textContent='❌ '+(e&&e.message||e); }
+    };
+  }
+  function phAfterSave(){
+    applyPhrases(_phEd.saved);
+    try{ localStorage.setItem(PH_CACHE, JSON.stringify(_phEd.saved)); }catch(e){}
+  }
+
   /* ---- PET MODAL ---- */
   function openPet(){
     petTick();
@@ -31780,7 +31895,8 @@ ${bodyHtml}
         <button class="sf-btn sf-btn-ghost" id="sfPetHouse">🏡 Domek pupili (${ncol}/${total})</button>
         ${si===3 ? '<button class="sf-btn sf-btn-main" id="sfPetToHouse">🏡 Do Domku + nowe jajko 🥚</button>' : '<button class="sf-btn sf-btn-ghost" id="sfPetSwap" style="font-size:.78rem">🔄 Wymień na inne jajko</button>'}
       </div>
-      <div class="sf-row"><button class="sf-btn sf-btn-ghost" id="sfPetRemind" style="font-size:.74rem">🔔 Przypomnienie o pupilu (np. o 17:00)</button></div>`;
+      <div class="sf-row"><button class="sf-btn sf-btn-ghost" id="sfPetRemind" style="font-size:.74rem">🔔 Przypomnienie o pupilu (np. o 17:00)</button></div>
+      ${isAdminUser() ? '<div class="sf-row"><button class="sf-btn sf-btn-ghost" id="sfPetPhEdit" style="font-size:.74rem">✏️ Edytuj wypowiedzi pupila (admin)</button></div>' : ''}`;
   }
 
   let _lastSay=null;
@@ -31865,6 +31981,7 @@ ${bodyHtml}
     const CH=$('sfPetChat'); if(CH) CH.onclick=()=>{ const o=box.closest('.sf-ov'); if(o) o.classList.remove('show'); if(window.openAiChat) window.openAiChat(); };
     const rename=()=>{ const cur=petLoad()||s; const nm=prompt('Imię pupila:', cur.name||PETS[cur.type].n); if(nm && nm.trim()){ cur.name=nm.trim().slice(0,20); delete cur.needName; petSave(cur); petRefresh(); renderPetCard(); openPet(); } };
     const R=$('sfPetRename'); if(R) R.onclick=rename;
+    const PE=$('sfPetPhEdit'); if(PE) PE.onclick=()=>openPetPhrases();
     const NN=$('sfPetNameNew'); if(NN) NN.onclick=rename;
     const H=$('sfPetHouse'); if(H) H.onclick=openHouse;
     const TH=$('sfPetToHouse'); if(TH) TH.onclick=()=>{ if(confirm('Twój dorosły pupil zamieszka w 🏡 Domku pupili (zostanie tam na zawsze), a Ty dostaniesz nowe jajko-niespodziankę. Kontynuować?')) petToHouse(); };
@@ -32333,10 +32450,10 @@ ${bodyHtml}
       }
     }catch(e){}
   }
-  function init(){ wrapShowScreen(); try{petSyncServer();}catch(e){} ensureButtons(); tryWrap(); try{petTick();}catch(e){} petRefresh(); renderPetCard(); renderChallengeBanner(); renderStudentRank(); }
+  function init(){ wrapShowScreen(); try{loadPhrases();}catch(e){} try{petSyncServer();}catch(e){} ensureButtons(); tryWrap(); try{petTick();}catch(e){} petRefresh(); renderPetCard(); renderChallengeBanner(); renderStudentRank(); }
   if(document.readyState!=='loading') init(); else document.addEventListener('DOMContentLoaded', init);
   // Profil może się ładować dłużej — dopóki pupil nie jest zsynchronizowany z serwerem, sprawdzaj co 2 s (do 60 s).
-  let n=0, chDone=false; const iv=setInterval(()=>{ n++; let synced=false; try{ synced=petSyncServer(); }catch(e){} if(synced){ try{petTick();}catch(e){} } ensureButtons(); tryWrap(); petRefresh(); renderPetCard(); if(!chDone && uid()!=='guest' && _petSyncedFor){ chDone=true; renderChallengeBanner(); renderStudentRank(); petCheckInbox(true); } if(n>=30 || (n>=12 && _petSyncedFor)) clearInterval(iv); }, 2000);
+  let n=0, chDone=false; const iv=setInterval(()=>{ n++; let synced=false; try{ loadPhrases(); synced=petSyncServer(); }catch(e){} if(synced){ try{petTick();}catch(e){} } ensureButtons(); tryWrap(); petRefresh(); renderPetCard(); if(!chDone && uid()!=='guest' && _petSyncedFor){ chDone=true; renderChallengeBanner(); renderStudentRank(); petCheckInbox(true); } if(n>=30 || (n>=12 && _petSyncedFor)) clearInterval(iv); }, 2000);
   document.addEventListener('visibilitychange', ()=>{ if(!document.hidden){ try{petSyncServer();}catch(e){} try{petTick();}catch(e){} petRefresh(); renderPetCard(); petCheckInbox(); renderChallengeBanner(); renderStudentRank(); } });
 })();
 </script>
