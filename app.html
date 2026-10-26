@@ -33430,7 +33430,11 @@ ${bodyHtml}
     ['story', '📖 Czytanki', [40, 0]],
     ['sentences', '📝 Zdania przykładowe', [150, 0]],
     ['wordlist', '🤖 Rozdział z AI (słówka)', [40, 0]],
+    ['tts', '🔊 Naturalny głos — czytanie odpowiedzi', [300, 150]],
+    ['stt', '🎙️ Naturalny głos — rozpoznawanie mowy', [200, 100]],
   ];
+  // Głos OpenAI nie zwraca tokenów — szacunek na jedno wywołanie (USD): krótka odpowiedź ~10 s / wypowiedź ~5 s.
+  const VOICE_EST = { tts: 0.003, stt: 0.0005 };
   let _ac = null;
   const usd = n => '$' + (n < 0.01 && n > 0 ? n.toFixed(4) : n.toFixed(2));
   window.openAiCostPanel = async function(days){
@@ -33448,7 +33452,8 @@ ${bodyHtml}
     const { days, stats, cfg } = _ac;
     const price = Object.assign({ in: 0.15, out: 0.6 }, cfg.settings.price || {});
     const en = Object.assign({ staff: true, student: true }, cfg.settings.enabled || {});
-    const cost = r => (Number(r.tokens_in) || 0) / 1e6 * price.in + (Number(r.tokens_out) || 0) / 1e6 * price.out;
+    const voice = Object.assign({ premium: false }, cfg.settings.voice || {});
+    const cost = r => VOICE_EST[r.action] != null ? (+r.calls || 0) * VOICE_EST[r.action] : (Number(r.tokens_in) || 0) / 1e6 * price.in + (Number(r.tokens_out) || 0) / 1e6 * price.out;
     const today = new Date(); const iso = d => d.toISOString().slice(0, 10);
     const todayIso = iso(new Date(today.getTime() - today.getTimezoneOffset() * 60000));
     const byDay = {}, byAct = {};
@@ -33478,6 +33483,10 @@ ${bodyHtml}
       + '<label class="ai-lab">Włączone dla</label>'
       + `<label class="ai-chk"><input type="checkbox" id="acEnStudent" ${en.student ? 'checked' : ''}> 🎒 Uczniów i opiekunów (rozmowa z AI, sprawdzanie zdań)</label>`
       + `<label class="ai-chk"><input type="checkbox" id="acEnStaff" ${en.staff ? 'checked' : ''}> 👩‍🏫 Nauczycieli i administratora (generatory)</label>`
+      + '<label class="ai-lab">🎙️ Naturalny głos w rozmowie z AI</label>'
+      + `<label class="ai-chk"><input type="radio" name="acVoice" value="admin" ${voice.premium ? '' : 'checked'}> 👑 Tylko administrator</label>`
+      + `<label class="ai-chk"><input type="radio" name="acVoice" id="acVoicePrem" value="premium" ${voice.premium ? 'checked' : ''}> ⭐ Administrator + konta Premium</label>`
+      + '<div class="ai-help" style="margin:2px 0 0">Pupil, Sowa i postacie z Grammar City mówią głosem OpenAI, a 🎤 rozpoznaje mowę także na iPhonie. Premium = prawdziwy plan (kupiony, trial albo nadany przez admina) — promocja do 30.11 się nie liczy. Koszt szacunkowy: ok. 0,3 centa za jedną przeczytaną odpowiedź.</div>'
       + '<label class="ai-lab">Dzienne limity na jedno konto</label><div class="ai-help" style="margin:0 0 4px">Puste pole = wartość domyślna (w nawiasie). 0 = funkcja wyłączona dla tej grupy.</div>'
       + '<table class="aw-table"><tr style="font-weight:800;color:var(--muted)"><td>Funkcja</td><td>Nauczyciel / admin</td><td>Uczeń / opiekun</td></tr>'
       + AI_ACTIONS.map(([a, l, d]) => `<tr><td>${l}</td><td><input type="text" inputmode="numeric" data-ac="${a}|staff" value="${lim(a, 'staff') ?? ''}" placeholder="(${d[0]})"></td><td><input type="text" inputmode="numeric" data-ac="${a}|student" value="${lim(a, 'student') ?? ''}" placeholder="(${d[1]})"></td></tr>`).join('') + '</table>'
@@ -33493,6 +33502,7 @@ ${bodyHtml}
     try {
       const pin = parseFloat(String($('acPin').value).replace(',', '.')), pout = parseFloat(String($('acPout').value).replace(',', '.'));
       await DB.saveAiSetting('enabled', { student: $('acEnStudent').checked, staff: $('acEnStaff').checked });
+      await DB.saveAiSetting('voice', { premium: !!($('acVoicePrem') && $('acVoicePrem').checked) });
       if (isFinite(pin) && isFinite(pout) && pin >= 0 && pout >= 0) await DB.saveAiSetting('price', { in: pin, out: pout });
       for (const inp of document.querySelectorAll('#aiCostModal [data-ac]')) {
         const [a, role] = inp.dataset.ac.split('|'), v = String(inp.value).trim();

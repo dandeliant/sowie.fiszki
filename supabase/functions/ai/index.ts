@@ -14,6 +14,12 @@
 //    story           (admin/nauczyciel) — czytanka: opowiadanie ze słówkami rozdziału + pytania A/B/C (bez tłumaczenia)
 //    chat            (każdy zalogowany)  — rozmowa po angielsku z pupilem / Sową / postacią z Grammar City,
 //                                          tylko o słówkach i gramatyce rozdziału (z moderacją wypowiedzi ucznia)
+//    voice_status    (każdy zalogowany)  — czy konto może używać naturalnego głosu (bez limitu, bez OpenAI)
+//    tts             (naturalny głos)    — odpowiedź rozmówcy czytana głosem OpenAI (mp3 w base64)
+//    stt             (naturalny głos)    — rozpoznanie wypowiedzi ucznia z nagrania (tekst)
+//      Naturalny głos: zawsze administrator; konta Premium tylko gdy admin włączy
+//      ai_settings.voice = {"premium": true} (panel kosztów AI). Premium = prawdziwy plan
+//      (premium / teacher, niewygasły) — promocja z kodu aplikacji się nie liczy.
 //
 //  Sekrety (Supabase → Edge Functions → Secrets):
 //    OPENAI_API_KEY  — wymagany
@@ -41,7 +47,10 @@ const LIMITS: Record<string, [number, number]> = {
   check_sentence: [200, 40],
   story: [40, 0],
   chat: [200, 50],
+  tts: [300, 150],
+  stt: [200, 100],
 };
+const VOICE_ACTIONS = ['tts', 'stt'];
 const LANGS: Record<string, string> = { en: 'British English', fr: 'French', de: 'German', es: 'Spanish', it: 'Italian', ru: 'Russian' };
 
 const json = (body: unknown, status = 200) =>
@@ -269,6 +278,61 @@ async function doCheck(b: any, acc: Usage) {
   };
 }
 
+// ── naturalny głos (OpenAI audio) ──
+async function voiceAllowed(svc: any, prof: any): Promise<boolean> {
+  if (!prof) return false;
+  if (prof.is_admin) return true;
+  try {
+    const { data } = await svc.from('ai_settings').select('value').eq('key', 'voice').maybeSingle();
+    if (!data || !data.value || data.value.premium !== true) return false;
+  } catch { return false; }
+  const exp = prof.plan_expires_at ? new Date(prof.plan_expires_at).getTime() : 0;
+  return (prof.plan === 'premium' || prof.plan === 'teacher') && (!exp || exp > Date.now());
+}
+const VOICES = ['alloy', 'ash', 'ballad', 'coral', 'echo', 'fable', 'nova', 'onyx', 'sage', 'shimmer', 'verse'];
+const TTS1_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
+function toBase64(buf: Uint8Array): string {
+  let bin = '';
+  for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+async function doTts(b: any) {
+  const text = str(str(b.text, 600).replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}*_#]/gu, ''), 600);
+  if (!text) throw new Error('Brak tekstu do przeczytania.');
+  const voice = VOICES.includes(String(b.voice)) ? String(b.voice) : 'coral';
+  const style = str(b.style, 200) || 'Warm, friendly and a little playful.';
+  const lang = LANGS[str(b.lang, 5)] || 'British English';
+  const call = (model: string, v: string, extra: Record<string, unknown>) => fetch('https://api.openai.com/v1/audio/speech', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${OPENAI_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model, voice: v, input: text, response_format: 'mp3', ...extra }),
+  });
+  let r = await call('gpt-4o-mini-tts', voice, {
+    instructions: `Speak clear, natural ${lang} to a Polish child who is learning the language. ` + style + ' Speak a little slowly.',
+  });
+  if (!r.ok && (r.status === 400 || r.status === 404)) r = await call('tts-1', TTS1_VOICES.includes(voice) ? voice : 'nova', { speed: 0.95 });
+  if (!r.ok) throw new Error(`OpenAI TTS ${r.status}: ${(await r.text()).slice(0, 200)}`);
+  return { audio: toBase64(new Uint8Array(await r.arrayBuffer())), mime: 'audio/mpeg' };
+}
+async function doStt(b: any) {
+  const b64 = String(b.audio || '');
+  if (!b64 || b64.length > 2_800_000) throw new Error('Nagranie jest puste albo za długie (maks. ok. 30 s).');
+  const mime = /^audio\/(webm|ogg|mp4|mpeg|wav|x-m4a|aac)/.test(String(b.mime)) ? String(b.mime).split(';')[0] : 'audio/webm';
+  const ext = { 'audio/webm': 'webm', 'audio/ogg': 'ogg', 'audio/mp4': 'mp4', 'audio/mpeg': 'mp3', 'audio/wav': 'wav', 'audio/x-m4a': 'm4a', 'audio/aac': 'm4a' }[mime] || 'webm';
+  const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  const call = (model: string) => {
+    const fd = new FormData();
+    fd.append('file', new Blob([bytes], { type: mime }), 'speech.' + ext);
+    fd.append('model', model);
+    fd.append('prompt', 'A Polish child practising simple English sentences.');
+    return fetch('https://api.openai.com/v1/audio/transcriptions', { method: 'POST', headers: { Authorization: `Bearer ${OPENAI_KEY}` }, body: fd });
+  };
+  let r = await call('gpt-4o-mini-transcribe');
+  if (!r.ok && (r.status === 400 || r.status === 404)) r = await call('whisper-1');
+  if (!r.ok) throw new Error(`OpenAI STT ${r.status}: ${(await r.text()).slice(0, 200)}`);
+  return { text: str((await r.json())?.text, 400) };
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return fail('METHOD', 'Tylko POST.', 405);
@@ -282,10 +346,14 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const action = String(body.action || '');
     const lim = LIMITS[action];
-    if (!lim) return fail('BAD_ACTION', 'Nieznana akcja.');
+    if (!lim && action !== 'voice_status') return fail('BAD_ACTION', 'Nieznana akcja.');
 
     const svc = createClient(SB_URL, SB_SERVICE);
-    const { data: prof } = await svc.from('profiles').select('is_admin, is_teacher').eq('id', user.id).maybeSingle();
+    let { data: prof, error: profErr } = await svc.from('profiles').select('is_admin, is_teacher, plan, plan_expires_at').eq('id', user.id).maybeSingle();
+    if (profErr) prof = (await svc.from('profiles').select('is_admin, is_teacher').eq('id', user.id).maybeSingle()).data;
+    if (action === 'voice_status') return json({ voice: await voiceAllowed(svc, prof) });
+    if (VOICE_ACTIONS.includes(action) && !(await voiceAllowed(svc, prof)))
+      return fail('VOICE_OFF', 'Naturalny głos jest na razie dostępny tylko dla wybranych kont.', 403);
     const staff = !!(prof && (prof.is_admin || prof.is_teacher));
     // Ustawienia admina (migracja #79): wyłącznik AI i limity z bazy; bez migracji — wartości domyślne z kodu.
     const roleKey = staff ? 'staff' : 'student';
@@ -311,6 +379,8 @@ Deno.serve(async (req) => {
       : action === 'grammar' ? await doGrammar(body, acc)
       : action === 'story' ? await doStory(body, acc)
       : action === 'chat' ? await doChat(body, acc)
+      : action === 'tts' ? await doTts(body)
+      : action === 'stt' ? await doStt(body)
       : await doCheck(body, acc);
     if (acc.in || acc.out) {
       try { await svc.rpc('ai_usage_tokens', { p_user: user.id, p_action: action, p_in: acc.in, p_out: acc.out }); } catch { /* bez migracji #79 */ }

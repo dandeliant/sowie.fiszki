@@ -7,6 +7,10 @@
      „Can you say: …?”, wymowa jest sprawdzana słowo po słowie; przy błędach prosi
      o powtórzenie (max 3 próby), bez kosztów AI
    - poprawki błędów zbierane na dole okna („✏️ Poprawki”)
+   - naturalny głos (akcje tts / stt Edge Function, gdy voice_status = true — na razie admin,
+     opcjonalnie konta Premium): odpowiedzi czytane głosem OpenAI (inny głos dla gatunku pupila),
+     🎤 nagrywa wypowiedź i zamienia ją na tekst (działa też na iPhonie i w Firefoksie);
+     przy błędzie — lektor przeglądarki
    window.SFChat.open({
      persona: 'pet' | 'owl' | 'npc', name, emoji, species, role,
      ctx: { lang, level, unitName, words: [{t, pl}], grammar: [tematy] },
@@ -21,6 +25,26 @@
   const E = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const normW = s => String(s || '').toLowerCase().replace(/[’‘`´]/g, "'").replace(/[^\p{L}\p{N}' ]+/gu, ' ').replace(/\s+/g, ' ').trim();
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const MR = !!(window.MediaRecorder && navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  // Naturalny głos: stały głos OpenAI dla rozmówcy (gatunek pupila / imię postaci).
+  const PET_VOICES = ['coral', 'nova', 'shimmer', 'ballad', 'sage', 'fable', 'verse', 'ash'];
+  const NPC_VOICES = ['alloy', 'ash', 'coral', 'echo', 'sage', 'onyx', 'nova', 'verse'];
+  const hash = s => [...String(s || '')].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
+  function voiceFor(o) {
+    if (o.persona === 'owl') return { voice: 'fable', style: 'You are a wise, kind and patient owl teacher.' };
+    if (o.persona === 'npc') return { voice: NPC_VOICES[hash(o.name) % NPC_VOICES.length], style: 'You are a friendly person living in a city, chatting with a child.' };
+    return { voice: PET_VOICES[hash(o.species || o.name) % PET_VOICES.length], style: 'You are a cute, cheerful pet (' + (o.species || 'animal') + ') talking to your young owner. Warm and playful.' };
+  }
+  // Cisza do „odblokowania” odtwarzania na iPhonie (pierwsze play() musi być w kliknięciu).
+  function silentWav() {
+    const n = 800, b = new ArrayBuffer(44 + n), v = new DataView(b);
+    const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+    w(0, 'RIFF'); v.setUint32(4, 36 + n, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true);
+    v.setUint16(22, 1, true); v.setUint32(24, 8000, true); v.setUint32(28, 8000, true); v.setUint16(32, 1, true); v.setUint16(34, 8, true);
+    w(36, 'data'); v.setUint32(40, n, true); for (let i = 0; i < n; i++) v.setUint8(44 + i, 128);
+    return URL.createObjectURL(new Blob([b], { type: 'audio/wav' }));
+  }
+  const blobToB64 = blob => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] || ''); r.onerror = rej; r.readAsDataURL(blob); });
 
   const css = document.createElement('style');
   css.textContent = `
@@ -59,8 +83,36 @@
   let voices = [];
   const loadVoices = () => { try { voices = speechSynthesis.getVoices() || []; } catch (e) { voices = []; } };
   if ('speechSynthesis' in window) { loadVoices(); try { speechSynthesis.addEventListener('voiceschanged', loadVoices); } catch (e) { /* stare przeglądarki */ } }
+  function stopVoice() {
+    try { speechSynthesis.cancel(); } catch (e) { /* ignore */ }
+    if (st && st.audio) { try { st.audio.pause(); } catch (e) { /* ignore */ } }
+  }
+  function speakNatural(text) {
+    const my = ++st.sayId;
+    stopVoice();
+    const play = url => { if (!st || my !== st.sayId) return; st.audio.src = url; const p = st.audio.play(); if (p && p.catch) p.catch(() => { /* autoplay zablokowany — 🔊 przy dymku */ }); };
+    if (st.cache[text]) { play(st.cache[text]); return; }
+    st.o.invoke({ action: 'tts', text, voice: st.vo.voice, style: st.vo.style, lang: st.ctx.lang || 'en' }).then(r => {
+      if (!st) return;
+      if (!r || !r.audio) throw new Error('brak dźwięku');
+      const bin = atob(r.audio), u8 = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+      const url = URL.createObjectURL(new Blob([u8], { type: r.mime || 'audio/mpeg' }));
+      st.cache[text] = url; play(url);
+    }).catch(e => {
+      if (!st) return;
+      st.voiceFails = (st.voiceFails || 0) + 1;
+      if (st.voiceFails >= 2 && st.voice) { st.voice = false; setVoiceTag(); addSys('🔈 Naturalny głos chwilowo niedostępny (' + ((e && e.message) || e) + ') — czyta lektor przeglądarki.'); }
+      if (my === st.sayId) speakBrowser(text, st.tts);
+    });
+  }
   function speak(text, lang) {
-    if (!text || !st || !st.autoRead && !st.forceSay || !('speechSynthesis' in window)) return;
+    if (!text || !st || !st.autoRead && !st.forceSay) return;
+    if (st.voice) { speakNatural(text); return; }
+    speakBrowser(text, lang);
+  }
+  function speakBrowser(text, lang) {
+    if (!('speechSynthesis' in window)) return;
     try {
       speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(text); u.lang = lang; u.rate = 0.92;
@@ -108,10 +160,10 @@
     if (!st.target) { box.style.display = 'none'; return; }
     box.style.display = '';
     box.innerHTML = '🗣️ Powiedz na głos: <b>' + (markup || E(st.target)) + '</b> <button class="sfc-hb" data-a="ts" style="padding:2px 7px">🔊</button>' +
-      (SR ? ' <button class="sfc-hb" data-a="tm" style="padding:2px 7px">🎤 Mówię</button>' : '<div style="font-size:.72rem;opacity:.8;margin-top:3px">Ta przeglądarka nie rozpoznaje mowy (działa w Chrome / Edge) — możesz wpisać to zdanie.</div>') +
+      (canMic() ? ' <button class="sfc-hb" data-a="tm" style="padding:2px 7px">🎤 Mówię</button>' : '<div style="font-size:.72rem;opacity:.8;margin-top:3px">Ta przeglądarka nie rozpoznaje mowy (działa w Chrome / Edge) — możesz wpisać to zdanie.</div>') +
       (st.tries ? '<div style="font-size:.72rem;opacity:.85;margin-top:3px">Próba ' + (st.tries + 1) + ' z 3</div>' : '');
     box.querySelector('[data-a="ts"]').onclick = () => say(st.target);
-    const m = box.querySelector('[data-a="tm"]'); if (m) m.onclick = startMic;
+    const m = box.querySelector('[data-a="tm"]'); if (m) m.onclick = micClick;
   }
 
   // Porównanie wymowy (tekst z rozpoznawania mowy) z frazą — słowo po słowie.
@@ -146,7 +198,8 @@
       addBot(r.reply || '…', r.replyPl || '');
       if (message && !(flags && flags.repeated) && (r.praise || !r.correction)) { try { st.o.onGood && st.o.onGood(!!r.praise); } catch (e) { /* ignore */ } }
       st.target = r.sayThis || ''; st.tries = 0; renderSay();
-      if (r.max) st.root.querySelector('.sfc-foot').textContent = '🤖 Rozmówcą jest sztuczna inteligencja — może się czasem pomylić. Rozmowa jest zapisywana na 7 dni. Wiadomości dziś: ' + r.used + ' / ' + r.max + '.';
+      if (r.max) st.root.querySelector('.sfc-foot').textContent = '🤖 Rozmówcą jest sztuczna inteligencja — może się czasem pomylić. Rozmowa jest zapisywana na 7 dni. Wiadomości dziś: ' + r.used + ' / ' + r.max + '.' +
+        (st.voice ? ' 🎙️ Nagranie głosu jest zamieniane na tekst przez OpenAI i nie jest zapisywane.' : '');
     } catch (e) {
       setBusy(false);
       if (st) addSys('❌ ' + (e.message || e));
@@ -184,10 +237,61 @@
     turn(text, spoken ? { spoken: true } : null);
   }
 
+  const canMic = () => !!(SR || (st && st.voice && MR));
+  function micClick() { if (st && st.voice && MR) recordMic(); else startMic(); }
+  // Naturalny głos: nagranie → OpenAI (stt) → tekst. Klik = start, drugi klik = koniec (max 15 s).
+  async function recordMic() {
+    if (!st || st.busy || st.locked) return;
+    if (st.mr) { try { st.mr.stop(); } catch (e) { /* ignore */ } return; }
+    stopVoice();
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } }); }
+    catch (e) { if (st) addSys('🎤 Zezwól przeglądarce na użycie mikrofonu (ikona kłódki przy adresie strony).'); return; }
+    if (!st) { stream.getTracks().forEach(t => t.stop()); return; }
+    const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'];
+    const mime = types.find(t => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) || '';
+    const mr = new MediaRecorder(stream, mime ? { mimeType: mime, audioBitsPerSecond: 32000 } : undefined);
+    const chunks = [], mics = () => st ? st.root.querySelectorAll('.sfc-btn.mic, [data-a="tm"]') : [];
+    st.mr = mr; mics().forEach(b => b.classList.add('rec'));
+    if (!st.recHint) { st.recHint = true; addSys('🔴 Nagrywam — mów po angielsku i kliknij 🎤 jeszcze raz, gdy skończysz (maks. 15 s).'); }
+    mr.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+    mr.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      if (!st) return;
+      clearTimeout(st.mrT); st.mr = null; mics().forEach(b => b.classList.remove('rec'));
+      const blob = new Blob(chunks, { type: mr.mimeType || mime || 'audio/webm' });
+      if (blob.size < 1500) { addSys('🎤 Nic nie usłyszałam — kliknij 🎤 i powiedz wyraźnie.'); return; }
+      const note = addSys('🎤 Rozpoznaję…');
+      try {
+        const r = await st.o.invoke({ action: 'stt', audio: await blobToB64(blob), mime: blob.type });
+        if (!st) return;
+        note.remove();
+        const t = String((r && r.text) || '').trim();
+        if (!t) { addSys('🎤 Nic nie usłyszałam — kliknij 🎤 i powiedz wyraźnie.'); return; }
+        send(t, true);
+      } catch (e) { if (st) { note.remove(); addSys('🎤 ' + ((e && e.message) || e)); } }
+    };
+    mr.start();
+    st.mrT = setTimeout(() => { try { if (mr.state !== 'inactive') mr.stop(); } catch (e) { /* ignore */ } }, 15000);
+  }
+  function setVoiceTag() {
+    const t = st && st.root.querySelector('.sfc-vtag'); if (!t) return;
+    t.textContent = st.voice ? ' · 🎙️ naturalny głos' : '';
+  }
+  function enableVoice() {
+    st.voice = true; st.vo = voiceFor(st.o); setVoiceTag();
+    if (MR && !st.root.querySelector('.sfc-btn.mic')) {
+      const b = el('<button class="sfc-btn mic" title="Powiedz po angielsku">🎤</button>');
+      b.onclick = micClick; st.root.querySelector('.sfc-btn.send').before(b);
+    }
+    st.root.querySelector('.sfc-foot').insertAdjacentText('beforeend', ' 🎙️ Nagranie głosu jest zamieniane na tekst przez OpenAI i nie jest zapisywane.');
+    if (st.target) renderSay();
+  }
+
   function startMic() {
     if (!SR || !st || st.busy || st.locked) return;
     if (st.rec) { try { st.rec.stop(); } catch (e) { /* ignore */ } return; }
-    try { speechSynthesis.cancel(); } catch (e) { /* ignore */ }
+    stopVoice();
     const r = new SR(); st.rec = r;
     r.lang = st.tts; r.interimResults = false; r.maxAlternatives = 1;
     const mic = st.root.querySelector('.sfc-btn.mic'); if (mic) mic.classList.add('rec');
@@ -200,8 +304,11 @@
 
   function close() {
     if (!st) return;
-    try { speechSynthesis.cancel(); } catch (e) { /* ignore */ }
+    stopVoice();
     try { st.rec && st.rec.abort(); } catch (e) { /* ignore */ }
+    try { if (st.mr && st.mr.state !== 'inactive') st.mr.stop(); } catch (e) { /* ignore */ }
+    clearTimeout(st.mrT);
+    Object.values(st.cache).forEach(u => { try { URL.revokeObjectURL(u); } catch (e) { /* ignore */ } });
     const o = st.o; st.root.remove(); st = null;
     document.removeEventListener('keydown', onKey, true);
     try { o.onClose && o.onClose(); } catch (e) { /* ignore */ }
@@ -220,10 +327,12 @@
     if (st) close();
     const ctx = o.ctx || {};
     st = { o, ctx, tts: TTS[ctx.lang] || 'en-GB', history: [], fixes: [], fixOpen: false, target: '', tries: 0, busy: false,
-      autoRead: localStorage.getItem('sfc_autoread') !== '0', locked: !!o.guest };
+      autoRead: localStorage.getItem('sfc_autoread') !== '0', locked: !!o.guest,
+      voice: false, vo: null, cache: {}, sayId: 0, audio: new Audio() };
+    try { st.audio.src = silentWav(); const p = st.audio.play(); if (p && p.catch) p.catch(() => { /* ignore */ }); } catch (e) { /* ignore */ }
     const root = el(`<div class="sfc-ov"><div class="sfc-box">
       <div class="sfc-head"><div class="sfc-ava">${E(o.emoji || '🦉')}</div>
-        <div class="sfc-who"><b>${E(o.name)}</b><small>💬 Rozmowa po angielsku${ctx.unitName ? ' · ' + E(ctx.unitName) : ''}</small></div>
+        <div class="sfc-who"><b>${E(o.name)}</b><small>💬 Rozmowa po angielsku${ctx.unitName ? ' · ' + E(ctx.unitName) : ''}<span class="sfc-vtag"></span></small></div>
         <button class="sfc-hb${st.autoRead ? '' : ' off'}" data-a="read" title="Lektor czyta odpowiedzi">🔈</button>
         <button class="sfc-hb" data-a="x" title="Zamknij (Esc)">✕</button></div>
       <div class="sfc-msgs"></div>
@@ -236,19 +345,25 @@
     st.root = root; document.body.appendChild(root);
     root.addEventListener('click', e => { if (e.target === root) close(); });
     root.querySelector('[data-a="x"]').onclick = close;
-    root.querySelector('[data-a="read"]').onclick = e => { st.autoRead = !st.autoRead; e.target.classList.toggle('off', !st.autoRead); try { localStorage.setItem('sfc_autoread', st.autoRead ? '1' : '0'); } catch (x) { /* ignore */ } if (!st.autoRead) try { speechSynthesis.cancel(); } catch (x) { /* ignore */ } };
+    root.querySelector('[data-a="read"]').onclick = e => { st.autoRead = !st.autoRead; e.target.classList.toggle('off', !st.autoRead); try { localStorage.setItem('sfc_autoread', st.autoRead ? '1' : '0'); } catch (x) { /* ignore */ } if (!st.autoRead) stopVoice(); };
     const ta = root.querySelector('textarea');
     root.querySelector('.send').onclick = () => send(ta.value, false);
-    const mic = root.querySelector('.mic'); if (mic) mic.onclick = startMic;
+    const mic = root.querySelector('.mic'); if (mic) mic.onclick = micClick;
     document.addEventListener('keydown', onKey, true);
     if (o.guest) {
       st.locked = true; setBusy(false);
       addSys('🔒 Rozmowa z AI działa po zalogowaniu.');
       return;
     }
-    if (!SR) addSys('ℹ️ Mówienie (🎤) działa w Chrome i Edge. Tutaj możesz pisać.');
     setTimeout(() => ta.focus(), 60);
-    turn('', null);
+    // Naturalny głos (Edge Function voice_status) — sprawdzamy przed powitaniem, max 2,5 s.
+    const me = st;
+    const check = Promise.resolve().then(() => o.invoke({ action: 'voice_status' })).then(r => { if (st === me && r && r.voice === true) enableVoice(); }).catch(() => { /* stara funkcja AI / brak dostępu */ });
+    Promise.race([check, new Promise(r => setTimeout(r, 2500))]).then(() => {
+      if (st !== me) return;
+      if (!SR && !st.voice) addSys('ℹ️ Mówienie (🎤) działa w Chrome i Edge. Tutaj możesz pisać.');
+      turn('', null);
+    });
   }
 
   // send(tekst, true) = wypowiedź z rozpoznawania mowy (używane też w testach)
