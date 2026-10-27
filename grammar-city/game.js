@@ -83,7 +83,7 @@ const HALF = (N * CELL + R) / 2;  // 328 (Metropolia 648)
 const HALF0 = (8 * CELL + R) / 2; // centrum (Grammar City) — wysokość budynków maleje od środka
 const LANE = 4;
 const SIDE_H = 0.3;
-const BOUND = REALMAP ? W_EXT - 3 : HALF + 70;
+const BOUND = REALMAP ? W_EXT - 3 : HALF + 175;
 const PAVE_Y = REALMAP ? 0 : SIDE_H;   // wysokość chodnika (Warszawa: teren spłaszczony do 0)
 const rc = i => -HALF + R / 2 + i * CELL;          // road centre line i (0..N)
 const bx0 = i => -HALF + R + i * CELL;             // block start
@@ -899,11 +899,11 @@ function buildGround() {
   const zGeo = new THREE.PlaneGeometry(R - 2, 3.6); zGeo.rotateX(-Math.PI / 2);
   const spots = [], stops = [];
   for (let i = 0; i <= N; i++) for (let j = 0; j <= N; j++) {
-    const x = rc(i), z = rc(j), o = R / 2 + 2.2, so = o + 2.6;
-    if (j < N) { spots.push([x, z + o, 0]); stops.push([x + 2.55, z + so, 0]); }
-    if (j > 0) { spots.push([x, z - o, 0]); stops.push([x - 2.55, z - so, 0]); }
-    if (i < N) { spots.push([x + o, z, Math.PI / 2]); stops.push([x + so, z - 2.55, Math.PI / 2]); }
-    if (i > 0) { spots.push([x - o, z, Math.PI / 2]); stops.push([x - so, z + 2.55, Math.PI / 2]); }
+    const x = rc(i), z = rc(j), o = R / 2 + 2.2, so = o + 2.6, nd = nodeAt(i, j), st = nd && nd.kind === 3 ? [] : stops;
+    if (j < N) { spots.push([x, z + o, 0]); st.push([x + 2.55, z + so, 0]); }
+    if (j > 0) { spots.push([x, z - o, 0]); st.push([x - 2.55, z - so, 0]); }
+    if (i < N) { spots.push([x + o, z, Math.PI / 2]); st.push([x + so, z - 2.55, Math.PI / 2]); }
+    if (i > 0) { spots.push([x - o, z, Math.PI / 2]); st.push([x - so, z + 2.55, Math.PI / 2]); }
   }
   const zebras = new THREE.InstancedMesh(zGeo, paintMat(zebraTex, { color: 0xe8e8e2 }), spots.length);
   spots.forEach((p, n) => { d.position.set(p[0], 0.025, p[1]); d.rotation.set(0, p[2], 0); d.updateMatrix(); zebras.setMatrixAt(n, d.matrix); });
@@ -1258,6 +1258,7 @@ const slabMat = pavingMat(32);
 function buildCity() {
   if (REALMAP) { buildWarsaw(); return; }
   layoutMissions();
+  planNodes();
   buildGround();
   buildCurbs();
   if (METRO) { scene.fog.near = 200; scene.fog.far = 700; }
@@ -1272,7 +1273,10 @@ function buildCity() {
     mapRects.push({ x0: X, z0: Z, x1: X + B, z1: Z + B, c: '#2b3340' });
     const key = `${bx - O},${bz - O}`, zone = blockZone(bx, bz);
     const hallM = MISSIONS.find(m => m.cityHall && `${m.cityHall[0]},${m.cityHall[1]}` === key);
-    if (zone !== 'core') {
+    const site = SITES.school.includes(`${bx},${bz}`) ? 'school' : SITES.gas.includes(`${bx},${bz}`) ? 'gas' : null;
+    if (site === 'school') buildSchool(X, Z);
+    else if (site === 'gas') buildGasStation(X, Z);
+    else if (zone !== 'core') {
       // Metropolia poza centrum: trawnik w środku kwartału, na nim osiedle bloków albo domy z ogródkami
       const h = hash2(bx, bz);
       if (h >= 0.07) lawns.push([X + B / 2, Z + B / 2]);
@@ -1298,6 +1302,13 @@ function buildCity() {
       if (hallM && s === 1 && Math.abs(x - (X + B / 2)) < 20) continue;
       if (k % 2 === 0) treeSpots.push([x, z, rr(0.85, 1.2)]); else lampSpots.push([x, z]);
     }
+    // wiata przystankowa z reklamą w połowie jednej krawędzi (centrum i osiedla)
+    const hb = hash2(bx + 0.37, bz + 0.71);
+    if (zone !== 'sub' && !site && !hallM && hb < 0.33) {
+      const sd = Math.floor(hash2(bz + 3.3, bx + 1.9) * 4), ins = 1.25;
+      const [x, z, ry] = sd === 0 ? [X + 32, Z + ins, Math.PI] : sd === 1 ? [X + 32, Z + B - ins, 0] : sd === 2 ? [X + ins, Z + 32, -Math.PI / 2] : [X + B - ins, Z + 32, Math.PI / 2];
+      if (!nearMarker(x, z, 9)) busStop(x, z, ry, Math.floor(hb * 100) % 8);
+    }
   }
   if (lawns.length) {
     const lawn = new THREE.InstancedMesh(geo('lawnPlane', () => new THREE.PlaneGeometry(B - 2 * SW, B - 2 * SW).rotateX(-Math.PI / 2)),
@@ -1305,6 +1316,7 @@ function buildCity() {
     lawns.forEach(([x, z], i) => { sd.position.set(x, SIDE_H + 0.011, z); sd.updateMatrix(); lawn.setMatrixAt(i, sd.matrix); });
     lawn.receiveShadow = true; lawn.frustumCulled = false; scene.add(lawn);
   }
+  buildOutskirts();
   buildLake();
   // countryside around the city
   for (let i = 0; i < 360; i++) {
@@ -1312,13 +1324,19 @@ function buildCity() {
     let x = Math.cos(a) * r, z = Math.sin(a) * r;
     x = clamp(x, -HALF - 240, HALF + 240); z = clamp(z, -HALF - 240, HALF + 240);
     if (Math.abs(x) < HALF + 8 && Math.abs(z) < HALF + 8) continue;
+    if (inZone(x, z, 4)) continue;
     if (Math.hypot(x - LAKE.x, z - LAKE.z) < LAKE.r + 4.5) continue;
     treeSpots.push([x, z, rr(1, 1.8)]);
   }
   buildRoadFurniture();
+  buildRoundabouts();
+  buildBillboards();
   buildHills();
   buildTrees();
   buildLamps();
+  buildAdQuads();
+  if (glassParts.length) { const gm = new THREE.Mesh(mergeColored(glassParts), glassMat); gm.renderOrder = 3; scene.add(gm); glassParts.length = 0; }
+  buildTrafficCones();
   // merged meshes
   if (signQuads.length) buildShopSigns();
   // budynki: jedna siatka na kafel (grupy: 5 rodzajów elewacji + dachy)
@@ -1328,6 +1346,587 @@ function buildCity() {
   }
   bldParts.length = 0;
   flushStaticChunks();
+}
+
+// ---------------------------------------------------------------- nowe miejsca (tylko siatka: Grammar City i Metropolia)
+// Ronda, stacje paliw (tankowanie przy dystrybutorze), szkoły z boiskiem typu Orlik, hipermarket z parkingiem do driftu
+// i pachołkami, strefa przemysłowa, las, billboardy przy obwodnicy, wiaty przystankowe z reklamami (nazwy firm zmyślone).
+// Kwartały w układzie siatki (bx, bz); Metropolia = Grammar City przesunięte o O kwartałów.
+const SITES = METRO ? { school: ['8,10', '3,7', '12,9'], gas: ['11,10', '1,4', '14,11'] } : { school: ['4,6'], gas: ['7,6'] };
+const RB_NODES = METRO ? ['6,9', '10,7', '9,10', '8,2', '2,8', '14,8', '8,14'] : ['2,5', '6,3', '5,6'];
+const ZONES = [];            // tereny za miastem (bez losowych drzew, ruin i billboardów)
+const inZone = (x, z, m = 0) => ZONES.some(r => x > r.x0 - m && x < r.x1 + m && z > r.z0 - m && z < r.z1 + m);
+const PUMPS = [];            // miejsca przy dystrybutorach [x, z]
+const EXTRA_PARKS = [];      // auta zaparkowane poza ulicami [x, z, kierunek, typ]
+const glassParts = [];       // szyby wiat (jedna siatka)
+const glassMat = new THREE.MeshStandardMaterial({ color: 0xd4e6f0, vertexColors: true, transparent: true, opacity: 0.28, roughness: 0.06, metalness: 0.2, depthWrite: false });
+let asphaltPadMat = null, concretePadMat = null, paintMat2 = null;
+function colNH(x0, x1, z0, z1, h) { addCol(x0, x1, z0, z1, h); colliders[colliders.length - 1].nh = true; }
+// prostopadłościan z kolizją (bez obrotu), y0 = poziom podłoża
+function solidBox(w, h, d, color, x, z, y0 = 0, col = true) {
+  addStatic(BOX(w, h, d), color, x, y0 + h / 2, z);
+  if (col) colNH(x - w / 2, x + w / 2, z - d / 2, z + d / 2, y0 + h);
+}
+// punkt lokalny (lx, lz) obiektu obróconego o ry → świat (jak rotation.y)
+const rotXZ = (x, z, ry, lx, lz) => [x + lx * Math.cos(ry) + lz * Math.sin(ry), z - lx * Math.sin(ry) + lz * Math.cos(ry)];
+// płaska nawierzchnia z UV w metrach / kafel
+function flatPlane(x0, x1, z0, z1, y, material, tile) {
+  const w = x1 - x0, d = z1 - z0, g = new THREE.PlaneGeometry(w, d).rotateX(-Math.PI / 2), uv = g.attributes.uv;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * w / tile, uv.getY(i) * d / tile);
+  const m = new THREE.Mesh(g, material); m.position.set((x0 + x1) / 2, y, (z0 + z1) / 2); m.receiveShadow = true; scene.add(m);
+  return m;
+}
+function padMats() {
+  if (asphaltPadMat) return;
+  asphaltPadMat = asphaltMat(1);
+  concretePadMat = new StdMat({ map: repTex(TX.concrete, 1), color: 0xa9a7a0, roughness: 0.86 });
+  paintMat2 = new THREE.MeshStandardMaterial({ map: repTex(TX.paint, 1), roughness: 0.72, polygonOffset: true, polygonOffsetFactor: -5, polygonOffsetUnits: -20 });
+}
+// utwardzony plac poza siatką ulic (asfalt / beton), y0 = wysokość (w kwartale — płyta chodnika)
+function padArea(x0, x1, z0, z1, kind, y0 = 0) {
+  padMats();
+  if (!y0) PADS.push({ x0, x1, z0, z1 });
+  flatPlane(x0, x1, z0, z1, y0 + 0.025, kind === 'concrete' ? concretePadMat : asphaltPadMat, kind === 'concrete' ? 1.5 : 8);
+  if (!y0) mapRects.push({ x0, z0, x1, z1, c: kind === 'concrete' ? '#59606a' : '#4a515c' });
+}
+// linie malowane (miejsca parkingowe): [x, z, długość, obrót]
+function paintLines(list, y, w = 0.12) {
+  if (!list.length) return;
+  padMats();
+  const m = new THREE.InstancedMesh(geo('paintLine', () => new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2)), paintMat2, list.length), d = new THREE.Object3D();
+  list.forEach(([x, z, len, ry], i) => { d.position.set(x, y, z); d.rotation.set(0, ry, 0); d.scale.set(w, 1, len); d.updateMatrix(); m.setMatrixAt(i, d.matrix); });
+  m.receiveShadow = true; m.computeBoundingSphere(); scene.add(m);
+}
+// tekstura z płótna (rysowanie w callbacku)
+function drawTex(w, h, fn) { const c = makeCanvas(w, h), g = c.getContext('2d'); fn(g, w, h); return canvasTex(c, false); }
+
+// ---------------------------------------------------------------- ronda
+function buildRoundabouts() {
+  const apron = pavingMat(4.7), top = grassMat(1.7, true);
+  for (const nd of nodes) {
+    if (nd.kind !== 3) continue;
+    const { x, z } = nd;
+    const ring = new THREE.Mesh(geo('rbApron', () => new THREE.RingGeometry(3.3, 4.7, 48).rotateX(-Math.PI / 2)), apron);
+    ring.position.set(x, 0.028, z); ring.receiveShadow = true; scene.add(ring);
+    addStatic(geo('rbCurb', () => new THREE.CylinderGeometry(3.4, 3.5, 0.32, 40)), 0xc9c6bf, x, 0.16, z);
+    const g = new THREE.Mesh(geo('rbTop', () => new THREE.CircleGeometry(3.25, 40).rotateX(-Math.PI / 2)), top);
+    g.position.set(x, 0.325, z); g.receiveShadow = true; scene.add(g);
+    const fl = [0xe84a5f, 0xffc93c, 0xf8f8f8, 0xb565d9, 0xff8c42];
+    for (let k = 0; k < 16; k++) { const a = k / 16 * Math.PI * 2; addStatic(geo('rbFlower', () => new THREE.SphereGeometry(0.2, 8, 6)), fl[k % fl.length], x + Math.cos(a) * 2.6, 0.42, z + Math.sin(a) * 2.6); }
+    for (let k = 0; k < 6; k++) { const a = k / 6 * Math.PI * 2 + 0.3; addStatic(geo('rbBush', () => new THREE.SphereGeometry(0.55, 10, 8).scale(1, 0.75, 1)), 0x3f6b35, x + Math.cos(a) * 1.6, 0.6, z + Math.sin(a) * 1.6); }
+    treeSpots.push([x, z, 0.8]);
+    const ring12 = []; for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2; ring12.push(x + Math.cos(a) * 3.55, z + Math.sin(a) * 3.55); }
+    addPolyCol([ring12], 0.45);
+  }
+}
+// Auto wjeżdża na rondo 12 m przed środkiem: tor = dojazd → wjazd na okrąg (promień 6 m) → jazda w kierunku
+// przeciwnym do ruchu wskazówek zegara (wyspa po lewej) → zjazd na wylot wg planu (prosto / w prawo / w lewo) → 12 m za środkiem.
+function startRound(a) {
+  if (a.real) return;
+  const nd = a.axis === 'x' ? nodeAt(a.k, a.line) : nodeAt(a.line, a.k);
+  if (!nd || nd.kind !== 3) return;
+  const dc = (rc(a.k) - a.along) * a.dir;
+  if (dc > 12 || dc < 2) return;
+  const t = a.plan.t === 's', ex = t ? { axis: a.axis, line: a.line, dir: a.dir, k: a.k + a.dir, c: rc(a.k) }
+    : { axis: a.axis === 'x' ? 'z' : 'x', line: a.k, dir: a.plan.d2, k: a.line + a.plan.d2, c: rc(a.line) };
+  const din = Math.sqrt(RB_R * RB_R - LANE * LANE);
+  const P0 = laneXZ(a, a.along), Pin = laneXZ(a, rc(a.k) - a.dir * din), Pout = laneXZ(ex, ex.c + ex.dir * din), X1 = laneXZ(ex, ex.c + ex.dir * 12);
+  const ti = Math.atan2(Pin[1] - nd.z, Pin[0] - nd.x), to = Math.atan2(Pout[1] - nd.z, Pout[0] - nd.x);
+  const D = ((ti - to) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2), n = Math.max(1, Math.ceil(D / 0.17));
+  const pts = [P0, Pin];
+  for (let i = 1; i < n; i++) { const th = ti - D * i / n; pts.push([nd.x + Math.cos(th) * RB_R, nd.z + Math.sin(th) * RB_R]); }
+  pts.push(Pout, X1);
+  const cum = [0]; for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+  a.rb = { pts, cum, s: 0, ex };
+}
+const RB_R = 6;
+function advanceRound(v, a, dt) {
+  const r = a.rb, L = r.cum[r.cum.length - 1];
+  r.s += Math.max(0, v.speed) * dt;
+  if (r.s >= L) {
+    const ex = r.ex;
+    a.axis = ex.axis; a.line = ex.line; a.dir = ex.dir; a.k = ex.k; a.along = ex.c + ex.dir * 12; a.rb = null; a.pass = -1;
+    choosePlan(a);
+    const [x, z] = laneXZ(a, a.along); v.pos.set(x, 0, z);
+    return;
+  }
+  let i = 1; while (i < r.cum.length - 1 && r.cum[i] < r.s) i++;
+  const p0 = r.pts[i - 1], p1 = r.pts[i], k = (r.s - r.cum[i - 1]) / Math.max(1e-6, r.cum[i] - r.cum[i - 1]);
+  v.pos.set(p0[0] + (p1[0] - p0[0]) * k, 0, p0[1] + (p1[1] - p0[1]) * k);
+  v.heading += angDiff(v.heading, Math.atan2(p1[0] - p0[0], p1[1] - p0[1])) * Math.min(1, dt * 8);
+}
+
+// ---------------------------------------------------------------- reklamy (atlas): billboardy i wiaty
+const ADS = [
+  { t: 'OWL MILK', s: 'Drink it every day!', bg: ['#4fa3e0', '#bfe6ff'], fg: '#0d3b66', e: '🥛' },
+  { t: 'SUPER PIZZA', s: 'Hot & tasty — call 555 123', bg: ['#e63946', '#f4a261'], fg: '#fff8e7', e: '🍕' },
+  { t: 'LEARN ENGLISH', s: 'with Sowie Fiszki', bg: ['#6a3fb5', '#b07cf2'], fg: '#ffffff', e: '🦉' },
+  { t: 'ZOOM PHONE X', s: 'Talk more. Pay less.', bg: ['#141821', '#3a4a6b'], fg: '#7ef0ff', e: '📱' },
+  { t: 'CITY ZOO', s: 'Come and see the lions!', bg: ['#2d6a4f', '#95d5b2'], fg: '#fffbe6', e: '🦁' },
+  { t: 'FRESH JUICE', s: '100% fruit, 0% sugar', bg: ['#ff9f1c', '#ffe066'], fg: '#7a2e00', e: '🍊' },
+  { t: 'SPEED CARS', s: 'Drive the future', bg: ['#0b2545', '#13315c'], fg: '#ffd166', e: '🏎️' },
+  { t: 'BIG SALE', s: 'Up to 50% off · MEGA MARKET', bg: ['#d90429', '#ef233c'], fg: '#ffffff', e: '🛒' },
+];
+const adQuads = [];          // {x, y, z, ry, w, h, k, p: pionowa (wiata)}
+let adTex = null;
+function adAtlas() {
+  if (adTex) return adTex;
+  const c = makeCanvas(1024, 1280), g = c.getContext('2d');
+  const font = (w, px) => `${w} ${px}px "Barlow Condensed", Arial, sans-serif`;
+  const fit = (txt, w, px, maxW) => { let f = px; g.font = font(w, f); while (g.measureText(txt).width > maxW && f > 12) { f -= 2; g.font = font(w, f); } };
+  ADS.forEach((a, k) => {
+    // poziome 512×256
+    const x = (k % 2) * 512, y = (k >> 1) * 256, gr = g.createLinearGradient(x, y, x + 512, y + 256);
+    gr.addColorStop(0, a.bg[0]); gr.addColorStop(1, a.bg[1]); g.fillStyle = gr; g.fillRect(x, y, 512, 256);
+    g.fillStyle = 'rgba(255,255,255,0.12)'; g.beginPath(); g.arc(x + 420, y + 128, 150, 0, Math.PI * 2); g.fill();
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.font = '120px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif'; g.fillText(a.e, x + 418, y + 132);
+    g.textAlign = 'left'; g.fillStyle = a.fg;
+    fit(a.t, 800, 78, 330); g.fillText(a.t, x + 26, y + 104);
+    fit(a.s, 600, 34, 330); g.fillText(a.s, x + 28, y + 176);
+    g.strokeStyle = 'rgba(255,255,255,0.5)'; g.lineWidth = 6; g.strokeRect(x + 3, y + 3, 506, 250);
+    // pionowe 128×256 (wiaty)
+    const px = k * 128, py = 1024, gp = g.createLinearGradient(px, py, px, py + 256);
+    gp.addColorStop(0, a.bg[0]); gp.addColorStop(1, a.bg[1]); g.fillStyle = gp; g.fillRect(px, py, 128, 256);
+    g.textAlign = 'center'; g.font = '64px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif'; g.fillText(a.e, px + 64, py + 82);
+    g.fillStyle = a.fg; fit(a.t, 800, 30, 116); g.fillText(a.t, px + 64, py + 160);
+    fit(a.s, 600, 16, 116); g.fillText(a.s, px + 64, py + 198);
+  });
+  adTex = canvasTex(c, false);
+  return adTex;
+}
+function buildAdQuads() {
+  if (!adQuads.length) return;
+  const pos = [], nor = [], uv = [];
+  for (const q of adQuads) {
+    const cs = Math.cos(q.ry), sn = Math.sin(q.ry);
+    let u0, u1, v0, v1;
+    if (q.p) { u0 = q.k * 0.125; u1 = u0 + 0.125; v0 = 0; v1 = 0.2; }
+    else { u0 = (q.k % 2) * 0.5; u1 = u0 + 0.5; v1 = 1 - (q.k >> 1) * 0.2; v0 = v1 - 0.2; }
+    const C = [[-q.w / 2, -q.h / 2, u0, v0], [q.w / 2, -q.h / 2, u1, v0], [q.w / 2, q.h / 2, u1, v1], [-q.w / 2, q.h / 2, u0, v1]];
+    for (const i of [0, 1, 2, 0, 2, 3]) { const [o, y, u, v] = C[i]; pos.push(q.x + cs * o, q.y + y, q.z - sn * o); nor.push(sn, 0, cs); uv.push(u, v); }
+  }
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geom.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  geom.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geom.computeBoundingSphere();
+  const t = adAtlas(), m = new THREE.MeshStandardMaterial({ map: t, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0, roughness: 0.4 });
+  m.userData.emi = 0.85; winMats.push(m);       // nocą podświetlone
+  const mesh = new THREE.Mesh(geom, m); mesh.receiveShadow = true; mesh.frustumCulled = false; scene.add(mesh);
+  adQuads.length = 0;
+}
+// Billboard: dwa słupy, rama 8 × 4 m, pomost, lampy u góry; reklama od strony ulicy (lokalne +Z).
+function billboard(x, z, ry, k) {
+  const L = (lx, lz) => rotXZ(x, z, ry, lx, lz);
+  for (const sx of [-2.6, 2.6]) {
+    const [px, pz] = L(sx, -0.1);
+    addStatic(geo('bbPost', () => new THREE.CylinderGeometry(0.2, 0.26, 7, 10).translate(0, 3.5, 0)), 0x6b7078, px, 0, pz);
+    colNH(px - 0.3, px + 0.3, pz - 0.3, pz + 0.3, 7);
+  }
+  addStatic(BOX(8.5, 4.5, 0.3), 0x2b2e33, x, 8.75, z, ry);
+  const [wx, wz] = L(0, 0.6); addStatic(BOX(8.4, 0.08, 0.8), 0x5b6067, wx, 6.45, wz, ry);
+  for (const lx of [-2.8, 0, 2.8]) {
+    const [ax, az] = L(lx, 0.65), [hx, hz] = L(lx, 1.15);
+    addStatic(BOX(0.1, 0.1, 1.0), 0x3a3d42, ax, 11.1, az, ry); addStatic(BOX(0.5, 0.16, 0.3), 0x1d1f22, hx, 11.0, hz, ry);
+  }
+  const [fx, fz] = L(0, 0.16); adQuads.push({ x: fx, y: 8.75, z: fz, ry, w: 8, h: 4, k });
+}
+function buildBillboards() {
+  const H = HALF, signs = [];
+  for (const t of N >= 16 ? [4, 12] : [2, 6]) signs.push([rc(t), -H], [rc(t), H], [-H, rc(t)], [H, rc(t)]);
+  let k = 0;
+  for (const side of [0, 1, 2, 3]) for (let t = -H + 55; t <= H - 55; t += 120) {
+    const [x, z, ry] = side === 0 ? [t, -H - 12, 0] : side === 1 ? [t, H + 12, Math.PI] : side === 2 ? [-H - 12, t, Math.PI / 2] : [H + 12, t, -Math.PI / 2];
+    if (inZone(x, z, 5) || signs.some(([sx, sz]) => Math.hypot(sx - x, sz - z) < 20) || Math.hypot(x - LAKE.x, z - LAKE.z) < LAKE.r + 30) continue;
+    billboard(x, z, ry, k++ % ADS.length);
+  }
+}
+// Wiata przystankowa: szyby, dach, ławka, podświetlana reklama z boku, słupek ze znakiem przystanku. Przód (+Z) do jezdni.
+function busStop(x, z, ry, k) {
+  const y0 = PAVE_Y, L = (lx, lz) => rotXZ(x, z, ry, lx, lz), white = new THREE.Color(0xffffff);
+  const glass = (w, h, d, lx, lz, y) => { const [gx, gz] = L(lx, lz); glassParts.push({ g: BOX(w, h, d), m: partMatrix(gx, y, gz, ry), c: white }); };
+  glass(4.0, 2.2, 0.04, 0, -0.75, y0 + 1.25); glass(0.04, 2.2, 1.3, 1.98, -0.1, y0 + 1.25);
+  const [rx, rz] = L(0, -0.05); addStatic(BOX(4.4, 0.12, 1.9), 0x3c4148, rx, y0 + 2.42, rz, ry);
+  for (const [lx, lz] of [[-2.0, -0.78], [2.0, -0.78], [-2.0, 0.55], [2.0, 0.55]]) { const [px, pz] = L(lx, lz); addStatic(BOX(0.07, 2.4, 0.07), 0x3c4148, px, y0 + 1.2, pz, ry); }
+  const [bx, bz] = L(0, -0.45); addStatic(BOX(2.4, 0.07, 0.42), 0x8a5a33, bx, y0 + 0.46, bz, ry);
+  for (const lx of [-1, 1]) { const [qx, qz] = L(lx, -0.45); addStatic(BOX(0.06, 0.44, 0.36), 0x3c4148, qx, y0 + 0.22, qz, ry); }
+  // podświetlana reklama (obie strony)
+  const [ax, az] = L(-2.05, -0.1); addStatic(BOX(0.16, 2.0, 1.28), 0x202226, ax, y0 + 1.25, az, ry);
+  for (const sg of [-1, 1]) { const [qx, qz] = L(-2.05 + sg * 0.085, -0.1); adQuads.push({ x: qx, y: y0 + 1.25, z: qz, ry: ry + sg * Math.PI / 2, w: 1.12, h: 1.82, k, p: true }); }
+  // słupek ze znakiem przystanku
+  const [sx, sz] = L(2.75, 0.45);
+  addStatic(geo('busPole', () => new THREE.CylinderGeometry(0.04, 0.045, 2.9, 6).translate(0, 1.45, 0)), 0xa0a5ab, sx, y0, sz);
+  const [qx, qz] = L(2.75, 0.5); roadSignQuad(qx, y0 + 2.55, qz, ry, 0.6, 0.6, 13, 7);
+  const [c0x, c0z] = L(-2.2, -1.0), [c1x, c1z] = L(2.2, 0.95);
+  colNH(Math.min(c0x, c1x), Math.max(c0x, c1x), Math.min(c0z, c1z), Math.max(c0z, c1z), 2.5);
+}
+
+// ---------------------------------------------------------------- stacja paliw (kwartał albo plac za miastem)
+// Wiata z dystrybutorami na trzech wysepkach, sklep, myjnia, pylon z cenami. Tankowanie: zatrzymaj auto przy dystrybutorze.
+let pylonTex = null;
+function buildGasStation(X, Z, y0 = SIDE_H) {
+  const cx = X + B / 2, cz = Z + B / 2;
+  padArea(X + 5, X + B - 5, Z + 5, Z + B - 5, 'concrete', y0);
+  // wiata
+  const ccz = cz - 6, cy = y0 + 5.4;
+  addStatic(BOX(27, 0.8, 15), 0xf2f4f6, cx, cy + 0.4, ccz);
+  addStatic(BOX(27.2, 0.75, 15.2), 0x1a8f96, cx, cy + 0.45, ccz);
+  addStatic(BOX(27.3, 0.18, 15.3), 0xffffff, cx, cy + 0.06, ccz);
+  const under = new THREE.Mesh(geo('canopyUnder', () => new THREE.PlaneGeometry(26.6, 14.6).rotateX(Math.PI / 2)), canopyLightMat());
+  under.position.set(cx, cy - 0.01, ccz); scene.add(under);
+  for (const px of [-10, 0, 10]) for (const pz of [-5, 5]) solidBox(0.5, 5.4, 0.5, 0xdfe3e7, cx + px, ccz + pz, y0);
+  // wysepki z dystrybutorami
+  for (const ix of [-8, 0, 8]) {
+    solidBox(1.2, 0.18, 7, 0xcfcac0, cx + ix, ccz, y0, false);
+    addStatic(BOX(1.24, 0.06, 7.04), 0xf2c418, cx + ix, y0 + 0.2, ccz);
+    for (const dz of [-1.8, 1.8]) {
+      solidBox(0.75, 1.9, 1.15, 0xf4f6f8, cx + ix, ccz + dz, y0 + 0.18);
+      addStatic(BOX(0.78, 0.5, 1.18), 0x1a8f96, cx + ix, y0 + 1.75, ccz + dz);
+      addStatic(BOX(0.8, 0.32, 0.5), 0x1c2a33, cx + ix, y0 + 1.25, ccz + dz);
+    }
+    PUMPS.push([cx + ix - 2.4, ccz], [cx + ix + 2.4, ccz]);
+  }
+  addSign('OWL FUEL', '#1a8f96', cx, cy + 0.45, ccz - 7.62, Math.PI, 9, 0.7);
+  addSign('OWL FUEL', '#1a8f96', cx, cy + 0.45, ccz + 7.62, 0, 9, 0.7);
+  // sklep
+  const sz = Z + B - 12;
+  solidBox(20, 4.6, 9, 0xeef0f2, cx, sz, y0);
+  addStatic(BOX(16, 2.8, 0.1), 0x1f3b52, cx, y0 + 1.6, sz - 4.52);
+  addStatic(BOX(20.4, 0.7, 9.4), 0x1a8f96, cx, y0 + 4.35, sz);
+  addSign('SHOP · 24h', '#1a8f96', cx, y0 + 3.75, sz - 4.58, Math.PI, 7, 0.8);
+  mapRects.push({ x0: cx - 10, z0: sz - 4.5, x1: cx + 10, z1: sz + 4.5, c: '#3c4656' });
+  // myjnia
+  const wx = X + B - 13, wz = cz + 8;
+  for (const sx of [-3.6, 3.6]) solidBox(0.4, 4, 11, 0xd5dbe0, wx + sx, wz, y0);
+  addStatic(BOX(7.8, 0.4, 11.4), 0x1a8f96, wx, y0 + 4.2, wz);
+  for (const sx of [-1.6, 1.6]) addStatic(geo('washBrush', () => new THREE.CylinderGeometry(0.55, 0.55, 3.4, 12)), 0x3a7bd5, wx + sx, y0 + 1.9, wz);
+  addSign('CAR WASH', '#3a7bd5', wx, y0 + 3.4, wz - 5.75, Math.PI, 5, 0.7);
+  // pylon z cenami
+  if (!pylonTex) pylonTex = drawTex(128, 512, (g) => {
+    g.fillStyle = '#1a8f96'; g.fillRect(0, 0, 128, 512);
+    g.fillStyle = '#ffffff'; g.fillRect(8, 8, 112, 150);
+    g.font = '64px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('🦉', 64, 62);
+    g.fillStyle = '#1a8f96'; g.font = '800 26px Arial, sans-serif'; g.fillText('OWL FUEL', 64, 130);
+    [['95', '6.49'], ['ON', '6.59'], ['LPG', '3.19']].forEach(([n, p], i) => {
+      const y = 200 + i * 100; g.fillStyle = '#111418'; g.fillRect(8, y, 112, 84);
+      g.fillStyle = '#ffffff'; g.font = '700 22px Arial, sans-serif'; g.fillText(n, 64, y + 20);
+      g.fillStyle = '#ffd34d'; g.font = '700 36px "Courier New", monospace'; g.fillText(p, 64, y + 56);
+    });
+  });
+  const pyx = X + 9, pyz = Z + 9;
+  solidBox(1.7, 7, 0.5, 0x2b2e33, pyx, pyz, y0);
+  const pm = new THREE.MeshStandardMaterial({ map: pylonTex, emissive: 0xffffff, emissiveMap: pylonTex, emissiveIntensity: 0, roughness: 0.4 });
+  pm.userData.emi = 0.8; winMats.push(pm);
+  for (const sg of [-1, 1]) { const q = new THREE.Mesh(geo('pylonFace', () => new THREE.PlaneGeometry(1.5, 6)), pm); q.position.set(pyx, y0 + 3.6, pyz + sg * 0.26); q.rotation.y = sg > 0 ? 0 : Math.PI; scene.add(q); }
+  EXTRA_PARKS.push([cx - 6, sz - 8.5, Math.PI / 2, 'hatch']);
+}
+let canopyMat = null;
+function canopyLightMat() {
+  if (canopyMat) return canopyMat;
+  canopyMat = new THREE.MeshStandardMaterial({ color: 0xf4f6f8, emissive: 0xfff4e0, emissiveIntensity: 0, roughness: 0.6 });
+  canopyMat.userData.emi = 1.1; winMats.push(canopyMat);
+  return canopyMat;
+}
+// Tankowanie: auto stoi (< 3 km/h) przy dystrybutorze — bak napełnia się w ~5 s, płaci się za zatankowaną część.
+let refuelT = 0, refuelAcc = 0, refuelCost = 0, refuelMsgT = 0, refuelHintT = 0;
+function updateRefuel(dt) {
+  refuelMsgT -= dt; refuelHintT -= dt;
+  const v = P.car;
+  const near = v && !ui && PUMPS.length ? Math.min(...PUMPS.map(p => Math.hypot(p[0] - v.pos.x, p[1] - v.pos.z))) : Infinity;
+  const finish = () => {
+    if (refuelCost > 0) { toast(`⛽ Zatankowane: ${Math.round(wardrobe.fuel * 100)}% · koszt ${fmtMoney(refuelCost)}`, 'good', 3000); persist(); persistWardrobe(); renderShop(); }
+    refuelCost = 0; refuelAcc = 0;
+  };
+  if (near < 14 && refuelHintT <= 0 && wardrobe.fuel < 0.9 && Math.abs(v.speed) < 8) { toast('⛽ Zatrzymaj auto przy dystrybutorze — tankowanie ruszy samo.', '', 3500); refuelHintT = 45; }
+  if (near > 3.8 || Math.abs(v.speed) > 0.8) { finish(); refuelT = 0; return; }
+  refuelT += dt;
+  if (refuelT < 0.7) return;
+  if (wardrobe.fuel >= 0.995) { if (refuelCost > 0) finish(); else if (refuelMsgT <= 0) { toast('⛽ Bak jest pełny.', '', 2000); refuelMsgT = 10; } return; }
+  if (save.money < 1) { if (refuelMsgT <= 0) { toast('⛽ Za mało pieniędzy na tankowanie — zrób misję.', 'bad', 2600); refuelMsgT = 8; } return; }
+  const add = Math.min(1 - wardrobe.fuel, dt * 0.2);
+  wardrobe.fuel += add; refuelAcc += FUEL_PRICE * add; fuelWarned = fuelEmptyWarned = false;
+  const whole = Math.min(save.money, Math.floor(refuelAcc));
+  if (whole > 0) { save.money -= whole; refuelAcc -= whole; refuelCost += whole; }
+  if (wardrobe.fuel >= 0.995) { wardrobe.fuel = 1; finish(); }
+}
+
+// ---------------------------------------------------------------- szkoła z boiskiem typu Orlik (cały kwartał)
+let pitchTex = null, courtTex = null, fenceMat = null;
+function buildSchool(X, Z) {
+  const y0 = SIDE_H, cx = X + B / 2;
+  // budynek szkoły (3 piętra) od strony północnej ulicy
+  bldParts.push({ g: buildingGeo(50, 12.6, 14), x: cx, z: Z + 13, f: 1, tint: 0xf3dca2 });
+  colNH(cx - 25, cx + 25, Z + 6, Z + 20, 12.6);
+  mapRects.push({ x0: cx - 25, z0: Z + 6, x1: cx + 25, z1: Z + 20, c: '#6a5a3a' });
+  addStatic(BOX(8, 0.3, 3), 0xdfe3e7, cx, y0 + 3.6, Z + 4.6);
+  for (const sx of [-3.6, 3.6]) addStatic(BOX(0.25, 3.4, 0.25), 0xdfe3e7, cx + sx, y0 + 1.7, Z + 3.4);
+  addStatic(BOX(3.2, 2.6, 0.12), 0x5b3a22, cx, y0 + 1.3, Z + 5.95);
+  addSign('PRIMARY SCHOOL', '#e9a23b', cx, y0 + 10.3, Z + 5.9, Math.PI, 14, 1.6);
+  // maszt z flagą
+  addStatic(geo('flagPole', () => new THREE.CylinderGeometry(0.06, 0.08, 9, 8).translate(0, 4.5, 0)), 0xd5d9de, cx + 18, y0, Z + 3);
+  addStatic(BOX(0.04, 0.55, 1.6), 0xffffff, cx + 18, y0 + 8.4, Z + 3.85); addStatic(BOX(0.04, 0.55, 1.6), 0xdc143c, cx + 18, y0 + 7.85, Z + 3.85);
+  // boisko piłkarskie (sztuczna trawa) z liniami
+  if (!pitchTex) pitchTex = drawTex(512, 640, (g, W, Hh) => {
+    for (let i = 0; i < 10; i++) { g.fillStyle = i % 2 ? '#2f8f3a' : '#36a043'; g.fillRect(0, i * 64, W, 64); }
+    g.strokeStyle = '#f4f7f2'; g.lineWidth = 5;
+    g.strokeRect(24, 24, W - 48, Hh - 48);
+    g.beginPath(); g.moveTo(24, Hh / 2); g.lineTo(W - 24, Hh / 2); g.stroke();
+    g.beginPath(); g.arc(W / 2, Hh / 2, 62, 0, Math.PI * 2); g.stroke();
+    for (const y of [24, Hh - 24]) {
+      const sg = y < Hh / 2 ? 1 : -1;
+      g.strokeRect(W / 2 - 130, y, 260, sg * 110); g.strokeRect(W / 2 - 60, y, 120, sg * 42);
+      g.beginPath(); g.arc(W / 2, y + sg * 80, 4, 0, Math.PI * 2); g.fillStyle = '#f4f7f2'; g.fill();
+    }
+  });
+  const px0 = X + 8, px1 = X + 36, pz0 = Z + 24, pz1 = Z + 58;
+  const pitch = new THREE.Mesh(new THREE.PlaneGeometry(px1 - px0, pz1 - pz0).rotateX(-Math.PI / 2), new StdMat({ map: pitchTex, roughness: 0.95 }));
+  pitch.position.set((px0 + px1) / 2, y0 + 0.02, (pz0 + pz1) / 2); pitch.receiveShadow = true; scene.add(pitch);
+  mapRects.push({ x0: px0, z0: pz0, x1: px1, z1: pz1, c: '#2f7a3a' });
+  // bramki
+  const gx = (px0 + px1) / 2;
+  for (const [gz, sg] of [[pz0 + 1.4, -1], [pz1 - 1.4, 1]]) {
+    for (const sx of [-2.5, 2.5]) addStatic(BOX(0.1, 2, 0.1), 0xffffff, gx + sx, y0 + 1, gz);
+    addStatic(BOX(5.1, 0.1, 0.1), 0xffffff, gx, y0 + 2, gz);
+    addStatic(BOX(5.1, 0.06, 0.06), 0xdddddd, gx, y0 + 2, gz + sg * 1.2);
+    for (const sx of [-2.5, 2.5]) addStatic(BOX(0.06, 0.06, 1.2), 0xdddddd, gx + sx, y0 + 2, gz + sg * 0.6);
+    colNH(gx - 2.6, gx + 2.6, Math.min(gz, gz + sg * 1.2), Math.max(gz, gz + sg * 1.2), 2.1);
+  }
+  // ogrodzenie z siatki (4 m) z furtką od strony szkoły
+  if (!fenceMat) {
+    const t = drawTex(64, 64, (g) => { g.strokeStyle = '#c9ced4'; g.lineWidth = 3; g.beginPath(); g.moveTo(0, 32); g.lineTo(32, 0); g.lineTo(64, 32); g.lineTo(32, 64); g.closePath(); g.stroke(); g.beginPath(); g.moveTo(0, 0); g.lineTo(0, 0); g.stroke(); });
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    fenceMat = new THREE.MeshStandardMaterial({ map: t, alphaTest: 0.4, transparent: false, side: THREE.DoubleSide, metalness: 0.5, roughness: 0.5 });
+  }
+  const fence = (ax, az, bx, bz) => {
+    const L = Math.hypot(bx - ax, bz - az), g = new THREE.PlaneGeometry(L, 4), uv = g.attributes.uv;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * L / 0.9, uv.getY(i) * 4 / 0.9);
+    const m = new THREE.Mesh(g, fenceMat); m.position.set((ax + bx) / 2, y0 + 2, (az + bz) / 2); m.rotation.y = Math.atan2(bz - az, -(bx - ax)) + Math.PI; scene.add(m);
+    for (let k = 0; k <= Math.round(L / 3); k++) { const t = k / Math.max(1, Math.round(L / 3)); addStatic(BOX(0.08, 4.1, 0.08), 0x6b7078, ax + (bx - ax) * t, y0 + 2.05, az + (bz - az) * t); }
+    addStatic(BOX(Math.abs(bx - ax) + 0.08, 0.06, Math.abs(bz - az) + 0.08), 0x6b7078, (ax + bx) / 2, y0 + 4.05, (az + bz) / 2);
+    colNH(Math.min(ax, bx) - 0.08, Math.max(ax, bx) + 0.08, Math.min(az, bz) - 0.08, Math.max(az, bz) + 0.08, 4);
+  };
+  const f0x = px0 - 0.6, f1x = px1 + 0.6, f0z = pz0 - 0.6, f1z = pz1 + 0.6, gate = (f0x + f1x) / 2;
+  fence(f0x, f0z, gate - 1.6, f0z); fence(gate + 1.6, f0z, f1x, f0z);
+  fence(f0x, f1z, f1x, f1z); fence(f0x, f0z, f0x, f1z); fence(f1x, f0z, f1x, f1z);
+  addSign('ORLIK', '#2f8f3a', gate + 6, y0 + 3.4, f0z - 0.05, Math.PI, 3.2, 0.8);
+  // boisko do koszykówki
+  if (!courtTex) courtTex = drawTex(256, 512, (g, W, Hh) => {
+    g.fillStyle = '#2b5c8a'; g.fillRect(0, 0, W, Hh); g.fillStyle = '#d9772b'; g.fillRect(14, 14, W - 28, Hh - 28);
+    g.strokeStyle = '#ffffff'; g.lineWidth = 4; g.strokeRect(14, 14, W - 28, Hh - 28);
+    g.beginPath(); g.moveTo(14, Hh / 2); g.lineTo(W - 14, Hh / 2); g.stroke(); g.beginPath(); g.arc(W / 2, Hh / 2, 34, 0, Math.PI * 2); g.stroke();
+    for (const y of [14, Hh - 14]) { const sg = y < Hh / 2 ? 1 : -1; g.fillStyle = '#2b5c8a'; g.fillRect(W / 2 - 36, Math.min(y, y + sg * 110), 72, 110); g.strokeRect(W / 2 - 36, Math.min(y, y + sg * 110), 72, 110); g.beginPath(); g.arc(W / 2, y, 128, sg > 0 ? 0 : Math.PI, sg > 0 ? Math.PI : Math.PI * 2); g.stroke(); }
+  });
+  const kx0 = X + 40, kx1 = X + 57, kz0 = Z + 25, kz1 = Z + 57;
+  const court = new THREE.Mesh(new THREE.PlaneGeometry(kx1 - kx0, kz1 - kz0).rotateX(-Math.PI / 2), new StdMat({ map: courtTex, roughness: 0.7 }));
+  court.position.set((kx0 + kx1) / 2, y0 + 0.02, (kz0 + kz1) / 2); court.receiveShadow = true; scene.add(court);
+  mapRects.push({ x0: kx0, z0: kz0, x1: kx1, z1: kz1, c: '#8a5a33' });
+  const kx = (kx0 + kx1) / 2;
+  for (const [hz, sg] of [[kz0 + 0.6, 1], [kz1 - 0.6, -1]]) {
+    solidBox(0.18, 3.6, 0.18, 0x3a3d42, kx, hz, y0);
+    addStatic(BOX(0.12, 0.12, 1.1), 0x3a3d42, kx, y0 + 3.5, hz + sg * 0.55);
+    addStatic(BOX(1.8, 1.05, 0.06), 0xffffff, kx, y0 + 3.55, hz + sg * 1.1);
+    addStatic(geo('hoop', () => new THREE.TorusGeometry(0.23, 0.02, 6, 16).rotateX(Math.PI / 2)), 0xe8551f, kx, y0 + 3.05, hz + sg * 1.4);
+  }
+}
+
+// ---------------------------------------------------------------- tereny za miastem
+const corrTex = (() => drawTex(64, 64, (g) => { for (let x = 0; x < 64; x++) { const v = 200 + Math.round(Math.sin(x / 64 * Math.PI * 8) * 38); g.fillStyle = `rgb(${v},${v},${v})`; g.fillRect(x, 0, 1, 64); } }))();
+corrTex.wrapS = corrTex.wrapT = THREE.RepeatWrapping;
+// hala z blachy trapezowej (UV w metrach), bramy rolowane od strony +Z
+function hall(x0, x1, z0, z1, h, color, doors = 3) {
+  const w = x1 - x0, d = z1 - z0, g = new THREE.BoxGeometry(w, h, d).translate(0, h / 2, 0), uv = g.attributes.uv;
+  for (let f = 0; f < 6; f++) { const [su, sv] = f < 2 ? [d, h] : f < 4 ? [w, d] : [w, h]; for (let k = 0; k < 4; k++) { const i = f * 4 + k; uv.setXY(i, uv.getX(i) * su / 1.2, uv.getY(i) * sv / 1.2); } }
+  const m = new THREE.Mesh(g, new StdMat({ map: corrTex, color, roughness: 0.55, metalness: 0.35 }));
+  m.position.set((x0 + x1) / 2, 0, (z0 + z1) / 2); m.castShadow = m.receiveShadow = true; scene.add(m);
+  colNH(x0, x1, z0, z1, h);
+  mapRects.push({ x0, z0, x1, z1, c: '#4b5563' });
+  for (let i = 0; i < doors; i++) {
+    const dx = x0 + (i + 0.5) * w / doors;
+    addStatic(BOX(5, 5, 0.12), 0x5d646d, dx, 2.5, z1 + 0.06);
+    addStatic(BOX(5.6, 0.3, 0.5), 0x3a3d42, dx, 5.2, z1 + 0.25);
+    addStatic(BOX(6, 1.1, 2.5), 0x9b9a96, dx, 0.55, z1 + 1.25);
+  }
+  addStatic(BOX(w + 0.4, 0.5, d + 0.4), 0x3a3d42, (x0 + x1) / 2, h + 0.25, (z0 + z1) / 2);
+}
+function buildOutskirts() {
+  const H = HALF;
+  // ----- hipermarket z parkingiem do driftu (południe)
+  ZONES.push({ x0: -114, x1: 114, z0: H - 2, z1: H + 168 });
+  padArea(-108, 108, H, H + 106, 'asphalt');
+  const lines = [];
+  for (let x = -100; x <= 100; x += 2.7) lines.push([x, H + 87, 5, 0], [x, H + 97, 5, 0]);
+  for (const sx of [-1, 1]) for (let z = H + 10; z <= H + 72; z += 2.7) lines.push([sx * 96, z, 5, Math.PI / 2]);
+  lines.push([0, H + 92, 200, Math.PI / 2]);
+  paintLines(lines, 0.04);
+  // napis DRIFT na środku placu
+  const dr = new THREE.Mesh(new THREE.PlaneGeometry(26, 9).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: drawTex(512, 176, (g) => { g.fillStyle = 'rgba(255,255,255,0.85)'; g.font = '800 150px "Barlow Condensed", Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('DRIFT ZONE', 256, 92); }), transparent: true, depthWrite: false, roughness: 0.8, polygonOffset: true, polygonOffsetFactor: -5, polygonOffsetUnits: -20 }));
+  dr.position.set(0, 0.045, H + 52); dr.rotation.y = Math.PI; scene.add(dr);
+  for (const [cxr, czr] of [[-36, H + 50], [36, H + 50]]) paintLines(Array.from({ length: 36 }, (_, i) => { const a = i / 36 * Math.PI * 2; return [cxr + Math.cos(a) * 13, czr + Math.sin(a) * 13, 1.2, -a]; }), 0.042, 0.18);
+  // budynek
+  const bz0 = H + 112, bz1 = H + 158;
+  solidBox(140, 11, bz1 - bz0, 0xe9ecef, 0, (bz0 + bz1) / 2);
+  mapRects.push({ x0: -70, z0: bz0, x1: 70, z1: bz1, c: '#3c4656' });
+  addStatic(BOX(140.4, 1.4, bz1 - bz0 + 0.4), 0xd90429, 0, 10.3, (bz0 + bz1) / 2);
+  addStatic(BOX(34, 6, 0.2), 0x1f3b52, 0, 3, bz0 - 0.1);
+  addStatic(BOX(38, 0.4, 7), 0xdfe3e7, 0, 6.4, bz0 - 3.5);
+  for (const sx of [-18, -6, 6, 18]) addStatic(BOX(0.35, 6.2, 0.35), 0xbfc4ca, sx, 3.1, bz0 - 6.6);
+  addSign('MEGA MARKET', '#d90429', 0, 8.4, bz0 - 0.15, Math.PI, 30, 3.6);
+  for (const tx of [-42, 42]) { solidBox(7, 2.5, 2.6, 0x8d949c, tx, H + 104, 0, true); addStatic(BOX(7.4, 0.12, 3), 0x1a8f96, tx, 2.56, H + 104); }
+  for (let x = -96; x <= 96; x += 32) lampSpots.push([x, H + 79, Math.PI]);
+  for (const sx of [-1, 1]) for (let z = H + 20; z <= H + 70; z += 25) lampSpots.push([sx * 88, z, sx > 0 ? Math.PI / 2 : -Math.PI / 2]);
+  EXTRA_PARKS.push([-30.7, H + 87, Math.PI, 'hatch'], [-11.8, H + 87, Math.PI, 'suv'], [21.6, H + 97, 0, 'sedan'], [56.7, H + 97, 0, 'van'], [-62, H + 97, 0, 'maluch']);
+  // pachołki: slalom + dwa kółka do driftu
+  for (let x = -55; x <= 55; x += 11) TCONES.push([x, H + 22]);
+  for (const [cxr, czr] of [[-36, H + 50], [36, H + 50]]) for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2; TCONES.push([cxr + Math.cos(a) * 6, czr + Math.sin(a) * 6]); }
+  // ----- stacja paliw przy hipermarkecie
+  ZONES.push({ x0: 176, x1: 246, z0: H - 2, z1: H + 70 });
+  buildGasStation(178, H + 2, 0);
+  // ----- strefa przemysłowa (północ)
+  ZONES.push({ x0: -262, x1: 172, z0: -H - 172, z1: -H - 2 });
+  padArea(-255, 165, -H - 165, -H, 'concrete');
+  hall(-240, -170, -H - 152, -H - 110, 12, 0xb9c4cf, 4);
+  hall(-150, -92, -H - 152, -H - 116, 10, 0xd9cfb8, 3);
+  hall(60, 150, -H - 158, -H - 122, 13, 0xe4e7ea, 5);
+  // hala fabryczna z dachem szedowym
+  solidBox(80, 9, 44, 0x9c5a44, -20, -H - 128);
+  for (let i = 0; i < 10; i++) addStatic(roofPrism(), i % 2 ? 0x6b7078 : 0x7d838b, -56 + i * 8, 9, -H - 128, 0, 8, 3.2, 44);
+  addStatic(BOX(70, 1.4, 0.12), 0x24323e, -20, 6.2, -H - 105.94);
+  mapRects.push({ x0: -60, z0: -H - 150, x1: 20, z1: -H - 106, c: '#5a463a' });
+  // komin w biało-czerwone pasy
+  for (let i = 0; i < 8; i++) addStatic(new THREE.CylinderGeometry(3 - (i + 1) * 0.12, 3 - i * 0.12, 6, 20), i % 2 ? 0xf2f2f2 : 0xc0392b, 32, 3 + i * 6, -H - 128);
+  addStatic(new THREE.CylinderGeometry(2.3, 2.3, 0.6, 20), 0x3a3d42, 32, 48.3, -H - 128);
+  colNH(29, 35, -H - 131, -H - 125, 48);
+  // silosy
+  for (let i = 0; i < 3; i++) {
+    const sx = -82 + i * 12, sz = -H - 82;
+    addStatic(geo('silo', () => new THREE.CylinderGeometry(4.6, 4.6, 20, 24).translate(0, 10, 0)), 0xd5d9de, sx, 0, sz);
+    addStatic(geo('siloTop', () => new THREE.ConeGeometry(4.7, 2.6, 24).translate(0, 21.3, 0)), 0xa8adb3, sx, 0, sz);
+    addStatic(BOX(0.5, 20, 0.12), 0x6b7078, sx, 10, sz + 4.62);
+    colNH(sx - 4.6, sx + 4.6, sz - 4.6, sz + 4.6, 22);
+  }
+  mapRects.push({ x0: -87, z0: -H - 87, x1: -53, z1: -H - 77, c: '#4b5563' });
+  // kontenery (stosy 1–3)
+  const CC = [0xc0392b, 0x2e5e8c, 0x1e8449, 0xe67e22, 0x7f8c8d, 0x8e44ad, 0xd4ac0d];
+  const rc2 = mulberry(4711);
+  for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) {
+    const x = 92 + c * 17, z = -H - 96 + r * 14, n = 1 + Math.floor(rc2() * 3);
+    for (let h = 0; h < n; h++) {
+      const col = CC[Math.floor(rc2() * CC.length)];
+      addStatic(BOX(12.2, 2.55, 2.44), col, x, h * 2.6 + 1.28, z);
+      addStatic(BOX(0.05, 2.4, 2.3), new THREE.Color(col).multiplyScalar(0.7).getHex(), x + 6.11, h * 2.6 + 1.28, z);
+    }
+    colNH(x - 6.1, x + 6.1, z - 1.22, z + 1.22, n * 2.6);
+    mapRects.push({ x0: x - 6.1, z0: z - 1.22, x1: x + 6.1, z1: z + 1.22, c: '#6b4a3a' });
+  }
+  // zbiorniki
+  for (const tz of [-H - 60, -H - 72]) {
+    addStatic(geo('tank', () => new THREE.CylinderGeometry(1.9, 1.9, 11, 18).rotateZ(Math.PI / 2)), 0xeef0f2, -205, 2.6, tz);
+    for (const tx of [-3.5, 3.5]) addStatic(BOX(0.6, 1.0, 3.2), 0x6b7078, -205 + tx, 0.5, tz);
+    colNH(-210.5, -199.5, tz - 1.9, tz + 1.9, 4.5);
+  }
+  for (const [x, z] of [[-200, -H - 30], [-110, -H - 30], [-10, -H - 30], [100, -H - 30], [-160, -H - 95], [40, -H - 95]]) lampSpots.push([x, z, Math.PI]);
+  EXTRA_PARKS.push([-215, -H - 100, 0, 'van'], [-205, -H - 100, 0, 'van'], [-130, -H - 105, 0, 'van'], [80, -H - 112, 0, 'van'], [95, -H - 112, 0, 'suv'], [-35, -H - 98, Math.PI / 2, 'kredens']);
+  addSign('INDUSTRIAL PARK', '#e67e22', -45, 5, -H - 8, 0, 9, 1.2);
+  addStatic(BOX(0.2, 4.4, 0.2), 0x3a3d42, -49.3, 2.2, -H - 8.3); addStatic(BOX(0.2, 4.4, 0.2), 0x3a3d42, -40.7, 2.2, -H - 8.3);
+  // ----- las (zachód): ścieżki, ambona, zwalone pnie
+  ZONES.push({ x0: -H - 176, x1: -H - 18, z0: -H - 176, z1: H + 176 });
+  const fr = mulberry(9090), PX = -H - 80, FS = METRO ? 12.5 : 10;      // Metropolia: dłuższy las — rzadziej (płynność)
+  for (let x = -H - 22; x > -H - 172; x -= FS) for (let z = -H - 170; z < H + 170; z += FS) {
+    if (fr() > 0.88) continue;
+    const tx = x + (fr() - 0.5) * 7, tz = z + (fr() - 0.5) * 7;
+    if (Math.abs(tx - PX) < 3.5 || (Math.abs(tz) < 3.5 && tx > PX) || Math.hypot(tx - (-H - 120), tz + 150) < 9) continue;
+    treeSpots.push([tx, tz, 0.95 + fr() * 0.75]);
+    // podszyt: krzaki między drzewami
+    if (fr() < 0.6) { const bs = 0.6 + fr() * 0.8, bx = tx + (fr() - 0.5) * 8, bz = tz + (fr() - 0.5) * 8; if (Math.abs(bx - PX) > 3 && !(Math.abs(bz) < 3 && bx > PX)) addStatic(geo('fBush', () => new THREE.SphereGeometry(1, 9, 6).scale(1, 0.62, 1)), fr() < 0.5 ? 0x2f5a2a : 0x3d6b33, bx, 0.35 * bs, bz, 0, bs, bs, bs); }
+  }
+  padMats();
+  const dirt = new StdMat({ map: repTex(TX.concrete, 1), color: 0x8a6a45, roughness: 1 });
+  flatPlane(PX - 1.8, PX + 1.8, -H - 168, H + 168, 0.02, dirt, 1.5);
+  flatPlane(PX, -H, -1.8, 1.8, 0.02, dirt, 1.5);
+  // ambona
+  const ax = -H - 120, az = -150;
+  for (const [lx, lz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) addStatic(BOX(0.18, 5.2, 0.18), 0x6b4a2b, ax + lx * 1.0, 2.6, az + lz * 1.0);
+  addStatic(BOX(2.4, 2.0, 2.4), 0x7a5233, ax, 6.2, az); addStatic(BOX(1.6, 0.5, 0.06), 0x2a1d12, ax, 6.6, az + 1.21);
+  addStatic(roofPrism(), 0x4a3524, ax, 7.2, az, 0, 2.9, 1.1, 2.9);
+  for (let k = 0; k < 9; k++) addStatic(BOX(0.7, 0.05, 0.05), 0x6b4a2b, ax, 0.5 + k * 0.6, az + 1.6 + k * 0.02);
+  for (const sx of [-0.35, 0.35]) addStatic(BOX(0.06, 5.4, 0.06), 0x6b4a2b, ax + sx, 2.7, az + 1.7);
+  colNH(ax - 1.2, ax + 1.2, az - 1.2, az + 1.2, 7.5);
+  for (let i = 0; i < 9; i++) {
+    const lx = -H - 30 - fr() * 130, lz = (fr() - 0.5) * 2 * (H + 140);
+    if (Math.abs(lx - PX) < 5 || Math.abs(lz) < 5) continue;
+    const ry = fr() * Math.PI;
+    addStatic(geo('log', () => new THREE.CylinderGeometry(0.35, 0.42, 6, 10).rotateZ(Math.PI / 2)), 0x5a4030, lx, 0.38, lz, ry);
+    colNH(lx - 3 * Math.abs(Math.cos(ry)) - 0.4, lx + 3 * Math.abs(Math.cos(ry)) + 0.4, lz - 3 * Math.abs(Math.sin(ry)) - 0.4, lz + 3 * Math.abs(Math.sin(ry)) + 0.4, 0.75);
+  }
+  addSign('FOREST TRAIL', '#6b4a2b', -H - 16, 2.2, 6, -Math.PI / 2, 3.6, 0.8);
+  addStatic(BOX(0.15, 2.6, 0.15), 0x5a4030, -H - 16.1, 1.3, 7.7); addStatic(BOX(0.15, 2.6, 0.15), 0x5a4030, -H - 16.1, 1.3, 4.3);
+}
+
+// ---------------------------------------------------------------- pachołki (parking hipermarketu): można je potrącić
+const TCONES = [];            // [x, z] na starcie; potem obiekty z fizyką
+let tconeMesh = null, coneT = 0;
+function buildTrafficCones() {
+  if (!TCONES.length) return;
+  const parts = [
+    { g: new THREE.CylinderGeometry(0.035, 0.17, 0.66, 14).translate(0, 0.37, 0), c: 0xff6a13 },
+    { g: new THREE.CylinderGeometry(0.105, 0.125, 0.13, 14).translate(0, 0.4, 0), c: 0xffffff },
+    { g: new THREE.BoxGeometry(0.44, 0.04, 0.44).translate(0, 0.02, 0), c: 0xff6a13 },
+  ].map(p => ({ g: p.g, m: IDENT, c: new THREE.Color(p.c) }));
+  tconeMesh = new THREE.InstancedMesh(mergeColored(parts), vcMat, TCONES.length);
+  tconeMesh.castShadow = true; tconeMesh.frustumCulled = false; scene.add(tconeMesh);
+  for (let i = 0; i < TCONES.length; i++) {
+    const [x, z] = TCONES[i];
+    TCONES[i] = { hx: x, hz: z, x, y: 0.03, z, vx: 0, vy: 0, vz: 0, rx: 0, rz: 0, ry: 0, wx: 0, wz: 0, moving: false, t: 0, out: false };
+    tconeMatrix(i);
+  }
+}
+const _cq = new THREE.Quaternion(), _ce = new THREE.Euler(), _cm = new THREE.Matrix4();
+function tconeMatrix(i) {
+  const c = TCONES[i];
+  _cm.compose(_p.set(c.x, c.y, c.z), _cq.setFromEuler(_ce.set(c.rx, c.ry, c.rz)), _s.set(1, 1, 1));
+  tconeMesh.setMatrixAt(i, _cm); tconeMesh.instanceMatrix.needsUpdate = true;
+}
+let driftZoneT = 0;
+function updateTrafficCones(dt) {
+  if (!tconeMesh) return;
+  const v = P.car, focus = v ? v.pos : P.pos;
+  // komunikat przy wjeździe na plac
+  driftZoneT -= dt;
+  if (v && driftZoneT <= 0 && Math.abs(focus.x) < 100 && focus.z > HALF + 4 && focus.z < HALF + 76) { driftZoneT = 150; toast('🏁 Parking driftowy: slalom i kółka wokół pachołków (Spacja = ręczny).', 'good', 4200); }
+  const nearArea = Math.abs(focus.x) < 160 && focus.z > HALF - 60 && focus.z < HALF + 160;
+  for (let i = 0; i < TCONES.length; i++) {
+    const c = TCONES[i];
+    if (v && nearArea && Math.abs(v.speed) > 1.5 && Math.abs(c.x - v.pos.x) < 4 && Math.abs(c.z - v.pos.z) < 4) {
+      const sp = v.spec || VSPEC.car;
+      for (const [cx, cz] of carCircles(v)) {
+        if (Math.hypot(c.x - cx, c.z - cz) < sp.rad + 0.28) {
+          const sg = v.speed < 0 ? -1 : 1, fx = Math.sin(v.heading) * sg, fz = Math.cos(v.heading) * sg, s = Math.abs(v.speed);
+          c.vx = fx * s * 0.95 + (c.x - cx) * 2.5 + (Math.random() - 0.5) * 2; c.vz = fz * s * 0.95 + (c.z - cz) * 2.5 + (Math.random() - 0.5) * 2;
+          c.vy = 2.5 + s * 0.12; c.wx = (Math.random() - 0.5) * 14; c.wz = (Math.random() - 0.5) * 14;
+          c.x += c.vx * 0.03; c.z += c.vz * 0.03; c.moving = true; c.out = true; c.t = 0;
+          Sound.noise(0.06, 0.18, 1400);
+          break;
+        }
+      }
+    }
+    if (c.moving) {
+      c.vy -= 18 * dt; c.x += c.vx * dt; c.y += c.vy * dt; c.z += c.vz * dt; c.rx += c.wx * dt; c.rz += c.wz * dt;
+      if (c.y <= 0.03) {
+        c.y = 0.03; c.vy = Math.abs(c.vy) > 1.5 ? -c.vy * 0.3 : 0; c.vx *= 0.7; c.vz *= 0.7; c.wx *= 0.6; c.wz *= 0.6;
+        if (Math.hypot(c.vx, c.vz) < 0.3 && !c.vy) {
+          c.moving = false;
+          const up = Math.abs(Math.cos(c.rx) * Math.cos(c.rz)) > 0.6;
+          if (up) { c.rx = 0; c.rz = 0; } else { c.rx = 0; c.rz = Math.PI / 2; c.y = 0.17; }
+        }
+      }
+      tconeMatrix(i);
+    }
+    if (c.out) {
+      c.t += dt;
+      if (c.t > 25 && !c.moving && Math.hypot(focus.x - c.hx, focus.z - c.hz) > 45) { Object.assign(c, { x: c.hx, z: c.hz, y: 0.03, rx: 0, rz: 0, out: false }); tconeMatrix(i); }
+    }
+  }
 }
 
 // ---------------------------------------------------------------- Metropolia: osiedla i przedmieścia
@@ -1571,6 +2170,7 @@ function planNodes() {
       kind = METRO ? 2 : 1;
       if (METRO) for (const [a, b] of [[i - 1, j - 1], [i - 1, j], [i, j - 1], [i, j]]) if (blockZone(a, b) !== 'sub') kind = 1;
     }
+    if (RB_NODES.includes(`${i},${j}`)) kind = 3;
     const nd = { i, j, x: rc(i), z: rc(j), kind, off: hash2(i * 3.1 + 0.4, j * 5.7 + 1.3) * SIG.C, minor: ringI ? 'x' : 'z', stop: hash2(j + 0.5, i + 9.5) < 0.25, st: [-1, -1], aps: [], poles: [] };
     nodes.push(nd);
     if (kind === 1) sigNodes.push(nd);
@@ -1595,7 +2195,6 @@ const rsQuads = [];                  // tarcze znaków: {x, y, z, ry, w, h, c: k
 function roadSignQuad(x, y, z, ry, w, h, c, b) { rsQuads.push({ x, y, z, ry, w, h, c, b }); }
 
 function buildRoadFurniture() {
-  planNodes();
   const PY = PAVE_Y, [px, pz] = SIG_POLE, gray = 0x8c9198, dark = 0x1b1d20;
   // szablon sygnalizacji: słup, stopa, wysięgnik z zastrzałem, sygnalizator na słupie i nad pasem
   const T = [];
@@ -1637,6 +2236,11 @@ function buildRoadFurniture() {
         }
         const [sx, sz] = apXZ(nd, ry, px, pz + 0.13);
         roadSignQuad(sx, PY + 4.1, sz, ry, 0.6, 0.6, 3, 7);                      // D-6 przejście dla pieszych nad sygnalizatorem
+      } else if (nd.kind === 3) {
+        addStatic(signPole, 0xa0a5ab, nd.x, 0, nd.z, ry);
+        const [sx, sz] = apXZ(nd, ry, px, pz + 0.06);
+        roadSignQuad(sx, PY + 2.45, sz, ry, 0.72, 0.72, 11, 12);                // C-12 ruch okrężny
+        roadSignQuad(sx, PY + 1.6, sz, ry, 0.82, 0.82, 0, 4);                   // A-7 ustąp pierwszeństwa
       } else {
         addStatic(signPole, 0xa0a5ab, nd.x, 0, nd.z, ry);
         const [sx, sz] = apXZ(nd, ry, px, pz + 0.06);
@@ -1686,8 +2290,10 @@ function updateSignals() {
 // Auta z ruchu (siatka): hamują przed linią zatrzymania na czerwonym i czerwonym z żółtym, na żółtym — gdy zdążą
 // spokojnie zahamować; przed znakiem „ustąp” / STOP na drodze podporządkowanej zwalniają.
 function signalTarget(v, a) {
+  if (a.rb) return Infinity;
   const nd = a.axis === 'x' ? nodeAt(a.k, a.line) : nodeAt(a.line, a.k);
   if (!nd || !nd.kind) return Infinity;
+  if (nd.kind === 3) { const dsr = (rc(a.k) - a.along) * a.dir - STOP_D; return dsr > -3 && dsr < 16 ? 5.5 : Infinity; }
   const key = nd.i * 1000 + nd.j;
   if (a.pass !== key) a.pass = -1;
   const ds = (rc(a.k) - a.along) * a.dir - STOP_D;
@@ -1726,6 +2332,21 @@ function roadSignAtlas() {
   g.moveTo(384 + 52, 62); g.lineTo(384 + 63, 58); g.lineTo(384 + 74, 66); g.stroke();
   // tyły tarcz
   poly(tri(1), BACK, 0, 128); poly(oct(1), BACK, 128, 128); poly(dia(1), BACK, 256, 128); poly(sq(1), BACK, 384, 128);
+  // C-12 ruch okrężny: niebieskie koło z trzema strzałkami
+  g.fillStyle = '#ffffff'; g.beginPath(); g.arc(64, 448, 60, 0, Math.PI * 2); g.fill();
+  g.fillStyle = BLUE; g.beginPath(); g.arc(64, 448, 56, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = '#ffffff'; g.fillStyle = '#ffffff'; g.lineWidth = 7;
+  for (let k = 0; k < 3; k++) {
+    const a0 = k * Math.PI * 2 / 3 - Math.PI / 2, a1 = a0 + 1.45;
+    g.beginPath(); g.arc(64, 448, 30, a0, a1); g.stroke();
+    const ax = 64 + Math.cos(a1) * 30, ay = 448 + Math.sin(a1) * 30, tx = -Math.sin(a1), ty = Math.cos(a1);
+    g.beginPath(); g.moveTo(ax + tx * 13, ay + ty * 13); g.lineTo(ax - Math.cos(a1) * 11, ay - Math.sin(a1) * 11); g.lineTo(ax + Math.cos(a1) * 11, ay + Math.sin(a1) * 11); g.closePath(); g.fill();
+  }
+  g.fillStyle = BACK; g.beginPath(); g.arc(192, 448, 60, 0, Math.PI * 2); g.fill();
+  // przystanek autobusowy
+  poly(sq(1), '#ffffff', 256, 384); poly(sq(0.93), '#f4c20d', 256, 384);
+  g.fillStyle = '#1b5e20'; g.font = '800 64px Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('A', 320, 436);
+  g.fillStyle = '#111111'; g.font = '800 17px Arial, sans-serif'; g.fillText('BUS STOP', 320, 488);
   // tablica miejscowości (E-17a) i koniec miejscowości (E-18a)
   for (const [ox, end] of [[0, false], [256, true]]) {
     g.fillStyle = '#ffffff'; g.fillRect(ox + 4, 260, 248, 120);
@@ -1736,7 +2357,7 @@ function roadSignAtlas() {
   }
   return canvasTex(c, false);
 }
-const RS_CELLS = { 0: [0, 0, 1, 1], 1: [1, 0, 1, 1], 2: [2, 0, 1, 1], 3: [3, 0, 1, 1], 4: [0, 1, 1, 1], 5: [1, 1, 1, 1], 6: [2, 1, 1, 1], 7: [3, 1, 1, 1], 8: [0, 2, 2, 1], 10: [2, 2, 2, 1] };
+const RS_CELLS = { 11: [0, 3, 1, 1], 12: [1, 3, 1, 1], 13: [2, 3, 1, 1], 0: [0, 0, 1, 1], 1: [1, 0, 1, 1], 2: [2, 0, 1, 1], 3: [3, 0, 1, 1], 4: [0, 1, 1, 1], 5: [1, 1, 1, 1], 6: [2, 1, 1, 1], 7: [3, 1, 1, 1], 8: [0, 2, 2, 1], 10: [2, 2, 2, 1] };
 function buildRoadSigns() {
   if (!rsQuads.length) return;
   const pos = [], nor = [], uv = [];
@@ -1999,9 +2620,9 @@ function buildLamps() {
   for (const grp of groupByChunk(lampSpots, l => l)) {
     const posts = new THREE.InstancedMesh(metal, postMat, grp.length), heads = new THREE.InstancedMesh(lens, lampHeadMat, grp.length), pools = new THREE.InstancedMesh(poolGeo, glowPoolMat, grp.length);
     const walks = new THREE.InstancedMesh(walkGeo, walkPoolMat, grp.length);
-    grp.forEach(([x, z], i) => {
-      const ry = lampDir(x, z);
-      d.position.set(x, PAVE_Y, z); d.rotation.set(0, ry, 0); d.updateMatrix(); posts.setMatrixAt(i, d.matrix); heads.setMatrixAt(i, d.matrix);
+    grp.forEach(([x, z, r0], i) => {
+      const ry = r0 != null ? r0 : lampDir(x, z), ly = groundAt(x, z);
+      d.position.set(x, ly, z); d.rotation.set(0, ry, 0); d.updateMatrix(); posts.setMatrixAt(i, d.matrix); heads.setMatrixAt(i, d.matrix);
       const lx = x + Math.sin(ry) * 1.9, lz = z + Math.cos(ry) * 1.9;
       p.position.set(lx, groundAt(lx, lz) + 0.05, lz); p.scale.set(11, 1, 11); p.rotation.set(0, 0, 0); p.updateMatrix(); pools.setMatrixAt(i, p.matrix);
       // chodnik: plama od krawężnika w głąb (jezdnia leży niżej, więc jej plama chodnika nie oświetla)
@@ -2010,7 +2631,7 @@ function buildLamps() {
         const cx = x + Math.sin(ry) * (cm - 3), cz = z + Math.cos(ry) * (cm - 3);
         p.position.set(cx, PAVE_Y + 0.035, cz); p.rotation.set(0, ry + Math.PI, 0); p.scale.set(1, 1, 1); p.updateMatrix(); walks.setMatrixAt(i, p.matrix);
       } else walks.setMatrixAt(i, ZERO_M);
-      const L = { x, z, y: PAVE_Y, ry, down: false, t: 0, parts: [posts, heads, pools, walks].map(m => { const mm = new THREE.Matrix4(); m.getMatrixAt(i, mm); return [m, i, mm]; }) };
+      const L = { x, z, y: ly, ry, down: false, t: 0, parts: [posts, heads, pools, walks].map(m => { const mm = new THREE.Matrix4(); m.getMatrixAt(i, mm); return [m, i, mm]; }) };
       L.col = { x0: x - 0.18, x1: x + 0.18, z0: z - 0.18, z1: z + 0.18, h: 7, lamp: L };
       colliders.push(L.col); lampList.push(L);
     });
@@ -3054,7 +3675,7 @@ function recycleGridCar(v, a, fx, fz) {
     const [x, z] = laneXZ({ axis, dir, line }, along), d = Math.hypot(x - fx, z - fz);
     if (d < 90 || d > 300) continue;
     if (vehicles.some(o => o !== v && Math.hypot(o.pos.x - x, o.pos.z - z) < 14)) continue;
-    Object.assign(a, { axis, dir, line, k, along, stuck: 0, ghost: 0 }); choosePlan(a);
+    Object.assign(a, { axis, dir, line, k, along, stuck: 0, ghost: 0, rb: null }); choosePlan(a);
     v.pos.set(x, 0, z); v.heading = axis === 'x' ? (dir > 0 ? Math.PI / 2 : -Math.PI / 2) : (dir > 0 ? 0 : Math.PI);
     return true;
   }
@@ -3084,6 +3705,7 @@ function spawnParked(count) {
       spawnVehicle(type, carColor(type), x, z, hd, 'parked'); n++;
     }
   }
+  for (const [x, z, hd, type] of EXTRA_PARKS) spawnVehicle(type, carColor(type), x, z, hd, 'parked');
   let tries = 0;
   while (count > 0 && tries++ < 400) {
     const axis = rand() < 0.5 ? 'x' : 'z', line = Math.floor(rand() * (N + 1)), seg = Math.floor(rand() * N);
@@ -3779,7 +4401,7 @@ function surfAt(x, z, icy) {
   let mu = 1, drag = 0;
   if (!REALMAP) {
     if (onBlock(x, z)) { mu = 0.9; drag = 0.01; }
-    else if (Math.abs(x) > HALF || Math.abs(z) > HALF) { mu = 0.65; drag = 0.05; }
+    else if ((Math.abs(x) > HALF || Math.abs(z) > HALF) && !onPad(x, z)) { mu = 0.65; drag = 0.05; }
   }
   _surf.mu = icy ? mu * 0.38 : mu; _surf.drag = drag;
   return _surf;
@@ -4502,7 +5124,7 @@ function updateTraffic(dt) {
   const focus = P.car ? P.car.pos : P.pos;
   for (const v of vehicles) {
     const a = v.ai; if (!a) continue;
-    const fx = a.real ? Math.sin(v.heading) : a.axis === 'x' ? a.dir : 0, fz = a.real ? Math.cos(v.heading) : a.axis === 'z' ? a.dir : 0;
+    const hv = a.real || a.rb, fx = hv ? Math.sin(v.heading) : a.axis === 'x' ? a.dir : 0, fz = hv ? Math.cos(v.heading) : a.axis === 'z' ? a.dir : 0;
     let ahead = Infinity, byPlayer = false, blk = null;
     const look = (ox, oz, isP, ob) => {
       const rx = ox - v.pos.x, rz = oz - v.pos.z, al = rx * fx + rz * fz;
@@ -4515,6 +5137,7 @@ function updateTraffic(dt) {
     let target = a.real ? a.vmax : 11.5;
     if (ahead < 16) target = ahead < 6.5 ? 0 : target * (ahead - 6.5) / 9.5;
     if (!a.real && a.plan.t === 'turn' && Math.abs(a.along - a.turnAt) < 12) target = Math.min(target, 6.5);
+    if (a.rb) target = Math.min(target, 6.5);
     a.red = false;
     if (!a.real && nodes.length) target = Math.min(target, signalTarget(v, a));
     a.queued = !!(blk && blk.ai && (blk.ai.red || blk.ai.queued) && ahead < 12);
@@ -4540,6 +5163,14 @@ function updateTraffic(dt) {
     if (METRO) {
       a.recycle = (a.recycle == null ? 2 * rand() : a.recycle) - dt;
       if (a.recycle <= 0) { a.recycle = 2; if (Math.hypot(v.pos.x - focus.x, v.pos.z - focus.z) > 330) recycleGridCar(v, a, focus.x, focus.z); }
+    }
+    // rondo: jazda po torze wokół wyspy, potem zjazd na wybrany wylot
+    if (a.rb || (startRound(a), a.rb)) {
+      advanceRound(v, a, dt);
+      const far = Math.abs(v.pos.x - focus.x) > 220 || Math.abs(v.pos.z - focus.z) > 220;
+      v.mesh.visible = !far;
+      if (!far) poseCar(v, dt);
+      continue;
     }
     // advance along lane
     a.along += a.dir * v.speed * dt;
@@ -5573,6 +6204,7 @@ function areaFree(x, z, r) {
   if (Math.hypot(x - SPAWN.x, z - SPAWN.z) < r + 50) return false;
   if (MISSIONS.some(m => Math.hypot(m.mx - x, m.mz - z) < r + 25)) return false;
   if (fishSpots.some(s => Math.hypot(s.x - x, s.z - z) < r + 20)) return false;
+  if (!REALMAP && inZone(x, z, r + 6)) return false;
   if (!REALMAP) return !onBlock(x, z) && !(Math.abs(x) < HALF + r && Math.abs(z) < HALF + r) && Math.hypot(x - LAKE.x, z - LAKE.z) > LAKE.r + r + 8;
   if (roadGraph) { const q = nearestOnRoad(x, z); if (q && q.d < r + 3) return false; }
   for (const L of [WD.water, WD.roads]) {
@@ -5667,6 +6299,7 @@ function buildHomes() {
   const rng = mulberry(9001 + MAP_ID.length * 131 + (MAP_ID.charCodeAt(0) || 0));
   const cands = [];
   for (const c of colliders) {
+    if (c.nh) continue;                       // hale, szkoły, sklepy — bez „domów z wnętrzem”
     if (c.rings) {
       if (c.h < 3 || c.h > 40) continue;
       const r = c.rings[0];
@@ -6157,7 +6790,7 @@ function recommendMission() {
 }
 
 // ---------------------------------------------------------------- map rendering
-const MAP_EXT = REALMAP ? W_EXT + 15 : HALF + 70, MAPS = 1024, MSC = MAPS / (2 * MAP_EXT);
+const MAP_EXT = REALMAP ? W_EXT + 15 : BOUND + 5, MAPS = 1024, MSC = MAPS / (2 * MAP_EXT);
 const w2m = v => (v + MAP_EXT) * MSC;
 const mapCanvas = makeCanvas(MAPS, MAPS);
 function buildMapCanvas() {
@@ -7157,6 +7790,8 @@ function frame() {
   updateSmoke(dt);
   updateSparks(dt);
   updateFallenLamps(dt);
+  updateTrafficCones(dt);
+  if (ui !== 'start') updateRefuel(dt);
   updateChase(dt);
   if (ui !== 'start') { updateSeason(dt); updateMissionTimer(dt); updateMushrooms(dt); checkFishSpots(); updateFishing(dt); checkMapEdge(dt); }
   netTick(dt);
