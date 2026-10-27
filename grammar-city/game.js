@@ -1315,6 +1315,8 @@ function buildCity() {
     if (Math.hypot(x - LAKE.x, z - LAKE.z) < LAKE.r + 4.5) continue;
     treeSpots.push([x, z, rr(1, 1.8)]);
   }
+  buildRoadFurniture();
+  buildHills();
   buildTrees();
   buildLamps();
   // merged meshes
@@ -1543,6 +1545,262 @@ function buildShopSigns() {
   winMats.push(m);
   const mesh = new THREE.Mesh(geom, m); mesh.receiveShadow = true; mesh.frustumCulled = false; scene.add(mesh);
 }
+// ---------------------------------------------------------------- sygnalizacja, znaki drogowe, wzgórza (siatka: Grammar City i Metropolia)
+// Skrzyżowanie: kind 1 = sygnalizacja (słup z wysięgnikiem nad pasem, dwa sygnalizatory z tablicą kontrastową, znak D-6),
+// kind 2 = pierwszeństwo (A-7 „ustąp” albo B-20 STOP na drodze podporządkowanej, D-1 na głównej), kind 0 = zakręt w rogu mapy.
+// Cykl świateł jak w Polsce: zielone → żółte → czerwone → czerwone z żółtym; kierunki N–S i W–E na zmianę, chwila „wszystkie czerwone”.
+const SIG = { G: 14, Y: 3, AR: 2, RY: 1.5 };
+SIG.C = 2 * (SIG.G + SIG.Y + SIG.AR);
+const STOP_D = 15.2;                 // środek auta zatrzymanego przed linią (linia 12,8 m od środka skrzyżowania)
+const nodes = [];                    // (N+1)² skrzyżowań: {i, j, x, z, kind, off, minor, stop, st, aps, poles}
+const sigNodes = [];
+const nodeAt = (i, j) => (i < 0 || j < 0 || i > N || j > N ? null : nodes[i * (N + 1) + j]);
+// stan świateł dla ruchu wzdłuż osi: 0 zielone, 1 żółte, 2 czerwone, 3 czerwone z żółtym
+function sigState(nd, axis, t = elapsed) {
+  let ph = ((t + nd.off) % SIG.C + SIG.C) % SIG.C;
+  if (axis === 'x') ph = (ph + SIG.C / 2) % SIG.C;
+  return ph < SIG.G ? 0 : ph < SIG.G + SIG.Y ? 1 : ph >= SIG.C - SIG.RY ? 3 : 2;
+}
+// Grammar City: światła na wszystkich skrzyżowaniach w środku, na obwodnicy pierwszeństwo.
+// Metropolia: światła w centrum i na osiedlach, na przedmieściach znaki (droga główna wzdłuż osi X).
+function planNodes() {
+  for (let i = 0; i <= N; i++) for (let j = 0; j <= N; j++) {
+    const ringI = i === 0 || i === N, ringJ = j === 0 || j === N;
+    let kind = ringI && ringJ ? 0 : 2;
+    if (!ringI && !ringJ) {
+      kind = METRO ? 2 : 1;
+      if (METRO) for (const [a, b] of [[i - 1, j - 1], [i - 1, j], [i, j - 1], [i, j]]) if (blockZone(a, b) !== 'sub') kind = 1;
+    }
+    const nd = { i, j, x: rc(i), z: rc(j), kind, off: hash2(i * 3.1 + 0.4, j * 5.7 + 1.3) * SIG.C, minor: ringI ? 'x' : 'z', stop: hash2(j + 0.5, i + 9.5) < 0.25, st: [-1, -1], aps: [], poles: [] };
+    nodes.push(nd);
+    if (kind === 1) sigNodes.push(nd);
+  }
+}
+// Wjazdy na skrzyżowanie: [oś ruchu, obrót]. Szablon jest dla ruchu z +Z (jedzie w −Z, prawa strona = +X).
+function nodeApproaches(nd) {
+  const out = [];
+  if (nd.j < N) out.push(['z', 0]);
+  if (nd.j > 0) out.push(['z', Math.PI]);
+  if (nd.i < N) out.push(['x', Math.PI / 2]);
+  if (nd.i > 0) out.push(['x', -Math.PI / 2]);
+  return out;
+}
+// punkt szablonu (lx, lz) → świat dla wjazdu obróconego o ry (jak rotation.y w three.js)
+const apXZ = (nd, ry, lx, lz) => [nd.x + lx * Math.cos(ry) + lz * Math.sin(ry), nd.z - lx * Math.sin(ry) + lz * Math.cos(ry)];
+const SIG_POLE = [9.3, 13.4];        // słup na rogu chodnika, tuż przed przejściem dla pieszych
+const SIG_ON = [new THREE.Color(4, 0.3, 0.12), new THREE.Color(3.4, 1.7, 0.08), new THREE.Color(0.25, 3.4, 1.1)];
+const SIG_OFF = [new THREE.Color(0.09, 0.02, 0.02), new THREE.Color(0.09, 0.065, 0.01), new THREE.Color(0.02, 0.08, 0.04)];
+let sigMesh = null;
+const rsQuads = [];                  // tarcze znaków: {x, y, z, ry, w, h, c: komórka atlasu, b: tył}
+function roadSignQuad(x, y, z, ry, w, h, c, b) { rsQuads.push({ x, y, z, ry, w, h, c, b }); }
+
+function buildRoadFurniture() {
+  planNodes();
+  const PY = PAVE_Y, [px, pz] = SIG_POLE, gray = 0x8c9198, dark = 0x1b1d20;
+  // szablon sygnalizacji: słup, stopa, wysięgnik z zastrzałem, sygnalizator na słupie i nad pasem
+  const T = [];
+  const part = (g, c) => T.push([g, c]);
+  part(new THREE.CylinderGeometry(0.085, 0.12, 6.3, 8).translate(px, PY + 3.15, pz), gray);
+  part(new THREE.CylinderGeometry(0.19, 0.22, 0.3, 8).translate(px, PY + 0.15, pz), 0x6d7177);
+  part(new THREE.CylinderGeometry(0.055, 0.075, 6.8, 6).rotateZ(Math.PI / 2).translate(px - 3.4, PY + 6.0, pz), gray);
+  part(new THREE.CylinderGeometry(0.03, 0.03, 2.2, 5).rotateZ(Math.atan2(1.9, 1.1)).translate(px - 0.95, PY + 5.45, pz), gray);
+  const heads = [[px - 0.45, PY + 2.9], [3.4, PY + 5.39]], bulbs = [];
+  for (const [hx, hy] of heads) {
+    part(new THREE.BoxGeometry(0.36, 1.0, 0.26).translate(hx, hy, pz), dark);
+    part(new THREE.BoxGeometry(0.58, 1.22, 0.02).translate(hx, hy, pz - 0.15), 0xf2c418);       // tablica kontrastowa: żółta obwódka
+    part(new THREE.BoxGeometry(0.5, 1.14, 0.02).translate(hx, hy, pz - 0.138), 0x16181a);
+    for (const o of [0.31, 0, -0.31]) {
+      part(new THREE.BoxGeometry(0.3, 0.025, 0.16).translate(hx, hy + o + 0.155, pz + 0.21), dark);   // daszki komór
+      bulbs.push([hx, hy + o, pz + 0.132]);
+    }
+  }
+  part(new THREE.BoxGeometry(0.22, 0.07, 0.07).translate(px - 0.15, PY + 3.2, pz), gray);
+  part(new THREE.BoxGeometry(0.22, 0.07, 0.07).translate(px - 0.15, PY + 2.6, pz), gray);
+  part(new THREE.BoxGeometry(0.06, 0.12, 0.06).translate(3.4, PY + 5.93, pz), gray);
+  const signPole = new THREE.CylinderGeometry(0.035, 0.04, 2.75, 6).translate(px, PY + 1.375, pz);
+  const nBulbs = sigNodes.reduce((n, nd) => n + nodeApproaches(nd).length, 0) * bulbs.length;
+  sigMesh = new THREE.InstancedMesh(geo('sigBulb', () => new THREE.CircleGeometry(0.105, 12)), new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }), Math.max(1, nBulbs));
+  const d = new THREE.Object3D();
+  let k = 0;
+  for (const nd of nodes) {
+    if (!nd.kind) continue;
+    for (const [axis, ry] of nodeApproaches(nd)) {
+      const [wx, wz] = apXZ(nd, ry, px, pz);
+      nd.poles.push([wx, wz]);
+      addCol(wx - 0.16, wx + 0.16, wz - 0.16, wz + 0.16, nd.kind === 1 ? 6.3 : 2.9);
+      if (nd.kind === 1) {
+        for (const [g, c] of T) addStatic(g, c, nd.x, 0, nd.z, ry);
+        nd.aps.push({ axis, k });
+        for (const [bx, by, bz] of bulbs) {
+          const [x, z] = apXZ(nd, ry, bx, bz);
+          d.position.set(x, by, z); d.rotation.set(0, ry, 0); d.updateMatrix(); sigMesh.setMatrixAt(k++, d.matrix);
+        }
+        const [sx, sz] = apXZ(nd, ry, px, pz + 0.13);
+        roadSignQuad(sx, PY + 4.1, sz, ry, 0.6, 0.6, 3, 7);                      // D-6 przejście dla pieszych nad sygnalizatorem
+      } else {
+        addStatic(signPole, 0xa0a5ab, nd.x, 0, nd.z, ry);
+        const [sx, sz] = apXZ(nd, ry, px, pz + 0.06);
+        if (axis === nd.minor) { if (nd.stop) roadSignQuad(sx, PY + 2.4, sz, ry, 0.8, 0.8, 1, 5); else roadSignQuad(sx, PY + 2.35, sz, ry, 0.9, 0.9, 0, 4); }
+        else roadSignQuad(sx, PY + 2.4, sz, ry, 0.72, 0.72, 2, 6);               // D-1 droga z pierwszeństwem
+      }
+    }
+  }
+  sigMesh.count = k;
+  sigMesh.frustumCulled = false; scene.add(sigMesh);
+  for (const nd of sigNodes) { nd.st = [-1, -1]; }
+  updateSignals();
+  // tablice miejscowości przy granicy miasta: od zewnątrz „GRAMMAR CITY”, od środka — koniec miejscowości
+  for (const t of N >= 16 ? [4, 12] : [2, 6]) {
+    for (const [x0, z0, ry] of [[rc(t), -HALF - 2.5, Math.PI], [rc(t), HALF + 2.5, 0], [-HALF - 2.5, rc(t), -Math.PI / 2], [HALF + 2.5, rc(t), Math.PI / 2]]) {
+      const ox = Math.cos(ry) * 0.68, oz = -Math.sin(ry) * 0.68;
+      const x = x0 + ox * 9, z = z0 + oz * 9;          // po prawej stronie wjeżdżającego, obok osi ulicy
+      for (const sg of [-1, 1]) {
+        addStatic(geo('townPost', () => new THREE.CylinderGeometry(0.04, 0.045, 2.5, 6).translate(0, 1.25, 0)), 0xa0a5ab, x + ox * sg, 0, z + oz * sg);
+        addCol(x + ox * sg - 0.1, x + ox * sg + 0.1, z + oz * sg - 0.1, z + oz * sg + 0.1, 2.5);
+      }
+      roadSignQuad(x, 2.05, z, ry, 1.7, 0.85, 8, 10);
+    }
+  }
+  // drzewa przy chodniku, które weszłyby w słup lub sygnalizator — usuwamy
+  const keep = treeSpots.filter(([x, z]) => {
+    const nd = nodeAt(gridIdx(x), gridIdx(z));
+    return !nd || !nd.poles.some(([qx, qz]) => Math.hypot(qx - x, qz - z) < 3.4);
+  });
+  treeSpots.length = 0; treeSpots.push(...keep);
+  buildRoadSigns();
+}
+function updateSignals() {
+  if (!sigMesh) return;
+  let dirty = false;
+  for (const nd of sigNodes) {
+    const sz = sigState(nd, 'z'), sx = sigState(nd, 'x');
+    if (sz === nd.st[0] && sx === nd.st[1]) continue;
+    nd.st[0] = sz; nd.st[1] = sx; dirty = true;
+    for (const ap of nd.aps) {
+      const st = ap.axis === 'z' ? sz : sx, on = [st >= 2, st === 1 || st === 3, st === 0];
+      for (let h = 0; h < 2; h++) for (let b = 0; b < 3; b++) sigMesh.setColorAt(ap.k + h * 3 + b, on[b] ? SIG_ON[b] : SIG_OFF[b]);
+    }
+  }
+  if (dirty) sigMesh.instanceColor.needsUpdate = true;
+}
+// Auta z ruchu (siatka): hamują przed linią zatrzymania na czerwonym i czerwonym z żółtym, na żółtym — gdy zdążą
+// spokojnie zahamować; przed znakiem „ustąp” / STOP na drodze podporządkowanej zwalniają.
+function signalTarget(v, a) {
+  const nd = a.axis === 'x' ? nodeAt(a.k, a.line) : nodeAt(a.line, a.k);
+  if (!nd || !nd.kind) return Infinity;
+  const key = nd.i * 1000 + nd.j;
+  if (a.pass !== key) a.pass = -1;
+  const ds = (rc(a.k) - a.along) * a.dir - STOP_D;
+  if (ds < 0 || ds > 70) return Infinity;
+  if (nd.kind === 2) return nd.minor === a.axis && ds < 16 ? (nd.stop ? 2.5 : 4.5) : Infinity;
+  if (a.pass === key) return Infinity;
+  const st = sigState(nd, a.axis);
+  if (st === 0 || (st === 1 && ds < v.speed * v.speed / 9 + 1)) { if (ds < 4) a.pass = key; return Infinity; }
+  a.red = true;
+  return ds < 0.4 ? 0 : Math.sqrt(7 * ds);
+}
+// Atlas znaków 512×512 (komórki 128 px): 0 A-7, 1 B-20, 2 D-1, 3 D-6, 4–7 tyły (szare), 8 tablica miejscowości, 10 koniec miejscowości.
+function roadSignAtlas() {
+  const c = makeCanvas(512, 512), g = c.getContext('2d');
+  const poly = (pts, fill, ox, oy) => { g.beginPath(); pts.forEach(([x, y], i) => (i ? g.lineTo(x + ox, y + oy) : g.moveTo(x + ox, y + oy))); g.closePath(); g.fillStyle = fill; g.fill(); };
+  const tri = k => [[64 - 58 * k, 64 - 50 * k], [64 + 58 * k, 64 - 50 * k], [64, 64 + 50 * k]].map(([x, y]) => [x, y + 6]);
+  const oct = k => Array.from({ length: 8 }, (_, i) => { const a = Math.PI / 8 + i * Math.PI / 4; return [64 + Math.cos(a) * 60 * k, 64 + Math.sin(a) * 60 * k]; });
+  const dia = k => [[64, 64 - 60 * k], [64 + 60 * k, 64], [64, 64 + 60 * k], [64 - 60 * k, 64]];
+  const sq = k => [[64 - 60 * k, 64 - 60 * k], [64 + 60 * k, 64 - 60 * k], [64 + 60 * k, 64 + 60 * k], [64 - 60 * k, 64 + 60 * k]];
+  const YEL = '#f6c90e', RED = '#c8102e', BLUE = '#1f5fae', BACK = '#8e939a';
+  // A-7 ustąp pierwszeństwa
+  poly(tri(1), '#ffffff', 0, 0); poly(tri(0.95), RED, 0, 0); poly(tri(0.68), YEL, 0, 0);
+  // B-20 STOP
+  poly(oct(1), '#ffffff', 128, 0); poly(oct(0.93), RED, 128, 0);
+  g.fillStyle = '#ffffff'; g.font = '800 34px Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('STOP', 192, 66);
+  // D-1 droga z pierwszeństwem
+  poly(dia(1), '#ffffff', 256, 0); poly(dia(0.9), '#222222', 256, 0); poly(dia(0.86), '#ffffff', 256, 0); poly(dia(0.56), YEL, 256, 0);
+  // D-6 przejście dla pieszych
+  poly(sq(1), '#ffffff', 384, 0); poly(sq(0.93), BLUE, 384, 0);
+  poly([[64, 22], [106, 102], [22, 102]], '#ffffff', 384, 0);
+  g.fillStyle = '#111111';
+  for (let i = 0; i < 4; i++) g.fillRect(384 + 30 + i * 18, 92, 10, 6);
+  g.beginPath(); g.arc(384 + 66, 46, 6, 0, Math.PI * 2); g.fill();
+  g.lineWidth = 5; g.lineCap = 'round'; g.strokeStyle = '#111111'; g.beginPath();
+  g.moveTo(384 + 64, 54); g.lineTo(384 + 61, 72); g.lineTo(384 + 52, 86); g.moveTo(384 + 61, 72); g.lineTo(384 + 72, 86);
+  g.moveTo(384 + 52, 62); g.lineTo(384 + 63, 58); g.lineTo(384 + 74, 66); g.stroke();
+  // tyły tarcz
+  poly(tri(1), BACK, 0, 128); poly(oct(1), BACK, 128, 128); poly(dia(1), BACK, 256, 128); poly(sq(1), BACK, 384, 128);
+  // tablica miejscowości (E-17a) i koniec miejscowości (E-18a)
+  for (const [ox, end] of [[0, false], [256, true]]) {
+    g.fillStyle = '#ffffff'; g.fillRect(ox + 4, 260, 248, 120);
+    g.strokeStyle = '#111111'; g.lineWidth = 6; g.strokeRect(ox + 12, 268, 232, 104);
+    g.fillStyle = '#111111'; g.font = '800 34px Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText('GRAMMAR', ox + 128, 302); g.fillText('CITY', ox + 128, 340);
+    if (end) { g.strokeStyle = RED; g.lineWidth = 10; g.beginPath(); g.moveTo(ox + 20, 366); g.lineTo(ox + 236, 274); g.stroke(); }
+  }
+  return canvasTex(c, false);
+}
+const RS_CELLS = { 0: [0, 0, 1, 1], 1: [1, 0, 1, 1], 2: [2, 0, 1, 1], 3: [3, 0, 1, 1], 4: [0, 1, 1, 1], 5: [1, 1, 1, 1], 6: [2, 1, 1, 1], 7: [3, 1, 1, 1], 8: [0, 2, 2, 1], 10: [2, 2, 2, 1] };
+function buildRoadSigns() {
+  if (!rsQuads.length) return;
+  const pos = [], nor = [], uv = [];
+  const quad = (q, cell, flip) => {
+    const ry = q.ry + (flip ? Math.PI : 0), cs = Math.cos(ry), sn = Math.sin(ry), off = flip ? -0.012 : 0.012;
+    const [cx, cy, cw, ch] = RS_CELLS[cell], u0 = cx / 4, u1 = (cx + cw) / 4, v1 = 1 - cy / 4, v0 = 1 - (cy + ch) / 4;
+    const bx = q.x + Math.sin(q.ry) * off, bz = q.z + Math.cos(q.ry) * off;
+    const C = [[-q.w / 2, -q.h / 2, u0, v0], [q.w / 2, -q.h / 2, u1, v0], [q.w / 2, q.h / 2, u1, v1], [-q.w / 2, q.h / 2, u0, v1]];
+    for (const i of [0, 1, 2, 0, 2, 3]) {
+      const [o, y, u, v] = C[i];
+      pos.push(bx + cs * o, q.y + y, bz - sn * o); nor.push(sn, 0, cs); uv.push(u, v);
+    }
+  };
+  for (const q of rsQuads) { quad(q, q.c, false); quad(q, q.b, true); }
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geom.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  geom.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geom.computeBoundingSphere();
+  const tex = roadSignAtlas();
+  // folia odblaskowa: nocą tarcze lekko „świecą” (jak w światłach aut)
+  const m = new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.5, roughness: 0.42, metalness: 0.05, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0 });
+  m.userData.emi = 0.22; winMats.push(m);
+  const mesh = new THREE.Mesh(geom, m); mesh.receiveShadow = true; mesh.frustumCulled = false; scene.add(mesh);
+  rsQuads.length = 0;
+}
+// Wzgórza na horyzoncie: pierścień terenu daleko za miastem. Mgła sceny jest krótka (miasto), więc wzgórza mają własną —
+// u podnóża pełna (łączy się z ziemią we mgle), wyżej zostaje zamglona sylwetka. Kolor zależy od pory roku.
+const HILL_COL = { spring: 0x6c9a52, summer: 0x5a8442, autumn: 0x93804a, winter: 0xc8d2dd };
+let hillMat = null;
+function buildHills() {
+  const seg = 180, rings = 7, r0 = HALF + 640, r1 = HALF + 1300, hs = clamp(r0 / 1250, 0.6, 1), PER = 18;
+  const nz = makeNoise(777), pos = [], col = [], idx = [];
+  for (let k = 0; k <= rings; k++) {
+    const t = k / rings, env = Math.pow(Math.sin(t * Math.PI), 0.8);
+    for (let si = 0; si <= seg; si++) {
+      const a = si / seg * Math.PI * 2, u = si / seg * PER;
+      const hn = fbm(nz, u, k * 0.7 + 3, 4, PER), h = env * (18 + smooth01((hn - 0.3) / 0.45) * 165) * hs;
+      const r = r0 + (r1 - r0) * t + (fbm(nz, u * 2, k * 1.1 + 11, 2, PER * 2) - 0.5) * 90 * env;
+      pos.push(Math.cos(a) * r, h, Math.sin(a) * r);
+      const c = (0.6 + 0.4 * fbm(nz, u * 3, k * 1.7 + 20, 3, PER * 3)) * (0.88 + 0.22 * Math.min(1, h / 220));
+      col.push(c, c, c * 0.96);
+    }
+  }
+  for (let k = 0; k < rings; k++) for (let si = 0; si < seg; si++) {
+    const a = k * (seg + 1) + si, b = a + 1, c = a + seg + 1, e = c + 1;
+    idx.push(a, b, c, b, e, c);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setIndex(idx); g.computeVertexNormals(); g.computeBoundingSphere();
+  hillMat = new StdMat({ vertexColors: true, roughness: 1, color: HILL_COL.summer });
+  hillMat.onBeforeCompile = sh => {
+    sh.vertexShader = 'varying float vHillY;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvHillY = transformed.y;');
+    sh.fragmentShader = 'varying float vHillY;\n' + sh.fragmentShader.replace('#include <fog_fragment>',
+      '#ifdef USE_FOG\n  float fogF = mix(1.0, 0.38 + 0.36 * smoothstep(800.0, 2400.0, vFogDepth), smoothstep(3.0, 60.0, vHillY));\n  gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, fogF);\n#endif');
+  };
+  hillMat.customProgramCacheKey = () => 'hills1';
+  const hills = new THREE.Mesh(g, hillMat);
+  hills.position.y = -0.05; scene.add(hills);
+}
+const smooth01 = x => { const t = clamp(x, 0, 1); return t * t * (3 - 2 * t); };
+
 const MISSION_TINTS = [0xf0d7a8, 0xd2e4f2, 0xe8c9b8, 0xcfe0c4, 0xe4d2ec, 0xf5e2b8];
 function buildMissionBuilding(m) {
   const X0 = m.lotX0, Z0 = m.lotZ0, sx = m.side;
@@ -4038,21 +4296,24 @@ function updateTraffic(dt) {
   for (const v of vehicles) {
     const a = v.ai; if (!a) continue;
     const fx = a.real ? Math.sin(v.heading) : a.axis === 'x' ? a.dir : 0, fz = a.real ? Math.cos(v.heading) : a.axis === 'z' ? a.dir : 0;
-    let ahead = Infinity, byPlayer = false;
-    const look = (ox, oz, isP) => {
+    let ahead = Infinity, byPlayer = false, blk = null;
+    const look = (ox, oz, isP, ob) => {
       const rx = ox - v.pos.x, rz = oz - v.pos.z, al = rx * fx + rz * fz;
       if (al <= 0 || al > 16) return;
-      if (Math.abs(rx * fz - rz * fx) < 2.4 && al < ahead) { ahead = al; byPlayer = isP; }
+      if (Math.abs(rx * fz - rz * fx) < 2.4 && al < ahead) { ahead = al; byPlayer = isP; blk = ob; }
     };
-    if (a.ghost <= 0) for (const o of vehicles) if (o !== v && !(o.spec && o.spec.fly && o.pos.y > 2)) look(o.pos.x, o.pos.z, o === P.car);
+    if (a.ghost <= 0) for (const o of vehicles) if (o !== v && !(o.spec && o.spec.fly && o.pos.y > 2)) look(o.pos.x, o.pos.z, o === P.car, o);
     if (!P.car) look(P.pos.x, P.pos.z, true);
     else if (a.ghost > 0) look(P.car.pos.x, P.car.pos.z, true);
     let target = a.real ? a.vmax : 11.5;
     if (ahead < 16) target = ahead < 6.5 ? 0 : target * (ahead - 6.5) / 9.5;
     if (!a.real && a.plan.t === 'turn' && Math.abs(a.along - a.turnAt) < 12) target = Math.min(target, 6.5);
+    a.red = false;
+    if (!a.real && nodes.length) target = Math.min(target, signalTarget(v, a));
+    a.queued = !!(blk && blk.ai && (blk.ai.red || blk.ai.queued) && ahead < 12);
     if (season() === 'winter') target *= 0.8;
     v.speed = target < v.speed ? Math.max(target, v.speed - 20 * dt) : Math.min(target, v.speed + 5 * dt);
-    if (v.speed < 0.3 && target === 0) {
+    if (v.speed < 0.3 && target === 0 && !a.red && !a.queued) {
       a.stuck += dt;
       if (byPlayer && a.stuck > 1.6 && v.honk <= 0 && Math.hypot(v.pos.x - focus.x, v.pos.z - focus.z) < 45) { Sound.horn(); v.honk = 4; }
       if (!byPlayer && a.stuck > 2.5) { a.ghost = 2.5; a.stuck = 0; }
@@ -4343,6 +4604,7 @@ function applySeason(announce) {
     }
     treeLodT = 0;   // kwitnienie wiosną — przy najbliższej aktualizacji LOD
   }
+  if (hillMat) hillMat.color.setHex(HILL_COL[s]);
   if (!seasonMatList) seasonMatList = collectSeasonMats();
   const W = s === 'winter';
   for (const { m, k } of seasonMatList) {
@@ -6684,6 +6946,7 @@ function frame() {
     if (!far) { v.pos.y = groundAt(v.pos.x, v.pos.z); v.mesh.position.copy(v.pos); }
   }
   updateTraffic(dt);
+  updateSignals();
   updateSmoke(dt);
   updateChase(dt);
   if (ui !== 'start') { updateSeason(dt); updateMissionTimer(dt); updateMushrooms(dt); checkFishSpots(); updateFishing(dt); checkMapEdge(dt); }
