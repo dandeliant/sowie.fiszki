@@ -108,7 +108,7 @@ const GC_GUEST = !GC_LOGIN || GC_LOGIN === '__guest__';
 const MODE_SLOT = window.GC_SAVE_KEY ? window.GC_SAVE_KEY.replace(/^grammarCity\./, '') : 'grammar';
 const SHARED_KEY = 'grammarCity.shared.' + GC_LOGIN;
 const PROG_KEY = 'grammarCity.prog.' + GC_LOGIN + '.' + MODE_SLOT;
-const SHARED_FIELDS = ['money', 'xp', 'gems', 'gemsFound', 'zoo', 'urbex', 'fish', 'mushrooms', 'wheelieBest'];
+const SHARED_FIELDS = ['money', 'xp', 'gems', 'gemsFound', 'zoo', 'urbex', 'fish', 'mushrooms', 'wheelieBest', 'driftBest'];
 const freshSave = () => ({ done: {}, best: {}, money: 0, xp: 0 });
 const freshWardrobe = () => ({ owned: { outfit_classic: 1, hat_cap: 1, hat_none: 1, glasses_none: 1, hair_blond: 1, veh_kscooter: 1 },
   equip: { outfit: 'classic', hat: 'cap', glasses: 'none', hair: 'blond', vehicle: 'veh_kscooter' }, talked: {}, fuel: 1, vcolor: {}, smode: 'S' });
@@ -198,6 +198,7 @@ function mergeShared(srv, loc) {
   const r = Object.assign({}, srv);
   for (const f of ['money', 'xp', 'gems', 'mushrooms', 'fish']) r[f] = (+srv[f] || 0) + (+loc[f] || 0);
   r.wheelieBest = Math.max(+srv.wheelieBest || 0, +loc.wheelieBest || 0);
+  r.driftBest = Math.max(+srv.driftBest || 0, +loc.driftBest || 0);
   for (const f of ['zoo', 'urbex', 'gemsFound']) r[f] = Object.assign({}, loc[f] || {}, srv[f] || {});
   const ws = normWardrobe(srv.wardrobe), wl = normWardrobe(loc.wardrobe);
   r.wardrobe = Object.assign({}, ws, { owned: Object.assign({}, wl.owned, ws.owned), talked: Object.assign({}, wl.talked, ws.talked), vcolor: Object.assign({}, wl.vcolor, ws.vcolor) });
@@ -279,7 +280,9 @@ const hemi = new THREE.HemisphereLight(0xdbeeff, 0x4d5a3c, 0.62);
 scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xffffff, 0.95);
 sun.castShadow = true;
-sun.shadow.mapSize.set(1024, 1024);
+// ostrzejsze cienie na komputerze (myszka); na telefonie / tablecie mniejsza mapa cieni
+const SHADOW_RES = window.matchMedia && matchMedia('(pointer: coarse)').matches ? 1024 : 2048;
+sun.shadow.mapSize.set(SHADOW_RES, SHADOW_RES);
 Object.assign(sun.shadow.camera, { left: -70, right: 70, top: 70, bottom: -70, near: 1, far: 420 });
 sun.shadow.bias = -0.0006;
 scene.add(sun, sun.target);
@@ -297,10 +300,12 @@ const vcMat = new THREE.MeshLambertMaterial({ vertexColors: true });
 const personMat = new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 14, specular: 0x1c1712 });
 function mergeColored(parts) {
   let count = 0;
-  const gs = parts.map(p => { const g = p.g.index ? p.g.toNonIndexed() : p.g.clone(); g.applyMatrix4(p.m); count += g.attributes.position.count; return [g, p.c]; });
+  const gs = parts.map(p => { const g = p.g.index ? p.g.toNonIndexed() : p.g.clone(); g.applyMatrix4(p.m); count += g.attributes.position.count; return [g, p.c, p.gl]; });
   const pos = new Float32Array(count * 3), nor = new Float32Array(count * 3), col = new Float32Array(count * 3);
+  // połysk części (lakier, chrom, szyby) — atrybut „gloss” tylko gdy któraś część go ma (auta)
+  const glossy = parts.some(p => p.gl != null || p.g.attributes.gloss), gls = glossy ? new Float32Array(count) : null;
   let o = 0;
-  for (const [g, c] of gs) {
+  for (const [g, c, gl] of gs) {
     const n = g.attributes.position.count;
     pos.set(g.attributes.position.array, o * 3); nor.set(g.attributes.normal.array, o * 3);
     const ca = g.attributes.color;   // własne kolory wierzchołków (np. twarz) = odcień mnożony przez kolor części
@@ -308,15 +313,51 @@ function mergeColored(parts) {
       const t = ca ? ca.array : null, k = i * 3;
       col[(o + i) * 3] = c.r * (t ? t[k] : 1); col[(o + i) * 3 + 1] = c.g * (t ? t[k + 1] : 1); col[(o + i) * 3 + 2] = c.b * (t ? t[k + 2] : 1);
     }
+    if (gls) { const ga = g.attributes.gloss; for (let i = 0; i < n; i++) gls[o + i] = ga ? ga.array[i] : gl != null ? gl : 0.2; }
     o += n; g.dispose();
   }
   const out = new THREE.BufferGeometry();
   out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
   out.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  if (gls) out.setAttribute('gloss', new THREE.BufferAttribute(gls, 1));
   out.computeBoundingSphere();
   return out;
 }
+// Lakier aut: PBR z odbiciem nieba i miasta (mapa otoczenia z prostej sceny). Połysk z atrybutu „gloss”:
+// 0 = guma/plastik (matowe), ~0,6 = lakier, ~0,9 = szyby i lampy, 1 = chrom (metal).
+// Lakier ma warstwę bezbarwną (clearcoat) — ostre odbicia nieba i budynków; guma i plastik bez niej.
+const carPaintMat = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.45, metalness: 0.1, clearcoat: 0.7, clearcoatRoughness: 0.07 });
+carPaintMat.onBeforeCompile = sh => {
+  sh.vertexShader = 'attribute float gloss;\nvarying float vGloss;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvGloss = gloss;');
+  sh.fragmentShader = 'varying float vGloss;\n' + sh.fragmentShader
+    .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = mix(0.92, 0.12, vGloss);')
+    .replace('#include <metalnessmap_fragment>', 'float metalnessFactor = smoothstep(0.93, 1.0, vGloss) * 0.95 + vGloss * 0.06;')
+    .replace('#include <lights_physical_fragment>', '#include <lights_physical_fragment>\n#ifdef CLEARCOAT\nmaterial.clearcoat *= smoothstep(0.5, 0.58, vGloss) * (1.0 - smoothstep(0.8, 0.88, vGloss));\n#endif');
+};
+carPaintMat.customProgramCacheKey = () => 'carPaint2';
+function makeCarEnv() {
+  const s = new THREE.Scene(), C = c => new THREE.Color(c);
+  const sky = new THREE.SphereGeometry(50, 48, 24), p = sky.attributes.position, cols = [];
+  for (let i = 0; i < p.count; i++) {
+    const y = p.getY(i) / 50;
+    const c = y > 0.02 ? C(0xe4f0fa).lerp(C(0x4f86c9), Math.pow(y, 0.6)) : y > -0.02 ? C(0xf4f7fa) : C(0xb4b7b0).lerp(C(0x74776f), Math.min(1, -y * 3));
+    cols.push(c.r, c.g, c.b);
+  }
+  sky.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+  s.add(new THREE.Mesh(sky, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide })));
+  // sylwetki budynków na horyzoncie i jasne „słońce” — odbicia na bokach i masce
+  const bm = new THREE.MeshBasicMaterial({ color: 0x5d6570 }), r = mulberry(7);
+  for (let k = 0; k < 26; k++) {
+    const a = k / 26 * Math.PI * 2 + r() * 0.1, h = 4 + r() * 14, w = 5 + r() * 7;
+    const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, 3), bm); b.position.set(Math.sin(a) * 40, h / 2 - 1.5, Math.cos(a) * 40); b.lookAt(0, h / 2 - 1.5, 0); s.add(b);
+  }
+  const sunM = new THREE.Mesh(new THREE.SphereGeometry(4, 16, 8), new THREE.MeshBasicMaterial({ color: 0xffffff })); sunM.position.set(18, 34, 22); s.add(sunM);
+  const pm = new THREE.PMREMGenerator(renderer);
+  const tex = pm.fromScene(s, 0.01).texture; pm.dispose();
+  return tex;
+}
+try { carPaintMat.envMap = makeCarEnv(); carPaintMat.envMapIntensity = 0.55; } catch (e) { console.warn('[Grammar City] env map', e); }
 const _q = new THREE.Quaternion(), _e = new THREE.Euler(), _p = new THREE.Vector3(), _s = new THREE.Vector3();
 function partMatrix(x, y, z, ry = 0, sx = 1, sy = 1, sz = 1) {
   return new THREE.Matrix4().compose(_p.set(x, y, z), _q.setFromEuler(_e.set(0, ry, 0)), _s.set(sx, sy, sz));
@@ -1454,6 +1495,14 @@ const VSPEC = {
   sport:    { acc: 20, max: 44, rev: 10, brake: 36, steer: 0.66, off: 1.3, rad: 1.12, exit: 2.4 },
   supercar: { acc: 25, max: 52, rev: 10, brake: 40, steer: 0.7, off: 1.35, rad: 1.15, exit: 2.4 },
   lux:      { acc: 17, max: 42, rev: 10, brake: 34, steer: 0.6, off: 1.4, rad: 1.12, exit: 2.4 },
+  // klasyki z polskich ulic (nazwy potoczne, bez znaków towarowych) — wymiary 1:1, grip = przyczepność opon (m/s²)
+  maluch:    { acc: 7, max: 30, rev: 7, brake: 26, steer: 0.78, off: 0.75, rad: 0.8, exit: 1.9, grip: 22 },
+  kredens:   { acc: 10, max: 39, rev: 8, brake: 28, steer: 0.64, off: 1.15, rad: 0.96, exit: 2.2, grip: 24 },
+  poldek:    { acc: 11, max: 42, rev: 8, brake: 28, steer: 0.64, off: 1.2, rad: 0.97, exit: 2.2, grip: 24 },
+  pasek:     { acc: 14, max: 55, rev: 9, brake: 32, steer: 0.6, off: 1.3, rad: 1.0, exit: 2.3, grip: 29 },
+  szwed:     { acc: 12, max: 48, rev: 9, brake: 30, steer: 0.57, off: 1.35, rad: 1.0, exit: 2.3, grip: 25 },
+  okularnik: { acc: 16, max: 62, rev: 10, brake: 34, steer: 0.6, off: 1.35, rad: 1.05, exit: 2.4, grip: 30 },
+  majestat:  { acc: 18, max: 69, rev: 10, brake: 34, steer: 0.52, off: 1.6, rad: 1.1, exit: 2.5, grip: 30 },
   plane:    { acc: 9, max: 70, rev: 0, brake: 10, steer: 0.5, off: 2.2, rad: 1.5, exit: 5.6, fly: true },
   moto:     { acc: 24, max: 48, rev: 3, brake: 38, steer: 1.0, off: 0.55, rad: 0.55, exit: 1.4, ride: 'moto', seatY: 0.92, seatZ: -0.2 },
   scooter:  { acc: 8, max: 12.5, rev: 2, brake: 22, steer: 1.25, off: 0.35, rad: 0.45, exit: 1.2, ride: 'scooter', seatY: 0.2, seatZ: -0.1 },
@@ -1501,45 +1550,117 @@ const CAR_SHAPES = {
   lux: { len: 4.95, w: 1.98,
     lower: [[-2.47, 0.3], [2.47, 0.3], [2.53, 0.55], [2.42, 0.8], [1.12, 0.94], [-1.5, 0.97], [-2.32, 0.92], [-2.53, 0.62]],
     glass: [[1.12, 0.92], [0.22, 1.43], [-0.92, 1.44], [-1.82, 0.96]], roof: [0.17, -0.87, 1.43] },
+  // Klasyki z polskich ulic — wymiary 1:1 (długość, szerokość, wysokość jak w prawdziwych autach).
+  // wr = promień koła, wz = odległość osi od środka, tw = szerokość opony.
+  maluch: { len: 3.05, w: 1.38, wr: 0.27, wz: 0.92, tw: 0.15,          // mały miejski klasyk z silnikiem z tyłu
+    lower: [[-1.52, 0.24], [1.52, 0.24], [1.56, 0.4], [1.5, 0.62], [1.25, 0.72], [0.7, 0.76], [-1.1, 0.78], [-1.45, 0.7], [-1.56, 0.42]],
+    glass: [[0.72, 0.74], [0.32, 1.3], [-0.78, 1.32], [-1.22, 0.76]], roof: [0.3, -0.8, 1.32] },
+  kredens: { len: 4.22, w: 1.63, wr: 0.3, wz: 1.25, tw: 0.18,         // kanciasty sedan z lat 70., cztery okrągłe lampy
+    lower: [[-2.11, 0.3], [2.11, 0.3], [2.15, 0.5], [2.12, 0.76], [1.0, 0.82], [-1.25, 0.84], [-2.08, 0.82], [-2.15, 0.5]],
+    glass: [[1.0, 0.8], [0.45, 1.42], [-0.72, 1.43], [-1.28, 0.84]], roof: [0.43, -0.72, 1.43] },
+  poldek: { len: 4.32, w: 1.65, wr: 0.3, wz: 1.25, tw: 0.18,          // liftback z lat 80., klinowy przód, opadający tył
+    lower: [[-2.16, 0.3], [2.16, 0.3], [2.2, 0.5], [2.12, 0.72], [1.02, 0.86], [-1.95, 0.9], [-2.16, 0.84], [-2.2, 0.5]],
+    glass: [[1.02, 0.84], [0.38, 1.37], [-0.55, 1.38], [-1.98, 0.9]], roof: [0.36, -0.6, 1.38] },
+  pasek: { len: 4.67, w: 1.74, wr: 0.32, wz: 1.35, tw: 0.2,           // rodzinne kombi z lat 90.
+    lower: [[-2.33, 0.32], [2.33, 0.32], [2.39, 0.55], [2.27, 0.82], [1.1, 0.98], [-2.22, 1.01], [-2.36, 0.88], [-2.4, 0.55]],
+    glass: [[1.1, 0.96], [0.3, 1.46], [-1.95, 1.45], [-2.24, 1.01]], roof: [0.28, -1.98, 1.46] },
+  szwed: { len: 4.79, w: 1.71, wr: 0.32, wz: 1.32, tw: 0.19,          // kanciaste szwedzkie kombi — „czołg"
+    lower: [[-2.39, 0.32], [2.39, 0.32], [2.43, 0.56], [2.4, 0.86], [1.2, 0.93], [-2.36, 0.96], [-2.42, 0.56]],
+    glass: [[1.2, 0.91], [0.72, 1.44], [-2.3, 1.44], [-2.36, 0.96]], roof: [0.7, -2.3, 1.44] },
+  okularnik: { len: 4.8, w: 1.8, wr: 0.33, wz: 1.42, tw: 0.21,        // niemiecki sedan z podwójnymi owalnymi lampami
+    lower: [[-2.4, 0.3], [2.4, 0.3], [2.47, 0.52], [2.36, 0.78], [1.16, 0.92], [-1.6, 0.96], [-2.33, 0.9], [-2.46, 0.58]],
+    glass: [[1.16, 0.9], [0.3, 1.42], [-0.92, 1.43], [-1.72, 0.96]], roof: [0.28, -0.92, 1.43] },
+  majestat: { len: 5.46, w: 1.92, wr: 0.37, wz: 1.7, tw: 0.24,        // długa, dwukolorowa limuzyna prestiżowa
+    lower: [[-2.73, 0.3], [2.73, 0.3], [2.79, 0.55], [2.68, 0.84], [1.3, 0.98], [-1.95, 1.02], [-2.62, 0.95], [-2.79, 0.62]],
+    glass: [[1.3, 0.96], [0.38, 1.49], [-1.3, 1.5], [-2.08, 1.02]], roof: [0.36, -1.3, 1.5],
+    lowerTwo: [[-2.73, 0.3], [2.73, 0.3], [2.79, 0.55], [2.75, 0.66], [-2.77, 0.66], [-2.79, 0.62]] },
 };
-const TYPE_SHAPE = { sedan: 'sedan', taxi: 'sedan', police: 'sedan', hatch: 'hatch', suv: 'suv', van: 'van', sport: 'sport', supercar: 'supercar', lux: 'lux' };
+const TYPE_SHAPE = { sedan: 'sedan', taxi: 'sedan', police: 'sedan', hatch: 'hatch', suv: 'suv', van: 'van', sport: 'sport', supercar: 'supercar', lux: 'lux',
+  maluch: 'maluch', kredens: 'kredens', poldek: 'poldek', pasek: 'pasek', szwed: 'szwed', okularnik: 'okularnik', majestat: 'majestat' };
+const CLASSICS = ['maluch', 'kredens', 'poldek', 'pasek', 'szwed', 'okularnik', 'majestat'];
+// Nazwy pojazdów na liczniku (auta z ruchu ulicznego też — po przejęciu).
+const VEH_NAMES = { sedan: 'Sedan Comfort', taxi: 'Taksówka', police: 'Radiowóz', hatch: 'Hatchback City', suv: 'SUV Explorer', van: 'Van Cargo',
+  sport: 'Sport GT', supercar: 'Supercar Fulmine', lux: 'Limuzyna Executive E', moto: 'Raptor 600', scooter: 'Volt K-Pro', kscooter: 'Pixel Rider', plane: 'Sky Hopper',
+  maluch: 'Maluch', kredens: 'Kredens', poldek: 'Poldek', pasek: 'Pasek Kombi', szwed: 'Szwedzki Czołg', okularnik: 'Okularnik', majestat: 'Majestat' };
+// Wymiary kół auta (osobne koła — obracają się i skręcają).
+function carDims(type) {
+  const S = CAR_SHAPES[TYPE_SHAPE[type] || 'sedan'];
+  const wr = S.wr || (type === 'suv' || type === 'van' ? 0.42 : 0.37), tw = S.tw || 0.28;
+  return { wr, tw, wz: S.wz || S.len / 2 - (type === 'supercar' ? 0.75 : 0.85), wx: S.w / 2 - (S.tw ? Math.max(0.08, tw * 0.45) : 0.12), len: S.len, w: S.w };
+}
+const isCar4 = t => !['plane', 'moto', 'scooter', 'kscooter'].includes(t);
 const BOX = (w, h, d) => geo(`bx${w}_${h}_${d}`, () => new THREE.BoxGeometry(w, h, d));
 const CYLX = (r, w, seg = 16) => geo(`cx${r}_${w}_${seg}`, () => new THREE.CylinderGeometry(r, r, w, seg).rotateZ(Math.PI / 2));
-function carGeometry(type, color) {
+const CYLZ = (r, d, seg = 16) => geo(`cz${r}_${d}_${seg}`, () => new THREE.CylinderGeometry(r, r, d, seg).rotateX(Math.PI / 2));
+// Koło: opona, bok opony, felga (styl wg auta), szprychy po zewnętrznej stronie (+X), piasta.
+const WHEEL_STYLE = { maluch: 'cap', kredens: 'steel', poldek: 'steel', pasek: 'alloy', szwed: 'steel', okularnik: 'alloy', majestat: 'chrome', sport: 'dark', supercar: 'dark', lux: 'chrome' };
+function wheelGeometry(r, w, style) {
+  const parts = [], C = c => new THREE.Color(c);
+  const put = (g, x, y, z, c, rx = 0, gl = 0.05) => parts.push({ g, m: new THREE.Matrix4().compose(_p.set(x, y, z), _q.setFromEuler(_e.set(rx, 0, 0)), _s.set(1, 1, 1)), c: C(c), gl });
+  const rim = style === 'chrome' ? 0xe4e7eb : style === 'alloy' ? 0xc4c9d0 : style === 'dark' ? 0x2b2d31 : style === 'cap' ? 0xd7dbe0 : 0x8d939c;
+  const rgl = style === 'chrome' || style === 'cap' ? 1 : style === 'alloy' ? 0.96 : style === 'dark' ? 0.6 : 0.45;
+  put(CYLX(r, w, 24), 0, 0, 0, 0x151515);                       // opona
+  put(CYLX(r * 0.8, w + 0.006, 22), 0, 0, 0, 0x202022);         // bok opony (ciemniejszy pierścień)
+  put(CYLX(r * 0.62, w + 0.014, 20), 0, 0, 0, rim, 0, rgl);     // felga
+  if (style === 'cap') put(CYLX(r * 0.42, w + 0.05, 16), 0, 0, 0, 0xeef0f3, 0, 1);   // chromowany kołpak
+  else {
+    const n = style === 'alloy' || style === 'chrome' ? 8 : 5, len = r * 0.48, sx = w / 2 + 0.01;
+    for (let k = 0; k < n; k++) {
+      const a = k / n * Math.PI * 2;
+      put(BOX(0.02, len, r * (n > 5 ? 0.07 : 0.11)), sx, Math.cos(a) * r * 0.33, Math.sin(a) * r * 0.33, style === 'steel' ? 0x6d737c : rim, a, rgl);
+    }
+    put(CYLX(r * 0.6, 0.012, 20), sx - 0.004, 0, 0, style === 'steel' ? 0x5d636b : 0x30333a, 0, 0.3);   // tło między szprychami
+  }
+  put(CYLX(r * 0.15, w + 0.06, 10), 0, 0, 0, 0x9aa1aa, 0, 0.97);   // piasta
+  return mergeColored(parts);
+}
+// Połysk części auta wg koloru: lakier, chrom, szyby, lampy, reszta (guma, plastik) matowa.
+const CAR_CHROME = new Set([0xdadee3, 0xdfe3e8, 0xe4e7eb, 0xc9ced6, 0xeef0f3, 0xd7dbe0, 0x9aa0a8, 0xf5f6f8]);
+const CAR_LAMPS = new Set([0xfdf6d8, 0xdcebf7, 0xe0161b, 0xc8141c, 0xf0951a, 0xbfe6ff, 0xe8f4ff, 0xeaf6ff, 0xffe36b, 0xff2030, 0x2060ff, 0x9fb3c8]);
+const carGloss = (c, paint) => c === paint ? 0.62 : CAR_CHROME.has(c) ? 1 : c === 0x16202b ? 0.9 : CAR_LAMPS.has(c) ? 0.86 : 0.14;
+// split = karoseria bez kół (auto gracza: koła osobno, obracają się i skręcają)
+function carGeometry(type, color, split) {
   const S = CAR_SHAPES[TYPE_SHAPE[type] || 'sedan'], L2 = S.len / 2, W = S.w;
   const parts = [];
-  const push = (g, x, y, z, c, ry, sx, sy, sz) => parts.push({ g, m: partMatrix(x, y, z, ry || 0, sx || 1, sy || 1, sz || 1), c: new THREE.Color(c) });
+  // Majestat: dwa kolory — góra w kolorze auta, dół kontrastowy (srebrny albo grafitowy)
+  const lowC = type === 'majestat' ? (new THREE.Color(color).getHSL({}).l < 0.4 ? 0xc6cad0 : 0x1d2027) : null;
+  const push = (g, x, y, z, c, ry, sx, sy, sz) => parts.push({ g, m: partMatrix(x, y, z, ry || 0, sx || 1, sy || 1, sz || 1), c: new THREE.Color(c), gl: c === lowC ? 0.62 : carGloss(c, color) });
+  const classic = CLASSICS.includes(type);
   push(geo(`pl_${type}`, () => profileGeo(S.lower, W, 0.08)), 0, 0, 0, color);
+  if (S.lowerTwo) push(geo(`pl2_${type}`, () => profileGeo(S.lowerTwo, W + 0.02, 0.08)), 0, 0, 0, lowC);
   push(geo(`pg_${type}`, () => profileGeo(S.glass, W * 0.86, 0.04)), 0, 0, 0, 0x16202b);
   const [rf, rb, ry] = S.roof;
   push(BOX(W * 0.84, 0.07, rf - rb), 0, ry + 0.02, (rf + rb) / 2, color);                  // dach
-  push(BOX(W * 0.87, 0.5, 0.12), 0, (S.glass[0][1] + ry) / 2, (rf + rb) / 2 + 0.25, color); // słupek B
+  push(BOX(W * 0.87, (ry - S.glass[0][1]) * 0.92, 0.12), 0, (S.glass[0][1] + ry) / 2, (rf + rb) / 2 + (classic ? 0.1 : 0.25), color); // słupek B
   const groundY = S.lower[0][1];
+  if (classic) classicDetails(type, S, push, color);
+  else {
   // zderzaki, grill, tablice
   push(BOX(W * 0.98, 0.2, 0.22), 0, groundY + 0.12, L2 + 0.04, 0x2a2d33);
   push(BOX(W * 0.98, 0.2, 0.22), 0, groundY + 0.12, -L2 - 0.04, 0x2a2d33);
   push(BOX(W * 0.42, 0.16, 0.06), 0, groundY + 0.34, L2 + 0.08, 0x111418);
   push(BOX(0.52, 0.13, 0.03), 0, groundY + 0.13, L2 + 0.17, 0xf2f2f2);
   push(BOX(0.52, 0.13, 0.03), 0, groundY + 0.3, -L2 - 0.1, 0xf5d000);
+  }
   // światła
   const ly = groundY + 0.36;
   for (const s of [-1, 1]) {
+    if (!classic) {
     push(BOX(0.42, 0.13, 0.06), s * W * 0.33, ly, L2 + 0.04, 0xfdf6d8);
     push(BOX(0.4, 0.04, 0.06), s * W * 0.33, ly + 0.1, L2 + 0.03, 0xbfe6ff);
     push(BOX(0.38, 0.13, 0.06), s * W * 0.34, ly + 0.08, -L2 - 0.03, 0xe0161b);
+    }
     // lusterka
     push(BOX(0.22, 0.12, 0.1), s * (W / 2 + 0.08), S.glass[0][1] + 0.05, S.glass[0][0] - 0.15, color);
     push(BOX(0.04, 0.1, 0.09), s * (W / 2 + 0.19), S.glass[0][1] + 0.05, S.glass[0][0] - 0.15, 0x9fb3c8);
     // klamki i linia drzwi
     push(BOX(0.03, 0.04, 0.16), s * (W / 2 + 0.01), S.glass[0][1] - 0.18, 0.15, 0x9aa0a8);
-    push(BOX(0.02, 0.5, 0.02), s * (W / 2 + 0.005), (groundY + S.glass[0][1]) / 2 + 0.1, (rf + rb) / 2 + 0.25, 0x1b1e23);
+    push(BOX(0.02, (S.glass[0][1] - groundY) * 0.85, 0.02), s * (W / 2 + 0.005), (groundY + S.glass[0][1]) / 2 + 0.05, (rf + rb) / 2 + (classic ? 0.1 : 0.25), 0x1b1e23);
   }
-  // koła: opona + felga + piasta
-  const wr = type === 'suv' || type === 'van' ? 0.42 : 0.37, wz = L2 - (type === 'supercar' ? 0.75 : 0.85);
-  for (const [sx, sz] of [[-1, 1], [1, 1], [-1, -1], [1, -1]]) {
-    push(CYLX(wr, 0.28, 18), sx * (W / 2 - 0.12), wr, sz * wz, 0x141414);
-    push(CYLX(wr * 0.62, 0.3, 12), sx * (W / 2 - 0.12), wr, sz * wz, type === 'supercar' || type === 'sport' ? 0x2b2b2b : type === 'lux' ? 0xe3e6ea : 0xc9ced6);
-    push(CYLX(wr * 0.2, 0.32, 8), sx * (W / 2 - 0.12), wr, sz * wz, 0x6b7280);
+  // koła (w aucie gracza osobno — patrz makeCarMesh0); zewnętrzna strona felgi na zewnątrz auta
+  if (!split) {
+    const d = carDims(type), wg = geo(`wheel_${type}`, () => wheelGeometry(d.wr, d.tw, WHEEL_STYLE[type] || 'steel'));
+    for (const [sx, sz] of [[-1, 1], [1, 1], [-1, -1], [1, -1]]) push(wg, sx * d.wx, d.wr, sz * d.wz, 0xffffff, sx < 0 ? Math.PI : 0);
   }
   // dodatki wg typu
   const top = ry + 0.06;
@@ -1567,6 +1688,153 @@ function carGeometry(type, color) {
     for (const s of [-1, 1]) push(BOX(0.06, 0.2, 0.06), s * W * 0.32, S.lower[6][1] + 0.1, -L2 + 0.25, 0x111111);
   }
   return mergeColored(parts);
+}
+// Detale klasyków: lampy, grille, zderzaki, listwy, tablice (polskie — biała z niebieskim paskiem).
+// Kształty i proporcje jak w prawdziwych autach, nazwy i znaczki ogólne (bez znaków towarowych).
+function classicDetails(type, S, push, color) {
+  const L2 = S.len / 2, W = S.w, gY = S.lower[0][1], belt = S.glass[0][1];
+  const CHR = 0xdadee3, BLK = 0x17191d, RUB = 0x25282d, LAMP = 0xfdf6d8, CLEAR = 0xdcebf7, TAIL = 0xc8141c, AMB = 0xf0951a;
+  // Karoseria z profilu jest wysunięta o fazę (EB) poza punkty profilu — detale przyklejamy do prawdziwej
+  // powierzchni przodu / tyłu na danej wysokości (F / R = środek części o grubości d, wystającej o d − out).
+  const EB = 0.08;
+  const edge = (y, sg) => {
+    let b = null; const pr = S.lower;
+    for (let i = 0; i < pr.length; i++) {
+      const [x1, y1] = pr[i], [x2, y2] = pr[(i + 1) % pr.length];
+      if (y1 === y2 || (y1 - y) * (y2 - y) > 0) continue;
+      const x = x1 + (x2 - x1) * (y - y1) / (y2 - y1);
+      if (b === null || x * sg > b * sg) b = x;
+    }
+    return (b === null ? sg * L2 : b) + sg * EB;
+  };
+  const F = (y, d, out = 0.015) => edge(Math.max(y, gY + 0.01), 1) - out + d / 2;
+  const R = (y, d, out = 0.015) => edge(Math.max(y, gY + 0.01), -1) + out - d / 2;
+  // zderzak przód + tył; zwraca położenie przedniej i tylnej ściany (na tablice)
+  const bumpers = (y, h, d, c, wk = 0.98, out = 0.05) => {
+    const zf = F(y, d, out), zr = R(y, d, out);
+    push(BOX(W * wk, h, d), 0, y, zf, c); push(BOX(W * wk, h, d), 0, y, zr, c);
+    return [zf + d / 2, zr - d / 2];
+  };
+  const plate = (y, z, sg) => {
+    push(BOX(0.52, 0.12, 0.02), 0, y, z + sg * 0.01, 0xf2f2f2);
+    push(BOX(0.05, 0.12, 0.022), -0.235, y, z + sg * 0.012, 0x1f4fbf);     // niebieski pasek z „PL”
+  };
+  const roundLampF = (x, y, r) => { push(CYLZ(r + 0.02, 0.04, 20), x, y, F(y, 0.04, 0.02), CHR); push(CYLZ(r, 0.05, 20), x, y, F(y, 0.05, 0.015), LAMP); };
+  const sideStrip = (y, len, c, z = 0) => { for (const s of [-1, 1]) push(BOX(0.02, 0.045, len), s * (W / 2 + 0.008), y, z, c); };
+  const roofRails = () => { const [rf, rb, ry] = S.roof; for (const s of [-1, 1]) { push(BOX(0.05, 0.05, (rf - rb) * 0.94), s * W * 0.37, ry + 0.12, (rf + rb) / 2, BLK); for (const k of [0.1, 0.9]) push(BOX(0.05, 0.08, 0.1), s * W * 0.37, ry + 0.07, rb + (rf - rb) * k, BLK); } };
+  if (type === 'maluch') {
+    const [pf, pr] = bumpers(gY + 0.06, 0.06, 0.06, CHR, 0.94, 0.03);                // cienkie chromowane zderzaki
+    for (const s of [-1, 1]) { push(BOX(0.05, 0.11, 0.08), s * 0.3, gY + 0.07, pf - 0.03, RUB); push(BOX(0.05, 0.11, 0.08), s * 0.3, gY + 0.07, pr + 0.03, RUB); }
+    for (const s of [-1, 1]) {
+      roundLampF(s * 0.45, gY + 0.36, 0.085);                                          // okrągłe reflektory
+      push(BOX(0.1, 0.05, 0.04), s * 0.45, gY + 0.2, F(gY + 0.2, 0.04), AMB);
+      push(BOX(0.16, 0.13, 0.04), s * 0.5, gY + 0.3, R(gY + 0.3, 0.04), TAIL);
+      push(BOX(0.16, 0.045, 0.042), s * 0.5, gY + 0.41, R(gY + 0.41, 0.042), AMB);
+    }
+    push(BOX(0.5, 0.03, 0.03), 0, gY + 0.46, F(gY + 0.46, 0.03, 0.02), CHR);        // listwa na przodzie
+    for (let k = 0; k < 5; k++) { const y = gY + 0.4 + k * 0.05; push(BOX(W * 0.4, 0.02, 0.04), 0, y, R(y, 0.04), BLK); }   // żaluzje silnika z tyłu
+    sideStrip(belt - 0.05, S.len * 0.55, CHR, -0.1);
+    plate(gY + 0.17, F(gY + 0.17, 0.02, 0.0), 1); plate(gY + 0.2, R(gY + 0.2, 0.02, 0.0), -1);
+  } else if (type === 'kredens') {
+    const [pf, pr] = bumpers(gY + 0.12, 0.08, 0.08, CHR, 0.99, 0.02);
+    for (const s of [-1, 1]) { push(BOX(0.06, 0.18, 0.1), s * 0.36, gY + 0.15, pf - 0.03, RUB); push(BOX(0.06, 0.18, 0.1), s * 0.36, gY + 0.15, pr + 0.03, RUB); }
+    const gy = gY + 0.38;
+    push(BOX(W * 0.6, 0.2, 0.05), 0, gy, F(gy, 0.05), BLK);                          // szeroki grill
+    for (const y of [-0.11, 0.11]) push(BOX(W * 0.62, 0.028, 0.06), 0, gy + y, F(gy + y, 0.06, 0.02), CHR);
+    for (let k = -3; k <= 3; k++) push(BOX(0.022, 0.2, 0.055), k * 0.13, gy, F(gy, 0.055), 0x3a3e45);
+    for (const s of [-1, 1]) {
+      roundLampF(s * 0.52, gy, 0.075); roundLampF(s * 0.7, gy, 0.075);                 // cztery okrągłe lampy
+      push(BOX(0.14, 0.05, 0.04), s * 0.62, gY + 0.25, F(gY + 0.25, 0.04), AMB);
+      push(BOX(0.36, 0.14, 0.04), s * 0.52, gY + 0.42, R(gY + 0.42, 0.04), TAIL);
+      push(BOX(0.11, 0.14, 0.042), s * 0.75, gY + 0.42, R(gY + 0.42, 0.042), AMB);
+    }
+    sideStrip(belt - 0.04, S.len * 0.8, CHR);
+    sideStrip(gY + 0.2, S.len * 0.82, CHR);
+    plate(gY + 0.12, pf, 1); plate(gY + 0.3, R(gY + 0.3, 0.02, 0.0), -1);
+  } else if (type === 'poldek') {
+    const [pf, pr] = bumpers(gY + 0.12, 0.2, 0.16, BLK, 1.0, 0.06);                   // czarne plastikowe zderzaki
+    const gy = gY + 0.4;
+    push(BOX(0.5, 0.14, 0.04), 0, gy, F(gy, 0.04), BLK);
+    for (let k = 0; k < 4; k++) { const y = gy - 0.05 + k * 0.033; push(BOX(0.48, 0.012, 0.045), 0, y, F(y, 0.045, 0.01), 0x3a3e45); }
+    for (const s of [-1, 1]) {
+      push(BOX(0.36, 0.15, 0.05), s * 0.53, gy, F(gy, 0.05), LAMP);                   // prostokątne reflektory
+      push(BOX(0.37, 0.025, 0.055), s * 0.53, gy + 0.085, F(gy + 0.085, 0.055, 0.02), CHR);
+      push(BOX(0.08, 0.15, 0.05), s * 0.77, gy, F(gy, 0.05, 0.03), AMB);
+      push(BOX(0.4, 0.17, 0.04), s * 0.55, gY + 0.46, R(gY + 0.46, 0.04), TAIL);
+      push(BOX(0.4, 0.04, 0.045), s * 0.55, gY + 0.575, R(gY + 0.575, 0.045), AMB);
+    }
+    push(BOX(0.64, 0.17, 0.035), 0, gY + 0.46, R(gY + 0.46, 0.035), 0x2b2f36);        // czarny pas między lampami
+    sideStrip(gY + 0.36, S.len * 0.72, BLK);
+    plate(gY + 0.13, pf, 1); plate(gY + 0.13, pr, -1);
+  } else if (type === 'pasek') {
+    const [pf, pr] = bumpers(gY + 0.14, 0.22, 0.14, color, 0.99, 0.06);              // zderzaki w kolorze nadwozia
+    bumpers(gY + 0.03, 0.07, 0.15, BLK, 0.9, 0.06);
+    const gy = gY + 0.46;
+    push(BOX(0.44, 0.15, 0.04), 0, gy, F(gy, 0.04), BLK);
+    push(BOX(0.46, 0.025, 0.05), 0, gy + 0.085, F(gy + 0.085, 0.05, 0.02), CHR);
+    push(CYLZ(0.06, 0.03, 18), 0, gy, F(gy, 0.03, 0.0), CHR);                          // znaczek (ogólny)
+    for (const s of [-1, 1]) {
+      push(BOX(0.42, 0.16, 0.06), s * 0.54, gy, F(gy, 0.06, 0.03), CLEAR);            // kloszowe reflektory
+      push(CYLZ(0.05, 0.06, 14), s * 0.46, gy, F(gy, 0.06, 0.025), LAMP); push(CYLZ(0.04, 0.06, 14), s * 0.64, gy, F(gy, 0.06, 0.03), LAMP);
+      push(BOX(0.34, 0.16, 0.05), s * 0.62, gY + 0.58, R(gY + 0.58, 0.05), TAIL);
+      push(BOX(0.34, 0.04, 0.052), s * 0.62, gY + 0.5, R(gY + 0.5, 0.052), 0xf2f2f2);
+    }
+    push(BOX(0.4, 0.025, 0.04), 0, gY + 0.62, R(gY + 0.62, 0.04), CHR);
+    roofRails();
+    sideStrip(gY + 0.36, S.len * 0.66, BLK);
+    plate(gY + 0.17, pf, 1); plate(gY + 0.42, R(gY + 0.42, 0.02, 0.0), -1);
+  } else if (type === 'szwed') {
+    const [pf, pr] = bumpers(gY + 0.12, 0.17, 0.2, 0x2a2d33, 1.0, 0.04);              // duże zderzaki z chromowanym paskiem
+    bumpers(gY + 0.21, 0.025, 0.21, CHR, 1.0, 0.04);
+    const gy = gY + 0.43;
+    push(BOX(0.5, 0.21, 0.05), 0, gy, F(gy, 0.05), CHR);                              // grill w chromowanej ramie
+    push(BOX(0.44, 0.17, 0.052), 0, gy, F(gy, 0.052, 0.01), BLK);
+    for (let k = -3; k <= 3; k++) push(BOX(0.018, 0.17, 0.056), k * 0.06, gy, F(gy, 0.056, 0.01), 0x6b717a);
+    for (const s of [-1, 1]) {
+      push(BOX(0.4, 0.17, 0.045), s * 0.5, gy, F(gy, 0.045), LAMP);                   // duże prostokątne reflektory
+      push(BOX(0.12, 0.17, 0.05), s * 0.77, gy, F(gy, 0.05, 0.02), AMB);
+      push(BOX(0.04, 0.17, 0.3), s * (W / 2 + 0.005), gy, F(gy, 0.3, 0.1) - 0.2, AMB); // kierunkowskaz na boku
+      push(BOX(0.13, 0.52, 0.05), s * (W / 2 - 0.09), gY + 0.58, R(gY + 0.58, 0.05), TAIL);   // wysokie pionowe lampy tylne
+    }
+    roofRails();
+    sideStrip(gY + 0.3, S.len * 0.8, BLK);
+    plate(gY + 0.12, pf, 1); plate(gY + 0.42, R(gY + 0.42, 0.02, 0.0), -1);
+  } else if (type === 'okularnik') {
+    const [pf, pr] = bumpers(gY + 0.13, 0.2, 0.16, color, 0.99, 0.06);
+    bumpers(gY + 0.16, 0.05, 0.17, 0x5a5f66, 1.0, 0.06);                               // szara listwa na zderzakach
+    const gy = gY + 0.46;
+    push(BOX(0.42, 0.27, 0.05), 0, gy, F(gy, 0.05, 0.01), CHR);                        // chromowana rama grilla
+    push(BOX(0.35, 0.21, 0.055), 0, gy, F(gy, 0.055, 0.005), BLK);
+    for (let k = -1; k <= 1; k++) push(BOX(0.35, 0.02, 0.06), 0, gy + k * 0.07, F(gy + k * 0.07, 0.06, 0.0), CHR);
+    push(CYLZ(0.065, 0.03, 20), 0, gy + 0.18, F(gy + 0.18, 0.03, 0.01), CHR);           // okrągły znaczek (ogólny)
+    push(BOX(0.025, 0.1, 0.025), 0, S.lower[3][1] + EB + 0.04, S.lower[3][0] - 0.12, CHR);   // ozdoba na masce
+    for (const s of [-1, 1]) for (const [x, sc] of [[0.39, 1.0], [0.64, 1.1]]) {        // podwójne owalne lampy
+      push(CYLZ(0.1, 0.04, 22), s * x, gy, F(gy, 0.04, 0.02), CHR, 0, sc * 1.2, 1, 1);
+      push(CYLZ(0.085, 0.05, 22), s * x, gy, F(gy, 0.05, 0.018), LAMP, 0, sc * 1.2, 1, 1);
+    }
+    for (const s of [-1, 1]) { push(BOX(0.42, 0.16, 0.05), s * 0.56, gY + 0.52, R(gY + 0.52, 0.05), TAIL); push(BOX(0.16, 0.16, 0.052), s * 0.8, gY + 0.52, R(gY + 0.52, 0.052), AMB); }
+    sideStrip(belt - 0.03, S.len * 0.6, CHR, -0.2);
+    sideStrip(gY + 0.32, S.len * 0.8, 0x5a5f66);
+    plate(gY + 0.13, pf, 1); plate(gY + 0.42, R(gY + 0.42, 0.02, 0.0), -1);
+  } else if (type === 'majestat') {
+    const [pf, pr] = bumpers(gY + 0.13, 0.22, 0.16, 0xc6cad0, 0.99, 0.06);
+    bumpers(gY + 0.21, 0.03, 0.17, CHR, 0.8, 0.06);
+    const gy = gY + 0.5;
+    push(BOX(0.56, 0.4, 0.06), 0, gy, F(gy, 0.06, 0.0), CHR);                          // wysoki chromowany grill
+    push(BOX(0.48, 0.33, 0.065), 0, gy, F(gy, 0.065, 0.0), BLK);
+    for (let k = -5; k <= 5; k++) push(BOX(0.016, 0.33, 0.07), k * 0.043, gy, F(gy, 0.07, 0.0), CHR);
+    push(BOX(0.04, 0.12, 0.04), 0, S.lower[3][1] + EB + 0.05, S.lower[3][0] - 0.05, CHR);   // stojąca ozdoba (ogólna)
+    for (const s of [-1, 1]) {
+      push(BOX(0.42, 0.12, 0.05), s * 0.62, gy, F(gy, 0.05, 0.02), CLEAR);
+      push(BOX(0.42, 0.028, 0.055), s * 0.62, gy + 0.075, F(gy + 0.075, 0.055, 0.02), 0xeaf6ff);   // LED
+      push(BOX(0.46, 0.12, 0.05), s * 0.6, gY + 0.55, R(gY + 0.55, 0.05), TAIL);
+      push(CYLZ(0.055, 0.1, 14), s * 0.42, gY + 0.04, pr - 0.02, CHR);                // końcówki wydechu
+    }
+    push(BOX(W * 0.66, 0.03, 0.04), 0, gY + 0.63, R(gY + 0.63, 0.04), CHR);
+    sideStrip(0.665 + EB * 0.5, S.len * 0.92, CHR);                                    // chrom na granicy dwóch kolorów
+    sideStrip(belt - 0.02, S.len * 0.62, CHR, -0.35);
+    plate(gY + 0.13, pf, 1); plate(gY + 0.42, R(gY + 0.42, 0.02, 0.0), -1);
+  }
 }
 // Motor sportowy w stylu „ninja": owiewka, zbiornik, siedzenie, widelec, wydech.
 function motoGeometry(color) {
@@ -1691,21 +1959,51 @@ function planeGeometry(color) {
   P2(new THREE.SphereGeometry(0.22, 10, 8), 0, 1.5, 4.25, 0xd9dde3, 1, 1, 1.3);                           // kołpak śmigła
   return mergeColored(parts);
 }
-function vehGeo(type, color) {
+function vehGeo(type, color, split) {
   if (type === 'plane') return geo(`plane_${color}`, () => planeGeometry(color));
   return type === 'moto' ? geo(`moto_${color}`, () => motoGeometry(color))
     : type === 'scooter' ? geo(`scooter_${color}`, () => scooterGeometry(color))
-    : geo(`car2_${type}_${color}`, () => carGeometry(type, color));
+    : geo(`car3_${type}_${color}${split ? '_s' : ''}`, () => carGeometry(type, color, split));
 }
 function recolorVehicle(v, hex) {
   if (v.type === 'kscooter') { v.mesh.userData.tint = hex; tintObj(v.mesh, hex); return; }
   if (v.type === 'plane') { v.mesh.children[0].geometry = vehGeo('plane', hex); return; }
+  if (v.mesh.userData.body) { v.mesh.userData.body.geometry = vehGeo(v.type, hex, true); v.mesh.userData.color = hex; return; }
   v.mesh.geometry = vehGeo(v.type, hex);
 }
-function makeCarMesh(type, color) {
-  const m = makeCarMesh0(type, color); m.g.userData.color = color; return m;
+function makeCarMesh(type, color, split) {
+  const m = makeCarMesh0(type, color, split); m.g.userData.color = color; return m;
 }
-function makeCarMesh0(type, color) {
+// Auto z osobnymi kołami (gracz): karoseria (kołysze się przy hamowaniu i w zakrętach) + 4 koła,
+// które się obracają; przednie skręcają. Pivot = środek koła, flip = zewnętrzna strona felgi na zewnątrz.
+function makeSplitCar(type, color) {
+  const root = new THREE.Group(); root.rotation.order = 'YXZ';
+  const body = new THREE.Mesh(vehGeo(type, color, true), carPaintMat); body.castShadow = true; body.rotation.order = 'YXZ'; root.add(body);
+  const d = carDims(type), wg = geo(`wheel_${type}`, () => wheelGeometry(d.wr, d.tw, WHEEL_STYLE[type] || 'steel'));
+  const wheels = [];
+  for (const [sx, sz] of [[-1, 1], [1, 1], [-1, -1], [1, -1]]) {
+    const pivot = new THREE.Group(); pivot.position.set(sx * d.wx, d.wr, sz * d.wz);
+    const flip = new THREE.Group(); flip.rotation.y = sx < 0 ? Math.PI : 0; pivot.add(flip);
+    const m = new THREE.Mesh(wg, carPaintMat); m.castShadow = true; flip.add(m);
+    root.add(pivot); wheels.push({ pivot, mesh: m, sgn: sx < 0 ? -1 : 1, front: sz > 0, x: sx * d.wx, z: sz * d.wz });
+  }
+  root.userData.body = body;
+  return { g: root, wheels, len: d.len };
+}
+// Wsiadając do auta z ruchu ulicznego zamieniamy jego bryłę na wersję z osobnymi kołami.
+function upgradeCarMesh(v) {
+  if (!isCar4(v.type) || v.mesh.userData.body) return;
+  const color = v.mesh.userData.color != null ? v.mesh.userData.color : carColor(v.type);
+  const gh = v.ghost; if (gh) ghostVehicle(v, false);
+  const c = makeCarMesh(v.type, color, true), old = v.mesh;
+  for (const ch of old.children.slice()) c.g.add(ch);      // płomienie nitro, kogut itd. przechodzą do nowej bryły
+  c.g.position.copy(old.position); c.g.rotation.copy(old.rotation);
+  scene.remove(old); scene.add(c.g);
+  v.mesh = c.g; v.wheels = c.wheels;
+  if (gh) ghostVehicle(v, true);
+}
+function makeCarMesh0(type, color, split) {
+  if (split && isCar4(type)) return makeSplitCar(type, color);
   if (type === 'kscooter') return makeKScooterMesh(color);
   if (type === 'plane') {
     const grp = new THREE.Group(); grp.rotation.order = 'YXZ';
@@ -1716,27 +2014,33 @@ function makeCarMesh0(type, color) {
     return { g: grp, wheels: [], len: 7.5 };
   }
   const g = vehGeo(type, color);
-  const mesh = new THREE.Mesh(g, vcMat);
+  const mesh = new THREE.Mesh(g, isCar4(type) ? carPaintMat : vcMat);
   mesh.castShadow = true;
   mesh.rotation.order = 'YXZ';
   return { g: mesh, wheels: [], len: (CAR_SHAPES[TYPE_SHAPE[type]] || { len: 2 }).len };
 }
 
 const vehicles = [];
-function spawnVehicle(type, color, x, z, heading, kind) {
-  const c = makeCarMesh(type, color);
+function spawnVehicle(type, color, x, z, heading, kind, split) {
+  const c = makeCarMesh(type, color, split);
   const v = { mesh: c.g, wheels: c.wheels, type, spec: specOf(type), pos: new THREE.Vector3(x, 0, z), heading, speed: 0, steer: 0, kind, ai: null, honk: 0, lean: 0, len: c.len || 4.5 };
   c.g.position.copy(v.pos); c.g.rotation.y = heading;
   scene.add(c.g);
   vehicles.push(v);
   return v;
 }
+// Ruch uliczny: współczesne auta + ok. 18% klasyków (najczęściej Maluch, Poldek i Pasek).
+const TRAFFIC_CLASSICS = ['maluch', 'maluch', 'poldek', 'poldek', 'pasek', 'pasek', 'kredens', 'szwed', 'okularnik', 'okularnik', 'majestat'];
 function randomCarType() {
   const r = rand();
-  return r < 0.12 ? 'taxi' : r < 0.2 ? 'van' : r < 0.27 ? 'sport' : r < 0.32 ? 'police' : r < 0.47 ? 'suv' : r < 0.64 ? 'hatch' : r < 0.74 ? 'lux' : 'sedan';
+  return r < 0.11 ? 'taxi' : r < 0.18 ? 'van' : r < 0.24 ? 'sport' : r < 0.29 ? 'police' : r < 0.42 ? 'suv' : r < 0.56 ? 'hatch' : r < 0.64 ? 'lux' : r < 0.82 ? 'sedan' : pick(TRAFFIC_CLASSICS);
 }
 const LUX_COLORS = [0x1d2027, 0xc9ccd1, 0x23324d, 0xf1f2f6, 0x5a5f66, 0x3b1f2b];
-function carColor(type) { return type === 'taxi' ? 0xf5c518 : type === 'police' ? 0xf1f2f6 : type === 'lux' ? pick(LUX_COLORS) : pick(CAR_COLORS); }
+const RETRO_COLORS = [0xc0392b, 0xe8b923, 0x2e5e8c, 0xd8d2b8, 0x6b8e23, 0x7a1f2b, 0xf1f2f6, 0x3d6b8f, 0xe67e22, 0x234d3a];
+function carColor(type) {
+  return type === 'taxi' ? 0xf5c518 : type === 'police' ? 0xf1f2f6 : type === 'lux' || type === 'majestat' || type === 'okularnik' ? pick(LUX_COLORS)
+    : type === 'maluch' || type === 'kredens' || type === 'poldek' || type === 'szwed' ? pick(RETRO_COLORS) : pick(CAR_COLORS);
+}
 
 // traffic AI --------------------------------------------------------------
 function laneXZ(a, along) {
@@ -1949,6 +2253,14 @@ const SHOP = [
   { id: 'veh_lux', cat: 'vehicle', name: 'Limuzyna Executive E', desc: 'Elegancki sedan klasy biznes — komfort, cisza i moc (do ~150 km/h)', price: 2800, vtype: 'lux', color: 0x1d2027 },
   { id: 'veh_plane', cat: 'vehicle', name: 'Samolot Sky Hopper', desc: 'Lataj nad miastem — bez korków i policji! W/S gaz, A/D skręt, Spacja w górę, Shift/X w dół. Wysiadasz po wylądowaniu.', price: 10000, vtype: 'plane', color: 0xf2f2f2 },
   { id: 'veh_super', cat: 'vehicle', name: 'Supercar Fulmine', desc: 'Najszybsze auto w mieście', price: 4000, vtype: 'supercar', color: 0xe8410b },
+  // klasyki z polskich ulic — wymiary 1:1, każdy prowadzi się inaczej (Spacja / Shift = ręczny, drift)
+  { id: 'veh_maluch', cat: 'vehicle', name: 'Maluch', desc: 'Mały klasyk z PRL: okrągłe lampy, silnik z tyłu, do ~110 km/h. Zwinny w ciasnych uliczkach', price: 600, vtype: 'maluch', color: 0xc0392b },
+  { id: 'veh_kredens', cat: 'vehicle', name: 'Kredens', desc: 'Kanciasty sedan z lat 70.: cztery okrągłe lampy, dużo chromu, do ~140 km/h', price: 900, vtype: 'kredens', color: 0x3d6b8f },
+  { id: 'veh_poldek', cat: 'vehicle', name: 'Poldek', desc: 'Polski liftback z lat 80.: klinowy przód, czarne zderzaki, do ~150 km/h', price: 1000, vtype: 'poldek', color: 0x7a1f2b },
+  { id: 'veh_pasek', cat: 'vehicle', name: 'Pasek Kombi', desc: 'Rodzinne kombi z lat 90. z relingami — pewne w zakrętach, do ~195 km/h', price: 1600, vtype: 'pasek', color: 0x9aa0a8 },
+  { id: 'veh_szwed', cat: 'vehicle', name: 'Szwedzki Czołg', desc: 'Kanciaste, niezniszczalne kombi z wysokimi lampami z tyłu, do ~170 km/h', price: 1800, vtype: 'szwed', color: 0x234d3a },
+  { id: 'veh_okularnik', cat: 'vehicle', name: 'Okularnik', desc: 'Niemiecki sedan z podwójnymi owalnymi lampami — szybki i stabilny, do ~220 km/h', price: 2400, vtype: 'okularnik', color: 0xc9ccd1 },
+  { id: 'veh_majestat', cat: 'vehicle', name: 'Majestat', desc: 'Długa, dwukolorowa limuzyna prestiżowa — chromowany grill, do ~245 km/h', price: 6000, vtype: 'majestat', color: 0x1d2027 },
 ];
 const SHOP_CATS = [['outfit', '👕 Stroje'], ['hat', '🧢 Nakrycia głowy'], ['glasses', '🕶️ Okulary'], ['hair', '💇 Fryzury'], ['vehicle', '🏍️ Pojazdy'], ['extra', '🔥 Nitro, paliwo, 💎'], ['settings', '⚙️ Ustawienia']];
 const shopItem = id => SHOP.find(i => i.id === id);
@@ -2170,9 +2482,9 @@ function updateTouchUI() {
   $('t-mode').classList.toggle('off', !scoot);
   $('t-wheelie').classList.toggle('off', !wh);
   const fly = !!(P.car && P.car.spec.fly);
-  $('t-jump').textContent = fly ? 'W GÓRĘ' : P.car ? 'HAMULEC' : 'SKOK';
+  $('t-jump').textContent = fly ? 'W GÓRĘ' : P.car ? (isCar4(P.car.type) ? 'RĘCZNY' : 'HAMULEC') : 'SKOK';
   $('t-sprint').classList.toggle('off', !!P.car && !fly && !hasNitro());
-  $('t-sprint').textContent = fly ? 'W DÓŁ' : P.car ? 'NITRO' : 'BIEG';
+  $('t-sprint').textContent = fly ? 'W DÓŁ' : P.car ? (hasNitro() || !isCar4(P.car.type) ? 'NITRO' : 'RĘCZNY') : 'BIEG';
 }
 
 function onEscape() {
@@ -2242,6 +2554,23 @@ const Sound = {
   sirenLevel(k) { if (this.sir) this.sir.g.gain.setTargetAtTime(0.012 + 0.07 * k, this.ctx.currentTime, 0.1); },
   crash(v) { this.noise(0.35, Math.min(0.6, v / 30), 500); },
   door() { this.noise(0.12, 0.25, 1500); },
+  // Pisk opon w poślizgu: zapętlony szum przez wąski filtr pasmowy (wysokość tonu „pływa” z poślizgiem).
+  skid(level) {
+    if (!this.ctx) return;
+    if (!this.sk) {
+      if (level <= 0.02) return;
+      const n = this.ctx.sampleRate * 2, buf = this.ctx.createBuffer(1, n, this.ctx.sampleRate), d = buf.getChannelData(0);
+      for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+      const s = this.ctx.createBufferSource(); s.buffer = buf; s.loop = true;
+      const f = this.ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1150; f.Q.value = 9;
+      const g = this.ctx.createGain(); g.gain.value = 0;
+      s.connect(f); f.connect(g); g.connect(this.master); s.start();
+      this.sk = { s, f, g };
+    }
+    const t = this.ctx.currentTime, k = clamp(level, 0, 1);
+    this.sk.g.gain.setTargetAtTime(k * 0.22, t, 0.06);
+    this.sk.f.frequency.setTargetAtTime(950 + k * 500 + Math.random() * 120, t, 0.05);
+  },
   engine(active, speed, throttle) {
     if (!this.engGain) return;
     const t = this.ctx.currentTime;
@@ -2341,29 +2670,37 @@ let shake = 0, pedWarnT = 0;
 function updateCar(v, dt) {
   const wantUp = !ui && key('KeyW', 'ArrowUp'), down = !ui && key('KeyS', 'ArrowDown');
   const left = !ui && key('KeyA', 'ArrowLeft'), right = !ui && key('KeyD', 'ArrowRight');
-  const hb = !ui && key('Space');
-  const sp = v.spec || VSPEC.car;
+  const sp = v.spec || VSPEC.car, four = isCar4(v.type);
+  // ręczny: Spacja (w aucie także Shift, jeśli nie kupiono nitro — wtedy Shift = nitro)
+  const hb = !ui && (key('Space') || (four && !hasNitro() && key('ShiftLeft', 'ShiftRight')));
   const up = fuelAndNitro(v, dt, wantUp) && wantUp;      // bez paliwa — brak gazu
   const sm = isScooterType(v.type) ? SCOOTER_MODES[wardrobe.smode] || SCOOTER_MODES.S : null;
   const vmax = sm ? sm.kmh / 3.6 : sp.max, vacc = sm ? sm.acc : sp.acc;
   const icy = season() === 'winter', brk = sp.brake * (icy ? 0.42 : 1);
+  const sp0 = v.speed;
   if (nitroActive) { v.speed += NITRO_ACC * (1 - v.speed / NITRO_MAX) * dt; }
-  else if (up) { v.speed += (v.speed < -0.5 ? brk : vacc * (icy ? 0.75 : 1) * (1 - v.speed / vmax)) * dt; }
+  else if (up) { v.speed += (v.speed < -0.5 ? brk : vacc * (icy ? 0.75 : 1) * (1 - v.speed / vmax) * (four && hb ? 0.35 : 1)) * dt; }
   else if (down) { v.speed -= (v.speed > 0.5 ? brk : vacc * 0.7 * (1 + v.speed / sp.rev)) * dt; }
   else { v.speed *= 1 - Math.min(1, (icy ? 0.22 : 0.55) * dt); if (Math.abs(v.speed) < 0.15) v.speed = 0; }
   if (sm && !nitroActive && v.speed > vmax) v.speed = Math.max(vmax, v.speed - 8 * dt);   // niższy tryb — silnik zwalnia
-  if (hb) { v.speed *= 1 - Math.min(1, (icy ? 0.8 : 2.2) * dt); }
+  if (hb) {
+    if (four) { const d = (icy ? 2.5 : 6.5) * dt; v.speed = Math.abs(v.speed) <= d ? 0 : v.speed - Math.sign(v.speed) * d; }   // zablokowane tylne koła
+    else v.speed *= 1 - Math.min(1, (icy ? 0.8 : 2.2) * dt);
+  }
   updateWheelie(v, dt);
   const steerIn = (left ? 1 : 0) - (right ? 1 : 0);
-  v.steer = lerp(v.steer, steerIn, Math.min(1, dt * 6));
+  v.steer = lerp(v.steer, steerIn, Math.min(1, dt * (four ? 4.5 : 6)));
   const maxSteer = sp.steer / (1 + Math.abs(v.speed) * 0.045);
-  v.heading += v.steer * maxSteer * v.speed / 3.0 * dt * (hb ? 1.7 : 1);
-  const f = carFwd(v);
-  // zimą auto „płynie": kierunek ruchu dogania kierunek maski z opóźnieniem (poślizg)
-  if (v.mdir == null) v.mdir = v.heading;
-  v.mdir += angDiff(v.mdir, v.heading) * Math.min(1, (icy ? (hb ? 0.9 : 2.1) : 40) * dt);
   const vox = v.pos.x, voz = v.pos.z;
-  v.pos.x += Math.sin(v.mdir) * v.speed * dt; v.pos.z += Math.cos(v.mdir) * v.speed * dt;
+  if (four) driveFour(v, dt, sp, hb, icy, up, maxSteer, sp0, down);
+  else {
+    v.heading += v.steer * maxSteer * v.speed / 3.0 * dt * (hb ? 1.7 : 1);
+    // zimą jednoślad „płynie": kierunek ruchu dogania kierunek z opóźnieniem (poślizg)
+    if (v.mdir == null) v.mdir = v.heading;
+    v.mdir += angDiff(v.mdir, v.heading) * Math.min(1, (icy ? (hb ? 0.9 : 2.1) : 40) * dt);
+    v.pos.x += Math.sin(v.mdir) * v.speed * dt; v.pos.z += Math.cos(v.mdir) * v.speed * dt;
+  }
+  const f = carFwd(v);
   // collisions: buildings & other vehicles
   let impact = 0;
   for (const off of [sp.off, -sp.off]) {
@@ -2386,10 +2723,15 @@ function updateCar(v, dt) {
       v.pos.x += mx; v.pos.z += mz;
       const dot = (f.x * mx + f.z * mz) / l;
       if (dot * v.speed < 0) { impact = Math.max(impact, Math.abs(v.speed * dot)); v.speed *= 1 - 1.3 * dot * dot; }
+      if (four && v.slip) {     // uderzenie bokiem w poślizgu
+        const ds = (f.z * mx - f.x * mz) / l;
+        if (ds * v.slip < 0) { impact = Math.max(impact, Math.abs(v.slip * ds)); v.slip *= 1 - 1.3 * ds * ds; }
+      }
     }
   }
   if (vehicleWater(v, vox, voz, f)) { impact = Math.max(impact, Math.abs(v.speed) * 0.6); v.speed *= 0.25; }
   if (impact > 7) { Sound.crash(impact); shake = Math.min(0.6, impact / 40); }
+  if (four && impact > 4) driftScore.fail();
   // pościg: jazda szybciej niż limit przez ponad 1,2 s
   if (Math.abs(v.speed) * 3.6 > SPEED_LIMIT_KMH) { overSpeedT += dt; if (overSpeedT > 1.2) triggerPolice('speed'); } else overSpeedT = 0;
   v.pos.x = clamp(v.pos.x, -BOUND, BOUND); v.pos.z = clamp(v.pos.z, -BOUND, BOUND);
@@ -2410,7 +2752,160 @@ function updateCar(v, dt) {
   }
   poseCar(v, dt);
   if (sp.ride) posePlayerRider(v);
+  if (four) carFx(v, dt, hb, down, icy);
   Sound.engine(true, v.speed * (sp.ride === 'scooter' ? 0.4 : 1), up && sp.ride !== 'scooter');
+}
+// ---------------------------------------------------------------- ślady opon, dym, pisk
+// Ślady: bufor pierścieniowy prostokątów na jezdni (najstarsze nadpisywane). Dym: pula sprite'ów.
+const SKID_MAX = 1800;
+const skidPos = new Float32Array(SKID_MAX * 18), skidGeo = new THREE.BufferGeometry();
+skidGeo.setAttribute('position', new THREE.BufferAttribute(skidPos, 3));
+skidGeo.setDrawRange(0, 0);
+const skidMesh = new THREE.Mesh(skidGeo, new THREE.MeshBasicMaterial({ color: 0x101010, transparent: true, opacity: 0.5, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }));
+skidMesh.frustumCulled = false; skidMesh.renderOrder = 1;
+scene.add(skidMesh);
+let skidN = 0, skidUsed = 0, skidDirty = false;
+function addSkid(ax, az, bx, bz, w, y) {
+  const dx = bx - ax, dz = bz - az, l = Math.hypot(dx, dz) || 1, nx = -dz / l * w / 2, nz = dx / l * w / 2;
+  const o = skidN * 18, q = [ax + nx, y, az + nz, ax - nx, y, az - nz, bx - nx, y, bz - nz, ax + nx, y, az + nz, bx - nx, y, bz - nz, bx + nx, y, bz + nz];
+  skidPos.set(q, o);
+  skidN = (skidN + 1) % SKID_MAX; skidUsed = Math.min(SKID_MAX, skidUsed + 1); skidDirty = true;
+}
+const smokeTex = (() => {
+  const c = makeCanvas(64, 64), x = c.getContext('2d'), g = x.createRadialGradient(32, 32, 2, 32, 32, 31);
+  g.addColorStop(0, 'rgba(255,255,255,0.9)'); g.addColorStop(0.5, 'rgba(255,255,255,0.35)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+  x.fillStyle = g; x.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+})();
+const smoke = [];
+for (let i = 0; i < 44; i++) {
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: smokeTex, color: 0xdedede, transparent: true, opacity: 0, depthWrite: false }));
+  s.visible = false; scene.add(s); smoke.push({ s, t: 0, life: 1, vx: 0, vy: 0, vz: 0 });
+}
+let smokeI = 0, smokeAcc = 0;
+function puff(x, y, z, vx, vz, snow) {
+  const p = smoke[smokeI = (smokeI + 1) % smoke.length];
+  p.t = 0; p.life = 0.9 + Math.random() * 0.6; p.vx = vx * 0.25 + (Math.random() - 0.5); p.vz = vz * 0.25 + (Math.random() - 0.5); p.vy = 0.6 + Math.random() * 0.8;
+  p.s.position.set(x, y + 0.3, z); p.s.visible = true; p.s.material.color.setHex(snow ? 0xffffff : 0xe6e6e6);
+}
+function updateSmoke(dt) {
+  for (const p of smoke) {
+    if (!p.s.visible) continue;
+    p.t += dt;
+    if (p.t >= p.life) { p.s.visible = false; continue; }
+    const k = p.t / p.life;
+    p.s.position.x += p.vx * dt; p.s.position.y += p.vy * dt; p.s.position.z += p.vz * dt;
+    p.s.scale.setScalar(0.7 + k * 2.6);
+    p.s.material.opacity = 0.55 * (1 - k) * Math.min(1, p.t * 8);
+  }
+  if (skidDirty) { skidGeo.attributes.position.needsUpdate = true; skidGeo.setDrawRange(0, skidUsed * 6); skidDirty = false; }
+}
+// Ślady, dym i pisk dla auta gracza: tylne koła w poślizgu / na ręcznym, przednie przy ostrym hamowaniu.
+function carFx(v, dt, hb, braking, icy) {
+  if (!v.wheels.length) { Sound.skid(0); return; }
+  driftScore.update(v, dt);
+  const f = carFwd(v), sx = f.z, sz = -f.x, d = carDims(v.type), spd = Math.abs(v.speed) + Math.abs(v.slip || 0);
+  const rearOn = spd > 3 && (v.drift > 0.12 || (hb && Math.abs(v.speed) > 2.5));
+  const frontOn = spd > 3 && (v.drift > 0.65 || (v.braking && v.aLong < -18));
+  let level = 0;
+  if (rearOn) level = Math.max(level, hb ? 0.55 + v.drift * 0.45 : v.drift);
+  if (frontOn) level = Math.max(level, 0.6);
+  Sound.skid(level * Math.min(1, spd / 8));
+  const y = v.pos.y + 0.025;
+  for (const w of v.wheels) {
+    const on = w.front ? frontOn : rearOn;
+    const wx = v.pos.x + f.x * w.z + sx * w.x, wz = v.pos.z + f.z * w.z + sz * w.x;
+    if (!on) { w.mark = null; continue; }
+    if (!icy) {
+      if (!w.mark) w.mark = [wx, wz];
+      else if (Math.hypot(wx - w.mark[0], wz - w.mark[1]) > 0.3) { addSkid(w.mark[0], w.mark[1], wx, wz, d.tw * 0.95, y); w.mark = [wx, wz]; }
+    }
+  }
+  if (rearOn && (v.drift > 0.25 || hb) && spd > 5) {
+    smokeAcc += dt * 26 * Math.max(v.drift, hb ? 0.6 : 0);
+    while (smokeAcc > 1) {
+      smokeAcc--;
+      const w = v.wheels[2 + (Math.random() < 0.5 ? 0 : 1)];
+      const vx = f.x * v.speed + sx * (v.slip || 0), vz = f.z * v.speed + sz * (v.slip || 0);
+      puff(v.pos.x + f.x * w.z + sx * w.x, v.pos.y, v.pos.z + f.z * w.z + sz * w.x, vx, vz, icy);
+    }
+  }
+}
+// Punkty za drift (kąt × prędkość × czas) — sama zabawa i rekord, bez pieniędzy (gra jest o nauce).
+// Uderzenie w coś w trakcie driftu kasuje punkty.
+const driftScore = {
+  pts: 0, idle: 0,
+  update(v, dt) {
+    const ang = Math.abs(Math.atan2(v.slip || 0, Math.max(1, Math.abs(v.speed)))) * 180 / Math.PI;
+    if (v.drift > 0.2 && Math.abs(v.speed) > 7 && ang > 7) {
+      this.pts += ang * Math.abs(v.speed) * dt * 0.6; this.idle = 0; clearTimeout(this.tm);
+      const el = $('drift-hud'); el.hidden = false; el.classList.remove('fail');
+      el.innerHTML = `DRIFT <b>${Math.round(ang)}°</b><span>${Math.round(this.pts)}</span>`;
+    } else if (this.pts > 0 && (this.idle += dt) > 1.1) this.end(false);
+  },
+  fail() {
+    if (this.pts < 30) return;
+    this.pts = 0; this.idle = 0;
+    const el = $('drift-hud'); el.innerHTML = 'DRIFT <b>✖</b><span>0</span>'; el.classList.add('fail');
+    clearTimeout(this.tm); this.tm = setTimeout(() => { el.hidden = true; el.classList.remove('fail'); }, 1200);
+  },
+  end(quiet) {
+    const p = Math.round(this.pts); this.pts = 0; this.idle = 0;
+    const el = $('drift-hud');
+    if (quiet || p < 120) { el.hidden = true; return; }
+    const rec = p > (save.driftBest || 0);
+    if (rec) { save.driftBest = p; persist(); }
+    el.innerHTML = `DRIFT <b>+${p}</b><span>${rec ? 'NOWY REKORD!' : 'rekord ' + save.driftBest}</span>`;
+    clearTimeout(this.tm); this.tm = setTimeout(() => { el.hidden = true; }, 1800);
+  },
+};
+function stopCarFx(v) {
+  v.slip = 0; v.drift = 0; v.yawV = 0; v.hb = false; v.pitch = v.roll = v.pv = v.rv = 0;
+  for (const w of v.wheels || []) w.mark = null;
+  const b = v.mesh.userData.body; if (b) b.rotation.set(0, 0, 0);
+  Sound.skid(0); driftScore.end(true);
+}
+// Fizyka auta 4-kołowego z poślizgiem. Prędkość w układzie auta: wzdłuż (v.speed) i w bok (v.slip, + = w lewo).
+// Obrót auta obraca wektor prędkości względem maski; przyczepność opon (spec.grip, m/s²) kasuje prędkość boczną.
+// Gdy siła w zakręcie przekracza przyczepność — auto się ślizga (drift); ręczny (Spacja/Shift) blokuje tył:
+// przyczepność spada, tył ucieka, auto obraca się mocniej. Kontra (skręt w przeciwną stronę) prostuje auto.
+function driveFour(v, dt, sp, hb, icy, up, maxSteer, sp0, braking) {
+  const L0 = v.speed, S0 = v.slip || 0, G0 = (sp.grip || 28) * (icy ? 0.38 : 1);
+  const sliding = Math.abs(S0) > 1.6;
+  // docelowa prędkość obrotu (jak dotąd) — z ręcznym i przy gazie w poślizgu auto skręca mocniej
+  let yawT = v.steer * maxSteer * L0 / 3.0 * (hb ? 1.4 : sliding && up ? 1.15 : 1);
+  if (hb) yawT = clamp(yawT, -2.4, 2.4);         // obrót na ręcznym: szybki, ale bez „bączka” w miejscu
+  else {
+    // przyczepność ogranicza obrót: a_boczne = v · ω ≤ G. Im większy kąt poślizgu, tym słabiej auto dokręca
+    // (stabilny drift ok. 9–18° zamiast obrotu w miejscu); kontra działa zawsze mocno.
+    const beta = Math.atan2(Math.abs(S0), Math.max(1, Math.abs(L0))), counter = L0 * yawT * S0 > 0;
+    const k = counter ? 1.4 : Math.max(0.35, 1.06 - 1.2 * beta) * (sliding && up ? 1.1 : 1);
+    const lim = k * G0 / Math.max(2, Math.abs(L0));
+    yawT = clamp(yawT, -lim, lim);
+  }
+  v.yawV = lerp(v.yawV || 0, yawT, Math.min(1, dt * (hb ? 5 : 8)));
+  const dh = v.yawV * dt;
+  v.heading += dh;
+  // prędkość zostaje w świecie — w układzie auta obraca się o −dh
+  const c = Math.cos(dh), s = Math.sin(dh);
+  let L = L0 * c + S0 * s, S = -L0 * s + S0 * c;
+  // opony: z ręcznym tył traci przyczepność; w poślizgu z gazem — mniej przyczepności (tarcie ślizgowe)
+  const G = G0 * (hb ? 0.26 : sliding && up ? 0.75 : sliding ? 0.88 : 1);
+  const cut = Math.min(Math.abs(S), G * dt);
+  S -= Math.sign(S) * cut;
+  L -= Math.sign(L) * Math.min(Math.abs(L), Math.abs(S) * 0.35 * dt);   // tarcie boczne hamuje
+  v.speed = L; v.slip = Math.abs(S) < 0.02 ? 0 : S;
+  const f = carFwd(v);
+  v.pos.x += (f.x * L + f.z * S) * dt; v.pos.z += (f.z * L - f.x * S) * dt;
+  v.mdir = v.heading;
+  v.hb = hb; v.braking = braking && L > 6;
+  v.drift = clamp((Math.abs(S) - 1.6) / 5, 0, 1);
+  // przechyły karoserii: hamowanie / przyspieszanie (nurkowanie / przysiad), zakręt (przechył na zewnątrz)
+  v.aLong = lerp(v.aLong || 0, (L - sp0) / Math.max(dt, 1e-3), Math.min(1, dt * 10));
+  const aLat = L * v.yawV;
+  const pT = clamp(-v.aLong * 0.0036, -0.04, 0.055), rT = clamp(aLat * 0.0036, -0.065, 0.065);
+  v.pv = (v.pv || 0) + ((pT - (v.pitch || 0)) * 70 - (v.pv || 0) * 10) * dt; v.pitch = (v.pitch || 0) + v.pv * dt;
+  v.rv = (v.rv || 0) + ((rT - (v.roll || 0)) * 60 - (v.rv || 0) * 9) * dt; v.roll = (v.roll || 0) + v.rv * dt;
 }
 // Pojazd na ziemi nie wjedzie do wody: sprawdzamy przód i tył (okręgi kolizji); ślizg wzdłuż brzegu.
 function vehicleWater(v, ox, oz, f) {
@@ -2450,8 +2945,15 @@ function poseCar(v, dt) {
     v.mesh.rotation.x = -wa;
     if (wa) v.mesh.position.y += (v.len || 2) * 0.4 * Math.sin(wa);
   }
-  const spin = v.speed * dt / 0.38;
-  v.wheels.forEach((w, i) => { w.rotation.x += spin; if (i < 2) w.rotation.y = (v.steer || 0) * 0.45; });
+  if (!v.wheels.length) return;
+  // osobne koła: obrót wg prędkości (z ręcznym tylne stoją), skręt przednich, przechył karoserii
+  const d = carDims(v.type), spin = v.speed * dt / d.wr, st = (v.steer || 0) * 0.55 / (1 + Math.abs(v.speed) * 0.03);
+  for (const w of v.wheels) {
+    if (!(v.hb && !w.front && v.kind === 'player')) w.mesh.rotation.x += spin * w.sgn;
+    if (w.front) w.pivot.rotation.y = st;
+  }
+  const b = v.mesh.userData.body;
+  if (b) { b.rotation.x = v.kind === 'player' ? v.pitch || 0 : 0; b.rotation.z = v.kind === 'player' ? v.roll || 0 : 0; }
 }
 
 function toggleCar() {
@@ -2466,6 +2968,7 @@ function toggleCar() {
       if ((!pushOut(p, 0.45, nearCols, 0.2) && !waterHit(p.x, p.z, 0.4)) || s === -1) { P.pos.set(p.x, groundAt(p.x, p.z), p.z); break; }
     }
     v.kind = 'parked'; v.speed = 0; v.steer = 0; v.lean = 0; v.wheelie = 0; v.mesh.rotation.z = 0; v.mesh.rotation.x = 0;
+    stopCarFx(v);
     nitroActive = false; if (v.flames) v.flames.visible = false; persistWardrobe();
     if (v.ghost) ghostVehicle(v, false);
     P.car = null; player.g.visible = true; P.facing = v.heading; P.speed = 0;
@@ -2479,11 +2982,15 @@ function toggleCar() {
   for (const v of vehicles) { if (v.kind === 'police') continue; const d = Math.hypot(v.pos.x - P.pos.x, v.pos.z - P.pos.z); if (d < bd) { bd = d; best = v; } }
   if (!best) return;
   if (best.ai) { best.ai = null; toast('Auto przejęte! Kierowca uciekł.', 'good'); }
-  best.kind = 'player'; best.speed = 0; P.car = best; player.g.visible = !!(best.spec && best.spec.ride);
+  upgradeCarMesh(best);
+  best.kind = 'player'; best.speed = 0; best.slip = 0; best.yawV = 0; best.mdir = best.heading; P.car = best; player.g.visible = !!(best.spec && best.spec.ride);
   if (invisibleOn()) ghostVehicle(best, true);
   Sound.door();
   $('speedo').hidden = false;
+  $('speed-car').textContent = VEH_NAMES[best.type] || '';
+  if (isCar4(best.type) && !carHintShown) { carHintShown = true; toast(`🚗 ${VEH_NAMES[best.type] || 'Auto'} — <kbd>Spacja</kbd>${hasNitro() ? '' : ' lub <kbd>Shift</kbd>'} = ręczny (drift), <kbd>F</kbd> = wysiądź.`, 'good', 4500); }
 }
+let carHintShown = false;
 
 // ---------------------------------------------------------------- samolot
 // W / S — gaz / hamowanie, A / D — skręt, Spacja — w górę, Shift / X / C — w dół (na dotyku SKOK / BIEG).
@@ -2558,7 +3065,11 @@ function ghostVehicle(v, on) {
     if (!on) { if (o.userData.origMat) { o.material = o.userData.origMat; delete o.userData.origMat; } return; }
     o.userData.origMat = base;
     if (base === vcMat) { o.material = ghostMat; return; }
-    if (!base.userData.ghost) { const gm = base.clone(); gm.transparent = true; gm.opacity = 0.38; gm.depthWrite = false; base.userData.ghost = gm; }
+    if (!base.userData.ghost) {
+      const gm = base.clone(); gm.transparent = true; gm.opacity = 0.38; gm.depthWrite = false;
+      if (base.onBeforeCompile !== THREE.Material.prototype.onBeforeCompile) { gm.onBeforeCompile = base.onBeforeCompile; gm.customProgramCacheKey = () => 'ghost_' + base.customProgramCacheKey(); }
+      base.userData.ghost = gm;
+    }
     o.material = base.userData.ghost;
   });
 }
@@ -2910,8 +3421,10 @@ function updateCamera(dt) {
   const v = P.car;
   const t = v ? tmpV.set(v.pos.x, v.pos.y + 1.6, v.pos.z) : tmpV.set(P.pos.x, P.pos.y + 1.7, P.pos.z);
   if (v && performance.now() - lastMouse > 1300 && Math.abs(v.speed) > 1.5) {
-    camYaw += angDiff(camYaw, v.heading + Math.PI) * Math.min(1, dt * 2.6);
-    camPitch = lerp(camPitch, 0.22, Math.min(1, dt));
+    // w drifcie kamera podąża za kierunkiem jazdy, nie za maską — widać auto bokiem, jak tył ucieka
+    const slipA = v.slip ? Math.atan2(v.slip, Math.abs(v.speed)) * Math.sign(v.speed) : 0;
+    camYaw += angDiff(camYaw, v.heading + slipA * 0.6 + Math.PI) * Math.min(1, dt * (v.drift ? 2.0 : 2.6));
+    camPitch = lerp(camPitch, 0.22 - (v.drift || 0) * 0.05, Math.min(1, dt));
   }
   if (!v && touchMode && P.speed > 1 && performance.now() - lastMouse > 1200) {
     // follow unless the player runs back towards the camera
@@ -2947,6 +3460,7 @@ function updateSky(dt, focus) {
   scene.background.copy(skyC); scene.fog.color.copy(skyC);
   hemi.intensity = 0.28 + 0.42 * day;
   sun.intensity = 0.18 + 0.8 * day;
+  carPaintMat.envMapIntensity = 0.08 + 0.47 * day;     // nocą lakier nie odbija jasnego nieba
   sun.color.setRGB(1, lerp(0.8, 1, day), lerp(0.75, 0.97, day));
   if (elev < 0) sun.color.setRGB(0.6, 0.7, 1.0);
   const sx = Math.cos(ang), sy = Math.max(0.28, Math.abs(elev)), sz = 0.42;
@@ -4327,6 +4841,7 @@ function timeUp() {
   if (P.car) {
     const v = P.car;
     v.kind = 'parked'; v.speed = 0; v.steer = 0; v.lean = 0; v.wheelie = 0; v.mesh.rotation.z = 0; v.mesh.rotation.x = 0;
+    stopCarFx(v);
     nitroActive = false; if (v.flames) v.flames.visible = false; persistWardrobe();
     if (v.ghost) ghostVehicle(v, false);
     P.car = null; player.g.visible = true; $('speedo').hidden = true; Sound.engine(false, 0, false);
@@ -5195,7 +5710,7 @@ function renderShop() {
 }
 function shopIcon(it) {
   if (it.cat === 'extra') return it.id === 'nitro' ? '🔥' : it.id === 'wheelie' ? '🤸' : it.id === 'gem_sell' ? '💎' : it.id === 'invis' ? '👻' : '⛽';
-  if (it.cat === 'vehicle') return { scooter: '🛴', kscooter: '🛴', moto: '🏍️', hatch: '🚗', suv: '🚙', supercar: '🏎️', lux: '🚘', plane: '✈️' }[it.vtype] || '🚗';
+  if (it.cat === 'vehicle') return { scooter: '🛴', kscooter: '🛴', moto: '🏍️', hatch: '🚗', suv: '🚙', supercar: '🏎️', lux: '🚘', plane: '✈️', pasek: '🚙', szwed: '🚙', majestat: '🚘', okularnik: '🚘' }[it.vtype] || '🚗';
   if (it.cat === 'glasses') return it.glasses === 'cash' ? '<span class="pixglass">▀█▀▀ ▀█▀▀</span>' : it.glasses === 'sun' ? '🕶️' : '🙂';
   if (it.cat === 'hat') return { none: '💇', cap: '🧢', beanie: '🧶', fedora: '🎩', crown: '👑' }[it.hat];
   if (it.cat === 'hair') return `<span class="swatch" style="background:#${it.hair.toString(16).padStart(6, '0')}"></span>`;
@@ -5237,7 +5752,7 @@ function summonVehicle(quiet) {
     if (!pushOut(p, rr0, nearCols) && !waterHit(p.x, p.z, rr0)) { best = p; break; }
   }
   if (!best) best = { x: P.pos.x + fz * 2.6, z: P.pos.z - fx * 2.6 };
-  summoned = spawnVehicle(it.vtype, vehColor(id), best.x, best.z, P.facing, 'parked');
+  summoned = spawnVehicle(it.vtype, vehColor(id), best.x, best.z, P.facing, 'parked', true);
   summoned.owned = true; summoned.itemId = id; summoned.pos.y = groundAt(best.x, best.z); summoned.mesh.position.copy(summoned.pos);
   if (quiet) return;
   Sound.door();
@@ -5371,10 +5886,11 @@ function frame() {
   nearTimer -= dt;
   if (nearTimer <= 0) { refreshNear(focus.x, focus.z); nearTimer = 0.2; }
   if (ui !== 'start') {
-    if (P.car) (P.car.spec && P.car.spec.fly ? updatePlane : updateCar)(P.car, dt); else { updateOnFoot(dt); Sound.engine(false, 0, false); }
+    if (P.car) (P.car.spec && P.car.spec.fly ? updatePlane : updateCar)(P.car, dt); else { updateOnFoot(dt); Sound.engine(false, 0, false); Sound.skid(0); }
   }
   for (const v of vehicles) if (v.kind === 'parked' && v.mesh.visible) v.pos.y = groundAt(v.pos.x, v.pos.z), v.mesh.position.copy(v.pos);
   updateTraffic(dt);
+  updateSmoke(dt);
   updateChase(dt);
   if (ui !== 'start') { updateSeason(dt); updateMissionTimer(dt); updateMushrooms(dt); checkFishSpots(); updateFishing(dt); checkMapEdge(dt); }
   netTick(dt);
