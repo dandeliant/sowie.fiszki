@@ -61,21 +61,26 @@ const MAP_DEFS = {
     banner: ['PARIS', 'Welcome to Paris!'], finalePL: 'wieża Eiffla', finaleIn: 'pod wieżą Eiffla', finaleEN: 'Eiffel Tower',
     tagline: 'Prawdziwy Paryż (wieża Eiffla) w 3D', ground: 'pave', eiffel: true, orbit: [330, 120, 110], fog: [240, 950] },
 };
-const MAP_ID = (p => (MAP_DEFS[p] ? p : 'grid'))(new URLSearchParams(location.search).get('map'));
+const MAP_ID = (p => (MAP_DEFS[p] || p === 'metro' ? p : 'grid'))(new URLSearchParams(location.search).get('map'));
 const MAPDEF = MAP_DEFS[MAP_ID] || null;
 const REALMAP = !!MAPDEF;     // mapa z prawdziwych danych (Warszawa, Jeleniec)
 const W_EXT = MAPDEF ? MAPDEF.ext : 515;   // mapa z danych: zakres ±W_EXT m (środek = środek eksportu)
 let WD = null;                // dane mapy (ładowane w boot)
+// Metropolia (?map=metro): Grammar City (te same misje i postęp) w środku dużej siatki 16 × 16 kwartałów,
+// dookoła dwa pierścienie osiedli z blokami i dwa pierścienie przedmieść z domami — ok. 1,3 × 1,3 km, skala 1:1.
+const METRO = MAP_ID === 'metro';
 
 // ---------------------------------------------------------------- city layout
-const N = 8;                  // blocks per side
+const N = METRO ? 16 : 8;     // blocks per side
+const O = METRO ? 4 : 0;      // przesunięcie kwartałów Grammar City (misje, ratusz, parki) — centrum dużej siatki
 const B = 64;                 // block size
 const R = 16;                 // road width
 const CELL = B + R;
 const SW = 5;                 // sidewalk width
 const GAP = 4;                // gap between lots
 const L = (B - 2 * SW - GAP) / 2; // lot size (25)
-const HALF = (N * CELL + R) / 2;  // 328
+const HALF = (N * CELL + R) / 2;  // 328 (Metropolia 648)
+const HALF0 = (8 * CELL + R) / 2; // centrum (Grammar City) — wysokość budynków maleje od środka
 const LANE = 4;
 const SIDE_H = 0.3;
 const BOUND = REALMAP ? W_EXT - 3 : HALF + 70;
@@ -488,15 +493,15 @@ function layoutMissions() {
   for (const m of MISSIONS) {
     if (m.block) {
       const [bx, bz] = m.block, [lx, lz] = m.lot;
-      const X0 = lot0(bx, lx), Z0 = lot0(bz, lz);
+      const X0 = lot0(bx + O, lx), Z0 = lot0(bz + O, lz);
       m.side = lx === 0 ? -1 : 1;
       m.lotX0 = X0; m.lotZ0 = Z0;
       m.mx = lx === 0 ? X0 + 3 : X0 + L - 3;
       m.mz = Z0 + L / 2;
     } else if (m.park) {
-      m.mx = bc(m.park[0]); m.mz = bc(m.park[1]) + 10;
+      m.mx = bc(m.park[0] + O); m.mz = bc(m.park[1] + O) + 10;
     } else if (m.cityHall) {
-      m.mx = bc(m.cityHall[0]); m.mz = bx0(m.cityHall[1]) + 52;
+      m.mx = bc(m.cityHall[0] + O); m.mz = bx0(m.cityHall[1] + O) + 52;
     }
   }
 }
@@ -869,18 +874,27 @@ function buildCity() {
   if (REALMAP) { buildWarsaw(); return; }
   layoutMissions();
   buildGround();
+  if (METRO) { scene.fog.near = 200; scene.fog.far = 700; }
   const lotOwner = {};
-  for (const m of MISSIONS) if (m.block) lotOwner[`${m.block[0]},${m.block[1]},${m.lot[0]},${m.lot[1]}`] = m;
+  for (const m of MISSIONS) if (m.block) lotOwner[`${m.block[0] + O},${m.block[1] + O},${m.lot[0]},${m.lot[1]}`] = m;
   const slabs = new THREE.InstancedMesh(new THREE.BoxGeometry(B, SIDE_H, B), slabMat, N * N);
   slabs.receiveShadow = true; slabs.frustumCulled = false; scene.add(slabs);
-  const sd = new THREE.Object3D();
+  const sd = new THREE.Object3D(), lawns = [];
   for (let bx = 0; bx < N; bx++) for (let bz = 0; bz < N; bz++) {
     const X = bx0(bx), Z = bx0(bz);
     sd.position.set(X + B / 2, SIDE_H / 2, Z + B / 2); sd.updateMatrix(); slabs.setMatrixAt(bx * N + bz, sd.matrix);
     mapRects.push({ x0: X, z0: Z, x1: X + B, z1: Z + B, c: '#2b3340' });
-    const key = `${bx},${bz}`;
+    const key = `${bx - O},${bz - O}`, zone = blockZone(bx, bz);
     const hallM = MISSIONS.find(m => m.cityHall && `${m.cityHall[0]},${m.cityHall[1]}` === key);
-    if (hallM) { buildCityHall(X, Z, hallM); }
+    if (zone !== 'core') {
+      // Metropolia poza centrum: trawnik w środku kwartału, na nim osiedle bloków albo domy z ogródkami
+      const h = hash2(bx, bz);
+      if (h >= 0.07) lawns.push([X + B / 2, Z + B / 2]);
+      if (h < 0.07) buildPark(X, Z, null);
+      else if (zone === 'mid') buildEstate(X, Z, h);
+      else buildSuburb(X, Z, bx, bz);
+    }
+    else if (hallM) { buildCityHall(X, Z, hallM); }
     else if (PARKS[key]) { buildPark(X, Z, MISSIONS.find(m => m.park && `${m.park[0]},${m.park[1]}` === key)); }
     else {
       for (let lx = 0; lx < 2; lx++) for (let lz = 0; lz < 2; lz++) {
@@ -898,6 +912,12 @@ function buildCity() {
       if (hallM && s === 1 && Math.abs(x - (X + B / 2)) < 20) continue;
       if (k % 2 === 0) treeSpots.push([x, z, rr(0.85, 1.2)]); else lampSpots.push([x, z]);
     }
+  }
+  if (lawns.length) {
+    const lawn = new THREE.InstancedMesh(geo('lawnPlane', () => new THREE.PlaneGeometry(B - 2 * SW, B - 2 * SW).rotateX(-Math.PI / 2)),
+      new THREE.MeshLambertMaterial({ map: parkGrassTex }), lawns.length);
+    lawns.forEach(([x, z], i) => { sd.position.set(x, SIDE_H + 0.011, z); sd.updateMatrix(); lawn.setMatrixAt(i, sd.matrix); });
+    lawn.receiveShadow = true; lawn.frustumCulled = false; scene.add(lawn);
   }
   buildLake();
   // countryside around the city
@@ -920,6 +940,104 @@ function buildCity() {
   const st = new THREE.Mesh(mergeColored(staticParts), vcMat);
   st.castShadow = st.receiveShadow = true; st.frustumCulled = false; scene.add(st);
   staticParts.length = 0;
+}
+
+// ---------------------------------------------------------------- Metropolia: osiedla i przedmieścia
+// Strefa kwartału: 'core' = Grammar City w środku, 'mid' = osiedla bloków (2 pierścienie), 'sub' = domy z ogródkami.
+function blockZone(bx, bz) {
+  if (!METRO || (bx >= O && bx < O + 8 && bz >= O && bz < O + 8)) return 'core';
+  const ring = Math.max(Math.abs(bx - (N - 1) / 2), Math.abs(bz - (N - 1) / 2));
+  return ring < 6 ? 'mid' : 'sub';
+}
+const hash2 = (a, b) => { const s = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return s - Math.floor(s); };
+const driveSpots = [];        // podjazdy przy domach — część aut parkuje tam (spawnParked)
+const HOUSE_WALLS = [0xf2e6d0, 0xe9dcc5, 0xd9c7a8, 0xf5f1e8, 0xcfd8dc, 0xe8d5c4, 0xf0e2b6, 0xd7e3d0, 0xe6cfc0, 0xc9d6e0];
+const HOUSE_ROOFS = [0xa4452f, 0x8b3a2b, 0x5a5f66, 0x3f4247, 0x7a4a33, 0x9c5b3a];
+// trójkątny graniastosłup 1 × 1 × 1 (dach dwuspadowy — kalenica wzdłuż osi Z), skalowany w addStatic
+const roofPrism = () => geo('roofPrism', () => {
+  const s = new THREE.Shape(); s.moveTo(-0.5, 0); s.lineTo(0.5, 0); s.lineTo(0, 1); s.closePath();
+  return new THREE.ExtrudeGeometry(s, { depth: 1, bevelEnabled: false }).translate(0, 0, -0.5);
+});
+// Osiedle: dwa długie bloki (5 pięter) z podwórkiem i placem zabaw albo wieżowiec-punktowiec (10–12 pięter).
+function buildEstate(X, Z, h) {
+  const rnd = mulberry(Math.floor(h * 1e6)), r2 = (a, b) => a + rnd() * (b - a);
+  const cx = X + B / 2, cz = Z + B / 2, wi = Math.floor(rnd() * wallPool.length);
+  const put = (w, hh, d, x, z) => {
+    (bldParts[wi] || (bldParts[wi] = [])).push({ g: buildingGeo(w, hh, d), x, z });
+    addCol(x - w / 2, x + w / 2, z - d / 2, z + d / 2, hh);
+    mapRects.push({ x0: x - w / 2, z0: z - d / 2, x1: x + w / 2, z1: z + d / 2, c: '#3c4656' });
+  };
+  if (h < 0.3) {                                          // punktowiec
+    const hh = r2(30, 37); put(18, hh, 18, cx, cz);
+    addBox(6, 2.4, 6, mat(0x8a8d93), cx, hh + 1.2, cz);
+    for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2; treeSpots.push([cx + Math.cos(a) * 19, cz + Math.sin(a) * 19, r2(0.9, 1.3)]); }
+    return;
+  }
+  const alongX = h < 0.65, hh = r2(14, 16.5);
+  for (const s of [-1, 1]) {
+    if (alongX) put(44, hh, 11, cx, cz + s * 15); else put(11, hh, 44, cx + s * 15, cz);
+  }
+  // podwórko: piaskownica, zjeżdżalnia, huśtawka, ławki, drzewa
+  const sandC = 0xe3cf98, metal = 0xc0392b;
+  addBox(5, 0.35, 5, mat(sandC), cx - 6, SIDE_H + 0.17, cz);
+  addBox(5.4, 0.45, 0.25, mat(0x8a5a33), cx - 6, SIDE_H + 0.22, cz - 2.7); addBox(5.4, 0.45, 0.25, mat(0x8a5a33), cx - 6, SIDE_H + 0.22, cz + 2.7);
+  addBox(0.25, 0.45, 5.4, mat(0x8a5a33), cx - 8.7, SIDE_H + 0.22, cz); addBox(0.25, 0.45, 5.4, mat(0x8a5a33), cx - 3.3, SIDE_H + 0.22, cz);
+  addBox(1.2, 2.2, 1.2, mat(0x2e86de), cx + 4, SIDE_H + 1.1, cz - 2);
+  addStatic(BOX(1, 0.12, 3.6), 0xf2b632, cx + 4, SIDE_H + 1.25, cz, 0, 1, 1, 1);
+  for (const dx of [-1.3, 1.3]) addBox(0.12, 2.4, 0.12, mat(metal), cx + 8 + dx, SIDE_H + 1.2, cz + 3);
+  addBox(2.8, 0.12, 0.12, mat(metal), cx + 8, SIDE_H + 2.4, cz + 3);
+  addBox(0.8, 0.08, 0.4, mat(0x3a3e45), cx + 8, SIDE_H + 0.7, cz + 3);
+  addCol(cx - 8.6, cx - 3.4, cz - 2.6, cz + 2.6, 0.5); addCol(cx + 3.4, cx + 4.6, cz - 2.6, cz - 1.4, 2.2);
+  for (const [dx, dz] of [[-14, -6], [14, 6], [-14, 6], [14, -6]]) treeSpots.push([cx + (alongX ? dx : dz), cz + (alongX ? dz : dx), r2(0.9, 1.3)]);
+}
+// Przedmieście: 4 działki z domami (1–2 piętra, dach dwuspadowy, komin), żywopłot albo płotek, podjazd, drzewa w ogrodzie.
+function buildSuburb(X, Z, bx, bz) {
+  const rnd = mulberry(bx * 7919 + bz * 104729 + 17), r2 = (a, b) => a + rnd() * (b - a), pk = a => a[Math.floor(rnd() * a.length)];
+  for (let lx = 0; lx < 2; lx++) for (let lz = 0; lz < 2; lz++) {
+    const X0 = lot0(bx, lx), Z0 = lot0(bz, lz), sx = lx === 0 ? -1 : 1;        // sx: strona ulicy (−1 zachód, +1 wschód)
+    const w = r2(8.5, 11), d = r2(9, 12), fl = rnd() < 0.55 ? 2 : 1, wallH = fl * 2.9 + 0.3, rh = r2(2.2, 3.2);
+    const streetX = sx < 0 ? X0 : X0 + L, hx = streetX - sx * (6.5 + w / 2), hz = Z0 + L / 2 + r2(-2, 2);
+    const wall = pk(HOUSE_WALLS), roof = pk(HOUSE_ROOFS);
+    addStatic(BOX(w, wallH, d), wall, hx, SIDE_H + wallH / 2, hz);
+    addStatic(BOX(w + 0.12, 0.35, d + 0.12), 0x9b9a96, hx, SIDE_H + 0.17, hz);                        // cokół
+    addStatic(roofPrism(), roof, hx, SIDE_H + wallH, hz, 0, w + 0.9, rh, d + 0.9);                     // dach
+    addStatic(BOX(0.7, 1.8, 0.7), 0x8d4a35, hx + w * 0.22, SIDE_H + wallH + rh * 0.7, hz - d * 0.2);  // komin
+    addCol(hx - w / 2, hx + w / 2, hz - d / 2, hz + d / 2, wallH + rh);
+    mapRects.push({ x0: hx - w / 2, z0: hz - d / 2, x1: hx + w / 2, z1: hz + d / 2, c: '#5a463a' });
+    // okna i drzwi: od ulicy (ściana x = ±w/2) i z boków
+    const fx = hx + sx * (w / 2 + 0.03);
+    for (let f = 0; f < fl; f++) {
+      const y = SIDE_H + 1.65 + f * 2.9;
+      for (const oz of [-d / 4, d / 4]) {
+        if (f === 0 && oz > 0) continue;                    // miejsce na drzwi
+        addStatic(BOX(0.06, 1.45, 1.35), 0xf4f4f4, fx, y, hz + oz); addStatic(BOX(0.08, 1.25, 1.15), 0x2b3d52, fx + sx * 0.01, y, hz + oz);
+      }
+      for (const s2 of [-1, 1]) { addStatic(BOX(1.35, 1.45, 0.06), 0xf4f4f4, hx, y, hz + s2 * (d / 2 + 0.03)); addStatic(BOX(1.15, 1.25, 0.08), 0x2b3d52, hx, y, hz + s2 * (d / 2 + 0.04)); }
+    }
+    addStatic(BOX(0.08, 2.15, 1.05), pk([0x6b4226, 0x2b4a6b, 0x3a3e45, 0x7a1f2b]), fx, SIDE_H + 1.07, hz + d / 4);   // drzwi
+    addStatic(BOX(1.6, 0.12, 1.6), 0x9b9a96, fx + sx * 0.75, SIDE_H + 0.06, hz + d / 4);                          // schodek
+    // podjazd z kostki do ulicy + miejsce na auto
+    const dz = hz - d / 4 - 1.2, dLen = Math.abs(streetX - (hx + sx * w / 2));
+    addStatic(BOX(dLen, 0.05, 3.2), 0xa7a196, (streetX + hx + sx * w / 2) / 2, SIDE_H + 0.03, dz);
+    driveSpots.push([streetX - sx * 3.2, dz, sx < 0 ? -Math.PI / 2 : Math.PI / 2]);
+    // ogrodzenie od ulicy (z przerwą na podjazd i furtkę): żywopłot albo biały płotek
+    const hedge = rnd() < 0.55, fc = hedge ? pk([0x3f6b35, 0x4a7a3c, 0x365f2e]) : 0xeeeeee;
+    const fh = hedge ? 1.15 : 0.95, ft = hedge ? 0.7 : 0.1, ex = streetX - sx * 0.5;
+    const segs = [[Z0 + 0.3, dz - 1.8], [dz + 1.8, hz + d / 4 - 0.8], [hz + d / 4 + 0.8, Z0 + L - 0.3]];
+    for (const [a, b] of segs) {
+      if (b - a < 0.4) continue;
+      addStatic(BOX(ft, fh, b - a), fc, ex, SIDE_H + fh / 2, (a + b) / 2);
+      addCol(ex - ft / 2 - 0.1, ex + ft / 2 + 0.1, a, b, fh);
+    }
+    // ogród: drzewa za domem, czasem drewniana szopa
+    for (let t = 0; t < 2; t++) treeSpots.push([streetX - sx * r2(19.5, 23), Z0 + (t ? r2(21, 23.5) : r2(1.5, 5)), r2(0.75, 1.15)]);
+    if (rnd() < 0.3) {
+      const shx = X0 + L / 2 - sx * 9.5, shz = Z0 + r2(15, 20);
+      addStatic(BOX(2.4, 2.1, 2.4), 0x8a5a33, shx, SIDE_H + 1.05, shz);
+      addStatic(roofPrism(), 0x5a5f66, shx, SIDE_H + 2.1, shz, 0, 2.9, 0.8, 2.9);
+      addCol(shx - 1.2, shx + 1.2, shz - 1.2, shz + 1.2, 2.9);
+    }
+  }
 }
 
 // Staw w lesie na wschód od miasta (tylko Grammar City — mapy z danych mają własne wody).
@@ -973,7 +1091,7 @@ function mergeBuildings(parts) {
 function buildNormalBuilding(X0, Z0) {
   const w = L - rr(1, 6), d = L - rr(1, 6);
   const cx = X0 + L / 2 + rr(-1, 1) * (L - w) / 2, cz = Z0 + L / 2 + rr(-1, 1) * (L - d) / 2;
-  const dc = Math.hypot(cx, cz) / HALF;
+  const dc = Math.hypot(cx, cz) / HALF0;
   const shop = rand() < 0.14;
   const h = shop ? rr(6, 9) : rr(8, 17) + Math.max(0, 1 - dc) * rr(8, 58);
   const wi = Math.floor(rand() * wallPool.length);
@@ -2071,6 +2189,23 @@ function spawnTraffic(count) {
     count--;
   }
 }
+// Nowe miejsce dla auta z ruchu (Metropolia): pas w promieniu ~3 kwartałów od gracza, 90–300 m od niego.
+const gridIdx = x => clamp(Math.round((x + HALF - R / 2) / CELL), 0, N);
+function recycleGridCar(v, a, fx, fz) {
+  for (let t = 0; t < 14; t++) {
+    const axis = rand() < 0.5 ? 'x' : 'z', dir = rand() < 0.5 ? 1 : -1;
+    const line = clamp(gridIdx(axis === 'x' ? fz : fx) + Math.floor(rand() * 7) - 3, 0, N);
+    const k = clamp(gridIdx(axis === 'x' ? fx : fz) + Math.floor(rand() * 7) - 3, dir > 0 ? 1 : 0, dir > 0 ? N : N - 1);
+    const along = rc(k) - dir * rr(14, CELL - 14);
+    const [x, z] = laneXZ({ axis, dir, line }, along), d = Math.hypot(x - fx, z - fz);
+    if (d < 90 || d > 300) continue;
+    if (vehicles.some(o => o !== v && Math.hypot(o.pos.x - x, o.pos.z - z) < 14)) continue;
+    Object.assign(a, { axis, dir, line, k, along, stuck: 0, ghost: 0 }); choosePlan(a);
+    v.pos.set(x, 0, z); v.heading = axis === 'x' ? (dir > 0 ? Math.PI / 2 : -Math.PI / 2) : (dir > 0 ? 0 : Math.PI);
+    return true;
+  }
+  return false;
+}
 function spawnParked(count) {
   if (REALMAP) {
     const spots = WD.parkSpots; let tries = 0;
@@ -2083,6 +2218,17 @@ function spawnParked(count) {
       count--;
     }
     return;
+  }
+  // Metropolia: część aut stoi na podjazdach przy domach (często klasyki)
+  if (METRO && driveSpots.length) {
+    let n = 0, t = 0;
+    while (n < 26 && t++ < 300) {
+      const [x, z, hd] = driveSpots[Math.floor(rand() * driveSpots.length)];
+      if (vehicles.some(v => Math.hypot(v.pos.x - x, v.pos.z - z) < 6)) continue;
+      const type = rand() < 0.55 ? pick(CLASSICS) : randomCarType();
+      if (type === 'police' || type === 'taxi') continue;
+      spawnVehicle(type, carColor(type), x, z, hd, 'parked'); n++;
+    }
   }
   let tries = 0;
   while (count > 0 && tries++ < 400) {
@@ -3345,6 +3491,11 @@ function updateTraffic(dt) {
       if (!farR) poseCar(v, dt);
       continue;
     }
+    // Metropolia: auta daleko od gracza przenoszone w jego okolicę (poza zasięg wzroku) — gęsty ruch tam, gdzie gracz jest
+    if (METRO) {
+      a.recycle = (a.recycle == null ? 2 * rand() : a.recycle) - dt;
+      if (a.recycle <= 0) { a.recycle = 2; if (Math.hypot(v.pos.x - focus.x, v.pos.z - focus.z) > 330) recycleGridCar(v, a, focus.x, focus.z); }
+    }
     // advance along lane
     a.along += a.dir * v.speed * dt;
     if ((a.along - a.turnAt) * a.dir >= 0) {
@@ -3374,6 +3525,14 @@ function updatePeds(dt) {
     const [px, pz, dx, dz] = pedPathPos(q);
     const far = Math.abs(px - fx) > 120 || Math.abs(pz - fz) > 120;
     q.p.g.visible = !far;
+    // Metropolia: piesi daleko od gracza przechodzą na chodnik kwartału w jego okolicy (poza zasięgiem wzroku)
+    if (METRO && far && !q.path && q.knock <= 0 && (q.rec = (q.rec == null ? 3 * rand() : q.rec) - dt) <= 0) {
+      q.rec = 3;
+      const bx = clamp(gridIdx(fx) + Math.floor(rand() * 5) - 3, 0, N - 1), bz = clamp(gridIdx(fz) + Math.floor(rand() * 5) - 3, 0, N - 1);
+      const nx = bx0(bx), nz = bx0(bz);
+      if (Math.abs(nx + B / 2 - fx) > 110 || Math.abs(nz + B / 2 - fz) > 110) { q.x0 = nx + 2.6; q.z0 = nz + 2.6; }
+      continue;
+    }
     if (q.knock > 0) {
       q.knock -= dt;
       q.ox += q.vx * dt; q.oz += q.vz * dt; q.y += q.vy * dt; q.vy -= 20 * dt;
@@ -3413,7 +3572,7 @@ function updateCamera(dt) {
       camera.lookAt(cx, LY, cz);
       return;
     }
-    const cx = bc(3), cz = bx0(3) + 30;
+    const cx = bc(3 + O), cz = bx0(3 + O) + 30;
     camera.position.set(cx + Math.sin(attractT * 0.06) * 95, 48 + Math.sin(attractT * 0.1) * 8, cz + Math.cos(attractT * 0.06) * 95);
     camera.lookAt(cx, 8, cz);
     return;
@@ -5828,7 +5987,7 @@ showResetLink();
 // ---------------------------------------------------------------- wybór mapy (ekran startowy)
 function setMap(id) {
   const u = new URL(location.href);
-  if (MAP_DEFS[id]) u.searchParams.set('map', id); else u.searchParams.delete('map');
+  if (MAP_DEFS[id] || id === 'metro') u.searchParams.set('map', id); else u.searchParams.delete('map');
   location.href = u.toString();
 }
 function initMapPicker() {
@@ -5888,7 +6047,11 @@ function frame() {
   if (ui !== 'start') {
     if (P.car) (P.car.spec && P.car.spec.fly ? updatePlane : updateCar)(P.car, dt); else { updateOnFoot(dt); Sound.engine(false, 0, false); Sound.skid(0); }
   }
-  for (const v of vehicles) if (v.kind === 'parked' && v.mesh.visible) v.pos.y = groundAt(v.pos.x, v.pos.z), v.mesh.position.copy(v.pos);
+  for (const v of vehicles) if (v.kind === 'parked') {
+    const far = Math.abs(v.pos.x - focus.x) > 300 || Math.abs(v.pos.z - focus.z) > 300;   // daleko (we mgle) — nie rysujemy
+    v.mesh.visible = !far;
+    if (!far) { v.pos.y = groundAt(v.pos.x, v.pos.z); v.mesh.position.copy(v.pos); }
+  }
   updateTraffic(dt);
   updateSmoke(dt);
   updateChase(dt);
@@ -5994,10 +6157,10 @@ async function boot() {
     if (best) spawnVehicle('sport', 0xf2b632, best[0], best[1], best[2], 'parked');
   } else {
   // player spawn in front of City Hall
-  const sx = bc(3), sz = bx0(3) + B - 2.5;
+  const sx = bc(3 + O), sz = bx0(3 + O) + B - 2.5;
   P.pos.set(sx - 6, SIDE_H, sz);
   player.g.position.copy(P.pos); player.g.rotation.y = P.facing;
-  spawnVehicle('sport', 0xf2b632, sx + 4, rc(4) - 6.2, Math.PI / 2, 'parked');
+  spawnVehicle('sport', 0xf2b632, sx + 4, rc(4 + O) - 6.2, Math.PI / 2, 'parked');
   }
   SPAWN = { x: P.pos.x, z: P.pos.z, facing: P.facing };
   applyGhost();
@@ -6008,9 +6171,9 @@ async function boot() {
   buildSnow();
   applySeason(false);
   loadKScooter();
-  spawnParked(REALMAP ? 40 : 18);
-  spawnTraffic(REALMAP ? 34 : 40);
-  spawnPeds(REALMAP ? 64 : 62);
+  spawnParked(REALMAP ? 40 : METRO ? 44 : 18);
+  spawnTraffic(REALMAP ? 34 : METRO ? 64 : 40);
+  spawnPeds(REALMAP ? 64 : METRO ? 96 : 62);
   spawnAnimals();
   spawnNPCs();
   buildMapCanvas();
