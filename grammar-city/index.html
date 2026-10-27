@@ -516,8 +516,7 @@ body.touch #minimap-wrap { pointer-events: auto; cursor: pointer; }
   </div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
 <script src="questions.js"></script>
 <script>
 // Tryb słówek (z rozdziału w Sowich Fiszkach: ?book=…&unit=…) — dociągamy słówka
@@ -531,7 +530,27 @@ if (/[?&]book=/.test(location.search)) {
 <script src="../ai-chat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../supabase-config.js" onerror="window.__noSB=1"></script>
-<script src="game.js"></script>
+<script type="module">
+// Silnik 3D: three.js r160 (moduły ES) → globalny obiekt THREE dla game.js (zwykły skrypt).
+// Dodatki: wczytywanie modeli GLB i post-processing (bloom, tonemapping, korekcja kolorów).
+import * as T from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+// napisy, ikony i znaczniki (sprite'y) bez tonemappingu — kolory jak w projekcie
+class SpriteMaterial extends T.SpriteMaterial { constructor(p) { super(p); if (!p || p.toneMapped === undefined) this.toneMapped = false; } }
+window.THREE = Object.assign({}, T, { GLTFLoader, EffectComposer, RenderPass, UnrealBloomPass, OutputPass, ShaderPass, SpriteMaterial });
+const s = document.createElement('script');
+s.src = 'game.js';
+document.body.appendChild(s);
+</script>
+<script>
+// gdy silnik 3D się nie wczyta (brak internetu przy pierwszym uruchomieniu) — komunikat zamiast zawieszonego „Ładowania”
+setTimeout(() => { if (!window.THREE) { const b = document.getElementById('btn-start'); if (b) b.textContent = 'Nie udało się wczytać silnika 3D — sprawdź internet i odśwież stronę'; } }, 15000);
+</script>
 <script>
 // PWA: offline cache + install button
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {

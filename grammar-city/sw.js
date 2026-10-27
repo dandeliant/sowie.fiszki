@@ -1,5 +1,5 @@
 // Grammar City service worker: offline play after the first visit.
-const VERSION = 'grammar-city-v37';
+const VERSION = 'grammar-city-v38';
 const SHELL = [
   './',
   './index.html',
@@ -13,8 +13,7 @@ const SHELL = [
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png',
-  'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js',
-  'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js',
+  'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js',
 ];
 
 self.addEventListener('install', e => {
@@ -44,8 +43,8 @@ self.addEventListener('fetch', e => {
     );
     return;
   }
-  // CDN library and Google Fonts: cache first.
-  if (/cdnjs\.cloudflare\.com|fonts\.(googleapis|gstatic)\.com/.test(url.host)) {
+  // Silnik 3D (three.js r160 i jego moduły z jsDelivr), CDN i Google Fonts: cache first.
+  if (/cdnjs\.cloudflare\.com|fonts\.(googleapis|gstatic)\.com/.test(url.host) || (url.host === 'cdn.jsdelivr.net' && url.pathname.startsWith('/npm/three@0.160.0/'))) {
     e.respondWith(
       caches.match(req).then(hit => hit || fetch(req).then(res => {
         const copy = res.clone(); caches.open(VERSION).then(c => c.put(req, copy)); return res;
