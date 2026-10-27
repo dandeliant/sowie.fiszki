@@ -735,10 +735,13 @@ function wallMaterial(style, tint) { return facadeMaterial(FACADES[style % FACAD
 const wallPool = [];
 for (const f of FACADES) for (const t of f.tints) wallPool.push(facadeMaterial(f, t));
 // parter: witryny sklepów (12,8 × 4,5 m) i przeszklone lobby biurowców (12 × 5 m); nocą świecą wnętrza
-const SHOP_IDX = wallPool.length, LOBBY_IDX = SHOP_IDX + 1;
-const bldMats = wallPool.concat([facadeMaterial({ tex: TX.shop, tw: 12.8, th: 4.5 }, 0xffffff), facadeMaterial({ tex: TX.lobby, tw: 12, th: 5 }, 0xffffff)]);
-bldMats[SHOP_IDX].userData.emi = bldMats[LOBBY_IDX].userData.emi = 0.5;   // witryny nocą słabiej niż okna mieszkań
-const OFFICE_N = FACADES[0].tints.length;     // wallPool[0 … OFFICE_N−1] = biurowce
+// Siatka miasta: jeden materiał na rodzaj elewacji, odcień tynku w kolorach wierzchołków (mniej wywołań rysowania).
+// FAC_MATS: 0 biurowiec, 1 kamienica, 2 blok, 3 parter ze sklepami, 4 lobby; WALL_CHOICES = rodzaj + odcień.
+const FAC_MATS = FACADES.map(f => facadeMaterial(f, 0xffffff)).concat([facadeMaterial({ tex: TX.shop, tw: 12.8, th: 4.5 }, 0xffffff), facadeMaterial({ tex: TX.lobby, tw: 12, th: 5 }, 0xffffff)]);
+for (const m of FAC_MATS) m.vertexColors = true;
+const SHOP_F = 3, LOBBY_F = 4;
+FAC_MATS[SHOP_F].userData.emi = FAC_MATS[LOBBY_F].userData.emi = 0.5;   // witryny nocą słabiej niż okna mieszkań
+const WALL_CHOICES = FACADES.flatMap((f, fi) => f.tints.map(tint => ({ f: fi, tint })));
 const roofMat = new StdMat({ map: repTex(TX.roofFlat, 16 / 6) });      // papa ze żwirkiem (UV dachu: kafel 16 m)
 
 // Nawierzchnie PBR (UV mapy w metrach / rozmiar kafla tekstury): asfalt 8 m, kostka 2 m, trawa 4 m.
@@ -1316,13 +1319,12 @@ function buildCity() {
   buildLamps();
   // merged meshes
   if (signQuads.length) buildShopSigns();
-  bldMats.forEach((wm, i) => {
-    if (!bldParts[i]) return;
-    for (const grp of groupByChunk(bldParts[i], p => [p.x, p.z])) {
-      const mesh = new THREE.Mesh(mergeBuildings(grp), [wm, roofMat]);
-      mesh.castShadow = mesh.receiveShadow = true; scene.add(mesh);
-    }
-  });
+  // budynki: jedna siatka na kafel (grupy: 5 rodzajów elewacji + dachy)
+  for (const grp of groupByChunk(bldParts, p => [p.x, p.z])) {
+    const mesh = new THREE.Mesh(mergeBuildings(grp), FAC_MATS.concat([roofMat]));
+    mesh.castShadow = mesh.receiveShadow = true; scene.add(mesh);
+  }
+  bldParts.length = 0;
   flushStaticChunks();
 }
 
@@ -1345,9 +1347,9 @@ const roofPrism = () => geo('roofPrism', () => {
 // Osiedle: dwa długie bloki (5 pięter) z podwórkiem i placem zabaw albo wieżowiec-punktowiec (10–12 pięter).
 function buildEstate(X, Z, h) {
   const rnd = mulberry(Math.floor(h * 1e6)), r2 = (a, b) => a + rnd() * (b - a);
-  const cx = X + B / 2, cz = Z + B / 2, wi = Math.floor(rnd() * wallPool.length);
+  const cx = X + B / 2, cz = Z + B / 2, panels = WALL_CHOICES.filter(c => c.f === 2), wc = rnd() < 0.75 ? panels[Math.floor(rnd() * panels.length)] : WALL_CHOICES[Math.floor(rnd() * WALL_CHOICES.length)];
   const put = (w, hh, d, x, z) => {
-    (bldParts[wi] || (bldParts[wi] = [])).push({ g: buildingGeo(w, hh, d), x, z });
+    bldParts.push({ g: buildingGeo(w, hh, d), x, z, f: wc.f, tint: wc.tint });
     addCol(x - w / 2, x + w / 2, z - d / 2, z + d / 2, hh);
     mapRects.push({ x0: x - w / 2, z0: z - d / 2, x1: x + w / 2, z1: z + d / 2, c: '#3c4656' });
   };
@@ -1448,26 +1450,35 @@ function buildLake() {
   for (const a of [0.4, 1.9, 3.5, 5.0]) fishSpots.push({ x: LAKE.x + Math.cos(a) * (LAKE.r + 1.3), z: LAKE.z + Math.sin(a) * (LAKE.r + 1.3), wx: LAKE.x, wz: LAKE.z });
 }
 
-const bldParts = {};
+const bldParts = [];   // {g, x, y, z, f: rodzaj elewacji (FAC_MATS), tint}
+// Scala bryły budynków: ściany w grupach wg rodzaju elewacji (odcień w kolorze wierzchołków), dachy w ostatniej grupie.
 function mergeBuildings(parts) {
-  const W = { p: [], n: [], u: [] }, Rf = { p: [], n: [], u: [] };
-  for (const { g, x, y = 0, z } of parts) {
+  const NG = FAC_MATS.length, G = Array.from({ length: NG + 1 }, () => ({ p: [], n: [], u: [], c: [] })), col = new THREE.Color();
+  for (const { g, x, y = 0, z, f: fi = 0, tint = 0xffffff } of parts) {
     const ng = g.toNonIndexed(), P = ng.attributes.position.array, Nn = ng.attributes.normal.array, U = ng.attributes.uv.array;
+    col.set(tint);
     for (let f = 0; f < 6; f++) {
-      const dst = f === 2 || f === 3 ? Rf : W;
+      const dst = f === 2 || f === 3 ? G[NG] : G[fi];
       for (let v = f * 6; v < f * 6 + 6; v++) {
         dst.p.push(P[v * 3] + x, P[v * 3 + 1] + y, P[v * 3 + 2] + z);
         dst.n.push(Nn[v * 3], Nn[v * 3 + 1], Nn[v * 3 + 2]);
         dst.u.push(U[v * 2], U[v * 2 + 1]);
+        dst.c.push(col.r, col.g, col.b);
       }
     }
     ng.dispose(); g.dispose();
   }
-  const out = new THREE.BufferGeometry(), wc = W.p.length / 3, rcn = Rf.p.length / 3;
-  out.setAttribute('position', new THREE.Float32BufferAttribute(W.p.concat(Rf.p), 3));
-  out.setAttribute('normal', new THREE.Float32BufferAttribute(W.n.concat(Rf.n), 3));
-  out.setAttribute('uv', new THREE.Float32BufferAttribute(W.u.concat(Rf.u), 2));
-  out.addGroup(0, wc, 0); out.addGroup(wc, rcn, 1);
+  const out = new THREE.BufferGeometry(), all = { p: [], n: [], u: [], c: [] };
+  let off = 0;
+  G.forEach((gr, mi) => {
+    const n = gr.p.length / 3; if (!n) return;
+    for (const k of ['p', 'n', 'u', 'c']) for (const v of gr[k]) all[k].push(v);
+    out.addGroup(off, n, mi); off += n;
+  });
+  out.setAttribute('position', new THREE.Float32BufferAttribute(all.p, 3));
+  out.setAttribute('normal', new THREE.Float32BufferAttribute(all.n, 3));
+  out.setAttribute('uv', new THREE.Float32BufferAttribute(all.u, 2));
+  out.setAttribute('color', new THREE.Float32BufferAttribute(all.c, 3));
   out.computeBoundingSphere();
   return out;
 }
@@ -1478,10 +1489,9 @@ function buildNormalBuilding(X0, Z0) {
   const dc = Math.hypot(cx, cz) / HALF0;
   const shop = rand() < 0.14;
   const h = shop ? rr(6, 9) : rr(8, 17) + Math.max(0, 1 - dc) * rr(8, 58);
-  const wi = Math.floor(rand() * wallPool.length), GF = 4.5, office = wi < OFFICE_N;
-  const gi = office ? LOBBY_IDX : SHOP_IDX;
-  (bldParts[gi] || (bldParts[gi] = [])).push({ g: buildingGeo(w + 0.12, GF, d + 0.12), x: cx, z: cz });
-  (bldParts[wi] || (bldParts[wi] = [])).push({ g: buildingGeo(w, h - GF, d), x: cx, y: GF, z: cz });
+  const wc = WALL_CHOICES[Math.floor(rand() * WALL_CHOICES.length)], GF = 4.5, office = wc.f === 0;
+  bldParts.push({ g: buildingGeo(w + 0.12, GF, d + 0.12), x: cx, z: cz, f: office ? LOBBY_F : SHOP_F });
+  bldParts.push({ g: buildingGeo(w, h - GF, d), x: cx, y: GF, z: cz, f: wc.f, tint: wc.tint });
   addCol(cx - w / 2, cx + w / 2, cz - d / 2, cz + d / 2, h);
   if (!office) {        // szyldy sklepów po angielsku nad witrynami — od strony ulic (narożnik kwartału)
     const ib = clamp(Math.floor((cx + HALF - R) / CELL), 0, N - 1), jb = clamp(Math.floor((cz + HALF - R) / CELL), 0, N - 1);
@@ -2577,6 +2587,11 @@ function vehGeo(type, color, split) {
 function recolorVehicle(v, hex) {
   if (v.type === 'kscooter') { v.mesh.userData.tint = hex; tintObj(v.mesh, hex); return; }
   if (v.type === 'plane') { v.mesh.children[0].geometry = vehGeo('plane', hex); return; }
+  if (v.mesh.userData.vis && window.GCCars) {
+    GCCars.setPaint(v.mesh.userData.vis, v.type, hex); v.mesh.userData.color = hex;
+    if (v.mesh.userData.far) v.mesh.userData.far.geometry = vehGeo(v.type, hex);
+    return;
+  }
   if (v.mesh.userData.body) { v.mesh.userData.body.geometry = vehGeo(v.type, hex, true); v.mesh.userData.color = hex; return; }
   v.mesh.geometry = vehGeo(v.type, hex);
 }
@@ -2602,16 +2617,35 @@ function makeSplitCar(type, color) {
 // Wsiadając do auta z ruchu ulicznego zamieniamy jego bryłę na wersję z osobnymi kołami.
 function upgradeCarMesh(v) {
   if (!isCar4(v.type) || v.mesh.userData.body) return;
+  if (v.mesh.userData.vis && !v.mesh.isLOD) return;
   const color = v.mesh.userData.color != null ? v.mesh.userData.color : carColor(v.type);
   const gh = v.ghost; if (gh) ghostVehicle(v, false);
   const c = makeCarMesh(v.type, color, true), old = v.mesh;
-  for (const ch of old.children.slice()) c.g.add(ch);      // płomienie nitro, kogut itd. przechodzą do nowej bryły
+  if (v.flames) { c.g.add(v.flames); }                     // płomienie nitro przechodzą do nowej bryły
   c.g.position.copy(old.position); c.g.rotation.copy(old.rotation);
   scene.remove(old); scene.add(c.g);
   v.mesh = c.g; v.wheels = c.wheels;
   if (gh) ghostVehicle(v, true);
 }
+// Modele aut z cars.js (window.GCCars): auto gracza — osobne koła, tarcze, światła stop i poświaty;
+// auta z ruchu — model z wtopionymi kołami do CAR_LOD_M, dalej uproszczona bryła (jedno wywołanie rysowania).
+const CAR_LOD_M = 45;
 function makeCarMesh0(type, color, split) {
+  if (window.GCCars && isCar4(type)) {
+    if (split) {
+      const vis = GCCars.makeCarVisual(type, color, { player: true });
+      vis.root.userData.body = vis.body; vis.root.userData.vis = vis;
+      return { g: vis.root, wheels: vis.wheels, len: vis.len };
+    }
+    const vis = GCCars.makeCarVisual(type, color), lod = new THREE.LOD();
+    lod.rotation.order = 'YXZ';
+    lod.addLevel(vis.root, 0);
+    vis.mesh.castShadow = false;                 // auta z ruchu: miękki cień kontaktowy zamiast mapy cieni (wydajność)
+    const far = new THREE.Mesh(vehGeo(type, color), carPaintMat);
+    lod.addLevel(far, CAR_LOD_M);
+    lod.userData.vis = vis; lod.userData.far = far;
+    return { g: lod, wheels: [], len: vis.len };
+  }
   if (split && isCar4(type)) return makeSplitCar(type, color);
   if (type === 'kscooter') return makeKScooterMesh(color);
   if (type === 'plane') {
@@ -3121,7 +3155,7 @@ function updateTouchUI() {
   const fly = !!(P.car && P.car.spec.fly);
   $('t-jump').textContent = fly ? 'W GÓRĘ' : P.car ? (isCar4(P.car.type) ? 'RĘCZNY' : 'HAMULEC') : 'SKOK';
   $('t-sprint').classList.toggle('off', !!P.car && !fly && !hasNitro());
-  $('t-sprint').textContent = fly ? 'W DÓŁ' : P.car ? (hasNitro() || !isCar4(P.car.type) ? 'NITRO' : 'RĘCZNY') : 'BIEG';
+  $('t-sprint').textContent = fly ? 'W DÓŁ' : P.car ? (hasNitro() || !isCar4(P.car.type) ? 'NITRO' : 'SPRZĘGŁO') : 'BIEG';
 }
 
 function onEscape() {
@@ -3307,10 +3341,13 @@ let shake = 0, pedWarnT = 0;
 function updateCar(v, dt) {
   const wantUp = !ui && key('KeyW', 'ArrowUp'), down = !ui && key('KeyS', 'ArrowDown');
   const left = !ui && key('KeyA', 'ArrowLeft'), right = !ui && key('KeyD', 'ArrowRight');
-  const sp = v.spec || VSPEC.car, four = isCar4(v.type);
-  // ręczny: Spacja (w aucie także Shift, jeśli nie kupiono nitro — wtedy Shift = nitro)
-  const hb = !ui && (key('Space') || (four && !hasNitro() && key('ShiftLeft', 'ShiftRight')));
+  const sp = v.spec || VSPEC.car, four = isCar4(v.type), phys = four && v.body;
+  // ręczny: Spacja. Shift w aucie: nitro (gdy kupione), inaczej kopnięcie sprzęgła (fizyka) / ręczny (dawny model)
+  const shift = !ui && key('ShiftLeft', 'ShiftRight');
+  const hb = !ui && (key('Space') || (four && !phys && !hasNitro() && shift));
   const up = fuelAndNitro(v, dt, wantUp) && wantUp;      // bez paliwa — brak gazu
+  const icy0 = season() === 'winter';
+  if (phys) { driveBody(v, dt, up, down, left, right, hb, shift && !hasNitro(), icy0); return finishCar(v, dt, sp, four, hb, down, up, icy0, v.pos.x - v.vdx, v.pos.z - v.vdz); }
   const sm = isScooterType(v.type) ? SCOOTER_MODES[wardrobe.smode] || SCOOTER_MODES.S : null;
   const vmax = sm ? sm.kmh / 3.6 : sp.max, vacc = sm ? sm.acc : sp.acc;
   const icy = season() === 'winter', brk = sp.brake * (icy ? 0.42 : 1);
@@ -3337,6 +3374,10 @@ function updateCar(v, dt) {
     v.mdir += angDiff(v.mdir, v.heading) * Math.min(1, (icy ? (hb ? 0.9 : 2.1) : 40) * dt);
     v.pos.x += Math.sin(v.mdir) * v.speed * dt; v.pos.z += Math.cos(v.mdir) * v.speed * dt;
   }
+  finishCar(v, dt, sp, four, hb, down, up, icy, vox, voz);
+}
+// Kolizje, woda, policja, piesi, poza, efekty i dźwięk — wspólne dla obu modeli jazdy.
+function finishCar(v, dt, sp, four, hb, down, up, icy, vox, voz) {
   const f = carFwd(v);
   // collisions: buildings & other vehicles
   let impact = 0;
@@ -3387,10 +3428,47 @@ function updateCar(v, dt) {
       }
     }
   }
+  if (v.body) syncBody(v);
   poseCar(v, dt);
   if (sp.ride) posePlayerRider(v);
   if (four) carFx(v, dt, hb, down, icy);
-  Sound.engine(true, v.speed * (sp.ride === 'scooter' ? 0.4 : 1), up && sp.ride !== 'scooter');
+  if (four && window.GCCars && v.mesh.userData.vis) GCCars.setPlayerLights(v.mesh.userData.vis, smooth(0.35, 0.85, nightK), (down && v.speed > 0.5) || hb);
+  Sound.engine(true, v.body ? v.body.rpm / 140 : v.speed * (sp.ride === 'scooter' ? 0.4 : 1), up && sp.ride !== 'scooter');
+}
+// Nawierzchnia pod osią: jezdnia 1,0 · chodnik / trawnik w kwartale 0,9 · trawa za miastem 0,65 (+ opór) · zimą lód ×0,38.
+const _surf = { mu: 1, drag: 0 };
+function surfAt(x, z, icy) {
+  let mu = 1, drag = 0;
+  if (!REALMAP) {
+    if (onBlock(x, z)) { mu = 0.9; drag = 0.01; }
+    else if (Math.abs(x) > HALF || Math.abs(z) > HALF) { mu = 0.65; drag = 0.05; }
+  }
+  _surf.mu = icy ? mu * 0.38 : mu; _surf.drag = drag;
+  return _surf;
+}
+// Jazda autem z fizyką z cars.js (VehicleBody): wynik → pozycja, kierunek, prędkość wzdłuż / w bok, przechyły.
+function driveBody(v, dt, up, down, left, right, hb, kick, icy) {
+  const b = v.body;
+  b.x = v.pos.x; b.z = v.pos.z;
+  b.extraF = nitroActive ? b.m * NITRO_ACC * Math.max(0, 1 - b.u / NITRO_MAX) : 0;
+  b.step(dt, { thr: up ? 1 : 0, brk: down ? 1 : 0, steer: (left ? 1 : 0) - (right ? 1 : 0), hand: hb, kick }, (x, z) => surfAt(x, z, icy));
+  v.vdx = b.x - v.pos.x; v.vdz = b.z - v.pos.z;
+  v.pos.x = b.x; v.pos.z = b.z; v.heading = b.h; v.mdir = b.h;
+  const fx = Math.sin(b.h), fz = Math.cos(b.h);
+  v.speed = b.vx * fx + b.vz * fz; v.slip = b.vx * fz - b.vz * fx;
+  v.steer = b.delta / Math.max(0.2, b.p.steer);
+  v.yawV = b.w; v.hb = hb; v.braking = b.braking && v.speed > 6;
+  v.drift = clamp((b.slipR - 2.0) / 4, 0, 1);
+  // przechyły nadwozia z przeciążeń (sprężyny jak w zawieszeniu)
+  const pT = clamp(-b.axS * 0.0065, -0.06, 0.06), rT = clamp(b.ayS * 0.0055, -0.07, 0.07);
+  v.pv = (v.pv || 0) + ((pT - (v.pitch || 0)) * 140 - (v.pv || 0) * 13) * dt; v.pitch = (v.pitch || 0) + v.pv * dt;
+  v.rv = (v.rv || 0) + ((rT - (v.roll || 0)) * 120 - (v.rv || 0) * 11) * dt; v.roll = (v.roll || 0) + v.rv * dt;
+}
+// Po kolizjach (budynki, auta, woda) — prędkość i pozycja wracają do ciała fizycznego.
+function syncBody(v) {
+  const b = v.body, fx = Math.sin(v.heading), fz = Math.cos(v.heading);
+  b.x = v.pos.x; b.z = v.pos.z; b.h = v.heading;
+  b.vx = fx * v.speed + fz * (v.slip || 0); b.vz = fz * v.speed - fx * (v.slip || 0);
 }
 // ---------------------------------------------------------------- ślady opon, dym, pisk
 // Ślady: bufor pierścieniowy prostokątów na jezdni (najstarsze nadpisywane). Dym: pula sprite'ów.
@@ -3442,11 +3520,13 @@ function carFx(v, dt, hb, braking, icy) {
   if (!v.wheels.length) { Sound.skid(0); return; }
   driftScore.update(v, dt);
   const f = carFwd(v), sx = f.z, sz = -f.x, d = carDims(v.type), spd = Math.abs(v.speed) + Math.abs(v.slip || 0);
-  const rearOn = spd > 3 && (v.drift > 0.12 || (hb && Math.abs(v.speed) > 2.5));
-  const frontOn = spd > 3 && (v.drift > 0.65 || (v.braking && v.aLong < -18));
+  const bb = v.body, intF = bb ? clamp((bb.slipF - 2.4) / 5, 0, 1) : 0;
+  const rearOn = bb ? clamp((bb.slipR - 2.0) / 4, 0, 1) > 0.02 : spd > 3 && (v.drift > 0.12 || (hb && Math.abs(v.speed) > 2.5));
+  const frontOn = bb ? intF > 0.02 : spd > 3 && (v.drift > 0.65 || (v.braking && v.aLong < -18));
   let level = 0;
   if (rearOn) level = Math.max(level, hb ? 0.55 + v.drift * 0.45 : v.drift);
-  if (frontOn) level = Math.max(level, 0.6);
+  if (frontOn) level = Math.max(level, bb ? intF : 0.6);
+  if (bb && rearOn) level = Math.max(level, clamp((bb.slipR - 2.0) / 4, 0, 1));
   Sound.skid(level * Math.min(1, spd / 8));
   const y = v.pos.y + 0.025;
   for (const w of v.wheels) {
@@ -3584,10 +3664,12 @@ function poseCar(v, dt) {
   }
   if (!v.wheels.length) return;
   // osobne koła: obrót wg prędkości (z ręcznym tylne stoją), skręt przednich, przechył karoserii
-  const d = carDims(v.type), spin = v.speed * dt / d.wr, st = (v.steer || 0) * 0.55 / (1 + Math.abs(v.speed) * 0.03);
+  const d = carDims(v.type), st = (v.steer || 0) * 0.55 / (1 + Math.abs(v.speed) * 0.03);
+  const pb = v.kind === 'player' && v.body;
   for (const w of v.wheels) {
-    if (!(v.hb && !w.front && v.kind === 'player')) w.mesh.rotation.x += spin * w.sgn;
-    if (w.front) w.pivot.rotation.y = st;
+    if (pb) w.mesh.rotation.x += (w.front ? pb.wheelSpinF : pb.wheelSpinR) * dt * w.sgn;
+    else if (!(v.hb && !w.front && v.kind === 'player')) w.mesh.rotation.x += v.speed * dt / (w.r || d.wr) * w.sgn;
+    if (w.front) w.pivot.rotation.y = pb ? pb.delta : st;
   }
   const b = v.mesh.userData.body;
   if (b) { b.rotation.x = v.kind === 'player' ? v.pitch || 0 : 0; b.rotation.z = v.kind === 'player' ? v.roll || 0 : 0; }
@@ -3620,12 +3702,13 @@ function toggleCar() {
   if (!best) return;
   if (best.ai) { best.ai = null; toast('Auto przejęte! Kierowca uciekł.', 'good'); }
   upgradeCarMesh(best);
+  if (isCar4(best.type) && window.GCCars) { best.body = best.body || GCCars.makeBody(best.type); best.body.setPose(best.pos.x, best.pos.z, best.heading); best.body.gear = 0; best.body.thr = 0; }
   best.kind = 'player'; best.speed = 0; best.slip = 0; best.yawV = 0; best.mdir = best.heading; P.car = best; player.g.visible = !!(best.spec && best.spec.ride);
   if (invisibleOn()) ghostVehicle(best, true);
   Sound.door();
   $('speedo').hidden = false;
   $('speed-car').textContent = VEH_NAMES[best.type] || '';
-  if (isCar4(best.type) && !carHintShown) { carHintShown = true; toast(`🚗 ${VEH_NAMES[best.type] || 'Auto'} — <kbd>Spacja</kbd>${hasNitro() ? '' : ' lub <kbd>Shift</kbd>'} = ręczny (drift), <kbd>F</kbd> = wysiądź.`, 'good', 4500); }
+  if (isCar4(best.type) && !carHintShown) { carHintShown = true; toast(`🚗 ${VEH_NAMES[best.type] || 'Auto'} — <kbd>Spacja</kbd> = ręczny (drift)${hasNitro() ? '' : ', <kbd>Shift</kbd> = kopnięcie sprzęgła'}, <kbd>S</kbd> = hamulec / wsteczny, <kbd>F</kbd> = wysiądź.`, 'good', 5000); }
 }
 let carHintShown = false;
 
@@ -3693,21 +3776,24 @@ function applyGhost() {
 }
 // Pojazd, którym jedzie niewidzialny gracz, też jest półprzezroczysty (po wyjściu wraca do normy).
 // Oryginalny materiał każdej części zapamiętany w userData; płomienie nitro (addytywne) bez zmian.
+function ghostOf(base) {
+  if (base === vcMat) return ghostMat;
+  if (!base.userData.ghost) {
+    const gm = base.clone(); gm.transparent = true; gm.opacity = Math.min(gm.opacity, 0.38); gm.depthWrite = false;
+    if (base.onBeforeCompile !== THREE.Material.prototype.onBeforeCompile) { gm.onBeforeCompile = base.onBeforeCompile; gm.customProgramCacheKey = () => 'ghost_' + base.customProgramCacheKey(); }
+    base.userData.ghost = gm;
+  }
+  return base.userData.ghost;
+}
 function ghostVehicle(v, on) {
   v.ghost = on;
   v.mesh.traverse(o => {
-    if (!o.isMesh || !o.material) return;
+    if (!(o.isMesh || o.isSprite) || !o.material) return;
     const base = o.userData.origMat || o.material;
-    if (base.blending === THREE.AdditiveBlending) return;
+    if (!Array.isArray(base) && base.blending === THREE.AdditiveBlending) return;
     if (!on) { if (o.userData.origMat) { o.material = o.userData.origMat; delete o.userData.origMat; } return; }
     o.userData.origMat = base;
-    if (base === vcMat) { o.material = ghostMat; return; }
-    if (!base.userData.ghost) {
-      const gm = base.clone(); gm.transparent = true; gm.opacity = 0.38; gm.depthWrite = false;
-      if (base.onBeforeCompile !== THREE.Material.prototype.onBeforeCompile) { gm.onBeforeCompile = base.onBeforeCompile; gm.customProgramCacheKey = () => 'ghost_' + base.customProgramCacheKey(); }
-      base.userData.ghost = gm;
-    }
-    o.material = base.userData.ghost;
+    o.material = Array.isArray(base) ? base.map(ghostOf) : ghostOf(base);
   });
 }
 function toggleInvis(force) {
@@ -4100,6 +4186,7 @@ function updateCamera(dt) {
 const DAY_LEN = 720;
 let tod = 0.36;
 const lampOff = new THREE.Color(0xd0d0d0), lampOn = new THREE.Color(0xffd98a);
+let nightK = 0;
 // Pory dnia (jak w grach z otwartym światem): kolory nieba, słońca, światła z nieba i ziemi, mgły, ekspozycja, bloom.
 // Między nimi płynne przejście wg wysokości słońca (cykl DAY_LEN).
 const SKY_PRESETS = {
@@ -4168,6 +4255,8 @@ function updateSky(dt, focus) {
   const night = 1 - day;
   for (const m of winMats) m.emissiveIntensity = night * (m.userData.emi || 0.95);
   lampHeadMat.emissiveIntensity = night * 4; glowPoolMat.opacity = night * 0.9;
+  nightK = night;
+  if (window.GCCars) GCCars.setNight(smooth(0.35, 0.85, night));
   const h = Math.floor(tod * 24), mnt = Math.floor((tod * 24 - h) * 60);
   return `${String(h).padStart(2, '0')}:${String(mnt).padStart(2, '0')}`;
 }
@@ -5811,7 +5900,7 @@ function updateHUD(dt, clock) {
   $('done-count').textContent = `${dc}/${MISSIONS.length}`;
   if (P.car) {
     $('speed').textContent = Math.round(Math.abs(P.car.speed) * 3.6);
-    const mt = P.car.spec.fly ? `KM/H · ↑ ${Math.round(P.car.pos.y - groundAt(P.car.pos.x, P.car.pos.z))} m` : isScooterType(P.car.type) ? `KM/H · ${wardrobe.smode === 'E' ? 'ECO' : wardrobe.smode}` : 'KM/H';
+    const cb = P.car.body, mt = cb ? 'KM/H · ' + (cb.reverse ? 'R' : Math.abs(cb.u) < 0.5 && !cb.thr ? 'N' : String(cb.gear + 1)) : P.car.spec.fly ? `KM/H · ↑ ${Math.round(P.car.pos.y - groundAt(P.car.pos.x, P.car.pos.z))} m` : isScooterType(P.car.type) ? `KM/H · ${wardrobe.smode === 'E' ? 'ECO' : wardrobe.smode}` : 'KM/H';
     if ($('speed-unit').textContent !== mt) $('speed-unit').textContent = mt;
   }
   const se = SEASONS[seasonIdx], stx = `${se.ico} ${se.name} · dzień ${seasonDay()}/${SEASON_DAYS}`;

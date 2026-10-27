@@ -1,9 +1,10 @@
 // Grammar City service worker: offline play after the first visit.
-const VERSION = 'grammar-city-v38';
+const VERSION = 'grammar-city-v39';
 const SHELL = [
   './',
   './index.html',
   './game.js',
+  './cars.js',
   './questions.js',
   './vocab-missions.js',
   './npc-talks.js',
