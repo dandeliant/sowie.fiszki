@@ -1973,6 +1973,18 @@ function lampDir(x, z) {
   const u = x - bx0(iu), v = z - bx0(iv), m = Math.min(u, B - u, v, B - v);
   return m === u ? -Math.PI / 2 : m === B - u ? Math.PI / 2 : m === v ? Math.PI : 0;
 }
+// odległość latarni od krawężnika (siatka) — plama na chodniku tylko dla latarni stojących przy jezdni
+function lampCurb(x, z) {
+  if (REALMAP) return Infinity;
+  const iu = clamp(Math.floor((x + HALF - R) / CELL), 0, N - 1), iv = clamp(Math.floor((z + HALF - R) / CELL), 0, N - 1);
+  const u = x - bx0(iu), v = z - bx0(iv);
+  return u < -0.5 || v < -0.5 || u > B + 0.5 || v > B + 0.5 ? Infinity : Math.min(u, B - u, v, B - v);
+}
+// Plama na chodniku: półkole jasne przy krawężniku (pod oprawą nad jezdnią), gasnące w głąb chodnika.
+const walkPoolMat = new THREE.MeshBasicMaterial({ color: 0xffc77a, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -12,
+  map: (() => { const c = makeCanvas(128, 64), g = c.getContext('2d'), gr = g.createRadialGradient(64, 0, 1, 64, 0, 63); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.35, 'rgba(255,255,255,0.55)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 64); return canvasTex(c, false); })() });
+const lampList = [], fallenLamps = [], ZERO_M = new THREE.Matrix4().makeScale(0, 0, 0);
+let lampMetal = null, lampLens = null, lampPostMat = null;
 function buildLamps() {
   const pole = new THREE.CylinderGeometry(0.075, 0.13, 8, 8).translate(0, 4, 0);
   const base = new THREE.CylinderGeometry(0.2, 0.24, 0.6, 8).translate(0, 0.3, 0);
@@ -1981,18 +1993,77 @@ function buildLamps() {
   const lens = new THREE.BoxGeometry(0.28, 0.05, 0.6).translate(0, 8.02, 1.9);
   const metal = mergeColored([pole, base, arm, housing].map(g => ({ g, m: IDENT, c: new THREE.Color(0xffffff) })));
   const postMat = new THREE.MeshStandardMaterial({ color: 0x3a3f46, roughness: 0.5, metalness: 0.6 }), poolGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+  const walkGeo = new THREE.PlaneGeometry(12, 6).rotateX(-Math.PI / 2);
+  lampMetal = metal; lampLens = lens; lampPostMat = postMat;
   const d = new THREE.Object3D(), p = new THREE.Object3D();
   for (const grp of groupByChunk(lampSpots, l => l)) {
     const posts = new THREE.InstancedMesh(metal, postMat, grp.length), heads = new THREE.InstancedMesh(lens, lampHeadMat, grp.length), pools = new THREE.InstancedMesh(poolGeo, glowPoolMat, grp.length);
+    const walks = new THREE.InstancedMesh(walkGeo, walkPoolMat, grp.length);
     grp.forEach(([x, z], i) => {
       const ry = lampDir(x, z);
       d.position.set(x, PAVE_Y, z); d.rotation.set(0, ry, 0); d.updateMatrix(); posts.setMatrixAt(i, d.matrix); heads.setMatrixAt(i, d.matrix);
       const lx = x + Math.sin(ry) * 1.9, lz = z + Math.cos(ry) * 1.9;
-      p.position.set(lx, groundAt(lx, lz) + 0.05, lz); p.scale.set(11, 1, 11); p.updateMatrix(); pools.setMatrixAt(i, p.matrix);
-      addCol(x - 0.18, x + 0.18, z - 0.18, z + 0.18, 7);
+      p.position.set(lx, groundAt(lx, lz) + 0.05, lz); p.scale.set(11, 1, 11); p.rotation.set(0, 0, 0); p.updateMatrix(); pools.setMatrixAt(i, p.matrix);
+      // chodnik: plama od krawężnika w głąb (jezdnia leży niżej, więc jej plama chodnika nie oświetla)
+      const cm = lampCurb(x, z);
+      if (cm < 2.6) {
+        const cx = x + Math.sin(ry) * (cm - 3), cz = z + Math.cos(ry) * (cm - 3);
+        p.position.set(cx, PAVE_Y + 0.035, cz); p.rotation.set(0, ry + Math.PI, 0); p.scale.set(1, 1, 1); p.updateMatrix(); walks.setMatrixAt(i, p.matrix);
+      } else walks.setMatrixAt(i, ZERO_M);
+      const L = { x, z, y: PAVE_Y, ry, down: false, t: 0, parts: [posts, heads, pools, walks].map(m => { const mm = new THREE.Matrix4(); m.getMatrixAt(i, mm); return [m, i, mm]; }) };
+      L.col = { x0: x - 0.18, x1: x + 0.18, z0: z - 0.18, z1: z + 0.18, h: 7, lamp: L };
+      colliders.push(L.col); lampList.push(L);
     });
-    for (const m of [posts, heads, pools]) { m.computeBoundingSphere(); scene.add(m); }
+    for (const m of [posts, heads, pools, walks]) { m.computeBoundingSphere(); scene.add(m); }
     posts.castShadow = true;
+  }
+}
+// Przewracanie latarni autem (od ~13 km/h): latarnia pada w kierunku jazdy, iskry, brzęk; auto lekko zwalnia.
+// Po 40 s, gdy gracz jest daleko, latarnia wraca na miejsce.
+function knockLamps(v, sp) {
+  if (Math.abs(v.speed) < 3.5) return;
+  for (let k = nearCols.length - 1; k >= 0; k--) {
+    const L = nearCols[k].lamp;
+    if (!L || L.down) continue;
+    for (const [cx, cz] of carCircles(v)) if (Math.hypot(cx - L.x, cz - L.z) < sp.rad + 0.3) { knockLamp(L, v); break; }
+  }
+}
+function knockLamp(L, v) {
+  L.down = true; L.t = 0; L.ang = 0; L.w = 1.0 + Math.abs(v.speed) * 0.07;
+  for (const [m, i] of L.parts) { m.setMatrixAt(i, ZERO_M); m.instanceMatrix.needsUpdate = true; }
+  let k = colliders.indexOf(L.col); if (k >= 0) colliders.splice(k, 1);
+  k = nearCols.indexOf(L.col); if (k >= 0) nearCols.splice(k, 1);
+  const sg = v.speed < 0 ? -1 : 1, fx = Math.sin(v.heading) * sg, fz = Math.cos(v.heading) * sg;
+  const pivot = new THREE.Group(); pivot.position.set(L.x, L.y, L.z); pivot.rotation.y = Math.atan2(fx, fz);
+  const body = new THREE.Mesh(lampMetal, lampPostMat); body.castShadow = true;
+  body.add(new THREE.Mesh(lampLens, mat(0x55575c)));
+  body.rotation.y = L.ry - pivot.rotation.y;
+  pivot.add(body); scene.add(pivot); L.fall = pivot;
+  v.speed *= 0.8;
+  Sound.crash(10); shake = Math.max(shake, 0.2);
+  sparks(L.x, L.y + 0.5, L.z, fx * Math.abs(v.speed) * 0.25, fz * Math.abs(v.speed) * 0.25, 22);
+  fallenLamps.push(L);
+}
+function updateFallenLamps(dt) {
+  if (!fallenLamps.length) return;
+  const f = P.car ? P.car.pos : P.pos;
+  for (let i = fallenLamps.length - 1; i >= 0; i--) {
+    const L = fallenLamps[i];
+    L.t += dt;
+    if (L.ang < 1.5) {
+      L.w += 6.5 * Math.sin(L.ang + 0.12) * dt;
+      L.ang = Math.min(1.5, L.ang + L.w * dt);
+      if (L.ang >= 1.5) {
+        if (L.w > 1.6) { L.w = -L.w * 0.22; L.ang = 1.47; Sound.noise(0.14, 0.3, 1200); sparks(L.x + Math.sin(L.fall.rotation.y) * 7, 0.2, L.z + Math.cos(L.fall.rotation.y) * 7, 0, 0, 10); }
+        else L.w = 0;
+      }
+      L.fall.rotation.x = L.ang;
+    }
+    if (L.t > 40 && Math.hypot(f.x - L.x, f.z - L.z) > 75) {
+      scene.remove(L.fall); L.fall = null; L.down = false;
+      for (const [m, j, mm] of L.parts) { m.setMatrixAt(j, mm); m.instanceMatrix.needsUpdate = true; }
+      colliders.push(L.col); fallenLamps.splice(i, 1);
+    }
   }
 }
 
@@ -3637,8 +3708,9 @@ function updateCar(v, dt) {
 // Kolizje, woda, policja, piesi, poza, efekty i dźwięk — wspólne dla obu modeli jazdy.
 function finishCar(v, dt, sp, four, hb, down, up, icy, vox, voz) {
   const f = carFwd(v);
+  knockLamps(v, sp);
   // collisions: buildings & other vehicles
-  let impact = 0;
+  let impact = 0, ix = 0, iz = 0;
   for (const off of [sp.off, -sp.off]) {
     const p = { x: v.pos.x + f.x * off, z: v.pos.z + f.z * off }, ox = p.x, oz = p.z;
     pushOut(p, sp.rad, nearCols);
@@ -3658,7 +3730,7 @@ function finishCar(v, dt, sp, four, hb, down, up, icy, vox, voz) {
     if (l > 1e-6) {
       v.pos.x += mx; v.pos.z += mz;
       const dot = (f.x * mx + f.z * mz) / l;
-      if (dot * v.speed < 0) { impact = Math.max(impact, Math.abs(v.speed * dot)); v.speed *= 1 - 1.3 * dot * dot; }
+      if (dot * v.speed < 0) { const im = Math.abs(v.speed * dot); if (im > impact) { impact = im; ix = ox; iz = oz; } v.speed *= 1 - 1.3 * dot * dot; }
       if (four && v.slip) {     // uderzenie bokiem w poślizgu
         const ds = (f.z * mx - f.x * mz) / l;
         if (ds * v.slip < 0) { impact = Math.max(impact, Math.abs(v.slip * ds)); v.slip *= 1 - 1.3 * ds * ds; }
@@ -3666,12 +3738,20 @@ function finishCar(v, dt, sp, four, hb, down, up, icy, vox, voz) {
     }
   }
   if (vehicleWater(v, vox, voz, f)) { impact = Math.max(impact, Math.abs(v.speed) * 0.6); v.speed *= 0.25; }
-  if (impact > 7) { Sound.crash(impact); shake = Math.min(0.6, impact / 40); }
+  if (impact > 7) { Sound.crash(impact); shake = Math.min(0.6, impact / 40); sparks(ix, v.pos.y + 0.5, iz, -f.x * 2, -f.z * 2, Math.min(30, 6 + impact | 0)); }
+  if (Math.abs(v.speed) > 42) shake = Math.max(shake, (Math.abs(v.speed) - 42) * 0.0022);     // drgania przy bardzo dużej prędkości
   if (four && impact > 4) driftScore.fail();
   // pościg: jazda szybciej niż limit przez ponad 1,2 s
   if (Math.abs(v.speed) * 3.6 > SPEED_LIMIT_KMH) { overSpeedT += dt; if (overSpeedT > 1.2) triggerPolice('speed'); } else overSpeedT = 0;
   v.pos.x = clamp(v.pos.x, -BOUND, BOUND); v.pos.z = clamp(v.pos.z, -BOUND, BOUND);
-  v.pos.y = lerp(v.pos.y, groundAt(v.pos.x, v.pos.z), Math.min(1, dt * 12));
+  const gy = groundAt(v.pos.x, v.pos.z);
+  // wjazd na krawężnik / zjazd: podskok nadwozia, lekki wstrząs i stuk
+  if (four && v.lastGy != null && Math.abs(gy - v.lastGy) > 0.1 && Math.abs(v.speed) > 2) {
+    v.pv = (v.pv || 0) + (gy > v.lastGy ? -1.5 : 1.0); v.rv = (v.rv || 0) + (Math.random() - 0.5) * 1.1;
+    shake = Math.max(shake, 0.05 + Math.abs(v.speed) * 0.004); Sound.noise(0.07, 0.14, 220);
+  }
+  v.lastGy = gy;
+  v.pos.y = lerp(v.pos.y, gy, Math.min(1, dt * 12));
   // pedestrians
   if (Math.abs(v.speed) > 4) for (const q of peds) {
     if (q.knock > 0) continue;
@@ -3689,7 +3769,7 @@ function finishCar(v, dt, sp, four, hb, down, up, icy, vox, voz) {
   if (v.body) syncBody(v);
   poseCar(v, dt);
   if (sp.ride) posePlayerRider(v);
-  if (four) carFx(v, dt, hb, down, icy);
+  if (four) carFx(v, dt, hb, down, icy, up);
   if (four && window.GCCars && v.mesh.userData.vis) GCCars.setPlayerLights(v.mesh.userData.vis, smooth(0.35, 0.85, nightK), (down && v.speed > 0.5) || hb);
   Sound.engine(true, v.body ? v.body.rpm / 140 : v.speed * (sp.ride === 'scooter' ? 0.4 : 1), up && sp.ride !== 'scooter');
 }
@@ -3751,15 +3831,15 @@ const smokeTex = (() => {
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
 })();
 const smoke = [];
-for (let i = 0; i < 44; i++) {
+for (let i = 0; i < 80; i++) {
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: smokeTex, color: 0xdedede, transparent: true, opacity: 0, depthWrite: false }));
   s.visible = false; scene.add(s); smoke.push({ s, t: 0, life: 1, vx: 0, vy: 0, vz: 0 });
 }
 let smokeI = 0, smokeAcc = 0;
-function puff(x, y, z, vx, vz, snow) {
+function puff(x, y, z, vx, vz, snow, col, sc = 1) {
   const p = smoke[smokeI = (smokeI + 1) % smoke.length];
-  p.t = 0; p.life = 0.9 + Math.random() * 0.6; p.vx = vx * 0.25 + (Math.random() - 0.5); p.vz = vz * 0.25 + (Math.random() - 0.5); p.vy = 0.6 + Math.random() * 0.8;
-  p.s.position.set(x, y + 0.3, z); p.s.visible = true; p.s.material.color.setHex(snow ? 0xffffff : 0xe6e6e6);
+  p.t = 0; p.life = (0.9 + Math.random() * 0.6) * (sc < 0.6 ? 0.7 : 1); p.vx = vx * 0.25 + (Math.random() - 0.5); p.vz = vz * 0.25 + (Math.random() - 0.5); p.vy = 0.6 + Math.random() * 0.8;
+  p.sc = sc; p.s.position.set(x, y + 0.3 * sc, z); p.s.visible = true; p.s.material.color.setHex(col != null ? col : snow ? 0xffffff : 0xe6e6e6);
 }
 function updateSmoke(dt) {
   for (const p of smoke) {
@@ -3768,13 +3848,13 @@ function updateSmoke(dt) {
     if (p.t >= p.life) { p.s.visible = false; continue; }
     const k = p.t / p.life;
     p.s.position.x += p.vx * dt; p.s.position.y += p.vy * dt; p.s.position.z += p.vz * dt;
-    p.s.scale.setScalar(0.7 + k * 2.6);
+    p.s.scale.setScalar((0.7 + k * 2.6) * (p.sc || 1));
     p.s.material.opacity = 0.55 * (1 - k) * Math.min(1, p.t * 8);
   }
   if (skidDirty) { skidGeo.attributes.position.needsUpdate = true; skidGeo.setDrawRange(0, skidUsed * 6); skidDirty = false; }
 }
 // Ślady, dym i pisk dla auta gracza: tylne koła w poślizgu / na ręcznym, przednie przy ostrym hamowaniu.
-function carFx(v, dt, hb, braking, icy) {
+function carFx(v, dt, hb, braking, icy, up) {
   if (!v.wheels.length) { Sound.skid(0); return; }
   driftScore.update(v, dt);
   const f = carFwd(v), sx = f.z, sz = -f.x, d = carDims(v.type), spd = Math.abs(v.speed) + Math.abs(v.slip || 0);
@@ -3805,6 +3885,133 @@ function carFx(v, dt, hb, braking, icy) {
       puff(v.pos.x + f.x * w.z + sx * w.x, v.pos.y, v.pos.z + f.z * w.z + sz * w.x, vx, vz, icy);
     }
   }
+  // kurz spod kół na trawie i gruntowej drodze (zimą — śnieg), także bez poślizgu
+  if (offRoad(v.pos.x, v.pos.z) && spd > 3) {
+    dustAcc += dt * Math.min(30, (spd - 3) * 1.4 + (v.drift || 0) * 18);
+    const col = icy ? 0xffffff : season() === 'autumn' ? 0xa08a66 : 0xb9a37c;
+    while (dustAcc > 1) {
+      dustAcc--;
+      const w = v.wheels[Math.min(v.wheels.length - 1, 2 + (Math.random() < 0.5 ? 0 : 1))];
+      puff(v.pos.x + f.x * w.z + sx * w.x, v.pos.y, v.pos.z + f.z * w.z + sz * w.x, -f.x * spd * 0.3, -f.z * spd * 0.3, false, col, 1.25);
+    }
+  }
+  // spaliny: ruszanie z miejsca (szary dymek z rury), zimą na postoju para
+  const ex = v.pos.x - f.x * ((v.len || 4.4) / 2 + 0.2) + sx * 0.45, ez = v.pos.z - f.z * ((v.len || 4.4) / 2 + 0.2) + sz * 0.45;
+  exhaustAcc += dt * (up && Math.abs(v.speed) < 9 ? 12 : icy && Math.abs(v.speed) < 1 ? 1.6 : 0);
+  while (exhaustAcc > 1) { exhaustAcc--; puff(ex, v.pos.y - 0.05, ez, -f.x * 2, -f.z * 2, false, icy ? 0xf4f6f8 : 0x8a8d90, 0.42); }
+}
+let dustAcc = 0, exhaustAcc = 0;
+// poza jezdnią i chodnikami (trawa za miastem, las) — siatka miast; place i parkingi (PADS) są utwardzone
+function offRoad(x, z) {
+  if (REALMAP) return false;
+  if (onBlock(x, z) || (Math.abs(x) <= HALF && Math.abs(z) <= HALF)) return false;
+  return !onPad(x, z);
+}
+const PADS = [];   // utwardzone place poza siatką ulic: {x0, x1, z0, z1}
+const onPad = (x, z) => PADS.some(p => x > p.x0 && x < p.x1 && z > p.z0 && z < p.z1);
+// Iskry: uderzenia, przewrócone latarnie (punkty addytywne, nocą świecą z poświatą)
+const SPK_N = 120, spkPos = new Float32Array(SPK_N * 3).fill(-999), spkVel = new Float32Array(SPK_N * 3), spkLife = new Float32Array(SPK_N);
+const spkGeo = new THREE.BufferGeometry();
+spkGeo.setAttribute('position', new THREE.BufferAttribute(spkPos, 3));
+const sparkPts = new THREE.Points(spkGeo, new THREE.PointsMaterial({ color: new THREE.Color(3, 1.5, 0.45), size: 0.11, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }));
+sparkPts.frustumCulled = false; scene.add(sparkPts);
+let spkI = 0, spkAlive = 0;
+function sparks(x, y, z, vx, vz, n) {
+  for (let k = 0; k < n; k++) {
+    const i = spkI = (spkI + 1) % SPK_N;
+    spkPos[i * 3] = x; spkPos[i * 3 + 1] = y; spkPos[i * 3 + 2] = z;
+    spkVel[i * 3] = vx + (Math.random() - 0.5) * 7; spkVel[i * 3 + 1] = 1.5 + Math.random() * 4.5; spkVel[i * 3 + 2] = vz + (Math.random() - 0.5) * 7;
+    spkLife[i] = 0.3 + Math.random() * 0.55;
+  }
+  spkAlive = 1.3;
+}
+function updateSparks(dt) {
+  if (spkAlive <= 0) return;
+  spkAlive -= dt;
+  for (let i = 0; i < SPK_N; i++) {
+    if (spkLife[i] <= 0) continue;
+    spkLife[i] -= dt;
+    if (spkLife[i] <= 0) { spkPos[i * 3 + 1] = -999; continue; }
+    spkVel[i * 3 + 1] -= 14 * dt;
+    spkPos[i * 3] += spkVel[i * 3] * dt; spkPos[i * 3 + 1] += spkVel[i * 3 + 1] * dt; spkPos[i * 3 + 2] += spkVel[i * 3 + 2] * dt;
+    if (spkPos[i * 3 + 1] < 0.04) { spkPos[i * 3 + 1] = 0.04; spkVel[i * 3 + 1] *= -0.3; spkVel[i * 3] *= 0.55; spkVel[i * 3 + 2] *= 0.55; }
+  }
+  spkGeo.attributes.position.needsUpdate = true;
+}
+
+// ---------------------------------------------------------------- snopy świateł nocą
+// Plama światła na jezdni przed autem (pula dla najbliższych aut), świetliste stożki w powietrzu (auto gracza
+// i auta tuż obok) oraz prawdziwe światło reflektorów auta gracza (SpotLight — oświetla budynki, auta, pieszych).
+const beamTex = (() => {
+  const W = 128, H = 256, c = makeCanvas(W, H), g = c.getContext('2d'), img = g.createImageData(W, H), d = img.data;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const t = 1 - y / H, hw = 0.16 + 0.84 * t, dx = Math.abs(x / (W - 1) - 0.5) * 2 / hw;
+    const a = smooth(0, 0.1, t) * Math.pow(1 - t, 1.3) * Math.exp(-dx * dx * 2.2);
+    const i = (y * W + x) * 4; d[i] = d[i + 1] = d[i + 2] = 255; d[i + 3] = Math.min(255, a * 300);
+  }
+  g.putImageData(img, 0, 0);
+  return canvasTex(c, false);
+})();
+const beamGeo = (() => {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute([-0.5, 0, 0, 0.5, 0, 0, 0.5, 0, 1, -0.5, 0, 1], 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute([0, 0, 1, 0, 1, 1, 0, 1], 2));
+  g.setIndex([0, 2, 1, 0, 3, 2]); return g;
+})();
+const beamMat = new THREE.MeshBasicMaterial({ map: beamTex, color: 0xfff0d2, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -5, polygonOffsetUnits: -10 });
+const coneGeo = (() => {
+  const g = new THREE.ConeGeometry(1, 1, 20, 1, true).translate(0, -0.5, 0).rotateX(-Math.PI / 2), p = g.attributes.position, col = [];
+  for (let i = 0; i < p.count; i++) { const c = Math.pow(1 - clamp(p.getZ(i), 0, 1), 1.4); col.push(c, c, c); }
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); return g;
+})();
+const coneMat = new THREE.MeshBasicMaterial({ color: 0xfff1d8, vertexColors: true, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+const BEAM_N = 28, CONE_N = 14;
+const beamMesh = new THREE.InstancedMesh(beamGeo, beamMat, BEAM_N), coneMesh = new THREE.InstancedMesh(coneGeo, coneMat, CONE_N);
+beamMesh.frustumCulled = coneMesh.frustumCulled = false; beamMesh.count = coneMesh.count = 0; beamMesh.renderOrder = 2;
+scene.add(beamMesh, coneMesh);
+const headSpot = new THREE.SpotLight(0xfff0d8, 0, 80, 0.5, 0.6, 1.5);
+headSpot.castShadow = false; scene.add(headSpot, headSpot.target);
+const _bm = new THREE.Matrix4(), _be = new THREE.Euler(0, 0, 0, 'YXZ'), _bc = [];
+function updateBeams() {
+  const k = smooth(0.3, 0.8, nightK);
+  beamMat.opacity = 0.62 * k; coneMat.opacity = 0.085 * k;
+  if (k < 0.02 || indoor) { beamMesh.count = coneMesh.count = 0; headSpot.intensity = 0; return; }
+  const cam = camera.position;
+  _bc.length = 0;
+  for (const v of vehicles) {
+    if (v.kind === 'parked' || !v.mesh.visible || (v.spec && v.spec.fly && v.pos.y > 1)) continue;
+    if (v.kind !== 'player' && v.kind !== 'traffic' && v.kind !== 'police') continue;
+    const d = Math.hypot(v.pos.x - cam.x, v.pos.z - cam.z);
+    if (d < 150) _bc.push([v === P.car ? -1 : d, v]);
+  }
+  _bc.sort((a, b) => a[0] - b[0]);
+  let nb = 0, nc = 0;
+  for (const [d, v] of _bc) {
+    if (nb >= BEAM_N) break;
+    const two = v.spec && v.spec.ride, hd = v.heading + (v.speed < -0.5 ? 0 : 0), fx = Math.sin(hd), fz = Math.cos(hd), sx = fz, sz = -fx;
+    const half = (v.len || 4.4) / 2 - 0.15, L = two ? 15 : 24, W = two ? 6.5 : 10;
+    _bm.compose(_p.set(v.pos.x + fx * half, v.pos.y + 0.05, v.pos.z + fz * half), _q.setFromEuler(_be.set(0, hd, 0)), _s.set(W, 1, L));
+    beamMesh.setMatrixAt(nb++, _bm);
+    if (d < 60 && nc < CONE_N) {
+      const w = two ? 0 : carDims(v.type).w / 2 - 0.32;
+      for (const sd of two ? [0] : [-1, 1]) {
+        if (nc >= CONE_N) break;
+        _bm.compose(_p.set(v.pos.x + fx * (half + 0.1) + sx * w * sd, v.pos.y + (two ? 0.9 : 0.68), v.pos.z + fz * (half + 0.1) + sz * w * sd),
+          _q.setFromEuler(_be.set(0.07, hd, 0)), _s.set(2.4, 1.3, 15));
+        coneMesh.setMatrixAt(nc++, _bm);
+      }
+    }
+  }
+  beamMesh.count = nb; coneMesh.count = nc;
+  beamMesh.instanceMatrix.needsUpdate = coneMesh.instanceMatrix.needsUpdate = true;
+  const v = P.car;
+  if (v && !(v.spec && v.spec.fly && v.pos.y > 1)) {
+    const fx = Math.sin(v.heading), fz = Math.cos(v.heading), half = (v.len || 4.4) / 2;
+    headSpot.position.set(v.pos.x + fx * half, v.pos.y + 0.85, v.pos.z + fz * half);
+    headSpot.target.position.set(v.pos.x + fx * (half + 26), v.pos.y, v.pos.z + fz * (half + 26));
+    headSpot.target.updateMatrixWorld();
+    headSpot.intensity = 240 * k;
+  } else headSpot.intensity = 0;
 }
 // Punkty za drift (kąt × prędkość × czas) — sama zabawa i rekord, bez pieniędzy (gra jest o nauce).
 // Uderzenie w coś w trakcie driftu kasuje punkty.
@@ -4515,7 +4722,7 @@ function updateSky(dt, focus) {
   sun.target.updateMatrixWorld();
   const night = 1 - day;
   for (const m of winMats) m.emissiveIntensity = night * (m.userData.emi || 0.95);
-  lampHeadMat.emissiveIntensity = night * 4; glowPoolMat.opacity = night * 0.9;
+  lampHeadMat.emissiveIntensity = night * 4; glowPoolMat.opacity = night * 0.9; walkPoolMat.opacity = night * 0.6;
   nightK = night;
   if (window.GCCars) GCCars.setNight(smooth(0.35, 0.85, night));
   const h = Math.floor(tod * 24), mnt = Math.floor((tod * 24 - h) * 60);
@@ -6948,6 +7155,8 @@ function frame() {
   updateTraffic(dt);
   updateSignals();
   updateSmoke(dt);
+  updateSparks(dt);
+  updateFallenLamps(dt);
   updateChase(dt);
   if (ui !== 'start') { updateSeason(dt); updateMissionTimer(dt); updateMushrooms(dt); checkFishSpots(); updateFishing(dt); checkMapEdge(dt); }
   netTick(dt);
@@ -6959,6 +7168,7 @@ function frame() {
   updateNPCs(dt);
   updateCamera(dt);
   updateTreeLOD(dt);
+  updateBeams();
   clockStr = updateSky(dt, ui === 'start' ? camera.position : focus);
   // markers
   for (const mk of markers) {
