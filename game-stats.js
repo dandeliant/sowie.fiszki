@@ -186,14 +186,56 @@
     readQueue: readQ, writeQueue: writeQ
   };
 
+  // „🟢 Teraz online" (#83): opis gry z podręcznikiem i rozdziałem (gdy znane).
+  const GC_MAPS = {
+    grid: 'Grammar City', metro: 'Metropolia', warsaw: 'Warszawa', jeleniec: 'Jeleniec',
+    london: 'Londyn', lukow: 'Łuków', wesolowka: 'Wesołówka', kierzkow: 'Kierzków',
+    sarnow: 'Sarnów', rzymy: 'Rzymy-Rzymki', paris: 'Paryż'
+  };
+  function whereLabel(book, unit) {
+    try {
+      /* global BOOKS */
+      if (!book || typeof BOOKS === 'undefined' || !BOOKS[book]) return '';
+      const b = BOOKS[book];
+      const all = !unit || unit === 'all' || unit === '__all__';
+      const u = all ? null : (b.units && b.units[unit]);
+      return (b.shortName || b.name || book) + (u ? ' · ' + u.name : (all ? ' · cały podręcznik' : ''));
+    } catch (e) { return ''; }
+  }
+  function presenceInfo(gameKey, pageFile, book, unit) {
+    const g = GAMES[gameKey] || { n: gameKey, i: '🎮' };
+    let name = g.n;
+    if (gameKey === 'grammarcity') {
+      const m = new URLSearchParams(location.search).get('map');
+      if (m && GC_MAPS[m] && m !== 'grid') name += ' (' + GC_MAPS[m] + ')';
+    }
+    const where = whereLabel(book, unit);
+    const tail = where ? ' — ' + where : (gameKey === 'grammarcity' && !book ? ' — gramatyka' : '');
+    return { page: pageFile, activity: 'game:' + gameKey, label: g.i + ' Gra: ' + name + tail, book: book || null, unit: unit || null };
+  }
+
   // Samodzielne pliki gier — start automatycznie po załadowaniu strony.
   const path = location.pathname;
-  const file = path.includes('/grammar-city/') ? 'grammar-city' : (path.split('/').pop() || '');
+  let file = path.includes('/grammar-city/') ? 'grammar-city' : (path.split('/').pop() || '');
+  if (file && file !== 'grammar-city' && file.indexOf('.') < 0) file += '.html';   // Vercel: /car-racer
   const page = PAGES[file];
   if (page) {
+    // Moduł obecności (presence.js) leży obok tego pliku — app.html go nie potrzebuje (db.js).
+    try {
+      const me = document.currentScript;
+      const base = (me && me.src) ? me.src.replace(/game-stats\.js(\?.*)?$/, '') : '';
+      if (!window.SF_PRESENCE && base) {
+        const s = document.createElement('script');
+        s.src = base + 'presence.js';
+        document.head.appendChild(s);
+      }
+    } catch (e) {}
     const run = () => {
       const p = new URLSearchParams(location.search);
-      start(page[0], page[1], { book: p.get('book'), unit: p.get('unit'), getCorrect: page[2] });
+      const book = p.get('book'), unit = p.get('unit');
+      start(page[0], page[1], { book, unit, getCorrect: page[2] });
+      const info = presenceInfo(page[0], file, book, unit);
+      if (window.SF_PRESENCE) window.SF_PRESENCE.set(info); else window.__sfPresence = info;
     };
     if (document.readyState === 'complete') run();
     else window.addEventListener('load', run);

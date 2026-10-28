@@ -275,6 +275,7 @@ const DB = (() => {
    * Wylogowuje użytkownika.
    */
   async function logout() {
+    try { await presenceLeave(); } catch(e) {}   // „🟢 Teraz online” (#83) — wyszedł
     await supabase.auth.signOut();
     _profile = null;
     _userId  = null;
@@ -4853,6 +4854,167 @@ const DB = (() => {
     }
   })();
 
+  // ═══════════════════════════════════════════════════════════════
+  //  „🟢 TERAZ NA SOWICH FISZKACH" — bieżąca aktywność (migracja #83
+  //  user-presence.sql). Aplikacja zgłasza ekran / tryb nauki / grę:
+  //  od razu po zmianie (debounce), potem co 30 s — tylko gdy karta jest
+  //  widoczna. Karta w tle → jeden sygnał 'hidden'; brak ruchu > 2 min →
+  //  'idle'; zamknięcie strony → presence_leave (fetch keepalive).
+  //  Bez migracji: pierwszy błąd „brak funkcji" wyłącza moduł (bez spamu).
+  //  Gość nic nie wysyła (brak _userId).
+  // ═══════════════════════════════════════════════════════════════
+  const PRESENCE_BEAT_MS = 30000;
+  const PRESENCE_IDLE_MS = 120000;
+  const _pres = {
+    info: null, key: '', sent: '',       // bieżący stan + ostatnio wysłany podpis (stan|widoczność)
+    provider: null,                       // funkcja z app.html zwracająca aktualny stan
+    debounce: null, beat: null,
+    missing: false, busy: false, again: false,
+    lastInput: Date.now()
+  };
+
+  function _presMissing(error) {
+    return !!error && /PGRST202|42883|42501|Could not find the function|function .*presence_.* does not exist|permission denied for function presence_/i
+      .test((error.code || '') + ' ' + (error.message || ''));
+  }
+  function _presStr(v, max) {
+    if (v === null || v === undefined) return null;
+    const s = String(v).replace(/[\u0000-\u001f\u007f]+/g, ' ').trim();
+    return s ? s.slice(0, max) : null;
+  }
+  function _presNorm(info) {
+    info = info || {};
+    return {
+      page:     _presStr(info.page, 60),
+      activity: _presStr(info.activity, 60),
+      label:    _presStr(info.label, 200),
+      book:     _presStr(info.book, 80),
+      unit:     _presStr(info.unit, 80)
+    };
+  }
+  function _presVisState() {
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return 'hidden';
+    return (Date.now() - _pres.lastInput > PRESENCE_IDLE_MS) ? 'idle' : 'active';
+  }
+  // true = stan się zmienił
+  function _presSetInfo(info) {
+    const n = _presNorm(info);
+    const key = JSON.stringify(n);
+    const changed = key !== _pres.key;
+    _pres.info = n; _pres.key = key;
+    return changed;
+  }
+  function _presRefresh() {
+    if (!_pres.provider) return;
+    try { const i = _pres.provider(); if (i) _presSetInfo(i); } catch(e) {}
+  }
+  async function _presSend() {
+    if (_pres.missing || !_userId || !_pres.info) return;
+    if (_pres.busy) { _pres.again = true; return; }
+    const st = _presVisState();
+    const i = _pres.info;
+    _pres.busy = true;
+    try {
+      const { error } = await supabase.rpc('presence_ping', {
+        p_page: i.page, p_activity: i.activity, p_label: i.label,
+        p_book: i.book, p_unit: i.unit, p_state: st
+      });
+      if (error) { if (_presMissing(error)) _presStop(); }
+      else _pres.sent = _pres.key + '|' + st;
+    } catch(e) { /* sieć — kolejny sygnał za 30 s */ }
+    finally {
+      _pres.busy = false;
+      if (_pres.again && !_pres.missing) { _pres.again = false; setTimeout(_presSend, 250); }
+    }
+  }
+  function _presStop() {
+    _pres.missing = true;
+    clearTimeout(_pres.debounce);
+    if (_pres.beat) { clearInterval(_pres.beat); _pres.beat = null; }
+  }
+  function _presStartBeat() {
+    if (_pres.beat || _pres.missing || typeof window === 'undefined') return;
+    _pres.beat = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      _presRefresh();
+      _presSend();
+    }, PRESENCE_BEAT_MS);
+  }
+
+  // Zgłoś bieżącą czynność: { page, activity, label, book, unit }.
+  // Ten sam stan nie jest wysyłany ponownie (poza sygnałem co 30 s).
+  function presencePing(info) {
+    if (!info || _pres.missing) return;
+    if (_presSetInfo(info) || !_pres.sent) {
+      clearTimeout(_pres.debounce);
+      _pres.debounce = setTimeout(_presSend, 700);
+    }
+    _presStartBeat();
+  }
+  // app.html podaje funkcję, która zwraca aktualny stan — sygnał co 30 s
+  // i powrót karty z tła czytają z niej świeże dane.
+  function presenceSetProvider(fn) {
+    _pres.provider = (typeof fn === 'function') ? fn : null;
+    _presStartBeat();
+  }
+  // Wyjście. keepalive=true przy zamykaniu strony (fetch przeżywa unload).
+  async function presenceLeave(keepalive) {
+    if (_pres.missing || !_userId || !_pres.sent) return;
+    clearTimeout(_pres.debounce);
+    _pres.sent = '';
+    if (keepalive) {
+      try {
+        const tok = _activity.accessToken;
+        if (!tok || typeof SUPABASE_URL === 'undefined') return;
+        fetch(SUPABASE_URL + '/rest/v1/rpc/presence_leave', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': (typeof SUPABASE_ANON_KEY !== 'undefined' ? SUPABASE_ANON_KEY : ''),
+            'Authorization': 'Bearer ' + tok,
+            'Prefer': 'return=minimal'
+          },
+          body: '{}',
+          keepalive: true
+        }).catch(() => {});
+      } catch(e) {}
+      return;
+    }
+    try { await supabase.rpc('presence_leave'); } catch(e) {}
+  }
+  // Admin / nauczyciel / opiekun: kto miał sygnał w ostatnich N minutach.
+  // null = brak migracji #83.
+  async function loadOnlineNow(minutes) {
+    if (!_userId) return [];
+    const { data, error } = await supabase.rpc('presence_online', { p_minutes: minutes || 3 });
+    if (error) {
+      if (_presMissing(error)) return null;
+      throw new Error(error.message);
+    }
+    return data || [];
+  }
+
+  (function _initPresenceListeners() {
+    if (typeof document === 'undefined' || typeof window === 'undefined') return;
+    const bump = () => {
+      const wasIdle = Date.now() - _pres.lastInput > PRESENCE_IDLE_MS;
+      _pres.lastInput = Date.now();
+      if (wasIdle && _pres.info && !_pres.missing) { _presRefresh(); _presSend(); }
+    };
+    ['pointerdown', 'mousemove', 'keydown', 'touchstart', 'wheel'].forEach(evt =>
+      document.addEventListener(evt, bump, { passive: true, capture: true }));
+    document.addEventListener('visibilitychange', () => {
+      if (_pres.missing || !_pres.info) return;
+      if (document.visibilityState === 'visible') { _pres.lastInput = Date.now(); _presRefresh(); }
+      _presSend();
+    });
+    window.addEventListener('pagehide', () => { presenceLeave(true); });
+    // Powrót z pamięci podręcznej przeglądarki (wstecz/dalej) — znowu jesteśmy.
+    window.addEventListener('pageshow', (e) => {
+      if (e && e.persisted && _pres.info && !_pres.missing) { _presRefresh(); _presSend(); }
+    });
+  })();
+
   // ─── PUBLICZNE API ───────────────────────────────────────────
   return {
     // init / auth
@@ -5118,6 +5280,11 @@ const DB = (() => {
     loadStudentActivity,
     loadStudentWordStats,
     cleanupOldActivityEvents,
+    // „🟢 Teraz online" (#83)
+    presencePing,
+    presenceSetProvider,
+    presenceLeave,
+    loadOnlineNow,
     // teacher sets
     teacherLoadMySets,
     adminLoadAllTeacherSets,

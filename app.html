@@ -1651,7 +1651,10 @@ body.guest-mode .progress-wrap{opacity:.4;}
         <div style="font-family:'Playfair Display',serif;font-size:1.2rem;color:var(--purple)">👩‍🏫 Panel nauczyciela</div>
         <div style="font-size:.68rem;color:var(--muted);font-weight:600">Zarządzaj klasami, postępami i materiałami</div>
       </div>
-      <span id="pendingBadge" style="background:var(--danger);color:#fff;border-radius:100px;padding:3px 10px;font-size:.65rem;font-weight:800;display:none"></span>
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+        <button id="onlineNowChip" onclick="openOnlineNow()" style="display:none;align-items:center;gap:4px;background:rgba(6,214,160,.12);border:1.5px solid rgba(6,214,160,.45);color:var(--accent2);border-radius:100px;padding:4px 12px;font-size:.72rem;font-weight:800;cursor:pointer;font-family:inherit">🟢 Teraz online</button>
+        <span id="pendingBadge" style="background:var(--danger);color:#fff;border-radius:100px;padding:3px 10px;font-size:.65rem;font-weight:800;display:none"></span>
+      </div>
     </div>
     <!-- Skrocony panel: tylko kafelki "Panel nauczyciela" + "Slowka" (admin).
          Wszystkie pozostale opcje (Klasy, Dostep, Zestawy, Prosby, ...) sa
@@ -4153,6 +4156,11 @@ szkoła	school"></textarea>
         <div style="font-size:.78rem;font-weight:800;color:var(--text)">Moje dzieci</div>
         <div style="font-size:.6rem;color:var(--muted);font-weight:600;margin-top:2px">Dodaj i przeglądaj</div>
       </div>
+      <div onclick="openOnlineNow()" style="background:var(--surface);border:1.5px solid var(--border);border-radius:14px;padding:14px 10px;text-align:center;cursor:pointer;transition:all .2s" onmouseover="this.style.borderColor='var(--accent2)'" onmouseout="this.style.borderColor='var(--border)'">
+        <div style="font-size:1.6rem;margin-bottom:4px">🟢</div>
+        <div style="font-size:.78rem;font-weight:800;color:var(--text)">Teraz online</div>
+        <div style="font-size:.6rem;color:var(--muted);font-weight:600;margin-top:2px">Czy dziecko teraz się uczy i co robi</div>
+      </div>
       <div onclick="openMessagesScreen()" style="background:var(--surface);border:1.5px solid var(--border);border-radius:14px;padding:14px 10px;text-align:center;cursor:pointer;transition:all .2s;position:relative" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
         <div style="font-size:1.6rem;margin-bottom:4px">💬</div>
         <div style="font-size:.78rem;font-weight:800;color:var(--text)">Wiadomości</div>
@@ -5213,6 +5221,371 @@ const SCREEN_TO_ACTIVITY = {
 };
 
 // ══════════════════════════════════════════════
+//  „🟢 TERAZ NA SOWICH FISZKACH" (#83) — bieżąca aktywność.
+//  presenceInfo() opisuje po polsku, co jest teraz otwarte (ekran, tryb nauki,
+//  gra, okno rozmowy z AI…) + podręcznik i rozdział; DB.presencePing wysyła to
+//  przy zmianie i co 30 s. Gry w osobnych plikach zgłaszają się same
+//  (game-stats.js → presence.js). Podgląd: okno „🟢 Teraz online" (?go=online).
+// ══════════════════════════════════════════════
+// ekran → [kod, ikona, nazwa, rozdział gry]
+const PRES_GAMES = {
+  sCrossword:   ['crossword',         '🔤', 'Krzyżówka',            () => cwCurUnit],
+  sWordsearch:  ['wordsearch',        '🔍', 'Wordsearch',           () => wsCurUnit],
+  sSnake:       ['snake',             '🐍', 'Wąż wyrazowy',         () => snakeUnitKey],
+  sMemory:      ['memory',            '🧠', 'Memory',               () => memUnitKey],
+  sHangman:     ['hangman',           '🚀', 'Wisielec',             () => hangUnitKey],
+  sScrGame:     ['letter_scramble',   '🔀', 'Rozsypanka literowa',  () => sgUnitKey],
+  sSentScrGame: ['sentence_scramble', '📜', 'Rozsypanka zdaniowa',  () => ssgUnitKey],
+  sBoardGame:   ['board_game',        '🎲', 'Gra planszowa',        () => boardUnitKey],
+  sDobble:      ['dobble',            '🎯', 'Karty do gry',         () => dobbleUnitKey],
+  sImageCard:   ['image_card',        '🖼️', 'Karta obrazkowa',      () => icUnitKey],
+  sCubes:       ['speaking_cubes',    '🎲', 'Speaking Cubes',       () => cubesUnitKey],
+  sSpellCard:   ['spell_card',        '✍️', 'Pisanie graficzne',    () => spellUnitKey],
+  sSentBuild:   ['sentence_builder',  '✏️', 'Budowanie zdań',       () => sbUnitKey],
+  sDuel:        ['duel',              '⚔️', 'Rywalizacja',          () => duelUnitKey || currentUnitKey],
+  sSpeed:       ['speed_round',       '⚡', 'Speed Challenge',      () => null],
+  sMG:          ['pairs',             '🧩', 'Połącz pary',          () => currentUnitKey]
+};
+// zwykłe ekrany: stały opis albo funkcja
+const PRES_SCREENS = {
+  sLang:              '🏠 Start — wybór języka',
+  sReviewQueue:       '📅 Powtórki — słowa do powtórzenia',
+  sApps:              '🧩 INNE — wybór gry lub ćwiczenia',
+  sSchool:            '🏫 Wybór szkoły',
+  sClass:             '🎓 Wybór klasy',
+  sBooks:             () => (isCurrentUserAdmin() || isCurrentUserTeacher()) ? '👩‍🏫 Panel nauczyciela — start' : '📚 Wybór podręcznika',
+  sUnits:             () => '📖 Rozdziały podręcznika' + _presWhere(currentBookId, null),
+  sWordList:          () => '📋 Lista słówek' + _presWhere(currentBookId, currentUnitKey),
+  sDone:              () => '🏁 Koniec sesji nauki' + _presWhere(currentBookId, currentUnitKey),
+  sStats:             '📊 Moje statystyki',
+  sDailyQuiz:         '📆 Codzienny quiz',
+  sDailyResult:       '📆 Codzienny quiz — wynik',
+  sQuizzes:           '📝 Kartkówki — lista',
+  sQuizResults:       () => '📝 Kartkówka — wyniki' + _presTry(() => _qr.quiz && _qr.quiz.title ? ': ' + _qr.quiz.title : ''),
+  sQuizTake:          () => '📝 Kartkówka' + _presTry(() => _qt.data && _qt.data.title ? ': ' + _qt.data.title : ''),
+  sDuelOnline:        () => '🌐 Rywalizacja online' + _presTry(() => _don.data && _don.data.title ? ' — ' + _don.data.title : ''),
+  sAdminAccess:       '👩‍🏫 Panel nauczyciela: Dostęp',
+  sAdminAccessDetail: '👩‍🏫 Panel nauczyciela: Dostęp — konto',
+  sAdminClasses:      '👩‍🏫 Panel nauczyciela: Klasy',
+  sClassDetail:       () => '👩‍🏫 Panel nauczyciela: Klasa' + _presTry(() => _curClassName ? ' ' + _curClassName : ''),
+  sStudentProgress:   () => _presTry(() => _studProgReturnTo === 'parent') ? '👨‍👩‍👧 Panel opiekuna: postęp dziecka' : '👩‍🏫 Panel nauczyciela: postęp ucznia',
+  sAdminTeacherSets:  '👩‍🏫 Panel admina: zestawy nauczycieli',
+  sTeacherSets:       '👩‍🏫 Panel nauczyciela: Zestawy',
+  sTeacherSetEdit:    '👩‍🏫 Panel nauczyciela: edycja zestawu',
+  sAccessRequests:    '👩‍🏫 Panel admina: prośby o dostęp',
+  sInactive:          '🔔 Nieaktywni',
+  sMessages:          '💬 Wiadomości',
+  sParentPanel:       '👨‍👩‍👧 Panel opiekuna',
+  sAddChild:          '👨‍👩‍👧 Panel opiekuna: dodaj dziecko',
+  sChildBooks:        '👨‍👩‍👧 Panel opiekuna: podręczniki dziecka',
+  sContactMessages:   '📨 Formularz kontaktowy',
+  sWordErrors:        '🐛 Zgłoszone błędy w słówkach',
+  sAdminTeachers:     '👩‍🏫 Konta nauczycieli',
+  sBulkTeachers:      '➕ Generowanie kont nauczycieli',
+  sBulkStudents:      '👥 Masowe tworzenie kont uczniów'
+};
+// okna otwarte nad ekranem (id → [kod, opis, z podręcznikiem?])
+const PRES_OVERLAYS = [
+  ['onlineNowModal', 'online',     '🟢 Teraz online — podgląd',          false],
+  ['gramPracModal',  'ai:grammar', '🧠 Ćwiczenia gramatyczne',           true],
+  ['storyReadModal', 'ai:story',   '📖 Czytanka',                        true],
+  ['aiDiaryModal',   'ai:diary',   '📔 Pamiętnik rozmów z AI',           false],
+  ['gtopModal',      'top',        '🌍 Topka wszystkich użytkowników',   false]
+];
+// Zmienne modułów zadeklarowane niżej w pliku — bez błędu przed ich inicjalizacją.
+function _presTry(fn) { try { return fn() || ''; } catch(e) { return ''; } }
+// „ — Brainy 6 · Unit 3" (prefix domyślnie „ — ")
+function _presWhere(bookId, unitKey, prefix) {
+  try {
+    if (!bookId || typeof BOOKS === 'undefined' || !BOOKS[bookId]) return '';
+    const b = BOOKS[bookId];
+    let s = b.shortName || b.name || bookId;
+    if (unitKey === 'all' || unitKey === '__all__') s += ' · cały podręcznik';
+    else if (unitKey && b.units && b.units[unitKey]) s += ' · ' + b.units[unitKey].name;
+    return (prefix == null ? ' — ' : prefix) + s;
+  } catch(e) { return ''; }
+}
+function _presVisible(el) {
+  if (!el || !el.isConnected) return false;
+  try { return getComputedStyle(el).display !== 'none'; } catch(e) { return false; }
+}
+function presenceInfo() {
+  const scr = document.querySelector('.screen.active');
+  const id = scr ? scr.id : '';
+  const base = { page: 'app', book: currentBookId || null, unit: (currentBookId && currentUnitKey) || null };
+  // 1) Okna nad ekranem
+  const chat = document.querySelector('.sfc-ov');
+  if (chat) {
+    const who = chat.querySelector('.sfc-who b');
+    return Object.assign(base, { activity: 'ai:chat', label: '💬 Rozmowa z AI po angielsku' + (who && who.textContent ? ' (' + who.textContent.trim() + ')' : '') + _presWhere(currentBookId, currentUnitKey) });
+  }
+  if (document.getElementById('dpTranscript')) {
+    const t = document.querySelector('#__genericModal__ .modal-title');
+    return Object.assign(base, { activity: 'dialog', label: '🎧 Mini-dialog' + (t ? ': ' + t.textContent.replace(/^🎧\s*/, '').trim() : '') + _presWhere(currentBookId, null) });
+  }
+  for (const [mid, act, lab, withBook] of PRES_OVERLAYS) {
+    const el = document.getElementById(mid);
+    if (!_presVisible(el)) continue;
+    let l = lab;
+    if (mid === 'storyReadModal') { const t = el.querySelector('.modal-title'); if (t) l += ': ' + t.textContent.replace(/^📖\s*/, '').trim(); }
+    return Object.assign(base, { activity: act, label: l + (withBook ? _presWhere(currentBookId, currentUnitKey) : '') },
+      withBook ? {} : { book: null, unit: null });
+  }
+  // 2) Nauka (tryby)
+  if (id === 'sStudy') {
+    const focus = scr.classList.contains('sf-focus');
+    if (focus && typeof mode === 'string') {
+      const ml = (typeof FOCUS_MODE_LABELS !== 'undefined' && FOCUS_MODE_LABELS[mode]) || ('📚 ' + mode);
+      const sp = ml.indexOf(' ');
+      const nice = sp > 0 ? ml.slice(0, sp) + ' Nauka: ' + ml.slice(sp + 1) : 'Nauka: ' + ml;
+      return Object.assign(base, { activity: 'study:' + mode, label: nice + _presWhere(currentBookId, currentUnitKey) });
+    }
+    return Object.assign(base, { activity: 'study:pick', label: '📚 Nauka: wybór trybu' + _presWhere(currentBookId, currentUnitKey) });
+  }
+  // 3) Gry wbudowane
+  if (PRES_GAMES[id]) {
+    const [code, ic, name, uk] = PRES_GAMES[id];
+    const unit = _presTry(uk) || null;
+    return Object.assign(base, { activity: 'game:' + code, unit, label: ic + ' Gra: ' + name + _presWhere(currentBookId, unit) });
+  }
+  // 4) LIVE „Gramy wszyscy"
+  if (/^sLive/.test(id)) {
+    const L = _presTry(() => window._livePresenceInfo && window._livePresenceInfo()) || {};
+    const phase = { sLiveJoin: 'dołącza do gry', sLiveLobby: 'poczekalnia', sLiveQuiz: 'gra trwa', sLiveRanking: 'wyniki' }[id] || '';
+    const who = L.host ? 'prowadzi grę' + (L.pin ? ' (PIN ' + L.pin + ')' : '') : '';
+    return Object.assign(base, { activity: 'live:' + (L.host ? 'host' : 'player'), book: L.book || null, unit: L.unit || null,
+      label: '📺 LIVE „Gramy wszyscy”: ' + [who, phase].filter(Boolean).join(' · ') + _presWhere(L.book, L.unit) });
+  }
+  // 5) Pozostałe ekrany
+  const def = PRES_SCREENS[id];
+  if (def) {
+    const label = typeof def === 'function' ? _presTry(def) : def;
+    const withBook = /^(sUnits|sWordList|sDone)$/.test(id);
+    return Object.assign(base, { activity: 'screen:' + id, label: label || id }, withBook ? {} : { book: null, unit: null });
+  }
+  return Object.assign(base, { activity: 'screen:' + (id || '?'), label: '🦉 Sowie Fiszki', book: null, unit: null });
+}
+function presenceSync() {
+  if (isGuest || typeof DB === 'undefined' || !DB.presencePing) return;
+  try { DB.presencePing(presenceInfo()); } catch(e) {}
+}
+// Każde kliknięcie / Esc może zmienić ekran, tryb albo okno — sprawdź chwilę później
+// (DB.presencePing wysyła tylko, gdy opis się zmienił).
+(function _presInitHooks(){
+  if (typeof document === 'undefined') return;
+  let t = null;
+  const later = () => { clearTimeout(t); t = setTimeout(presenceSync, 450); };
+  document.addEventListener('click', later, { passive: true });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' || e.key === 'Enter') later(); }, { passive: true });
+})();
+
+// ── Okno „🟢 Teraz na Sowich Fiszkach": admin — wszyscy, nauczyciel — swoi
+//    uczniowie, opiekun — dzieci (zakres pilnuje RPC presence_online). ──
+const ONLINE_SEC = 180;      // sygnał w ostatnich 3 min = jest w aplikacji
+const ONLINE_RECENT_MIN = 15;
+const _onl = { rows: null, at: 0, role: 'all', q: '', act: '', poll: null, tick: null, seq: 0, err: '', missing: false, recentOpen: false };
+const ONL_ROLES = {
+  all:     ['👥 Wszyscy',      '',                       ''],
+  student: ['🎓 Uczeń',        'rgba(6,214,160,.12)',    'var(--accent2)'],
+  teacher: ['👩‍🏫 Nauczyciel',  'rgba(255,209,102,.15)',  'var(--accent)'],
+  parent:  ['👨‍👩‍👧 Opiekun',     'rgba(124,77,255,.13)',   'var(--purple)'],
+  admin:   ['👑 Admin',        'rgba(255,107,157,.13)',  'var(--pink)']
+};
+function _onlRole(r) { return r.is_admin ? 'admin' : r.is_teacher ? 'teacher' : r.is_parent ? 'parent' : 'student'; }
+function _onlElapsed() { return Math.max(0, Math.round((Date.now() - _onl.at) / 1000)); }
+function _onlAge(r) { return (r.idle_sec || 0) + _onlElapsed(); }
+function _onlIsOnline(r) { return r.state !== 'left' && _onlAge(r) <= ONLINE_SEC; }
+function _onlDur(sec) {
+  sec = Math.max(0, sec | 0);
+  if (sec < 60) return sec + ' s';
+  const m = Math.floor(sec / 60);
+  return m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + (m % 60) + ' min';
+}
+function _onlAgo(sec) { return sec < 15 ? 'przed chwilą' : _onlDur(sec) + ' temu'; }
+// „✏️ Nauka: Wpisz — Brainy 6 · Unit 3" → „✏️ Nauka: Wpisz" (grupa w podsumowaniu)
+function _onlGroup(r) { return String(r.label || r.activity || '—').split(' — ')[0].replace(/\s*\(PIN [^)]*\)/, '').trim(); }
+function _onlStatus(r, online) {
+  if (!online) return r.state === 'left' ? ['⚪', 'wyszedł(-ła)'] : ['⚪', 'brak sygnału'];
+  if (r.state === 'hidden') return ['💤', 'karta w tle'];
+  if (r.state === 'idle') return ['🟡', 'bez ruchu'];
+  return ['🟢', 'aktywny(-a)'];
+}
+function _onlRowHtml(r, online) {
+  const role = _onlRole(r), rb = ONL_ROLES[role];
+  const st = _onlStatus(r, online), age = _onlAge(r);
+  const name = (typeof fmtNameWithLabel === 'function') ? fmtNameWithLabel(r.user_id, r.username) : escHtml(r.username || '');
+  const nick = r.nickname ? ' <span style="font-size:.64rem;color:var(--muted);font-weight:700" title="Ksywka">„' + escHtml(r.nickname) + '”</span>' : '';
+  // podręcznik/rozdział osobno, gdy opis ich nie zawiera (np. gra z podręcznika dodanego w panelu)
+  let where = '';
+  if (r.book_id) {
+    const w = _presWhere(r.book_id, r.unit_key, '');
+    const bn = w ? w.split(' · ')[0] : '';
+    if (!w) where = r.book_id + (r.unit_key ? ' · ' + r.unit_key : '');
+    else if (!String(r.label || '').includes(bn)) where = w;
+  }
+  const meta = [];
+  if (where) meta.push('📖 ' + escHtml(where));
+  // online: od kiedy trwa ta czynność; po wyjściu: jak długo trwała
+  const dur = online ? (r.activity_sec || 0) + _onlElapsed() : (r.activity_sec || 0) - (r.idle_sec || 0);
+  meta.push('⏱️ ' + (online ? 'od ' : 'przez ') + escHtml(_onlDur(dur)));
+  meta.push((online ? '📡 sygnał ' : '🕒 ') + escHtml(_onlAgo(age)));
+  return '<div style="display:flex;align-items:flex-start;gap:10px;padding:9px 11px;border-radius:12px;margin-bottom:6px;background:' + (r.is_me ? 'rgba(77,150,255,.12)' : 'var(--surface)') + ';border:1px solid ' + (r.is_me ? 'rgba(77,150,255,.5)' : 'var(--border)') + ';' + (online ? '' : 'opacity:.72') + '">'
+    + '<div title="' + escHtml(st[1]) + '" style="font-size:1rem;line-height:1.3;flex-shrink:0">' + st[0] + '</div>'
+    + '<div style="flex:1;min-width:0">'
+    +   '<div style="font-size:.86rem;font-weight:800;color:var(--text);overflow-wrap:anywhere">' + name + nick
+    +     ' <span style="font-size:.58rem;background:' + rb[1] + ';color:' + rb[2] + ';padding:1px 7px;border-radius:100px;font-weight:800;white-space:nowrap">' + rb[0] + '</span>'
+    +     (r.is_me ? ' <span style="font-size:.66rem;color:var(--accent2);font-weight:800">(Ty)</span>' : '') + '</div>'
+    +   '<div style="font-size:.8rem;font-weight:700;color:var(--text);margin-top:2px;overflow-wrap:anywhere">' + escHtml(r.label || r.activity || '—') + '</div>'
+    +   '<div style="font-size:.64rem;color:var(--muted);font-weight:700;margin-top:3px;display:flex;flex-wrap:wrap;gap:4px 10px">' + meta.map(m => '<span>' + m + '</span>').join('')
+    +     '<span>' + st[0] + ' ' + escHtml(st[1]) + '</span></div>'
+    + '</div></div>';
+}
+function _onlMatches(r) {
+  if (_onl.role !== 'all' && _onlRole(r) !== _onl.role) return false;
+  if (_onl.act && _onlGroup(r) !== _onl.act) return false;
+  const q = _onl.q.trim().toLowerCase();
+  if (!q) return true;
+  const note = (DB.getUserPrivateNote && DB.getUserPrivateNote(r.user_id)) || '';
+  const lbl = (DB.getUserLabel && DB.getUserLabel(r.user_id)) || '';
+  return [r.username, r.nickname, note, lbl, r.label].some(s => s && String(s).toLowerCase().includes(q));
+}
+function _onlRender() {
+  const box = document.getElementById('onlBody');
+  if (!box) return;
+  if (_onl.err) { box.innerHTML = '<div style="color:var(--danger);font-size:.8rem;padding:14px;text-align:center">❌ ' + escHtml(_onl.err) + '</div>'; return; }
+  if (_onl.missing) {
+    box.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:.8rem;font-weight:600;padding:24px;line-height:1.5">🟢 '
+      + (isCurrentUserAdmin() ? 'Ten podgląd zadziała po uruchomieniu migracji <b>#83 (user-presence.sql)</b> w Supabase → SQL Editor.' : 'Podgląd pojawi się po aktualizacji bazy danych.') + '</div>';
+    return;
+  }
+  if (!_onl.at || !_onl.rows) { box.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:.8rem;font-weight:600;padding:24px">⏳ Sprawdzam, kto jest w aplikacji…</div>'; return; }
+  const rank = r => r.state === 'hidden' ? 2 : r.state === 'idle' ? 1 : 0;
+  const online = _onl.rows.filter(_onlIsOnline).sort((a, b) => rank(a) - rank(b) || (a.username || '').localeCompare(b.username || '', 'pl'));
+  const recent = _onl.rows.filter(r => !_onlIsOnline(r)).sort((a, b) => _onlAge(a) - _onlAge(b));
+  const others = online.filter(r => !r.is_me);
+  // Podsumowanie
+  const per = { student: 0, teacher: 0, parent: 0, admin: 0 };
+  others.forEach(r => { per[_onlRole(r)]++; });
+  const groups = {};
+  others.forEach(r => { const g = _onlGroup(r); groups[g] = (groups[g] || 0) + 1; });
+  const top = Object.keys(groups).sort((a, b) => groups[b] - groups[a] || a.localeCompare(b, 'pl')).slice(0, 10);
+  const pill = (txt, sel, onclick) => '<button onclick="' + onclick + '" style="border-radius:100px;padding:4px 10px;font-size:.7rem;font-weight:800;cursor:pointer;font-family:inherit;border:1.5px solid ' + (sel ? 'var(--accent)' : 'var(--border)') + ';background:' + (sel ? 'rgba(255,209,102,.16)' : 'var(--surface)') + ';color:' + (sel ? 'var(--accent)' : 'var(--text)') + '">' + txt + '</button>';
+  let h = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">'
+    + '<div class="ac-stat-box" style="min-width:92px;padding:8px 10px"><div class="ac-stat-val" style="color:var(--accent2)">' + others.length + '</div><div class="ac-stat-lbl">🟢 Teraz w aplikacji</div></div>'
+    + ['student', 'teacher', 'parent', 'admin'].filter(k => per[k] || k === 'student').map(k =>
+        '<div class="ac-stat-box" style="min-width:76px;padding:8px 10px"><div class="ac-stat-val">' + per[k] + '</div><div class="ac-stat-lbl">' + ONL_ROLES[k][0] + '</div></div>').join('')
+    + '</div>';
+  if (top.length) {
+    h += '<div style="font-size:.66rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:2px 0 6px">Co teraz robią (kliknij, aby zawęzić)</div>'
+      + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">'
+      + top.map(g => pill(escHtml(g) + ' <span style="color:var(--muted)">· ' + groups[g] + '</span>', _onl.act === g, "onlSet('act'," + escHtml(JSON.stringify(g)) + ")")).join('')
+      + (_onl.act && !top.includes(_onl.act) ? pill('✕ ' + escHtml(_onl.act), true, "onlSet('act','')") : '')
+      + '</div>';
+  }
+  // Filtry
+  if (isCurrentUserAdmin()) {
+    h += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">'
+      + Object.keys(ONL_ROLES).map(k => pill(ONL_ROLES[k][0], _onl.role === k, "onlSet('role','" + k + "')")).join('') + '</div>';
+  }
+  const shown = online.filter(_onlMatches), shownRecent = recent.filter(_onlMatches);
+  h += '<div style="font-size:.74rem;font-weight:800;color:var(--text);margin:10px 0 6px">🟢 Teraz w aplikacji: ' + shown.length + (shown.length !== online.length ? ' <span style="color:var(--muted);font-weight:700">(z ' + online.length + ')</span>' : '') + '</div>';
+  if (!shown.length) {
+    h += '<div style="text-align:center;color:var(--muted);font-size:.78rem;font-weight:600;padding:16px;background:var(--surface);border:1px dashed var(--border);border-radius:12px">'
+      + (online.length ? 'Nikt nie pasuje do filtra.' : (isCurrentUserAdmin() ? 'Nikogo teraz nie ma w aplikacji. 🦉' : isCurrentUserTeacher() ? 'Żaden z Twoich uczniów nie jest teraz w aplikacji. 🦉' : 'Nikogo z Twoich dzieci nie ma teraz w aplikacji. 🦉')) + '</div>';
+  } else {
+    h += shown.map(r => _onlRowHtml(r, true)).join('');
+  }
+  h += '<details style="margin-top:12px"' + (_onl.recentOpen ? ' open' : '') + ' ontoggle="_onl.recentOpen=this.open"><summary style="cursor:pointer;font-size:.74rem;font-weight:800;color:var(--muted)">🕒 Ostatnie ' + ONLINE_RECENT_MIN + ' minut — już wyszli: ' + shownRecent.length + '</summary><div style="margin-top:8px">'
+    + (shownRecent.length ? shownRecent.map(r => _onlRowHtml(r, false)).join('') : '<div style="font-size:.74rem;color:var(--muted);font-weight:600;padding:8px">Brak.</div>')
+    + '</div></details>';
+  box.innerHTML = h;
+  const upd = document.getElementById('onlUpdated');
+  if (upd) upd.textContent = 'Odświeżono ' + _onlAgo(_onlElapsed()) + ' · co 15 s';
+}
+window.onlSet = function(kind, val) { _onl[kind] = (_onl[kind] === val && kind === 'act') ? '' : val; _onlRender(); };
+async function _onlLoad() {
+  const seq = ++_onl.seq;
+  let rows;
+  try { rows = await DB.loadOnlineNow(ONLINE_RECENT_MIN); _onl.err = ''; }
+  catch(e) { if (seq !== _onl.seq) return; _onl.err = e.message || String(e); _onlRender(); return; }
+  if (seq !== _onl.seq) return;
+  _onl.missing = rows === null;
+  _onl.rows = rows || []; _onl.at = Date.now();
+  _onlRender();
+  _onlChipSet(rows);
+}
+function _onlOpenNow() { const ov = document.getElementById('onlineNowModal'); return !!ov && ov.style.display !== 'none'; }
+window.closeOnlineNow = function() {
+  const ov = document.getElementById('onlineNowModal');
+  if (ov) ov.style.display = 'none';
+  clearInterval(_onl.poll); clearInterval(_onl.tick); _onl.poll = _onl.tick = null;
+  presenceSync();
+};
+window.openOnlineNow = function() {
+  if (isGuest || !(isCurrentUserAdmin() || isCurrentUserTeacher() || isCurrentUserParent())) {
+    toast('Ten widok jest dostępny dla nauczyciela i opiekuna.', 3000); return;
+  }
+  let ov = document.getElementById('onlineNowModal');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'onlineNowModal';
+    ov.className = 'modal-overlay';
+    ov.style.cssText = 'display:flex;z-index:9998';
+    ov.onclick = (e) => { if (e.target === ov) closeOnlineNow(); };
+    ov.innerHTML = '<div class="modal-box" style="max-width:640px;width:100%;max-height:90vh;overflow:auto">'
+      + '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">'
+      +   '<div style="flex:1;min-width:0;font-family:\'Playfair Display\',serif;font-size:1.2rem;color:var(--accent);line-height:1.25">🟢 Teraz na Sowich Fiszkach</div>'
+      +   '<div style="display:flex;gap:4px;flex-shrink:0"><button class="btn-sm" style="padding:4px 9px" onclick="_onlLoad()" title="Odśwież">🔄</button><button class="btn-sm" style="padding:4px 9px" onclick="closeOnlineNow()" title="Zamknij">✕</button></div></div>'
+      + '<div id="onlSub" style="font-size:.7rem;color:var(--muted);font-weight:600;margin:3px 0 10px"></div>'
+      + '<input id="onlSearch" type="search" placeholder="🔎 Szukaj: login, ksywka, etykieta, czynność…" autocomplete="off" '
+      +   'style="width:100%;box-sizing:border-box;padding:8px 11px;border-radius:10px;border:1.5px solid var(--border);background:var(--surface);color:var(--text);font-size:.8rem;font-family:inherit;margin-bottom:10px">'
+      + '<div id="onlBody"></div>'
+      + '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:.62rem;color:var(--muted);font-weight:600;margin-top:10px;line-height:1.45">'
+      +   '<span>🟢 aktywny · 🟡 bez ruchu od 2 min · 💤 aplikacja otwarta w karcie w tle</span><span id="onlUpdated"></span></div>'
+      + '</div>';
+    document.body.appendChild(ov);
+    const s = ov.querySelector('#onlSearch');
+    s.addEventListener('input', () => { _onl.q = s.value; _onlRender(); });
+  }
+  document.getElementById('onlSub').textContent = isCurrentUserAdmin()
+    ? 'Wszyscy użytkownicy — kto jest teraz w aplikacji i co dokładnie robi'
+    : isCurrentUserTeacher() ? 'Twoi uczniowie — kto jest teraz w aplikacji i co robi' : 'Twoje dzieci — czy są teraz w aplikacji i co robią';
+  ov.style.display = 'flex';
+  _onlRender();
+  _onlLoad();
+  presenceSync();
+  clearInterval(_onl.poll); clearInterval(_onl.tick);
+  _onl.poll = setInterval(() => {
+    if (!_onlOpenNow()) { clearInterval(_onl.poll); clearInterval(_onl.tick); _onl.poll = _onl.tick = null; return; }
+    if (document.visibilityState === 'visible') _onlLoad();
+  }, 15000);
+  _onl.tick = setInterval(() => { if (_onlOpenNow() && _onl.at && document.visibilityState === 'visible') _onlRender(); }, 5000);
+};
+// Licznik na ekranie startowym panelu (sBooks) — admin i nauczyciel.
+function _onlChipSet(rows) {
+  const chip = document.getElementById('onlineNowChip');
+  if (!chip) return;
+  if (rows === null) { chip.innerHTML = '🟢 Teraz online'; return; }
+  const n = (rows || []).filter(r => !r.is_me && r.state !== 'left' && (r.idle_sec || 0) <= ONLINE_SEC).length;
+  chip.innerHTML = '🟢 Teraz online: <b>' + n + '</b>';
+  chip.title = n ? 'Kliknij, aby zobaczyć, kto jest teraz w aplikacji i co robi' : 'Nikogo teraz nie ma w aplikacji';
+}
+let _onlChipTimer = null;
+async function refreshOnlineChip() {
+  const chip = document.getElementById('onlineNowChip');
+  if (!chip) return;
+  if (isGuest || !(isCurrentUserAdmin() || isCurrentUserTeacher())) { chip.style.display = 'none'; return; }
+  chip.style.display = 'inline-flex';
+  if (!_onlChipTimer) {
+    _onlChipTimer = setInterval(() => {
+      const sb = document.getElementById('sBooks');
+      if (sb && sb.classList.contains('active') && document.visibilityState === 'visible' && !_onlOpenNow()) refreshOnlineChip();
+    }, 60000);
+  }
+  try { _onlChipSet(await DB.loadOnlineNow(3)); } catch(e) { /* licznik jest tylko podpowiedzią */ }
+}
+
+// ══════════════════════════════════════════════
 //  TOPKA WSZYSTKICH UŻYTKOWNIKÓW (#67) — ranking całej platformy:
 //  📚 Słówka / ⭐ XP / 🎮 Punkty z gier × Ten tydzień / Od początku.
 //  Inni widoczni tylko po ksywce albo zamaskowanym loginie (RPC).
@@ -5441,6 +5814,9 @@ function showScreen(id) {
       }
     } catch(e) {}
   }
+
+  // „🟢 Teraz online" (#83) — od razu i jeszcze raz, gdy ekran doczyta dane (tytuł kartkówki itp.)
+  presenceSync(); setTimeout(presenceSync, 1500);
 
   window.scrollTo(0, 0);
 }
@@ -10341,6 +10717,7 @@ function setMode(m) {
       });
     }
   } catch(e) {}
+  presenceSync();   // „🟢 Teraz online" (#83): konkretny tryb nauki
 }
 
 // ── Tryb skupienia: wybrany tryb nauki na pełnym ekranie ──
@@ -10384,6 +10761,7 @@ function exitStudyFocus() {
   setStudyPick();
   _leaveBrowserFullscreen();
   window.scrollTo(0, 0);
+  presenceSync();
 }
 
 function setDir(d) {
@@ -12283,6 +12661,8 @@ function renderAdminPanel() {
   // Banner „Wymagają Twojej uwagi" — pokazuje liczniki rzeczy do rozpatrzenia.
   // Best-effort: jeśli któreś wywołanie zawiedzie, banner się po prostu nie pojawi.
   try { refreshAdminAttentionBanner(); } catch(e) { console.warn('[renderAdminPanel] attention banner:', e.message || e); }
+  // „🟢 Teraz online: N" (#83) — best-effort
+  try { refreshOnlineChip(); } catch(e) {}
   const reqs = DB.getAdminRequests().filter(r => r.status === 'pending');
   const pending = document.getElementById('pendingBadge');
   const notifDot = document.getElementById('adminNotifDot');
@@ -21802,6 +22182,8 @@ if ('serviceWorker' in navigator) {
     } catch(e) { console.warn('[BOOT] auto-delete inactive:', e.message); }
     // Grafika profilowa (#62): „ostatnie wejście" (podstawa usuwania po 2 mies.) + ikona w nagłówku.
     try { if (DB.touchLastSeen) DB.touchLastSeen(); if (typeof _refreshHeaderAvatar === 'function') _refreshHeaderAvatar(); } catch(e) {}
+    // „🟢 Teraz online" (#83): sygnał co 30 s czyta aktualny stan z presenceInfo()
+    try { if (DB.presenceSetProvider) { DB.presenceSetProvider(presenceInfo); setTimeout(presenceSync, 1200); } } catch(e) {}
     // Sesje gier (#66): wyślij to, co gry zapisały w localStorage (game-stats.js), i potem co minutę.
     try {
       if (DB.flushGameSessions && !isGuest) {
@@ -21897,6 +22279,7 @@ if ('serviceWorker' in navigator) {
         tests:            () => (typeof openTestGenerator==='function')    && openTestGenerator(),
         quizzes:          () => (typeof openQuizzes==='function')          && openQuizzes(),
         stats:            () => (typeof openAdminStats==='function')       && openAdminStats(),
+        online:           () => (typeof openOnlineNow==='function')        && openOnlineNow(),
         admins:           () => (typeof openAdminsModal==='function')      && openAdminsModal(),
         review:           () => (typeof openContentReview==='function')    && openContentReview(),
         bank:             () => (typeof openTaskBank==='function')         && openTaskBank(),
@@ -22631,6 +23014,7 @@ if ('serviceWorker' in navigator) {
       <ul style="margin:4px 0 10px 20px;padding:0">
         <li><strong>Dane Konta:</strong> login (nazwa użytkownika), hasło (przechowywane w postaci zaszyfrowanej przez Supabase).</li>
         <li><strong>Dane postępów nauki:</strong> punkty XP, poziom, odblokowane odznaki, czas ostatniej nauki, statystyki odpowiedzi, liczba sesji.</li>
+        <li><strong>Bieżąca aktywność:</strong> otwarty w danej chwili ekran, tryb nauki lub gra (z podręcznikiem i rozdziałem) oraz czas ostatniego sygnału z aplikacji — widzi je Administrator, a w przypadku ucznia także jego Nauczyciel i Opiekun; zapisujemy tylko ostatni stan i usuwamy go po około 24 godzinach bez aktywności.</li>
         <li><strong>Dane roli:</strong> przynależność do klasy (uczeń ↔ nauczyciel), plan konta (Free/Premium/Teacher).</li>
         <li><strong>Preferencje:</strong> wybrany motyw interfejsu (przechowywany w localStorage przeglądarki).</li>
         <li><strong>Grafika profilowa (dobrowolna):</strong> obrazek dodany w „Moje konto", zmniejszany do 256×256 px, widoczny dla uczniów z tej samej klasy, Nauczyciela i Administratora. Nie musi przedstawiać Użytkownika — zalecamy dowolny obrazek zamiast zdjęcia twarzy. Do jej automatycznego usuwania zapisujemy datę ostatniego wejścia na Platformę.</li>
@@ -24196,6 +24580,11 @@ if ('serviceWorker' in navigator) {
   let _liveSubPlayers = null;    // Realtime channel: zmiany live_game_players
   let _livePlayers = [];         // bieżąca lista graczy
   let _livePollTimer = null;     // safety-net polling (gdy Realtime nie włączony w Supabase)
+  // „🟢 Teraz online" (#83): rola w grze LIVE, PIN i podręcznik — dla presenceInfo()
+  window._livePresenceInfo = () => ({
+    host: _liveIsHost, pin: _liveGame && _liveGame.pin,
+    book: _liveGame && _liveGame.bookId, unit: _liveGame && _liveGame.unitKey
+  });
 
   // Premium check helper
   function _canHostLiveGame() {
