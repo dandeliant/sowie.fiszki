@@ -7,7 +7,7 @@
 //  (SF_PRESENCE.set); inne strony dołączają <script src="presence.js" defer>
 //  i zgłaszają się automatycznie tytułem strony.
 //
-//  Sygnał: od razu po wejściu (z małym opóźnieniem), potem co 30 s — tylko
+//  Sygnał: od razu po wejściu (z małym opóźnieniem), potem co 90 s — tylko
 //  gdy karta jest widoczna; karta w tle → 'hidden', brak ruchu > 2 min →
 //  'idle', zamknięcie strony → presence_leave (fetch keepalive).
 //  Połączenie: klient Supabase strony (window.supabase.rpc), a gdy go nie ma —
@@ -22,7 +22,7 @@
   'use strict';
   if (window.SF_PRESENCE) return;   // app.html tego pliku nie ładuje — ma własny moduł w db.js
 
-  const BEAT_MS = 30000, IDLE_MS = 120000, FIRST_MS = 1500;
+  const BEAT_MS = 90000, IDLE_MS = 120000, FIRST_MS = 1500;   // sygnał co 90 s (jak db.js)
   const SB_LIB = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
   const me = document.currentScript;
   const BASE = (me && me.src) ? me.src.replace(/presence\.js(\?.*)?$/, '') : '';
@@ -197,7 +197,7 @@
         p_page: i.page, p_activity: i.activity, p_label: i.label, p_book: i.book, p_unit: i.unit, p_state: visState()
       });
       if (ok) st.sent = true;
-    } catch (e) { /* sieć — następna próba za 30 s */ }
+    } catch (e) { /* sieć — następna próba za 90 s */ }
     finally {
       st.busy = false;
       if (st.again && !st.off) { st.again = false; setTimeout(send, 250); }

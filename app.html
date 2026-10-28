@@ -22182,7 +22182,7 @@ if ('serviceWorker' in navigator) {
     } catch(e) { console.warn('[BOOT] auto-delete inactive:', e.message); }
     // Grafika profilowa (#62): „ostatnie wejście" (podstawa usuwania po 2 mies.) + ikona w nagłówku.
     try { if (DB.touchLastSeen) DB.touchLastSeen(); if (typeof _refreshHeaderAvatar === 'function') _refreshHeaderAvatar(); } catch(e) {}
-    // „🟢 Teraz online" (#83): sygnał co 30 s czyta aktualny stan z presenceInfo()
+    // „🟢 Teraz online" (#83): sygnał co 90 s czyta aktualny stan z presenceInfo()
     try { if (DB.presenceSetProvider) { DB.presenceSetProvider(presenceInfo); setTimeout(presenceSync, 1200); } } catch(e) {}
     // Sesje gier (#66): wyślij to, co gry zapisały w localStorage (game-stats.js), i potem co minutę.
     try {
@@ -32653,12 +32653,20 @@ ${bodyHtml}
     }catch(e){}
   }
 
+  // Karty na ekranie startowym odświeżają się przy każdym powrocie do karty przeglądarki — wynik z bazy
+  // trzymamy 5 min, żeby nie obciążać małego serwera (darmowy plan Supabase: mało RAM-u i limit operacji dysku).
+  const _sfCache={};
+  async function sfCached(key, fn){
+    const k=key+'|'+((DB.getUserId&&DB.getUserId())||''), c=_sfCache[k];
+    if(c && Date.now()-c.t<300000) return c.v;
+    const v=await fn(); _sfCache[k]={t:Date.now(), v}; return v;
+  }
   /* ---- WYZWANIA KLASOWE — baner dla ucznia (Wave 2, #8) ---- */
   async function renderChallengeBanner(){
     try{
       if(!(window.DB && DB.listMyActiveChallenges && DB.getUserId && DB.getUserId())) return;
       engageTop(); const b=$('sfChallengeBanner'); if(!b) return;
-      let list=[]; try{ list=await DB.listMyActiveChallenges(); }catch(e){ return; }
+      let list=[]; try{ list=await sfCached('ch', ()=>DB.listMyActiveChallenges()); }catch(e){ return; }
       if(!list || !list.length){ b.innerHTML=''; return; }
       let h='';
       list.slice(0,3).forEach(c=>{
@@ -32770,7 +32778,7 @@ ${bodyHtml}
     try{
       if(!(window.DB && DB.loadMyClassRankings && DB.getUserId && DB.getUserId())) return;
       engageTop(); const card=$('sfRankCard'); if(!card) return;
-      let rows=[]; try{ rows=await DB.loadMyClassRankings(); }catch(e){ return; }
+      let rows=[]; try{ rows=await sfCached('rank', ()=>DB.loadMyClassRankings()); }catch(e){ return; }
       const cls=srPickPool(rows);
       if(!cls || (cls.members.length<2 && _srViews.length<2)){ _srData=null; card.innerHTML=''; return; }
       _srData=cls;

@@ -4863,7 +4863,7 @@ const DB = (() => {
   //  Bez migracji: pierwszy błąd „brak funkcji" wyłącza moduł (bez spamu).
   //  Gość nic nie wysyła (brak _userId).
   // ═══════════════════════════════════════════════════════════════
-  const PRESENCE_BEAT_MS = 30000;
+  const PRESENCE_BEAT_MS = 90000;      // co 90 s (mały serwer Supabase — mniej zapisów); okno „online” = 3 min
   const PRESENCE_IDLE_MS = 120000;
   const _pres = {
     info: null, key: '', sent: '',       // bieżący stan + ostatnio wysłany podpis (stan|widoczność)
@@ -4921,7 +4921,7 @@ const DB = (() => {
       });
       if (error) { if (_presMissing(error)) _presStop(); }
       else _pres.sent = _pres.key + '|' + st;
-    } catch(e) { /* sieć — kolejny sygnał za 30 s */ }
+    } catch(e) { /* sieć — kolejny sygnał za 90 s */ }
     finally {
       _pres.busy = false;
       if (_pres.again && !_pres.missing) { _pres.again = false; setTimeout(_presSend, 250); }
@@ -4942,7 +4942,7 @@ const DB = (() => {
   }
 
   // Zgłoś bieżącą czynność: { page, activity, label, book, unit }.
-  // Ten sam stan nie jest wysyłany ponownie (poza sygnałem co 30 s).
+  // Ten sam stan nie jest wysyłany ponownie (poza sygnałem co 90 s).
   function presencePing(info) {
     if (!info || _pres.missing) return;
     if (_presSetInfo(info) || !_pres.sent) {
@@ -4951,7 +4951,7 @@ const DB = (() => {
     }
     _presStartBeat();
   }
-  // app.html podaje funkcję, która zwraca aktualny stan — sygnał co 30 s
+  // app.html podaje funkcję, która zwraca aktualny stan — sygnał co 90 s
   // i powrót karty z tła czytają z niej świeże dane.
   function presenceSetProvider(fn) {
     _pres.provider = (typeof fn === 'function') ? fn : null;
