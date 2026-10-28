@@ -3863,6 +3863,7 @@ const SHOP = [
   { id: 'hair_red', cat: 'hair', name: 'Rude', desc: '', price: 150, hair: 0xb5501f, hairStyle: 'short' },
   { id: 'hair_bald', cat: 'hair', name: 'Łysy', desc: '', price: 0, hair: 0x2b1d14, hairStyle: 'bald' },
   { id: 'nitro', cat: 'extra', name: 'Nitro', desc: 'W pojeździe przytrzymaj Shift (na telefonie NITRO) — przyspieszenie do 300 km/h i płomienie z wydechu. Ładunek ~6 s, sam się odnawia.', price: 3000, perk: true },
+  { id: 'hero', cat: 'extra', name: 'Superbohater 🦸', desc: 'Latasz jak superbohater z wyciągniętą prawą ręką — do 300 km/h, a policja Cię nie zauważa. Na piechotę klawisz L (na telefonie LOT): W — lot przed siebie, Spacja — w górę, Shift — w dół, L — lądowanie.', price: 100000, perk: true },
   { id: 'invis', cat: 'extra', name: 'Niewidzialność', desc: 'Policja Cię nie widzi — żadnych pościgów ani mandatów. Włączasz i wyłączasz klawiszem I (lub w Ustawieniach).', price: 3000, perk: true },
   { id: 'wheelie', cat: 'extra', name: 'Willibary (jazda na jednym kole)', desc: 'Na hulajnodze i motorze przytrzymaj Q (na telefonie WHEELIE) — przednie koło w górę! Co 3 s na jednym kole +$5.', price: 1200, perk: true },
   { id: 'gem_sell', cat: 'extra', name: 'Wymiana diamentów', desc: 'Diamenty znajdziesz w domach (🚪) i opuszczonych budynkach (🏚️). Każdy wymienisz tutaj na $500.', price: 0, gemSell: true },
@@ -3957,6 +3958,8 @@ window.addEventListener('keydown', e => {
   if (e.code === 'KeyV' && !e.repeat) { if (indoor) toast('Najpierw wyjdź z domu.'); else summonVehicle(); return; }
   if (e.code === 'KeyU' && !e.repeat) { toggleUrbex(); return; }
   if (e.code === 'KeyI' && !e.repeat) { toggleInvis(); return; }
+  if (e.code === 'KeyL' && !e.repeat) { toggleHero(); return; }
+  if (P.fly && (e.code === 'KeyF' || e.code === 'KeyV') && !e.repeat) { toast('🦸 Najpierw wyląduj (L).'); return; }
   if (e.code === 'KeyT' && !e.repeat) { if (nearPet && !P.car && !nearMission) petAnimal(nearPet); else if (nearNPC && !P.car) openTalk(nearNPC); return; }
   if (e.code === 'KeyR' && !e.repeat) { if (nearFish && !P.car) openFishing(nearFish); return; }
   if (e.code === 'KeyG' && !e.repeat) { if (P.car && isScooterType(P.car.type)) cycleScooterMode(); else toast('Tryby Eco / S / R działają na hulajnodze — wsiądź na nią (V, potem F).'); return; }
@@ -4046,7 +4049,7 @@ touchUI.querySelectorAll('[data-hold]').forEach(b => {
   b.addEventListener('pointerleave', e => { if (e.pointerType !== 'touch') up(); });
 });
 // Tap buttons fire an action once.
-const TAPS = { car: () => toggleCar(), mission: () => tryStartMission(), map: () => openMap(), shop: () => openShop(), call: () => summonVehicle(), mode: () => cycleScooterMode() };
+const TAPS = { fly: () => toggleHero(), car: () => (P.fly ? toast('🦸 Najpierw wyląduj (LOT).') : toggleCar()), mission: () => tryStartMission(), map: () => openMap(), shop: () => openShop(), call: () => summonVehicle(), mode: () => cycleScooterMode() };
 touchUI.querySelectorAll('[data-tap]').forEach(b => {
   const fire = e => { e.preventDefault(); Sound.init(); TAPS[b.dataset.tap](); };
   if (HAS_TOUCH) b.addEventListener('touchstart', fire, { passive: false });
@@ -4092,7 +4095,7 @@ function updateTouchUI() {
   const talkAvail = !nearMission && !fishAvail && !petAvail && !doorAvail && !!nearNPC && !P.car;
   const misAvail = (!!nearMission && !P.car && isUnlocked(nearMission)) || talkAvail || fishAvail || petAvail || doorAvail;
   const scoot = !!P.car && isScooterType(P.car.type), wh = !!P.car && isTwoWheel(P.car.type) && hasWheelie();
-  const st = `${show}|${carAvail}|${misAvail}|${!!P.car}|${talkAvail}|${fishAvail}|${petAvail}|${doorAvail}|${!!indoor}|${hasNitro()}|${scoot}|${wh}|${!!(P.car && P.car.spec.fly)}`;
+  const st = `${show}|${carAvail}|${misAvail}|${!!P.car}|${talkAvail}|${fishAvail}|${petAvail}|${doorAvail}|${!!indoor}|${hasNitro()}|${scoot}|${wh}|${!!(P.car && P.car.spec.fly)}|${!!P.fly}|${hasHero()}`;
   if (st === touchState) return;
   touchState = st;
   touchUI.hidden = !show;
@@ -4103,7 +4106,9 @@ function updateTouchUI() {
   $('t-mission').textContent = doorAvail ? (nearPhoto ? 'ZDJĘCIE' : indoor ? 'WYJDŹ' : 'WEJDŹ') : petAvail ? 'GŁASKAJ' : fishAvail ? 'RYBY' : talkAvail ? 'ROZMOWA' : 'MISJA';
   $('t-mode').classList.toggle('off', !scoot);
   $('t-wheelie').classList.toggle('off', !wh);
-  const fly = !!(P.car && P.car.spec.fly);
+  $('t-fly').classList.toggle('off', !hasHero() || !!P.car || !!indoor);
+  $('t-fly').textContent = P.fly ? 'LĄDUJ' : 'LOT';
+  const fly = !!(P.car && P.car.spec.fly) || !!P.fly;
   $('t-jump').textContent = fly ? 'W GÓRĘ' : P.car ? (isCar4(P.car.type) ? 'RĘCZNY' : 'HAMULEC') : 'SKOK';
   $('t-sprint').classList.toggle('off', !!P.car && !fly && !hasNitro());
   $('t-sprint').textContent = fly ? 'W DÓŁ' : P.car ? (hasNitro() || !isCar4(P.car.type) ? 'NITRO' : 'SPRZĘGŁO') : 'BIEG';
@@ -4891,6 +4896,105 @@ function toggleInvis(force) {
   if (ui === 'shop') renderShop();
 }
 
+// ---------------------------------------------------------------- Superbohater (sklep, $100 000)
+// Lot postaci: L / LOT start i lądowanie, W — lot w stronę kamery (rozpędza się do 300 km/h), S — hamowanie,
+// A/D — w bok, Spacja — w górę, Shift/C — w dół. Ciało poziomo, prawa ręka wyciągnięta przed siebie.
+// Ponad dachami bez kolizji (pushOut z wysokością), pułap HERO_CEIL. Policja nie zauważa (triggerPolice / updateChase).
+const HERO_MAX = 300 / 3.6, HERO_ACC = 26, HERO_CEIL = 420;
+const hasHero = () => !!wardrobe.owned.hero;
+function toggleHero() {
+  if (P.car) { toast('🦸 Wysiądź z pojazdu (F), żeby latać.'); return; }
+  if (!hasHero()) { toast('🦸 Superbohatera kupisz w sklepie (B) za $100 000.'); return; }
+  if (indoor) { toast('🦸 W domu nie da się latać — wyjdź na zewnątrz.'); return; }
+  if (P.fly) {
+    if (P.pos.y - groundAt(P.pos.x, P.pos.z) < 0.6) { heroLand(); return; }
+    P.flyLand = !P.flyLand;
+    toast(P.flyLand ? '🦸 Lądowanie…' : '🦸 Lecimy dalej!', '', 1600);
+    return;
+  }
+  P.fly = true; P.flyLand = false; P.onGround = false;
+  P.fv = { x: (P.mx || 0) * P.speed, y: 9, z: (P.mz || 0) * P.speed };
+  if (chase) { endChase(); chaseCooldown = 10; }
+  $('speedo').hidden = false; $('speed-car').textContent = '🦸 Superbohater';
+  Sound.passed();
+  toast('🦸 Lot! W — naprzód (do 300 km/h), Spacja — w górę, Shift — w dół, L — lądowanie.', 'good', 4200);
+}
+function heroLand() {
+  P.fly = false; P.flyLand = false; P.vy = 0; P.speed = 0; P.onGround = true;
+  P.pos.y = groundAt(P.pos.x, P.pos.z);
+  resetPose(player);
+  if (!P.car) $('speedo').hidden = true;
+}
+function updateHeroFly(dt) {
+  let fwd = 0, side = 0, vert = 0;
+  if (!ui) {
+    if (key('KeyW', 'ArrowUp')) fwd += 1;
+    if (key('KeyS', 'ArrowDown')) fwd -= 1;
+    if (key('KeyA')) side -= 1;
+    if (key('KeyD')) side += 1;
+    if (key('Space')) vert += 1;
+    if (key('ShiftLeft', 'ShiftRight', 'KeyC', 'KeyX')) vert -= 1;
+    if (key('ArrowLeft')) camYaw += dt * 2.2;
+    if (key('ArrowRight')) camYaw -= dt * 2.2;
+  }
+  const fx = -Math.sin(camYaw), fz = -Math.cos(camYaw), rx = Math.cos(camYaw), rz = -Math.sin(camYaw);
+  let mx = fx * fwd + rx * side, mz = fz * fwd + rz * side;
+  const ml = Math.hypot(mx, mz);
+  if (ml > 0) { mx /= ml; mz /= ml; }
+  const v = P.fv, hs = Math.hypot(v.x, v.z), alt = P.pos.y - groundAt(P.pos.x, P.pos.z);
+  // poziomo: przytrzymany kierunek rozpędza (szybciej, im dłużej lecisz), puszczony — wyhamowanie
+  const tgt = P.flyLand ? 0 : ml > 0 ? (fwd > 0 ? HERO_MAX : 14) : 0;
+  const tx = mx * tgt, tz = mz * tgt, acc = ml > 0 ? HERO_ACC * (1 + hs / 40) : 18;
+  const dx = tx - v.x, dz = tz - v.z, dl = Math.hypot(dx, dz), st = Math.min(dl, acc * dt);
+  if (dl > 1e-6) { v.x += dx / dl * st; v.z += dz / dl * st; }
+  // pionowo: Spacja / Shift, przy lądowaniu opadanie (szybciej wysoko), w zawisie lekkie unoszenie
+  const tvy = P.flyLand ? -Math.min(30, 6 + alt * 0.45) : vert * (12 + hs * 0.18);
+  v.y += clamp(tvy - v.y, -30 * dt, 30 * dt);
+  const ox0 = P.pos.x, oz0 = P.pos.z, oy0 = P.pos.y;
+  P.pos.x += v.x * dt; P.pos.y += v.y * dt; P.pos.z += v.z * dt;
+  const g = groundAt(P.pos.x, P.pos.z);
+  if (P.pos.y > HERO_CEIL) { P.pos.y = HERO_CEIL; v.y = Math.min(0, v.y); }
+  if (P.pos.y <= g) {
+    P.pos.y = g; v.y = Math.max(0, v.y);
+    if (P.flyLand || (vert <= 0 && Math.hypot(v.x, v.z) < 2.5)) { heroLand(); return; }
+  }
+  // budynki: ponad dachem przelatujesz, w ścianę — odbicie
+  const p = { x: P.pos.x, z: P.pos.z };
+  if (pushOut(p, 0.5, nearCols, P.pos.y + 0.01)) {
+    const sp = Math.hypot(v.x, v.z);
+    if (sp > 18) { Sound.crash(sp); shake = Math.min(0.5, sp / 90); toast('🦸 Uwaga na budynki — wznieś się wyżej (Spacja)!', 'bad', 1800); }
+    const nx = p.x - P.pos.x, nz = p.z - P.pos.z, nl = Math.hypot(nx, nz) || 1, vn = (v.x * nx + v.z * nz) / nl;
+    if (vn < 0) { v.x -= nx / nl * vn * 1.4; v.z -= nz / nl * vn * 1.4; }
+    v.x *= 0.6; v.z *= 0.6;
+  }
+  if (alt < 1 && !indoor) waterSlide(ox0, oz0, p, 0.35);
+  P.pos.x = clamp(p.x, -BOUND, BOUND); P.pos.z = clamp(p.z, -BOUND, BOUND);
+  P.speed = Math.hypot(v.x, v.z);
+  if (P.speed > 1) { P.facing += angDiff(P.facing, Math.atan2(v.x, v.z)) * Math.min(1, dt * 6); P.mx = v.x / P.speed; P.mz = v.z / P.speed; }
+  else if (ml > 0) P.facing += angDiff(P.facing, Math.atan2(mx, mz)) * Math.min(1, dt * 6);
+  player.g.position.copy(P.pos); P.visY = P.pos.y;
+  player.g.rotation.y = P.facing;
+  heroPose(player, P.speed, v.y, dt);
+  if (P.speed > 40) shake = Math.max(shake, (P.speed - 40) * 0.0016);
+}
+// Poza lotu: przy prędkości ciało poziomo (obrót wokół bioder), prawa ręka wyciągnięta przed siebie,
+// lewa przy boku, nogi razem (prawe kolano lekko zgięte); w zawisie pionowo, nogi swobodnie, delikatne kołysanie.
+function heroPose(p, speed, vy, dt) {
+  const k = Math.min(1, dt * 5);
+  p.hf = lerp(p.hf || 0, clamp(speed / 22, 0, 1), k);
+  p.hu = lerp(p.hu || 0, clamp(vy / 8, 0, 1) * (1 - (p.hf || 0)), k);
+  p.idle += dt;
+  const f = p.hf, up = p.hu, th = 0.12 + f * 1.33, c = 1.0;
+  p.rig.rotation.set(th, 0, Math.sin(p.idle * 1.3) * 0.04 * (1 - f));
+  p.rig.position.set(0, c - c * Math.cos(th) + Math.sin(p.idle * 2.1) * 0.06 * (1 - f), -c * Math.sin(th));
+  // prawa ręka postaci = la (postać patrzy w +Z, więc jej prawa strona to −X)
+  const raise = Math.max(f, up);            // prawa ręka w górę / przed siebie
+  p.la.rotation.set(lerp(-0.25, -2.95, raise), 0, lerp(-0.15, -0.05, raise)); p.lf.rotation.set(lerp(-0.5, -0.05, raise), 0, 0);
+  p.ra.rotation.set(lerp(0.15, 0.35, f), 0, lerp(0.25, 0.12, f)); p.rf.rotation.set(lerp(-0.6, -0.15, f), 0, 0);
+  p.ll.rotation.set(lerp(-0.12, 0.06, f), 0, 0); p.rl.rotation.set(lerp(0.15, 0.18, f), 0, 0);
+  p.lk.rotation.set(lerp(0.35, 0.05, f), 0, 0); p.rk.rotation.set(lerp(0.55, 0.45, f), 0, 0);
+}
+
 // ---------------------------------------------------------------- nitro i paliwo
 // Nitro (kupowane w sklepie): w pojeździe Shift + gaz → przyspieszenie do 300 km/h, płomienie
 // z wydechu. Ładunek NITRO_SEC sekund, odnawia się w NITRO_RECHARGE s.
@@ -4952,6 +5056,7 @@ function updateFlames(v, dt) {
 }
 function updateFuelHud() {
   const el = $('fuelhud'); if (!el) return;
+  el.style.visibility = P.fly && !P.car ? 'hidden' : '';
   const pct = Math.round(wardrobe.fuel * 100);
   $('fuel-fill').style.width = pct + '%';
   $('fuel-fill').style.background = pct < 15 ? '#ff4d4d' : pct < 35 ? '#f2b632' : '#45d483';
@@ -4980,7 +5085,7 @@ function chaseHud(html) {
 }
 function triggerPolice(why) {
   if (chase || police || chaseCooldown > 0 || ui) return;
-  if (invisibleOn() || (P.car && P.car.spec && P.car.spec.fly)) return;   // policja nas nie widzi
+  if (invisibleOn() || P.fly || (P.car && P.car.spec && P.car.spec.fly)) return;   // policja nas nie widzi
   const from = P.car ? P.car.pos : P.pos, f = P.car ? carFwd(P.car) : { x: Math.sin(P.facing), z: Math.cos(P.facing) };
   const p = { x: clamp(from.x - f.x * 70, -BOUND + 5, BOUND - 5), z: clamp(from.z - f.z * 70, -BOUND + 5, BOUND - 5) };
   const near = colliders.filter(b => p.x > b.x0 - 8 && p.x < b.x1 + 8 && p.z > b.z0 - 8 && p.z < b.z1 + 8);
@@ -5009,9 +5114,9 @@ function endChase() {
 function updateChase(dt) {
   if (chaseCooldown > 0 && !chase && !police) chaseCooldown -= dt;
   if (!chase) return;
-  if (invisibleOn() || (P.car && P.car.spec && P.car.spec.fly && P.car.pos.y - groundAt(P.car.pos.x, P.car.pos.z) > 6)) {
+  if (invisibleOn() || P.fly || (P.car && P.car.spec && P.car.spec.fly && P.car.pos.y - groundAt(P.car.pos.x, P.car.pos.z) > 6)) {
     endChase(); chaseCooldown = 10;
-    toast(invisibleOn() ? '👻 Jesteś niewidzialny — policja straciła Cię z oczu.' : '✈️ Odleciałeś — policja straciła Cię z oczu.', 'good', 3500);
+    toast(invisibleOn() ? '👻 Jesteś niewidzialny — policja straciła Cię z oczu.' : P.fly ? '🦸 Odleciałeś — policja straciła Cię z oczu.' : '✈️ Odleciałeś — policja straciła Cię z oczu.', 'good', 3500);
     return;
   }
   const c = chase, v = c.v, tgt = P.car ? P.car.pos : P.pos;
@@ -5266,7 +5371,7 @@ function updateCamera(dt) {
     const toward = -(Math.sin(P.facing) * -Math.sin(camYaw) + Math.cos(P.facing) * -Math.cos(camYaw));
     if (toward < 0.4) camYaw += angDiff(camYaw, P.facing + Math.PI) * Math.min(1, dt * 1.6);
   }
-  const want = v ? (v.spec && v.spec.fly ? 17 + Math.abs(v.speed) * 0.08 : 10.5 + Math.abs(v.speed) * 0.06) : 6.5;
+  const want = v ? (v.spec && v.spec.fly ? 17 + Math.abs(v.speed) * 0.08 : 10.5 + Math.abs(v.speed) * 0.06) : P.fly ? 8 + P.speed * 0.09 : 6.5;
   camDist = lerp(camDist, want, Math.min(1, dt * 3));
   const cp = Math.cos(camPitch), dx = Math.sin(camYaw) * cp, dy = Math.sin(camPitch), dz = Math.cos(camYaw) * cp;
   let d = camDist;
@@ -6535,6 +6640,7 @@ function placeExitSigns() {
 function checkMapEdge(dt) {
   travelCd -= dt;
   if (ui || indoor || travelCd > 0) return;
+  if (P.fly) return;                         // superbohater: granica tylko zatrzymuje, bez okna przejazdu
   const f = P.car ? P.car.pos : P.pos, m = BOUND - 1.5;
   if (Math.abs(f.x) > m || Math.abs(f.z) > m) openTravel();
 }
@@ -7000,6 +7106,11 @@ function updateHUD(dt, clock) {
   $('xpfill').style.width = next ? `${((dc - RANKS[ri][0]) / (next[0] - RANKS[ri][0])) * 100}%` : '100%';
   $('clock').textContent = clock;
   $('done-count').textContent = `${dc}/${MISSIONS.length}`;
+  if (P.fly && !P.car) {
+    $('speed').textContent = Math.round(P.speed * 3.6);
+    const mt = `KM/H · ↑ ${Math.max(0, Math.round(P.pos.y - groundAt(P.pos.x, P.pos.z)))} m`;
+    if ($('speed-unit').textContent !== mt) $('speed-unit').textContent = mt;
+  }
   if (P.car) {
     $('speed').textContent = Math.round(Math.abs(P.car.speed) * 3.6);
     const cb = P.car.body, mt = cb ? 'KM/H · ' + (cb.reverse ? 'R' : Math.abs(cb.u) < 0.5 && !cb.thr ? 'N' : String(cb.gear + 1)) : P.car.spec.fly ? `KM/H · ↑ ${Math.round(P.car.pos.y - groundAt(P.car.pos.x, P.car.pos.z))} m` : isScooterType(P.car.type) ? `KM/H · ${wardrobe.smode === 'E' ? 'ECO' : wardrobe.smode}` : 'KM/H';
@@ -7778,7 +7889,7 @@ function frame() {
   nearTimer -= dt;
   if (nearTimer <= 0) { refreshNear(focus.x, focus.z); nearTimer = 0.2; }
   if (ui !== 'start') {
-    if (P.car) (P.car.spec && P.car.spec.fly ? updatePlane : updateCar)(P.car, dt); else { updateOnFoot(dt); Sound.engine(false, 0, false); Sound.skid(0); }
+    if (P.car) (P.car.spec && P.car.spec.fly ? updatePlane : updateCar)(P.car, dt); else if (P.fly) { updateHeroFly(dt); Sound.engine(false, 0, false); Sound.skid(0); } else { updateOnFoot(dt); Sound.engine(false, 0, false); Sound.skid(0); }
   }
   for (const v of vehicles) if (v.kind === 'parked') {
     const far = Math.abs(v.pos.x - focus.x) > 300 || Math.abs(v.pos.z - focus.z) > 300;   // daleko (we mgle) — nie rysujemy
@@ -7836,7 +7947,7 @@ function frame() {
     if (hudT <= 0) { updateHUD(0.1, clockStr); updateFuelHud(); hudT = 0.1; }
   }
   const pv = P.car ? Math.abs(P.car.speed) : 0;
-  renderScene(P.car && !(P.car.spec && P.car.spec.fly) ? clamp((pv - 22) / 40, 0, 0.6) : 0);   // lekkie rozmycie krawędzi przy dużej prędkości
+  renderScene(P.car && !(P.car.spec && P.car.spec.fly) ? clamp((pv - 22) / 40, 0, 0.6) : P.fly ? clamp((P.speed - 25) / 50, 0, 0.6) : 0);   // lekkie rozmycie krawędzi przy dużej prędkości
   adaptQuality(dt);
 }
 // Dynamiczna jakość (słabsze laptopy): najpierw bez bloomu, potem niższa rozdzielczość, na końcu bez cieni.
