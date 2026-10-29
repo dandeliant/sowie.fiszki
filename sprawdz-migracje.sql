@@ -141,6 +141,7 @@ with c(nr, plik, ok) as (values
   ('81', 'pet-phrases.sql',                       pg_temp.tab('public.pet_phrases')),
   ('82', 'ai-diary.sql',                          pg_temp.col('ai_chat_logs', 'session_id') and pg_temp.fn('my_ai_diary')),
   ('83', 'user-presence.sql',                     pg_temp.tab('public.user_presence') and pg_temp.fn('presence_online')),
+  ('84', 'security-advisor-fixes.sql',            coalesce(not has_function_privilege('anon', to_regprocedure('public._delete_account_rows(uuid)')::oid, 'EXECUTE'), true)),
   ('x2', 'add-live-games.sql',                    pg_temp.fn('create_live_game')),
   ('x3', 'add-live-time-limit-and-score-rpc.sql', pg_temp.fn('update_live_player_score')),
   ('x4', 'fix-live-join-token.sql + fix-live-join-ambiguous.sql', pg_temp.fn('join_live_game')),
