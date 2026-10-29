@@ -30,6 +30,10 @@ const DB = (() => {
   let _hasWellLearned = false;  // czy istnieje kolumna profiles.well_learned_words (migracja add-well-learned-ranking.sql #54)
   let _hasPet         = false;  // czy istnieje kolumna profiles.pet (migracja pet-sync.sql #70)
   let _petServer      = null;   // stan pupila z serwera {pet, on, ts}
+  let _hasXpAtomic    = false;  // migracja #85: XP dodawane w bazie (add_my_xp), bez XP w zapisie profilu
+  let _xpChain        = Promise.resolve();
+  let _xpInflight     = 0;
+  let _xpSyncFn       = null;   // app.html: aktualizacja paska XP wartością z bazy
 
   // ─── Domyślny profil ─────────────────────────────────────────
   function emptyProfile(username) {
@@ -94,8 +98,6 @@ const DB = (() => {
     const payload = {
       id:              _userId,
       username:        _profile.username,
-      xp:              _profile.xp,
-      level:           _profile.level,
       streak:          _profile.streak,
       longest_streak:  _profile.longestStreak,
       last_study_date: _profile.lastStudyDate,
@@ -107,6 +109,9 @@ const DB = (() => {
       daily_xp_date:   _profile.dailyXPDate,
       speed_best:      _profile.speedBest
     };
+    // XP i poziom zmienia w bazie add_my_xp (#85) — zapis całego wiersza ze starej karty
+    // albo drugiego urządzenia nie może ich już nadpisać starszą wartością.
+    if (!_hasXpAtomic) { payload.xp = _profile.xp; payload.level = _profile.level; }
     // Tylko gdy kolumna istnieje (migracja add-ranking-stats.sql), inaczej upsert
     // by sie wywalil i przestalby zapisywac XP/streak.
     if (_hasBestCombo) payload.best_correct_streak = _profile.bestCorrectStreak || 0;
@@ -148,8 +153,10 @@ const DB = (() => {
     _hasBestCombo = !!(profRes.data && Object.prototype.hasOwnProperty.call(profRes.data, 'best_correct_streak'));
     _hasWellLearned = !!(profRes.data && Object.prototype.hasOwnProperty.call(profRes.data, 'well_learned_words'));
     _hasPet = !!(profRes.data && Object.prototype.hasOwnProperty.call(profRes.data, 'pet'));
+    _hasXpAtomic = !!(profRes.data && Object.prototype.hasOwnProperty.call(profRes.data, 'xp_synced_at'));
     _petServer = (_hasPet && profRes.data.pet && typeof profRes.data.pet === 'object') ? profRes.data.pet : null;
     _profile = _rowToProfile(profRes.data, unitRes.data || []);
+    if (_hasXpAtomic) _xpSend(0);   // XP, które nie zdążyło się zapisać (offline / zamknięta karta)
 
     // Załaduj przypisane podręczniki (user_books) — z deduplikacja
     // (chroni przed duplikatami w bazie, gdyby UNIQUE constraint jeszcze
@@ -276,7 +283,9 @@ const DB = (() => {
    */
   async function logout() {
     try { await presenceLeave(); } catch(e) {}   // „🟢 Teraz online” (#83) — wyszedł
-    await supabase.auth.signOut();
+    // Tylko to urządzenie — wylogowanie w szkole nie może zrywać sesji na telefonie
+    // (inaczej otwarta karta dalej liczy XP, ale nic się nie zapisuje).
+    await supabase.auth.signOut({ scope: 'local' });
     _profile = null;
     _userId  = null;
     _adminRequests = [];
@@ -304,6 +313,43 @@ const DB = (() => {
     _profile.level = level;
     _save();
   }
+
+  // Zdobyte XP (każde źródło: nauka, gramatyka, czytanki, rozmowa z AI).
+  // Z migracją #85 baza dodaje je w jednym kroku (add_my_xp: xp = xp + delta,
+  // poziom i dzienny log) — stara karta ani drugie urządzenie nie cofną już XP.
+  // Bez migracji — dawny zapis całego profilu (setXP).
+  function _xpPendKey() { return 'fiszki_xp_pending_' + (_userId || ''); }
+  function _xpPending() { try { return Math.max(0, parseInt(localStorage.getItem(_xpPendKey()) || '0', 10) || 0); } catch(e) { return 0; } }
+  function _xpSetPending(n) { try { if (n > 0) localStorage.setItem(_xpPendKey(), String(n)); else localStorage.removeItem(_xpPendKey()); } catch(e) {} }
+  function _xpSend(delta) {
+    if (!_userId) return;
+    _xpInflight++;
+    _xpChain = _xpChain.then(async () => {
+      const d = Math.max(0, delta | 0) + _xpPending();
+      if (d <= 0) return;
+      _xpSetPending(d);   // zapisane, dopóki baza nie potwierdzi
+      const { data, error } = await supabase.rpc('add_my_xp', { p_delta: d });
+      if (error) throw error;
+      _xpSetPending(0);
+      const row = Array.isArray(data) ? data[0] : data;
+      if (row && _profile) {
+        _profile.xp = row.new_xp || 0;
+        _profile.level = row.new_level || 1;
+        // pasek XP poprawiamy dopiero, gdy nie czekają kolejne zapisy (bez migotania)
+        if (_xpInflight <= 1 && _xpSyncFn) { try { _xpSyncFn(_profile.xp, _profile.level); } catch(e) {} }
+      }
+    }).catch(e => {
+      console.warn('[add_my_xp]', e && e.message || e);
+    }).finally(() => { _xpInflight--; });
+  }
+  function gainXP(delta, localTotal, localLevel) {
+    if (!_profile || !_userId) return;
+    if (!_hasXpAtomic) { setXP(_profile.username, localTotal, localLevel); return; }
+    _profile.xp = localTotal;
+    _profile.level = localLevel;
+    _xpSend(delta);
+  }
+  function setXpSyncHandler(fn) { _xpSyncFn = typeof fn === 'function' ? fn : null; }
 
   // ═══════════════════════════════════════════════════════════════
   //  POSTĘP JEDNOSTKI
@@ -456,8 +502,8 @@ const DB = (() => {
     const prev     = _profile.dailyXP || 0;
     _profile.dailyXP = prev + amount;
     _save();
-    // Log do historii (Premium chart) — fire-and-forget
-    if (amount > 0 && _userId) {
+    // Log do historii (Premium chart) — fire-and-forget. Z migracją #85 robi to add_my_xp.
+    if (amount > 0 && _userId && !_hasXpAtomic) {
       supabase.rpc('log_daily_xp', { p_delta: amount }).then(() => {}).catch(e => {
         console.warn('[log_daily_xp]', e.message || e);
       });
@@ -573,8 +619,10 @@ const DB = (() => {
         .upsert({ user_id: userId, week_start: weekStart }, { onConflict: 'user_id,week_start' });
       if (error) throw new Error(error.message);
     } else {
+      // Starsze wpisy mają datę niedzieli przed poniedziałkiem (dawne liczenie w UTC) — usuń oba warianty.
+      const prev = new Date(weekStart + 'T12:00:00Z'); prev.setUTCDate(prev.getUTCDate() - 1);
       const { error } = await supabase.from('grade_disabled_weeks')
-        .delete().eq('user_id', userId).eq('week_start', weekStart);
+        .delete().eq('user_id', userId).in('week_start', [weekStart, prev.toISOString().slice(0, 10)]);
       if (error) throw new Error(error.message);
     }
   }
@@ -2408,7 +2456,7 @@ const DB = (() => {
     const { data, error } = await supabase.rpc('pet_react', { p_to: toUserId, p_kind: kind });
     if (error) {
       if (/LIMIT/.test(error.message)) throw new Error('Dziś wysłano już 10 reakcji temu pupilowi — wróć jutro! 🌙');
-      if (/NOT_IN_CLASS/.test(error.message)) throw new Error('Możesz odwiedzać tylko pupile kolegów z klasy.');
+      if (/NOT_IN_CLASS/.test(error.message)) throw new Error('Możesz odwiedzać tylko pupile kolegów z klasy i znajomych.');
       throw new Error(error.message);
     }
     return data || 0;
@@ -2507,9 +2555,89 @@ const DB = (() => {
   //          xp_month, longest_streak, best_combo }]. Wymaga student-class-ranking.sql.
   async function loadMyClassRankings() {
     if (!_userId) return [];
-    const { data, error } = await supabase.rpc('my_class_rankings');
-    if (error) { console.warn('[loadMyClassRankings]', error.message); return []; }
+    const [cls, fr] = await Promise.all([
+      supabase.rpc('my_class_rankings'),
+      supabase.rpc('friends_rankings')           // #85 — ranking „👫 Znajomi”
+    ]);
+    let rows = [];
+    if (cls.error) console.warn('[loadMyClassRankings]', cls.error.message); else rows = cls.data || [];
+    if (!fr.error && fr.data && fr.data.length) rows = rows.concat(fr.data.map(r => Object.assign({ _friends: true }, r)));
+    return rows;
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  ZNAJOMI (migracja #85 friends-and-rivalry.sql) — tylko konta uczniów.
+  //  Z wyszukiwarki: osoby z klas widocznych w rankingu; spoza nich — kodem
+  //  znajomego przekazanym osobiście. Zaproszenie trzeba przyjąć, bez wiadomości.
+  // ═══════════════════════════════════════════════════════════════
+  const _FR_ERR = {
+    AUTH: 'Musisz być zalogowany.',
+    NOT_STUDENT: 'Znajomych mogą dodawać tylko konta uczniów.',
+    BAD_TARGET: 'Tej osoby nie można zaprosić.',
+    NOT_IN_POOL: 'Z wyszukiwarki zaprosisz tylko osobę z klas, które widzisz w rankingu. Kogoś spoza nich zaproś kodem znajomego.',
+    BAD_CODE: 'Nie ma takiego kodu — sprawdź, czy dobrze go przepisałeś/przepisałaś.',
+    SELF: 'To Twój własny kod 🙂 Wpisz kod kolegi lub koleżanki.',
+    LIMIT_CODE: 'Za dużo błędnych kodów — spróbuj za godzinę.',
+    LIMIT: 'Wysłano już dziś 20 zaproszeń — spróbuj jutro.',
+    TOO_MANY: 'Masz już 200 znajomych — to maksimum.',
+    DECLINED: 'Ta osoba odrzuciła zaproszenie. Możesz zaprosić ją ponownie za kilka dni.',
+    NOT_FOUND: 'Tego zaproszenia już nie ma.'
+  };
+  function _frMissing(error) { return !!(error && /function|does not exist|schema cache|friend_/i.test(error.message || '')); }
+  function _frResult(data) {
+    const r = data || {};
+    if (r.ok === false) throw new Error(_FR_ERR[r.error] || ('Błąd: ' + r.error));
+    return r;
+  }
+  // null = brak migracji #85
+  async function friendCodeGet() {
+    if (!_userId) return null;
+    const { data, error } = await supabase.rpc('friend_code_get');
+    if (_frMissing(error)) return undefined;
+    if (error) throw new Error(error.message);
+    return data || null;
+  }
+  async function friendCodeNew() {
+    const { data, error } = await supabase.rpc('friend_code_new');
+    if (error) throw new Error(error.message);
+    return data || null;
+  }
+  async function friendInvite(userId) {
+    const { data, error } = await supabase.rpc('friend_invite', { p_user: userId });
+    if (error) throw new Error(error.message);
+    return _frResult(data);
+  }
+  async function friendInviteByCode(code) {
+    const { data, error } = await supabase.rpc('friend_invite_by_code', { p_code: code || '' });
+    if (error) throw new Error(error.message);
+    return _frResult(data);
+  }
+  async function friendRespond(fromUserId, accept) {
+    const { data, error } = await supabase.rpc('friend_respond', { p_from: fromUserId, p_accept: !!accept });
+    if (error) throw new Error(error.message);
+    return _frResult(data);
+  }
+  async function friendRemove(userId) {
+    const { error } = await supabase.rpc('friend_remove', { p_user: userId });
+    if (error) throw new Error(error.message);
+  }
+  async function loadMyFriends() {
+    if (!_userId) return [];
+    const { data, error } = await supabase.rpc('my_friends');
+    if (_frMissing(error)) return null;
+    if (error) throw new Error(error.message);
     return data || [];
+  }
+  async function friendSearch(query) {
+    const { data, error } = await supabase.rpc('friend_search', { p_query: query || '' });
+    if (error) throw new Error(error.message);
+    return data || [];
+  }
+  async function friendPendingCount() {
+    if (!_userId) return 0;
+    const { data, error } = await supabase.rpc('friend_pending_count');
+    if (error) return 0;
+    return Number(data) || 0;
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -5028,6 +5156,8 @@ const DB = (() => {
     getUser,
     // xp
     setXP,
+    gainXP,
+    setXpSyncHandler,
     // postęp
     saveUnitProgress,
     getUnitProgress,
@@ -5217,6 +5347,8 @@ const DB = (() => {
     loadClassLeaderboard,
     loadClassRankings,
     loadMyClassRankings,
+    friendCodeGet, friendCodeNew, friendInvite, friendInviteByCode, friendRespond,
+    friendRemove, loadMyFriends, friendSearch, friendPendingCount,
     loadClassRankingLinks,
     saveClassRankingLinks,
     getMyNickname,

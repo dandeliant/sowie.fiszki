@@ -3863,8 +3863,8 @@ const SHOP = [
   { id: 'hair_red', cat: 'hair', name: 'Rude', desc: '', price: 150, hair: 0xb5501f, hairStyle: 'short' },
   { id: 'hair_bald', cat: 'hair', name: 'Łysy', desc: '', price: 0, hair: 0x2b1d14, hairStyle: 'bald' },
   { id: 'nitro', cat: 'extra', name: 'Nitro', desc: 'W pojeździe przytrzymaj Shift (na telefonie NITRO) — przyspieszenie do 300 km/h i płomienie z wydechu. Ładunek ~6 s, sam się odnawia.', price: 3000, perk: true },
-  { id: 'hero', cat: 'extra', name: 'Superbohater 🦸', desc: 'Latasz jak superbohater z wyciągniętą prawą ręką — do 300 km/h, a policja Cię nie zauważa. Na piechotę klawisz L (na telefonie LOT): W — lot przed siebie, Spacja — w górę, Shift — w dół, L — lądowanie.', price: 100000, perk: true },
-  { id: 'invis', cat: 'extra', name: 'Niewidzialność', desc: 'Policja Cię nie widzi — żadnych pościgów ani mandatów. Włączasz i wyłączasz klawiszem I (lub w Ustawieniach).', price: 3000, perk: true },
+  { id: 'hero', cat: 'extra', name: 'Superbohater 🦸', desc: 'Latasz jak superbohater z wyciągniętą prawą ręką — do 300 km/h, a policja Cię nie zauważa. Na piechotę klawisz L (na telefonie LOT): W — lot przed siebie, Spacja — w górę, Shift — w dół, L — lądowanie.', price: 20000, perk: true },
+  { id: 'invis', cat: 'extra', name: 'Niewidzialność', desc: 'Policja Cię nie widzi — żadnych pościgów ani mandatów. Włączasz i wyłączasz klawiszem I (lub w Ustawieniach).', price: 10000, perk: true },
   { id: 'wheelie', cat: 'extra', name: 'Willibary (jazda na jednym kole)', desc: 'Na hulajnodze i motorze przytrzymaj Q (na telefonie WHEELIE) — przednie koło w górę! Co 3 s na jednym kole +$5.', price: 1200, perk: true },
   { id: 'gem_sell', cat: 'extra', name: 'Wymiana diamentów', desc: 'Diamenty znajdziesz w domach (🚪) i opuszczonych budynkach (🏚️). Każdy wymienisz tutaj na $500.', price: 0, gemSell: true },
   { id: 'fuel', cat: 'extra', name: 'Pełny bak', desc: 'Tankowanie do pełna. Paliwo ubywa podczas jazdy (z nitro 4× szybciej).', price: 500, consumable: true },
@@ -4856,7 +4856,7 @@ function updatePlane(v, dt) {
 }
 
 // ---------------------------------------------------------------- niewidzialność
-// Kupowana raz w sklepie ($3000), włączana / wyłączana klawiszem I lub w Ustawieniach. Policja nie widzi gracza
+// Kupowana raz w sklepie ($10 000), włączana / wyłączana klawiszem I lub w Ustawieniach. Policja nie widzi gracza
 // (brak pościgów, trwający pościg się kończy); postać gracza staje się półprzezroczysta.
 const hasInvis = () => !!wardrobe.owned.invis;
 const invisibleOn = () => hasInvis() && !wardrobe.invisOff;
@@ -4889,14 +4889,14 @@ function ghostVehicle(v, on) {
   });
 }
 function toggleInvis(force) {
-  if (!hasInvis()) { toast('👻 Niewidzialność kupisz w sklepie (B) za $3000.'); return; }
+  if (!hasInvis()) { toast('👻 Niewidzialność kupisz w sklepie (B) za $10 000.'); return; }
   wardrobe.invisOff = force != null ? !force : !wardrobe.invisOff; persistWardrobe();
   applyGhost();
   toast(invisibleOn() ? '👻 Niewidzialność włączona — policja Cię nie widzi.' : '👻 Niewidzialność wyłączona.', invisibleOn() ? 'good' : '', 3000);
   if (ui === 'shop') renderShop();
 }
 
-// ---------------------------------------------------------------- Superbohater (sklep, $100 000)
+// ---------------------------------------------------------------- Superbohater (sklep, $20 000)
 // Lot postaci: L / LOT start i lądowanie, W — lot w stronę kamery (rozpędza się do 300 km/h), S — hamowanie,
 // A/D — w bok, Spacja — w górę, Shift/C — w dół. Ciało poziomo, prawa ręka wyciągnięta przed siebie.
 // Ponad dachami bez kolizji (pushOut z wysokością), pułap HERO_CEIL. Policja nie zauważa (triggerPolice / updateChase).
@@ -4904,7 +4904,7 @@ const HERO_MAX = 300 / 3.6, HERO_ACC = 26, HERO_CEIL = 420;
 const hasHero = () => !!wardrobe.owned.hero;
 function toggleHero() {
   if (P.car) { toast('🦸 Wysiądź z pojazdu (F), żeby latać.'); return; }
-  if (!hasHero()) { toast('🦸 Superbohatera kupisz w sklepie (B) za $100 000.'); return; }
+  if (!hasHero()) { toast('🦸 Superbohatera kupisz w sklepie (B) za $20 000.'); return; }
   if (indoor) { toast('🦸 W domu nie da się latać — wyjdź na zewnątrz.'); return; }
   if (P.fly) {
     if (P.pos.y - groundAt(P.pos.x, P.pos.z) < 0.6) { heroLand(); return; }

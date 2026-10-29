@@ -1,5 +1,5 @@
 // Grammar City service worker: offline play after the first visit.
-const VERSION = 'grammar-city-v43';
+const VERSION = 'grammar-city-v44';
 const SHELL = [
   './',
   './index.html',
