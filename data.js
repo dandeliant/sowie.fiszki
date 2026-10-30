@@ -26422,6 +26422,12 @@ const BOOKS = {
           ['we współczesnym świecie', 'in the modern world'],
           ['w dzisiejszych czasach, w obecnych czasach', 'in this day and age'],
           ['czasami, od czasu do czasu', 'every now and then'],
+          ['większość czasu', 'most of the time', 'Myślę, że ona przez większość czasu wierzyła we własne kłamstwo.', 'I think she believed her own lie most of the time.'],
+          ['na tę chwilę, jak na razie, na chwilę obecną', 'for now', 'To wszystko, co mam na tę chwilę do powiedzenia na ten temat.', 'That is all I have to say on the matter for now.'],
+          ['na razie, póki co', 'for the time being', 'Na razie zdecydowałem się zostać tutaj.', 'I decided to stay here for the time being.'],
+          ['obecnie, aktualnie, na chwilę obecną', 'at present'],
+          ['do teraz, do tej pory', 'up to now', 'Do teraz byłem zadowolony z tego, co mam.', "I've been happy with what I have up to now."],
+          ['zaprzeczać, odmawiać', 'deny'],
         ]
       },
     },
