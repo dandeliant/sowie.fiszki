@@ -33040,6 +33040,18 @@ ${bodyHtml}
   .gram-ans{font-size:.76rem;color:var(--muted);font-weight:700;margin-top:2px;} .gram-ans span{margin-right:12px;} .gram-ok{color:var(--accent2,#06d6a0);}
   .gram-exp{font-size:.72rem;color:var(--muted);margin-top:2px;}
   .gram-del{position:absolute;top:6px;right:6px;background:transparent;border:none;color:var(--danger);cursor:pointer;font-size:.95rem;}
+  .ge-item{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:8px 10px 10px;}
+  .ge-item.bad{border-color:var(--danger);box-shadow:0 0 0 1px var(--danger) inset;}
+  .ge-item .ai-inp{background:var(--surface);}
+  .ge-head{display:flex;align-items:center;gap:8px;}
+  .ge-head .ge-type{width:auto;padding:5px 8px;font-size:.78rem;}
+  .ge-move{display:flex;gap:4px;margin-left:auto;} .ge-move .btn-sm{padding:3px 9px;}
+  .ge-head .ge-del{position:static;font-size:1.05rem;padding:2px 6px;}
+  .ge-lab{display:block;font-size:.66rem;font-weight:800;color:var(--muted);margin:7px 0 3px;}
+  .ge-opt{display:flex;align-items:center;gap:7px;margin:4px 0;cursor:pointer;} .ge-opt b{font-size:.8rem;color:var(--text);min-width:18px;}
+  .ge-opt input[type=radio]{width:17px;height:17px;flex:none;accent-color:var(--accent2,#06d6a0);}
+  .ge-err{font-size:.74rem;font-weight:700;color:var(--danger);margin-top:5px;} .ge-err:empty{display:none;}
+  .ge-add{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
   .gp-q{font-size:1.15rem;font-weight:800;line-height:1.6;text-align:center;margin:14px 0;color:var(--text);}
   .gp-opts{display:grid;gap:8px;} .gp-opt{text-align:left;padding:11px 14px;border-radius:12px;border:2px solid var(--border);background:var(--surface2);color:var(--text);font-weight:700;font-size:.95rem;cursor:pointer;font-family:inherit;}
   .gp-opt:hover{border-color:var(--accent);} .gp-opt.ok{border-color:var(--accent2,#06d6a0);background:rgba(6,214,160,.15);} .gp-opt.bad{border-color:var(--danger);background:rgba(255,118,117,.12);}
@@ -33162,6 +33174,7 @@ ${bodyHtml}
         + '<button class="btn-sm accent" onclick="openGrammarPractice(\'' + s.id + '\')">▶ Ćwicz</button>'
         + (staff ? '<button class="btn-sm" onclick="printGrammarSetUi(\'' + s.id + '\')">🖨️ Kartkówka</button>' : '')
         + (mine && staff ? shareBtn('grammar', s) : '')
+        + (canDel && staff ? '<button class="btn-sm" onclick="editGrammarSetUi(\'' + s.id + '\')" title="Popraw zdania, odpowiedzi i wyjaśnienia">✏️ Edytuj</button>' : '')
         + (canDel ? '<button class="btn-sm" onclick="deleteGrammarSetUi(\'' + s.id + '\')" title="Usuń zestaw">🗑️</button>' : '')
         + '</div></div>';
     });
@@ -33224,35 +33237,150 @@ ${bodyHtml}
       renderGrammarPreview();
     } catch(e) { setMsg('agMsg', '❌ ' + e.message, 'err'); btn.disabled = false; }
   };
-  function itemHtml(it, i, del){
+  function itemHtml(it, i){
     const q = E(it.q).replace(/___/g, '<span class="gram-gap">___</span>');
     const ans = it.type === 'abc'
       ? (it.o || []).map((o, j) => `<span class="${j === it.a ? 'gram-ok' : ''}">${'ABC'[j]}) ${E(o)}${j === it.a ? ' ✓' : ''}</span>`).join('')
       : '✍️ ' + (it.a || []).map(E).join(' / ');
-    return `<div class="gram-item"><div><b>${i + 1}.</b> ${q}</div><div class="gram-ans">${ans}</div>${it.e ? `<div class="gram-exp">💡 ${E(it.e)}</div>` : ''}${del ? `<button class="gram-del" onclick="grammarDraftDel(${i})" title="Usuń to zadanie">✕</button>` : ''}</div>`;
+    return `<div class="gram-item"><div><b>${i + 1}.</b> ${q}</div><div class="gram-ans">${ans}</div>${it.e ? `<div class="gram-exp">💡 ${E(it.e)}</div>` : ''}</div>`;
   }
-  function renderGrammarPreview(){
-    const d = _ag;
-    aiModal('aiGramModal', closeBtn('aiGramModal') + `<div class="modal-title">👀 Sprawdź zadania przed zapisem</div>
-      <div class="ai-help">AI może się czasem pomylić — przejrzyj zadania i usuń złe (✕). Zapisane zadania zobaczą wszyscy uczniowie tego rozdziału.</div>
-      <label class="ai-lab">Nazwa zestawu</label><input id="agTopic2" class="ai-inp" maxlength="100" value="${E(d.topic)}">
-      <div class="gram-list">${d.items.map((it, i) => itemHtml(it, i, true)).join('')}</div>
-      <div id="agMsg" class="ai-msg"></div>
-      <div class="modal-btns"><button class="btn-modal-cancel" onclick="openGrammarGen()">↩ Zmień ustawienia</button>
-      <button class="btn-modal-save" id="agSave" onclick="grammarDraftSave()">💾 Zapisz dla wszystkich (${d.items.length})</button></div>`, true);
+  /* ---- edytor zadań: szkic z AI przed zapisem i zapisane zestawy (admin / autor) ---- */
+  let _ge = null;   // { mode: 'draft' | 'edit', id?, bookId, unitKey, topic, items, dirty, after? }
+  const GE_LIM = { q: 320, o: 80, a: 80, e: 300 };
+  const GAP_RE = /_{3,}/g;
+  function geItemHtml(it, i){
+    const abc = it.type === 'abc';
+    return `<div class="ge-item" id="geItem${i}">
+      <div class="ge-head"><b>${i + 1}.</b>
+        <select class="ai-inp ge-type" onchange="geType(${i}, this.value)" title="Rodzaj zadania"><option value="abc"${abc ? ' selected' : ''}>A/B/C — wybór</option><option value="gap"${abc ? '' : ' selected'}>Luka — wpisz</option></select>
+        <span class="ge-move"><button class="btn-sm" onclick="geMove(${i},-1)" title="Wyżej"${i ? '' : ' disabled'}>↑</button><button class="btn-sm" onclick="geMove(${i},1)" title="Niżej"${i < _ge.items.length - 1 ? '' : ' disabled'}>↓</button></span>
+        <button class="gram-del ge-del" onclick="geDel(${i})" title="Usuń to zadanie">✕</button></div>
+      <label class="ge-lab">Zdanie z luką ___${abc ? '' : ' (w nawiasie podpowiedź, np. „She ___ (play) tennis.”)'}</label>
+      <input class="ai-inp" maxlength="${GE_LIM.q}" value="${E(it.q || '')}" oninput="geSet(${i},'q',this.value)">
+      ${abc
+        ? `<label class="ge-lab">Odpowiedzi — kropką zaznacz poprawną</label>` + [0, 1, 2].map(j => `<label class="ge-opt"><input type="radio" name="geA${i}"${it.a === j ? ' checked' : ''} onchange="geCorrect(${i},${j})" title="Poprawna odpowiedź"><b>${'ABC'[j]})</b><input class="ai-inp" maxlength="${GE_LIM.o}" value="${E((it.o || [])[j] || '')}" oninput="geOpt(${i},${j},this.value)"></label>`).join('')
+        : `<label class="ge-lab">Poprawne odpowiedzi (kilka wariantów oddziel ukośnikiem /)</label><input class="ai-inp" maxlength="300" value="${E((it.a || []).join(' / '))}" placeholder="np. doesn't play / does not play" oninput="geAns(${i},this.value)">`}
+      <label class="ge-lab">Wyjaśnienie po polsku (opcjonalnie)</label>
+      <input class="ai-inp" maxlength="${GE_LIM.e}" value="${E(it.e || '')}" oninput="geSet(${i},'e',this.value)">
+      <div class="ge-err" id="geErr${i}"></div></div>`;
   }
-  window.grammarDraftDel = i => { if (!_ag) return; const t = $('agTopic2'); if (t) _ag.topic = t.value; _ag.items.splice(i, 1); renderGrammarPreview(); };
-  window.grammarDraftSave = async function(){
-    if (!_ag) return;
-    const topic = ($('agTopic2').value || '').trim() || _ag.topic;
-    if (_ag.items.length < 3) { setMsg('agMsg', 'Zostaw co najmniej 3 zadania.', 'err'); return; }
-    const btn = $('agSave'); btn.disabled = true; setMsg('agMsg', '⏳ Zapisuję…');
+  function renderGrammarEditor(keepScroll){
+    const d = _ge; if (!d) return;
+    const draft = d.mode === 'draft';
+    const old = $('aiGramModalBox'), top = old ? old.scrollTop : 0;
+    aiModal('aiGramModal', closeBtn('aiGramModal') + `<div class="modal-title">${draft ? '👀 Sprawdź i popraw zadania przed zapisem' : '✏️ Edytuj zestaw zadań'}</div>
+      <div class="ai-help">${draft ? 'AI może się czasem pomylić — popraw zdania, odpowiedzi i wyjaśnienia albo usuń złe zadania (✕).' : 'Popraw zdania, odpowiedzi i wyjaśnienia, usuń albo dodaj zadania.'}
+      Lukę oznacz trzema podkreślnikami <b>___</b> (jedna w zdaniu). Zapisane zadania zobaczą wszyscy uczniowie tego rozdziału — także jako misje w Grammar City.</div>
+      <label class="ai-lab">Nazwa zestawu</label><input id="geTopic" class="ai-inp" maxlength="100" value="${E(d.topic || '')}" oninput="geTopicSet(this.value)">
+      <div class="gram-list">${d.items.map(geItemHtml).join('')}</div>
+      <div class="ge-add"><button class="btn-sm" onclick="geAdd('abc')">➕ Zadanie A/B/C</button><button class="btn-sm" onclick="geAdd('gap')">➕ Luka</button></div>
+      <div id="geMsg" class="ai-msg"></div>
+      <div class="modal-btns">${draft ? `<button class="btn-modal-cancel" onclick="openGrammarGen()">↩ Zmień ustawienia</button>` : `<button class="btn-modal-cancel" onclick="geCancel()">Anuluj</button>`}
+      <button class="btn-modal-save" id="geSave" onclick="geSave()">💾 ${draft ? 'Zapisz dla wszystkich' : 'Zapisz zmiany'} (${d.items.length})</button></div>`, true);
+    const box = $('aiGramModalBox'); if (box) box.scrollTop = keepScroll ? top : 0;
+  }
+  function geOpen(state){
+    _ge = state;
+    renderGrammarEditor(false);
+    const o = $('aiGramModal'); if (o) document.body.appendChild(o);   // nad innym otwartym oknem (np. „Do zatwierdzenia”)
+  }
+  const geTouch = () => { if (_ge) _ge.dirty = true; };
+  window.geTopicSet = v => { if (_ge) { _ge.topic = v; geTouch(); } };
+  window.geSet = (i, k, v) => { const it = _ge && _ge.items[i]; if (it) { it[k] = v; geTouch(); } };
+  window.geOpt = (i, j, v) => { const it = _ge && _ge.items[i]; if (it) { it.o = (it.o || ['', '', '']).slice(); it.o[j] = v; geTouch(); } };
+  window.geCorrect = (i, j) => { const it = _ge && _ge.items[i]; if (it) { it.a = j; geTouch(); } };
+  window.geAns = (i, v) => { const it = _ge && _ge.items[i]; if (it) { it.a = String(v).split('/').map(s => s.trim()).filter(Boolean); geTouch(); } };
+  window.geType = (i, t) => {
+    const it = _ge && _ge.items[i]; if (!it || it.type === t) return;
+    if (t === 'gap') { const right = Array.isArray(it.o) && it.o[it.a] ? [it.o[it.a]] : []; Object.assign(it, { type: 'gap', a: right }); delete it.o; }
+    else { const first = Array.isArray(it.a) ? (it.a[0] || '') : ''; Object.assign(it, { type: 'abc', o: [first, '', ''], a: 0 }); }
+    geTouch(); renderGrammarEditor(true);
+  };
+  window.geDel = i => { if (!_ge) return; _ge.items.splice(i, 1); geTouch(); renderGrammarEditor(true); };
+  window.geMove = (i, dir) => {
+    const a = _ge && _ge.items, j = i + dir; if (!a || j < 0 || j >= a.length) return;
+    [a[i], a[j]] = [a[j], a[i]]; geTouch(); renderGrammarEditor(true);
+  };
+  window.geAdd = t => {
+    if (!_ge) return;
+    _ge.items.push(t === 'abc' ? { type: 'abc', q: '', o: ['', '', ''], a: 0, e: '' } : { type: 'gap', q: '', a: [], e: '' });
+    geTouch(); renderGrammarEditor(true);
+    const box = $('aiGramModalBox'), el = $('geItem' + (_ge.items.length - 1));
+    if (box && el) { el.scrollIntoView({ block: 'center' }); const inp = el.querySelector('input.ai-inp'); if (inp) inp.focus(); }
+  };
+  window.geCancel = () => {
+    if (_ge && _ge.dirty && !confirm('Zamknąć bez zapisywania zmian?')) return;
+    const after = _ge && _ge.after; _ge = null; hide('aiGramModal');
+    if (after) after(false);
+  };
+  // Sprawdza i porządkuje jedno zadanie → { it, err }
+  function geNorm(src){
+    const q = String(src.q || '').replace(/\s+/g, ' ').trim().replace(GAP_RE, '___').slice(0, GE_LIM.q);
+    const e = String(src.e || '').replace(/\s+/g, ' ').trim().slice(0, GE_LIM.e);
+    const gaps = (q.match(/___/g) || []).length;
+    let err = '';
+    if (!q) err = 'Wpisz zdanie.';
+    else if (gaps !== 1) err = gaps ? 'W zdaniu może być tylko jedna luka ___.' : 'Zaznacz lukę trzema podkreślnikami ___.';
+    if (src.type === 'abc') {
+      const o = [0, 1, 2].map(j => String((src.o || [])[j] || '').replace(/\s+/g, ' ').trim().slice(0, GE_LIM.o));
+      const a = Number(src.a);
+      if (!err && o.some(x => !x)) err = 'Uzupełnij wszystkie trzy odpowiedzi A, B i C.';
+      else if (!err && new Set(o.map(x => x.toLowerCase())).size !== 3) err = 'Odpowiedzi A, B i C muszą się różnić.';
+      else if (!err && !(a >= 0 && a <= 2)) err = 'Zaznacz poprawną odpowiedź.';
+      const it = { type: 'abc', q, o, a: a >= 0 && a <= 2 ? a : 0 }; if (e) it.e = e;
+      return { it, err };
+    }
+    const a = [...new Set((Array.isArray(src.a) ? src.a : [src.a]).map(x => String(x || '').replace(/\s+/g, ' ').trim().slice(0, GE_LIM.a)).filter(Boolean))].slice(0, 5);
+    if (!err && !a.length) err = 'Wpisz poprawną odpowiedź.';
+    const it = { type: 'gap', q, a }; if (e) it.e = e;
+    return { it, err };
+  }
+  window.geSave = async function(){
+    const d = _ge; if (!d) return;
+    const topic = String(d.topic || '').trim();
+    if (!topic) { setMsg('geMsg', 'Wpisz nazwę zestawu.', 'err'); return; }
+    let bad = -1; const items = [];
+    d.items.forEach((src, i) => {
+      const r = geNorm(src); items.push(r.it);
+      const el = $('geErr' + i); if (el) el.textContent = r.err ? '⚠️ ' + r.err : '';
+      const box = $('geItem' + i); if (box) box.classList.toggle('bad', !!r.err);
+      if (r.err && bad < 0) bad = i;
+    });
+    if (bad >= 0) {
+      setMsg('geMsg', 'Popraw zaznaczone zadania (pierwsze: nr ' + (bad + 1) + ').', 'err');
+      const el = $('geItem' + bad); if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      return;
+    }
+    if (items.length < 3) { setMsg('geMsg', 'Zestaw musi mieć co najmniej 3 zadania.', 'err'); return; }
+    const btn = $('geSave'); btn.disabled = true; setMsg('geMsg', '⏳ Zapisuję…');
     try {
-      const row = await DB.saveGrammarSet({ bookId: _ag.bookId, unitKey: _ag.unitKey, topic, items: _ag.items, source: 'ai' });
-      hide('aiGramModal'); _ag = null;
-      toast(savedMsg(row, 'Zadania zapisane — uczniowie zobaczą je w „🧠 Utrwalaj gramatykę” i w Grammar City.'), 4200);
-      renderGrammarBox();
-    } catch(e) { setMsg('agMsg', '❌ ' + e.message, 'err'); btn.disabled = false; }
+      const draft = d.mode === 'draft';
+      const row = draft
+        ? await DB.saveGrammarSet({ bookId: d.bookId, unitKey: d.unitKey, topic, items, source: 'ai' })
+        : await DB.saveGrammarSet({ id: d.id, topic, items });
+      if (draft) _ag = null;
+      _ge = null; hide('aiGramModal');
+      toast(savedMsg(row, draft ? 'Zadania zapisane — uczniowie zobaczą je w „🧠 Utrwalaj gramatykę” i w Grammar City.'
+        : 'Zmiany zapisane — uczniowie zobaczą poprawione zadania w „🧠 Utrwalaj gramatykę” i w Grammar City.'), 4200);
+      if (book() && currentBookId === (row && row.book_id || d.bookId)) renderGrammarBox();
+      if (d.after) d.after(true);
+    } catch(e) { setMsg('geMsg', '❌ ' + e.message, 'err'); btn.disabled = false; }
+  };
+  function renderGrammarPreview(){
+    geOpen(Object.assign(_ag, { mode: 'draft', dirty: false }));
+  }
+  // Zapisany zestaw: admin — każdy, nauczyciel — własny (RLS: autor lub admin)
+  function openGrammarSetEditor(s, after){
+    if (!s) return;
+    if (_ge && _ge.mode === 'edit' && _ge.id === s.id && _ge.dirty && confirm('Masz niezapisane zmiany w tym zestawie. Wrócić do nich?')) { geOpen(_ge); return; }
+    geOpen({ mode: 'edit', id: s.id, bookId: s.book_id, unitKey: s.unit_key, topic: s.topic || '',
+      items: JSON.parse(JSON.stringify(Array.isArray(s.items) ? s.items : [])), dirty: false, after });
+  }
+  window.editGrammarSetUi = function(id){
+    const s = _gsCache.find(x => x.id === id); if (!s) return;
+    const me = DB.getUserId ? DB.getUserId() : null;
+    if (!isCurrentUserAdmin() && s.created_by !== me) { toast('Poprawić możesz tylko własne zestawy.', 2800); return; }
+    openGrammarSetEditor(s);
   };
 
   /* ---- ćwiczenie zestawu (uczeń) ---- */
@@ -33869,7 +33997,7 @@ ${bodyHtml}
     h += '<div>' + rows.map(r => {
       const isG = r.kind === 'grammar', n = isG ? (r.items || []).length : (r.questions || []).length;
       return `<div class="bk-row"><div class="bk-info"><b>${isG ? '🧠' : '📖'} ${E(r.topic || r.title)}</b><small>${E(bookUnitName(r))} · ${isG ? zadan(n) : pytan(n)} · autor: ${E(r.author || '—')}</small>
-        ${k.open === r.id ? '<div class="bk-prev">' + (isG ? '<div class="gram-list">' + (r.items || []).map((it, i) => itemHtml(it, i, false)).join('') + '</div>' : storyReaderHtml(r, false) + '<div class="gram-list">' + (r.questions || []).map((qq, i) => storyQHtml(qq, i, false)).join('') + '</div>') + '</div>' : ''}</div>
+        ${k.open === r.id ? '<div class="bk-prev">' + (isG ? '<div class="gram-list">' + (r.items || []).map((it, i) => itemHtml(it, i)).join('') + '</div>' : storyReaderHtml(r, false) + '<div class="gram-list">' + (r.questions || []).map((qq, i) => storyQHtml(qq, i, false)).join('') + '</div>') + '</div>' : ''}</div>
         <div class="gram-set-act"><button class="btn-sm" onclick="bankToggle('${r.id}')">${k.open === r.id ? '🔼 Zwiń' : '👀 Podgląd'}</button>
         ${k.target ? `<button class="btn-sm accent" onclick="bankCopy('${r.id}')">➕ Dodaj</button>` : ''}</div></div>`;
     }).join('') + '</div>';
@@ -33917,14 +34045,23 @@ ${bodyHtml}
       return `<div class="bk-row"><div class="bk-info"><b>${isG ? '🧠' : '📖'} ${E(r.topic || r.title)}</b>
         <small>${E(bookUnitName(r))} · ${isG ? zadan(n) : pytan(n)} · autor: ${E(r.author || '—')} · ${new Date(r.updated_at || r.created_at).toLocaleDateString('pl-PL')}</small>
         <div class="rv-badge rv-pend">${why}</div>
-        ${v.open === r.id ? '<div class="bk-prev">' + (isG ? '<div class="gram-list">' + (r.items || []).map((it, i) => itemHtml(it, i, false)).join('') + '</div>' : storyReaderHtml(r, false) + '<div class="gram-list">' + (r.questions || []).map((qq, i) => storyQHtml(qq, i, false)).join('') + '</div>') + '</div>' : ''}</div>
+        ${v.open === r.id ? '<div class="bk-prev">' + (isG ? '<div class="gram-list">' + (r.items || []).map((it, i) => itemHtml(it, i)).join('') + '</div>' : storyReaderHtml(r, false) + '<div class="gram-list">' + (r.questions || []).map((qq, i) => storyQHtml(qq, i, false)).join('') + '</div>') + '</div>' : ''}</div>
         <div class="gram-set-act" style="flex-direction:column;align-items:stretch"><button class="btn-sm" onclick="reviewToggle('${r.id}')">${v.open === r.id ? '🔼 Zwiń' : '👀 Podgląd'}</button>
+        ${isG ? `<button class="btn-sm" onclick="reviewEditGrammar('${r.id}')" title="Popraw zadania przed zatwierdzeniem">✏️ Popraw</button>` : ''}
         <button class="btn-sm accent" onclick="reviewDecide('${r.id}',true)">✅ Zatwierdź</button>
         <button class="btn-sm" onclick="reviewDecide('${r.id}',false)">❌ Odrzuć</button></div></div>`;
     }).join('');
     aiModal('reviewModal', h, true);
   }
   window.reviewToggle = id => { _rv.open = _rv.open === id ? null : id; reviewRender(); };
+  // Admin poprawia zestaw nauczyciela przed zatwierdzeniem (status zostaje „czeka”, decyzja nadal przyciskami ✅ / ❌)
+  window.reviewEditGrammar = function(id){
+    const r = _rv && _rv.rows.find(x => x.id === id); if (!r || r.kind !== 'grammar') return;
+    openGrammarSetEditor(r, saved => {
+      if (!saved) return;
+      DB.loadReviewQueue().then(rows => { if (rows && _rv) { _rv.rows = rows; _rv.open = id; reviewRender(); } }).catch(() => {});
+    });
+  };
   window.reviewDecide = async function(id, ok){
     const r = _rv && _rv.rows.find(x => x.id === id); if (!r) return;
     let note = null;
