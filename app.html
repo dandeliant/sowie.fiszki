@@ -10525,7 +10525,7 @@ function typeNextNow() { _typeAdvance(); }
 
 // Formy nieregularne (angielski) — żeby znaleźć słówko w zdaniu przykładowym (take → took, think → thought).
 const _GAP_IRREG = (() => {
-  const src = 'be:am is are was were been being|have:has had having|do:does did done doing|go:goes went gone going|make:made|take:took taken|get:got gotten|give:gave given|come:came|see:saw seen|know:knew known|think:thought|bring:brought|buy:bought|catch:caught|teach:taught|keep:kept|leave:left|feel:felt|find:found|tell:told|say:said|stand:stood|understand:understood|run:ran|begin:began begun|break:broke broken|choose:chose chosen|drive:drove driven|eat:ate eaten|fall:fell fallen|forget:forgot forgotten|grow:grew grown|hold:held|lose:lost|meet:met|pay:paid|sit:sat|sleep:slept|speak:spoke spoken|spend:spent|swim:swam swum|throw:threw thrown|wake:woke woken|wear:wore worn|win:won|write:wrote written|draw:drew drawn|fly:flew flown|hear:heard|lead:led|learn:learnt|mean:meant|rise:rose risen|seek:sought|sell:sold|send:sent|shine:shone|shoot:shot|show:shown|sing:sang sung|steal:stole stolen|strike:struck|dig:dug|hang:hung|deal:dealt|bear:bore borne|become:became|build:built|burn:burnt|dream:dreamt|lie:lay lain lying|light:lit|ride:rode ridden|ring:rang rung|shake:shook shaken|sink:sank sunk|stick:stuck|swear:swore sworn|tear:tore torn|bite:bit bitten|blow:blew blown|freeze:froze frozen|hide:hid hidden|forgive:forgave forgiven|overcome:overcame|mistake:mistook mistaken|undertake:undertook undertaken|withdraw:withdrew withdrawn|foresee:foresaw foreseen|feed:fed|fight:fought|flee:fled|lend:lent|bend:bent|bleed:bled|creep:crept|kneel:knelt|leap:leapt|slide:slid|sweep:swept|weep:wept|wind:wound|spring:sprang sprung|arise:arose arisen|beat:beaten|bind:bound|cling:clung|grind:ground|stride:strode|strive:strove striven|tread:trod trodden|uphold:upheld|weave:wove woven|wring:wrung';
+  const src = 'be:am is are was were been being|have:has had having|do:does did done doing|go:goes went gone going|make:made|take:took taken|get:got gotten|give:gave given|come:came|see:saw seen|know:knew known|think:thought|bring:brought|buy:bought|catch:caught|teach:taught|keep:kept|leave:left|feel:felt|find:found|tell:told|say:said|stand:stood|understand:understood|run:ran|begin:began begun|break:broke broken|choose:chose chosen|drive:drove driven|eat:ate eaten|fall:fell fallen|forget:forgot forgotten|grow:grew grown|hold:held|lose:lost|meet:met|pay:paid|sit:sat|sleep:slept|speak:spoke spoken|spend:spent|swim:swam swum|throw:threw thrown|wake:woke woken|wear:wore worn|win:won|write:wrote written|draw:drew drawn|fly:flew flown|hear:heard|lead:led|learn:learnt|mean:meant|rise:rose risen|seek:sought|sell:sold|send:sent|shine:shone|shoot:shot|show:shown|sing:sang sung|steal:stole stolen|strike:struck|dig:dug|hang:hung|deal:dealt|bear:bore borne|become:became|build:built|burn:burnt|dream:dreamt|lie:lay lain lying|light:lit|ride:rode ridden|ring:rang rung|shake:shook shaken|sink:sank sunk|stick:stuck|swear:swore sworn|tear:tore torn|bite:bit bitten|blow:blew blown|freeze:froze frozen|hide:hid hidden|forgive:forgave forgiven|overcome:overcame|mistake:mistook mistaken|undertake:undertook undertaken|withdraw:withdrew withdrawn|foresee:foresaw foreseen|feed:fed|fight:fought|flee:fled|lend:lent|bend:bent|bleed:bled|creep:crept|kneel:knelt|leap:leapt|slide:slid|sweep:swept|weep:wept|wind:wound|spring:sprang sprung|arise:arose arisen|beat:beaten|bind:bound|cling:clung|grind:ground|stride:strode|strive:strove striven|tread:trod trodden|uphold:upheld|weave:wove woven|wring:wrung|undergo:underwent undergone|undo:undid undone|redo:redid redone|rebuild:rebuilt|rewrite:rewrote rewritten|mislead:misled|outgrow:outgrew outgrown|overtake:overtook overtaken|override:overrode overridden';
   const m = {}; src.split('|').forEach(p => { const [k, v] = p.split(':'); m[k] = v.split(' '); }); return m;
 })();
 // Zastępniki w hasłach: „somebody / your / yourself…” → dowolne słowo(a) w zdaniu (zostają widoczne).
@@ -10533,7 +10533,8 @@ const _GAP_ANY = "[\\p{L}\\p{N}'’-]+(?:\\s+[\\p{L}\\p{N}'’-]+){0,2}";
 const _GAP_PH = {
   somebody: _GAP_ANY, someone: _GAP_ANY, something: _GAP_ANY, sb: _GAP_ANY, sth: _GAP_ANY, smb: _GAP_ANY, smth: _GAP_ANY,
   "somebody's": "[\\p{L}'’-]+", "someone's": "[\\p{L}'’-]+", "sb's": "[\\p{L}'’-]+", "one's": "[\\p{L}'’-]+",
-  your: "(?:my|your|his|her|its|our|their|one's|[\\p{L}]+['’]s)",
+  your: "(?:all\\s+)?(?:my|your|his|her|its|our|their|one's|[\\p{L}]+['’]s)",
+  doing: "[\\p{L}]+ing",   // „it's no use doing” → dowolny czasownik z -ing
   yourself: '(?:myself|yourself|himself|herself|itself|ourselves|yourselves|themselves|oneself)',
   oneself: '(?:myself|yourself|himself|herself|itself|ourselves|yourselves|themselves|oneself)',
 };
@@ -10583,8 +10584,11 @@ function _gapSentence(sent, answer, polish) {
       const usePh = toks.some(t => !_GAP_PH[t.toLowerCase()]);   // samo „your” to hasło, nie zastępnik
       // Segmenty: wyrazy hasła (→ luka) i to, co zostaje widoczne (zastępniki, wtrącenia)
       const segs = [];
-      toks.forEach(tok => {
-        const low = tok.toLowerCase(), ph = usePh && _GAP_PH[low];
+      toks.forEach((tok, ti) => {
+        const low = tok.toLowerCase();
+        // „… to do” na końcu hasła = dowolny czasownik („have the energy to do” → „… to finish”)
+        const ph = usePh && (_GAP_PH[low]
+          || (low === 'do' && ti === toks.length - 1 && ti > 0 && toks[ti - 1].toLowerCase() === 'to' ? WRD : null));
         if (ph) { segs.push({ lit: false, re: ph }); return; }
         const re = pass === 'exact' ? _reEsc(tok)
           : (!polish && /^(a|an|the)$/.test(low)) ? DET : _gapTokRe(tok, polish);
