@@ -7157,6 +7157,23 @@ function getInlineSentences(w) {
   }
   return { sentPl: '', sentEn: '' };
 }
+// Zdania przykładowe słówka do wyświetlenia: najpierw zapisane w bazie (edycja ✏️ — word_sentences,
+// także spod pierwotnego słowa, gdy polskie słowo poprawiono), potem z data.js (inline).
+// Wcześniej inline miało pierwszeństwo, więc poprawione zdanie się nie pokazywało.
+function wordSentences(w, bId) {
+  if (!w) return { sentPl: '', sentEn: '' };
+  const b = bId || currentBookId;
+  let d = null;
+  if (b && typeof DB !== 'undefined' && DB.getSentence) {
+    d = DB.getSentence(b, w[0]);
+    if (!(d && (d.sentence_pl || d.sentence_target)) && DB.getOriginalPl) {
+      const orig = DB.getOriginalPl(b, w[0]);
+      if (orig) d = DB.getSentence(b, orig);
+    }
+  }
+  const inl = getInlineSentences(w);
+  return { sentPl: (d && d.sentence_pl) || inl.sentPl || '', sentEn: (d && d.sentence_target) || inl.sentEn || '' };
+}
 function getWordEmoji(pl) {
   // 1) Emoji zaszyte w data.js (BOOKS) jako 3. element pary [pl, en, emoji]
   //    Pomijamy gdy w[2] wygląda jak zdanie (4-elementowy format inline).
@@ -7531,7 +7548,7 @@ h2{text-align:center;font-size:9pt;color:#888;margin-bottom:4px;font-weight:400}
       const w = slice[i];
       if (w) {
         let sPl = '';
-        if (withSentences) { const inl = getInlineSentences(w); if (inl.sentPl || inl.sentEn) sPl = inl.sentPl; else { const d = DB.getSentence(currentBookId, w[0]); sPl = (d && d.sentence_pl) || ''; } }
+        if (withSentences) sPl = wordSentences(w).sentPl;
         const sentHtml = sPl ? '<div class="sub">' + esc(sPl) + '</div>' : '';
         const em = getWordEmojiRaw(w[0]);
         const emHtml = em ? '<div style="font-size:18pt;line-height:1;margin-bottom:3pt">' + em + '</div>' : '';
@@ -7557,7 +7574,7 @@ h2{text-align:center;font-size:9pt;color:#888;margin-bottom:4px;font-weight:400}
       if (w) {
         const origIdx = (function(){ const r=Math.floor(i/cols); const c=i%cols; return r*cols+(cols-1-c); })();
         let sEn = '';
-        if (withSentences) { const inl = getInlineSentences(w); if (inl.sentPl || inl.sentEn) sEn = inl.sentEn; else { const d = DB.getSentence(currentBookId, w[0]); sEn = (d && d.sentence_target) || ''; } }
+        if (withSentences) sEn = wordSentences(w).sentEn;
         const sentHtml2 = sEn ? '<div class="sub">' + esc(sEn) + '</div>' : '';
         const em2 = getWordEmojiRaw(w[0]);
         const emHtml2 = em2 ? '<div style="font-size:18pt;line-height:1;margin-bottom:3pt">' + em2 + '</div>' : '';
@@ -9229,16 +9246,10 @@ function showCardSentence() {
   const word = activeWords[curIdx];
   const wordPl = word[0];
   const wordTarget = word[1];
-  // Źródło zdań — priorytet: inline w słowie (4-elem lub 5-elem), fallback: tabela word_sentences.
-  // getInlineSentences obsluguje wszystkie 4 formaty data.js (patrz definicja przy isLikelySentence).
-  let s = null;
-  const inline = getInlineSentences(word);
-  if (inline.sentPl || inline.sentEn) {
-    s = { sentence_pl: inline.sentPl, sentence_target: inline.sentEn };
-  } else {
-    s = DB.getSentence(currentBookId, wordPl);
-  }
-  const hasSentence = s && (s.sentence_pl || s.sentence_target);
+  // Źródło zdań — najpierw poprawione w bazie (word_sentences), potem inline z data.js (wordSentences).
+  const ws_ = wordSentences(word);
+  const s = { sentence_pl: ws_.sentPl, sentence_target: ws_.sentEn };
+  const hasSentence = !!(s.sentence_pl || s.sentence_target);
   const adminUser = isCurrentUserAdmin();
 
   if (!hasSentence && !adminUser) return; // nic do pokazania
@@ -9288,10 +9299,13 @@ function openSentenceEditor() {
   if (curIdx === null) return;
   const wordPl     = activeWords[curIdx][0];
   const wordTarget = activeWords[curIdx][1];
+  // Wypełnij aktualnymi zdaniami (z bazy albo z data.js) — wcześniej pola otwierały się puste
+  // dla słówek ze zdaniami w data.js i trzeba było pisać od nowa.
   const s = DB.getSentence(currentBookId, wordPl) || {};
+  const cur = wordSentences(activeWords[curIdx]);
   document.getElementById('modalWordInfo').textContent = wordPl + ' → ' + wordTarget;
-  document.getElementById('sentenceEditPl').value     = s.sentence_pl     || '';
-  document.getElementById('sentenceEditTarget').value = s.sentence_target || '';
+  document.getElementById('sentenceEditPl').value     = cur.sentPl || '';
+  document.getElementById('sentenceEditTarget').value = cur.sentEn || '';
   document.getElementById('sentenceEditImg').value    = s.image_url       || '';
   document.getElementById('sentenceImgPreview').innerHTML = s.image_url
     ? '<img src="' + esc(s.image_url) + '" style="max-width:120px;max-height:80px;border-radius:8px;border:1px solid var(--border)">'
@@ -9321,7 +9335,8 @@ async function saveSentenceEdit() {
     const imageUrl = document.getElementById('sentenceEditImg').value.trim();
     await DB.saveSentence(currentBookId, wordPl, sentencePl, sentenceTarget, imageUrl);
     closeSentenceEditor();
-    showCardSentence(); // odśwież widok
+    showCardSentence();       // odśwież widok (tył karty)
+    _refreshSentenceBlock();  // i zdanie z luką na przodzie / we Wpisz
   } catch(e) {
     alert('Błąd zapisu: ' + e.message);
   } finally {
@@ -9385,15 +9400,20 @@ async function saveWordHintEdit(){
     const h = await DB.saveWordHint(currentBookId, wordPl, document.getElementById('wordEditHint').value);
     msg.style.color = 'var(--success)';
     msg.textContent = h ? '✓ Zapisano wskazówkę: [Wskazówka: ' + h + ']' : '✓ Wskazówka usunięta.';
-    // Odśwież tylko blok zdania na karcie (bez przerywania odpowiedzi)
+    _refreshSentenceBlock();
+  } catch(e) {
+    msg.style.color = 'var(--danger)'; msg.textContent = '❌ ' + e.message;
+  } finally { btn.disabled = false; }
+}
+// Odśwież tylko blok zdania (przód fiszki / tryb Wpisz) — bez przerywania odpowiedzi
+function _refreshSentenceBlock(){
+  try {
     const html = _sentenceHintHtml();
     [['cardFrontCtx', 'card'], ['tHint', 'type']].forEach(([id, m]) => {
       const el = document.getElementById(id);
       if (el && mode === m) { el.innerHTML = html; el.style.display = html ? '' : 'none'; }
     });
-  } catch(e) {
-    msg.style.color = 'var(--danger)'; msg.textContent = '❌ ' + e.message;
-  } finally { btn.disabled = false; }
+  } catch(e) { /* karta mogła się już zmienić */ }
 }
 
 function closeWordEditor(){
@@ -9489,12 +9509,14 @@ async function saveWordEdit(){
   btn.disabled = true; btn.textContent = '⏳ Zapisuję…';
   msg.style.color = 'var(--muted)'; msg.textContent = '⏳ Zapisuję zmianę w bazie…';
   try {
+    // adminEditWord przenosi też zdanie, wskazówkę, konteksty i nagrania pod nowe polskie słowo
     await DB.adminEditWord(currentBookId, foundUnitKey, originalPl, newPl, newTarget);
-    // Aktualizuj activeWords lokalnie żeby od razu zobaczyć zmianę bez reloadu
-    activeWords[curIdx] = [newPl, newTarget];
+    // Aktualizuj activeWords lokalnie (bez reloadu) — z zachowaniem emoji i zdań przykładowych
+    // z data.js (elementy 2+); wcześniej `[newPl, newTarget]` gubiło zdania.
+    activeWords[curIdx] = [newPl, newTarget, ...activeWords[curIdx].slice(2)];
     if (typeof activeAllWords !== 'undefined') {
       const i = activeAllWords.findIndex(w => w[0] === originalPl);
-      if (i !== -1) activeAllWords[i] = [newPl, newTarget];
+      if (i !== -1) activeAllWords[i] = [newPl, newTarget, ...activeAllWords[i].slice(2)];
     }
     msg.style.color = 'var(--success)';
     msg.textContent = '✓ Zapisano.';
@@ -9632,8 +9654,8 @@ function _waGetSentenceForCurrentWord() {
   if (curIdx === null || !activeWords || !activeWords[curIdx]) return null;
   const w = activeWords[curIdx];
   let pl = null, en = null;
-  if (typeof getInlineSentences === 'function') {
-    const inl = getInlineSentences(w);
+  if (typeof wordSentences === 'function') {
+    const inl = wordSentences(w);
     if (inl && (inl.sentPl || inl.sentEn)) { pl = inl.sentPl || null; en = inl.sentEn || null; }
   }
   if ((!pl || !en) && typeof DB !== 'undefined' && DB.getSentence && currentBookId) {
@@ -10126,8 +10148,8 @@ function _bulkAudioRender() {
     if (urlEn) countEn++;
     // Czy slowo ma zdanie?
     let sentPl = null, sentEn = null;
-    if (typeof getInlineSentences === 'function') {
-      const inl = getInlineSentences(w);
+    if (typeof wordSentences === 'function') {
+      const inl = wordSentences(w);
       if (inl) { sentPl = inl.sentPl || null; sentEn = inl.sentEn || null; }
     }
     if ((!sentPl || !sentEn) && DB.getSentence) {
@@ -10623,10 +10645,7 @@ function _sentenceHintHtml() {
   const word = activeWords[curIdx], wordPl = word[0];
   const ans = getA(curIdx);
   const promptIsPl = (studyDir === 'pl_en');
-  let sPl = '', sEn = '';
-  const inline = getInlineSentences(word);
-  if (inline.sentPl || inline.sentEn) { sPl = inline.sentPl; sEn = inline.sentEn; }
-  else { const s = DB.getSentence(currentBookId, wordPl); if (s) { sPl = s.sentence_pl || ''; sEn = s.sentence_target || ''; } }
+  const { sentPl: sPl, sentEn: sEn } = wordSentences(word);
   const hintSent   = promptIsPl ? sPl : sEn;
   const answerSent = promptIsPl ? sEn : sPl;
   let html = '';
@@ -11097,8 +11116,8 @@ function _tryCustomAudio(text, lang) {
       }
       // 2) Match na zdanie — inline + DB
       let sentPl = null, sentEn = null;
-      if (typeof getInlineSentences === 'function') {
-        const inl = getInlineSentences(w);
+      if (typeof wordSentences === 'function') {
+        const inl = wordSentences(w);
         if (inl) { sentPl = inl.sentPl || null; sentEn = inl.sentEn || null; }
       }
       if ((!sentPl || !sentEn) && DB.getSentence) {
@@ -29933,7 +29952,7 @@ function buildAlphaKeys(inputId, answer) {
       const pl = (w[0] || '').trim(), en = (w[1] || '').trim();
       if (!en) return;
       let sentPl = '', sentEn = '';
-      if (typeof getInlineSentences === 'function'){ const inl = getInlineSentences(w); sentPl = inl.sentPl || ''; sentEn = inl.sentEn || ''; }
+      if (typeof wordSentences === 'function'){ const inl = wordSentences(w, book.id); sentPl = inl.sentPl || ''; sentEn = inl.sentEn || ''; }
       if (!sentEn && typeof DB !== 'undefined' && DB.getSentence){
         const s = DB.getSentence(book.id, pl);
         if (s){ sentPl = sentPl || (s.sentence_pl || ''); sentEn = s.sentence_target || ''; }
@@ -30459,7 +30478,7 @@ function buildAlphaKeys(inputId, answer) {
     words.forEach(w=>{
       const pl=(w[0]||'').trim(), en=(w[1]||'').trim();
       if(!en) return;
-      const inline=getInlineSentences(w);
+      const inline=wordSentences(w, bookId);
       let sentEn=inline.sentEn, sentPl=inline.sentPl;
       if(!sentEn && typeof DB!=='undefined' && DB.getSentence){
         try{ const s=DB.getSentence(bookId, pl)||{}; sentEn=s.sentence_target||''; sentPl=sentPl||s.sentence_pl||''; }catch(e){}
@@ -30643,8 +30662,8 @@ function buildAlphaKeys(inputId, answer) {
       words.forEach(w => {
         const pl = w[0] || '';
         const en = w[1] || '';
-        // Inline zdania z dowolnego formatu (4-elem lub 5-elem). Dla [pl, en, emoji] pomijamy.
-        const inline = getInlineSentences(w);
+        // Zdania: poprawione w bazie albo inline z data.js (4-elem / 5-elem). Dla [pl, en, emoji] pomijamy.
+        const inline = wordSentences(w, book.id);
         const sentPl = inline.sentPl;
         const sentEn = inline.sentEn;
         // Skip slowek bez zdania angielskiego

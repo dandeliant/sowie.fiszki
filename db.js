@@ -1001,7 +1001,7 @@ const DB = (() => {
         const idx = words.findIndex(w => w[0] === row.original_pl);
         if (idx !== -1) {
           if (row.is_deleted) words.splice(idx, 1);
-          else words[idx] = [row.word_pl, row.word_target];
+          else words[idx] = [row.word_pl, row.word_target, ...words[idx].slice(2)];   // emoji i zdania z data.js zostają
         }
       } else if (!row.is_deleted) {
         // Nowe słówko — dodaj jeśli nie duplikat
@@ -1047,8 +1047,54 @@ const DB = (() => {
       if (error) throw new Error(error.message);
       _adminWords.push(data);
     }
+    // Zachowaj emoji i zdania przykładowe z data.js (elementy 2+) — wcześniej ginęły przy edycji
     const words = BOOKS[bookId]?.units[unitKey]?.words;
-    if (words) { const i = words.findIndex(w => w[0] === originalPl); if (i !== -1) words[i] = [newPl, newTarget]; }
+    if (words) { const i = words.findIndex(w => w[0] === originalPl); if (i !== -1) words[i] = [newPl, newTarget, ...words[i].slice(2)]; }
+    if (newPl !== originalPl) await moveWordData(bookId, unitKey, originalPl, newPl);
+  }
+
+  // Pierwotne polskie słowo z data.js dla słówka poprawionego przez admina (admin_words.original_pl)
+  function getOriginalPl(bookId, wordPl) {
+    const r = _adminWords.find(w => w.book_id === bookId && w.word_pl === wordPl && w.original_pl && !w.is_deleted);
+    return r ? r.original_pl : null;
+  }
+
+  // Po zmianie polskiego słowa przenieś dane zapisane pod starym słowem (klucz = word_pl):
+  // zdanie przykładowe i wskazówkę (kopia), zdania kontekstowe, nagrania wymowy, obrazek słowniczka.
+  // Każda część osobno — brak tabeli albo uprawnień nie przerywa reszty.
+  async function moveWordData(bookId, unitKey, oldPl, newPl) {
+    if (!bookId || !oldPl || !newPl || oldPl === newPl) return;
+    const sk = bookId + '__';
+    try {
+      const s = _sentences[sk + oldPl];
+      if (s && (s.sentence_pl || s.sentence_target) && !_sentences[sk + newPl]) {
+        await saveSentence(bookId, newPl, s.sentence_pl || '', s.sentence_target || '', s.image_url || '');
+      }
+    } catch (e) { console.warn('[moveWordData] zdanie:', e && e.message); }
+    try {
+      if (_hints[sk + oldPl] && !_hints[sk + newPl]) await saveWordHint(bookId, newPl, _hints[sk + oldPl]);
+    } catch (e) { console.warn('[moveWordData] wskazówka:', e && e.message); }
+    try {
+      if ((_contexts[sk + oldPl] || []).length && !(_contexts[sk + newPl] || []).length) {
+        const { error } = await supabase.from('word_contexts').update({ word_pl: newPl }).eq('book_id', bookId).eq('word_pl', oldPl);
+        if (!error) { _contexts[sk + newPl] = _contexts[sk + oldPl]; delete _contexts[sk + oldPl]; }
+      }
+    } catch (e) { console.warn('[moveWordData] konteksty:', e && e.message); }
+    try {
+      const ka = _waKey(bookId, unitKey, oldPl), kb = _waKey(bookId, unitKey, newPl);
+      if (_wordAudioCache[ka] && !_wordAudioCache[kb]) {
+        const { error } = await supabase.from('word_audio').update({ word_pl: newPl })
+          .eq('book_id', bookId).eq('unit_key', unitKey).eq('word_pl', oldPl);
+        if (!error) { _wordAudioCache[kb] = _wordAudioCache[ka]; delete _wordAudioCache[ka]; }
+      }
+    } catch (e) { console.warn('[moveWordData] nagrania:', e && e.message); }
+    try {
+      if (_dictImages[bookId + '|' + oldPl] && !_dictImages[bookId + '|' + newPl]) {
+        const { error } = await supabase.from('dictionary_words').update({ word_pl: newPl })
+          .eq('book_id', bookId).eq('unit_key', unitKey).eq('word_pl', oldPl);
+        if (!error) { _dictImages[bookId + '|' + newPl] = _dictImages[bookId + '|' + oldPl]; delete _dictImages[bookId + '|' + oldPl]; }
+      }
+    } catch (e) { console.warn('[moveWordData] obrazek:', e && e.message); }
   }
 
   async function adminDeleteWord(bookId, unitKey, wordPl) {
@@ -5284,6 +5330,7 @@ const DB = (() => {
     loadWordHints,
     getWordHint,
     saveWordHint,
+    getOriginalPl,
     getBookPrefs,
     isBookIgnored,
     isBookLearning,
