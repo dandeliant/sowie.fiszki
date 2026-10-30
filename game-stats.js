@@ -52,9 +52,9 @@
   /* global jpScore, brScore, bfScore, score, correct, xp, correctCount, hits,
      helped, kills, tips, perfectCount, correctTotal */
   const PAGES = {
-    'skoczek.html':        ['jump',        () => jpScore],
-    'most.html':           ['bridge',      () => brScore],
-    'motyle.html':         ['butterfly',   () => bfScore],
+    'skoczek.html':        ['jump',        () => jpScore,      () => Math.floor(jpScore / 10)],   // +10 pkt = 1 poprawna
+    'most.html':           ['bridge',      () => brScore,      () => Math.floor(brScore / 10)],
+    'motyle.html':         ['butterfly',   () => bfScore,      () => Math.floor(bfScore / 10)],
     'car-racer.html':      ['carracer',    () => score],
     'word_rocket.html':    ['rocket',      () => correct * 10, () => correct],
     'word_wheel.html':     ['wheel',       () => xp,           () => correctCount],
@@ -108,8 +108,87 @@
     const c = num(cur.getCorrect);
     if (c !== null) {
       if (cur.lastCorrect === null || c < cur.lastCorrect) cur.lastCorrect = c;
-      else if (c > cur.lastCorrect) { cur.correct += c - cur.lastCorrect; cur.lastCorrect = c; }
+      else if (c > cur.lastCorrect) {
+        const d = c - cur.lastCorrect;
+        cur.correct += d; cur.lastCorrect = c;
+        if (XP_GAMES[cur.game]) awardXp(d * XP_PER_CORRECT);
+      }
     }
+  }
+
+  // ── XP na konto za poprawne odpowiedzi w grach (od SW v1.219): +5, w weekend ×2 ──
+  // Skoczek, Most, Motyle, Słówkoło, Przejście, Inwazja obcych, Głodomorek. Zła odpowiedź — 0.
+  // XP trafia do kolejki localStorage['fiszki_xp_pending_<uid>'] (tej samej co w db.js)
+  // i jest wysyłane RPC add_my_xp (#85). Gdy się nie uda — wyśle je app.html przy starcie.
+  const XP_GAMES = { jump: 1, bridge: 1, butterfly: 1, wheel: 1, crossing: 1, alien: 1, feed: 1 };
+  const XP_PER_CORRECT = 5;
+  function sbCfg() {
+    try { if (typeof SUPABASE_URL !== 'undefined' && typeof SUPABASE_ANON_KEY !== 'undefined') return { u: SUPABASE_URL, k: SUPABASE_ANON_KEY }; } catch (e) {}
+    try { const c = JSON.parse(localStorage.getItem('fiszki_sb_cfg') || 'null'); if (c && c.u && c.k) return c; } catch (e) {}
+    return null;
+  }
+  function sbSession(c) {
+    try {
+      const ref = new URL(c.u).hostname.split('.')[0];
+      let s = JSON.parse(localStorage.getItem('sb-' + ref + '-auth-token') || 'null');
+      if (s && s.currentSession) s = s.currentSession;
+      return s || null;
+    } catch (e) { return null; }
+  }
+  const isWeekend = () => { const d = new Date().getDay(); return d === 0 || d === 6; };
+  const pendKey = (uid) => 'fiszki_xp_pending_' + uid;
+  const pendGet = (k) => { try { return Math.max(0, parseInt(localStorage.getItem(k) || '0', 10) || 0); } catch (e) { return 0; } };
+  const pendSet = (k, n) => { try { if (n > 0) localStorage.setItem(k, String(n)); else localStorage.removeItem(k); } catch (e) {} };
+  let xpTimer = null, xpBusy = false;
+  function awardXp(n) {
+    const c = sbCfg(), s = c && sbSession(c), uid = s && s.user && s.user.id;
+    if (!(n > 0) || !uid || !cur || !cur.user) return;
+    const k = pendKey(uid);
+    pendSet(k, pendGet(k) + n * (isWeekend() ? 2 : 1));
+    clearTimeout(xpTimer);
+    xpTimer = setTimeout(flushXp, 3000);
+  }
+  async function flushXp() {
+    if (xpBusy) return;
+    const c = sbCfg(), s = c && sbSession(c), uid = s && s.user && s.user.id;
+    if (!uid || !s.access_token || (s.expires_at && s.expires_at * 1000 < Date.now() + 20000)) return;   // wyśle app.html
+    const k = pendKey(uid), d = Math.min(2000, pendGet(k));
+    if (d <= 0) return;
+    xpBusy = true;
+    pendSet(k, pendGet(k) - d);   // najpierw zdejmij z kolejki — bez ryzyka podwójnego naliczenia
+    let ok = false;
+    try {
+      const r = await fetch(c.u + '/rest/v1/rpc/add_my_xp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: c.k, Authorization: 'Bearer ' + s.access_token },
+        body: JSON.stringify({ p_delta: d })
+      });
+      ok = r.ok;
+    } catch (e) {}
+    if (!ok) pendSet(k, pendGet(k) + d);   // nie wyszło — zostaje dla app.html
+    xpBusy = false;
+  }
+
+  // 🙈 Słówka „znam to doskonale” (lista z app.html: localStorage['fiszki_ignored_<login>'])
+  // nie pojawiają się w grach. Gdy w rozdziale ukryte są wszystkie — zostają (gra by nie ruszyła).
+  function dropIgnored() {
+    try {
+      /* global BOOKS */
+      if (typeof BOOKS === 'undefined') return false;
+      const user = currentUserLogin();
+      if (!user || user === '__guest__') return true;
+      const map = JSON.parse(localStorage.getItem('fiszki_ignored_' + user) || '{}') || {};
+      Object.keys(map).forEach(bId => {
+        const b = BOOKS[bId], set = new Set(Array.isArray(map[bId]) ? map[bId] : []);
+        if (!b || !b.units || !set.size) return;
+        Object.keys(b.units).forEach(k => {
+          const u = b.units[k], words = u.words || [];
+          const left = words.filter(w => !(w && set.has(w[0])));
+          if (left.length && left.length !== words.length) u.words = left;
+        });
+      });
+    } catch (e) {}
+    return true;
   }
 
   // Wirtualny pupil (app.html): sekundy aktywnej gry poprawiają mu humor.
@@ -220,6 +299,8 @@
   if (file && file !== 'grammar-city' && file.indexOf('.') < 0) file += '.html';   // Vercel: /car-racer
   const page = PAGES[file];
   if (page) {
+    // Przed skryptem gry (game-stats.js jest zaraz po data.js) — usuń ignorowane słówka.
+    if (!dropIgnored()) document.addEventListener('DOMContentLoaded', dropIgnored);
     // Moduł obecności (presence.js) leży obok tego pliku — app.html go nie potrzebuje (db.js).
     try {
       const me = document.currentScript;

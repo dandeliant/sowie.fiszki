@@ -614,6 +614,13 @@ body.sf-focus-on{overflow:hidden;}
 .btn-diff{font-family:'Nunito',sans-serif;font-size:.83rem;font-weight:800;padding:10px 19px;border:2px solid;border-radius:100px;cursor:pointer;transition:all .18s;display:flex;align-items:center;gap:5px;}
 .btn-diff:active{transform:scale(.94);}
 .btn-diff small{display:block;font-size:.6rem;font-weight:700;opacity:.8;letter-spacing:0;}
+.ignore-wrap{display:flex;justify-content:center;margin:-4px 0 12px;}
+.btn-ignore{display:flex;flex-direction:column;align-items:center;gap:1px;background:transparent;border:1.5px dashed var(--border);color:var(--muted);border-radius:14px;padding:6px 18px;font-family:inherit;font-size:.78rem;font-weight:800;cursor:pointer;line-height:1.2;}
+.btn-ignore small{font-size:.6rem;font-weight:700;opacity:.85;}
+.btn-ignore:hover{border-color:var(--accent2,#06d6a0);color:var(--text);}
+tr.row-ignored .td-pl, tr.row-ignored .td-en{text-decoration:line-through;opacity:.5;}
+.btn-unignore{background:transparent;border:1.5px solid var(--border);border-radius:100px;padding:1px 7px;font-size:.72rem;cursor:pointer;color:var(--text);font-family:inherit;white-space:nowrap;}
+.btn-unignore:hover{border-color:var(--accent2,#06d6a0);}
 .sent-hint{margin-top:6px;font-size:.88rem;font-weight:700;font-style:normal;color:var(--accent2,#06d6a0);display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;}
 .sent-hint-spk{background:transparent;border:1.5px solid var(--border);border-radius:100px;padding:1px 9px;font-size:.82rem;line-height:1.5;cursor:pointer;color:var(--text);font-family:inherit;}
 .sent-hint-spk:hover{border-color:var(--accent2,#06d6a0);}
@@ -3584,6 +3591,10 @@ szkoła	school"></textarea>
     <div class="progress-bar-bg"><div class="progress-bar-fill" id="pFill" style="width:0%"></div></div>
     <div class="progress-label"><span id="pTxt">0 / 0 opanowanych</span><span id="pPct">0%</span></div>
   </div>
+  <!-- 🙈 Ignoruj — słówko znika ze wszystkich trybów i gier (przywrócenie: lista słówek rozdziału) -->
+  <div class="ignore-wrap" id="ignoreWrap" style="display:none">
+    <button type="button" class="btn-ignore" onclick="ignoreCurrentWord()" title="Słówko nie będzie się już pojawiać w żadnym trybie ani grze. Przywrócisz je na liście słówek rozdziału (będzie przekreślone).">🙈 Ignoruj<small>znam to doskonale</small></button>
+  </div>
   <div class="kbd-hint">
     <div class="kbd-tag"><kbd class="kbd-key">Spacja</kbd> obróć</div>
     <div class="kbd-tag"><kbd class="kbd-key">←</kbd> Trudne</div>
@@ -4919,23 +4930,29 @@ async function logout() {
 //  CONSTANTS
 // ══════════════════════════════════════════════
 const XP_PER = 60;
-const XPV = { again: 2, hard: 5, medium: 9, good: 11, easy: 16 };
-// Mnożnik XP zależny od trybu — żeby liczyła się RZETELNA nauka, a nie samo
-// „klikanie". Tryby z SAMOOCENĄ / wyborem odpowiedzi dają mniej punktów;
-// tryby wymagające WPISANIA poprawnej odpowiedzi (z pamięci) — najwięcej.
-const XP_MODE_MULT = {
-  scramble: 1.0, sentscr: 1.0,                           // układanie (Rozsypanka, Zdanie)
-  type: 1.3, typeSent: 1.3, dictate: 1.2, dictSent: 1.2, // pełne wpisanie z pamięci — premia
-  write: 1.3                                             // własne zdanie sprawdzone przez AI
-};
-// Tryby „łatwe" (×0,5): samoocena, wybór z opcji, częściowe wpisywanie, mówienie.
-// Stałe punkty wg ustaleń: Łatwe/szybko 8 · poprawnie (Średnie) 5 · po błędzie (Trudne) 3 · błąd 0.
-const XP_LOW_MODES = new Set(['card', 'quiz', 'speed', 'match', 'tf', 'missing', 'gap', 'speak', 'speakSent']);
-const XP_LOW = { easy: 8, good: 5, medium: 5, hard: 3, again: 0 };
-function _modeXpMult() { return (XP_MODE_MULT[mode] != null) ? XP_MODE_MULT[mode] : 1; }
-function _xpFor(r) {
-  if (XP_LOW_MODES.has(mode)) return XP_LOW[r] != null ? XP_LOW[r] : 0;
-  return Math.max(1, Math.round((XPV[r] || 0) * _modeXpMult()));
+// ── Punkty XP za odpowiedzi (od SW v1.219 — zasady właściciela) ──
+//  • samoocena „Jak było?” (Trudne / Średnie / Łatwe — Fiszki, Znajdź parę) — 0,
+//  • Wpisz — +10 za poprawną odpowiedź (także po poprawce w 2. próbie), 0 za błędną,
+//  • Znajdź parę, Prawda/Fałsz, Litery — +5 za każde 5 poprawnych z rzędu bez pomyłki,
+//  • Quiz, Speed Quiz, Luka, Rozsypanka, Zdanie, Napisz zdanie, Dyktando (+ zdania),
+//    Wpisz zdania, Mów (+ zdania) — +3 tylko za poprawną odpowiedź za pierwszym razem,
+//  • gry z osobnych plików (Skoczek, Most, Motyle, Słówkoło, Przejście, Inwazja, Głodomorek)
+//    — +5 za poprawną odpowiedź (game-stats.js).
+//  W sobotę i niedzielę ×2 (weekendXP).
+const XP_TYPE = 10, XP_FIRST = 3, XP_RUN = 5, XP_RUN_N = 5;
+const XP_RUN_MODES = new Set(['match', 'tf', 'missing']);
+let _xpRunCount = 0;   // poprawne z rzędu w trybach XP_RUN_MODES (pomyłka zeruje)
+function _xpRunStep(ok) {
+  if (!ok) { _xpRunCount = 0; return 0; }
+  _xpRunCount++;
+  return (_xpRunCount % XP_RUN_N === 0) ? XP_RUN : 0;
+}
+function _xpFor(r, selfRated) {
+  if (selfRated || mode === 'card') return 0;
+  const first = (r === 'easy' || r === 'good');
+  if (mode === 'type') return (first || r === 'hard') ? XP_TYPE : 0;
+  if (XP_RUN_MODES.has(mode)) return _xpRunStep(first);
+  return first ? XP_FIRST : 0;
 }
 // Weekend (sobota i niedziela, czas lokalny): podwójne XP za naukę.
 function isWeekendXP() { const d = new Date().getDay(); return d === 0 || d === 6; }
@@ -5009,6 +5026,103 @@ let activeAllWords = [];
 let curIdx = null, mode = 'card', revealed = false, flipped = false, active = false;
 let _sesOk = {};       // „umiem” w bieżącej sesji (idx → ile razy) — kroki nauki jak w Anki
 let _sesDueCount = 0;  // ile powtórek na dziś weszło na początek sesji
+
+// ── 🙈 Słówka „znam to doskonale” (Ignoruj) — od SW v1.219, bez migracji ──
+// Flaga ignored w stanie słówka (unit_progress, rozdział, w którym słówko jest na liście).
+// Słówko nie pojawia się w żadnym trybie nauki ani grze; liczy się jako opanowane.
+// Przywrócenie: lista słówek rozdziału (słówko przekreślone → „🙈 ↩️”).
+// Gry z osobnych plików dostają listę z localStorage['fiszki_ignored_<login>'] (game-stats.js).
+let _ignCache = null;
+function ignoredWordSet() {
+  if (_ignCache) return _ignCache;
+  const ready = !isGuest && typeof DB !== 'undefined' && DB.isProfileLoaded && DB.isProfileLoaded();   // postęp wczytany
+  const set = new Set(), byBook = {};
+  try {
+    if (!isGuest && typeof BOOKS !== 'undefined' && DB.getUnitProgress) {
+      for (const bId of Object.keys(BOOKS)) {
+        const b = BOOKS[bId];
+        if (!b || !b.units) continue;
+        for (const uk of Object.keys(b.units)) {
+          const pr = DB.getUnitProgress(currentUser, bId, uk), st = pr && pr.wordStates;
+          if (!st) continue;
+          const words = b.units[uk].words || [];
+          for (const i in st) {
+            if (st[i] && st[i].ignored && words[i]) { set.add(bId + '|' + words[i][0]); (byBook[bId] = byBook[bId] || []).push(words[i][0]); }
+          }
+        }
+      }
+    }
+    const k = 'fiszki_ignored_' + currentUser, v = JSON.stringify(byBook);
+    if (ready && localStorage.getItem(k) !== v) localStorage.setItem(k, v);
+  } catch(e) {}
+  if (ready) _ignCache = set;   // przed wczytaniem profilu nie zapamiętuj pustej listy
+  return set;
+}
+function isWordIgnored(bId, pl) {
+  if (isGuest || !bId || !pl) return false;
+  return ignoredWordSet().has(bId + '|' + pl);
+}
+// Słówka rozdziałów do gier (bez ignorowanych). Gdy w rozdziale ignorowane są wszystkie — zostają (gra by nie ruszyła).
+function getUnitsForPlay(bId) {
+  const units = getUnitsWithCustom(bId);
+  const set = ignoredWordSet();
+  if (!set.size) return units;
+  const out = {};
+  Object.keys(units).forEach(k => {
+    const u = units[k], words = (u.words || []).filter(w => !set.has(bId + '|' + w[0]));
+    out[k] = words.length ? Object.assign({}, u, { words }) : u;
+  });
+  return out;
+}
+// Ustaw / zdejmij flagę ignored dla słówka (w jego rozdziale). Zwraca true, gdy znaleziono słówko.
+function _setWordIgnored(bId, pl, on) {
+  const book = BOOKS[bId];
+  if (!book || !book.units || isGuest) return false;
+  let uk = null, idx = -1;
+  for (const k of Object.keys(book.units)) {
+    const i = (book.units[k].words || []).findIndex(x => x && x[0] === pl);
+    if (i >= 0) { uk = k; idx = i; break; }
+  }
+  if (!uk) return false;
+  const inSession = (bId === currentBookId && currentUnitKey === uk && activeWords[idx] && activeWords[idx][0] === pl);
+  let states;
+  if (inSession) states = ws;
+  else { const pr = DB.getUnitProgress(currentUser, bId, uk); states = Object.assign({}, (pr && pr.wordStates) || {}); }
+  const st = states[idx] || { ef: 2.5, reps: 0, interval: 1, nextReview: 0, known: false, errCount: 0, lastError: false, dueIn: 0 };
+  if (on) { if (!st.ignored) st.knownBefore = !!st.known; st.ignored = true; st.known = true; }
+  else { st.ignored = false; st.known = !!st.knownBefore; delete st.knownBefore; }
+  states[idx] = st;
+  const total = ((getUnitsWithCustom(bId)[uk] || {}).words || []).length;
+  const kn = Object.values(states).filter(s => s && s.known).length;
+  DB.saveUnitProgress(currentUser, bId, uk, states, kn, total);
+  _ignCache = null;
+  ignoredWordSet();   // od razu zapisz listę dla gier z osobnych plików (localStorage)
+  return true;
+}
+// Przycisk „🙈 Ignoruj — znam to doskonale” pod paskiem postępu
+function ignoreCurrentWord() {
+  if (curIdx === null || !active || isGuest || !activeWords[curIdx]) return;
+  const pl = activeWords[curIdx][0];
+  if (!_setWordIgnored(currentBookId, pl, true)) { toast('Tego słówka nie da się ukryć (nie ma go w podręczniku).', 2600); return; }
+  if (ws[curIdx]) { ws[curIdx].ignored = true; ws[curIdx].known = true; }
+  pool = pool.filter(i => i !== curIdx);
+  clearTimeout(_typeHoldTimer);
+  toast('🙈 „' + pl + '” — ukryte, znasz je doskonale. Przywrócisz je na liście słówek rozdziału.', 3200);
+  updateStats();
+  if (!pool.length) { setTimeout(showDone, 300); return; }
+  generate();
+}
+function _syncIgnoreBtn() {
+  const w = document.getElementById('ignoreWrap');
+  if (w) w.style.display = (active && curIdx !== null && !isGuest && !_bookIgnored()) ? '' : 'none';
+}
+window.unignoreWord = function(pl) {
+  if (!confirm('Przywrócić „' + pl + '” do nauki?\n\nZnowu będzie się pojawiać w trybach nauki i grach.')) return;
+  if (_setWordIgnored(currentBookId, pl, false)) {
+    toast('↩️ „' + pl + '” wraca do nauki.', 2400);
+    openWordList(currentUnitKey);
+  }
+};
 // Podręcznik „🙈 Nie zapisuj mojej nauki” (admin / nauczyciel przerabia go na lekcji, migracja #86)
 function _bookIgnored(bId) {
   const b = bId || currentBookId;
@@ -7174,6 +7288,25 @@ function wordSentences(w, bId) {
   const inl = getInlineSentences(w);
   return { sentPl: (d && d.sentence_pl) || inl.sentPl || '', sentEn: (d && d.sentence_target) || inl.sentEn || '' };
 }
+// Zdanie po polskim słowie — w formacie DB.getSentence ({sentence_pl, sentence_target, image_url}),
+// ale także ze zdań zapisanych w data.js. Dla trybów i gier, które znają tylko słowo PL
+// (Luka, Zdanie, Wpisz zdania, Dyktando i Mów — zdania, karty pracy). Wcześniej czytały
+// tylko bazę i pokazywały „Brak zdania” przy słówkach ze zdaniami w data.js.
+function sentenceFor(bId, pl) {
+  if (!bId || !pl) return null;
+  let w = null;
+  if (bId === currentBookId && Array.isArray(activeWords)) w = activeWords.find(x => x && x[0] === pl) || null;
+  if (!w && typeof BOOKS !== 'undefined' && BOOKS[bId] && BOOKS[bId].units) {
+    for (const k in BOOKS[bId].units) {
+      const f = (BOOKS[bId].units[k].words || []).find(x => x && x[0] === pl);
+      if (f) { w = f; break; }
+    }
+  }
+  const s = wordSentences(w || [pl, ''], bId);
+  if (!s.sentPl && !s.sentEn) return null;
+  const d = (typeof DB !== 'undefined' && DB.getSentence) ? DB.getSentence(bId, pl) : null;
+  return { sentence_pl: s.sentPl, sentence_target: s.sentEn, image_url: (d && d.image_url) || '' };
+}
 function getWordEmoji(pl) {
   // 1) Emoji zaszyte w data.js (BOOKS) jako 3. element pary [pl, en, emoji]
   //    Pomijamy gdy w[2] wygląda jak zdanie (4-elementowy format inline).
@@ -7319,8 +7452,12 @@ function openWordList(key) {
   const body = document.getElementById('wlBody');
   body.innerHTML = '';
   u.words.forEach(([pl, en], i) => {
-    const dot = getDiffDot(currentBookId, key, i);
+    const ignored = isWordIgnored(currentBookId, pl);   // 🙈 „znam to doskonale” — przekreślone, ↩️ przywraca
+    const dot = ignored
+      ? '<button class="btn-unignore" title="Ignorujesz to słówko (znasz je doskonale). Kliknij, aby przywrócić je do nauki." data-pl="' + escHtml(pl) + '">🙈 ↩️</button>'
+      : getDiffDot(currentBookId, key, i);
     const tr = document.createElement('tr');
+    if (ignored) tr.classList.add('row-ignored');
     const adminCells = isAdmin && key !== 'all'
       ? `<td class="td-admin">
            <button class="btn-row-emoji" title="Emoji">😀</button>
@@ -7350,6 +7487,8 @@ function openWordList(key) {
     });
     tr.querySelectorAll('.btn-speak-sm')[0].addEventListener('click', () => spkPl(pl));
     tr.querySelectorAll('.btn-speak-sm')[1].addEventListener('click', () => speakTxt(en));
+    const unIgn = tr.querySelector('.btn-unignore');
+    if (unIgn) unIgn.addEventListener('click', () => unignoreWord(pl));
     if (isAdmin && key !== 'all') {
       tr.querySelector('.btn-row-emoji').addEventListener('click', () => setWordEmoji(pl));
       tr.querySelector('.btn-row-edit').addEventListener('click', () => openAdminEditWord(pl, en));
@@ -7494,7 +7633,7 @@ function printWordList() {
     <h2>Sowie Fiszki · ${new Date().toLocaleDateString('pl-PL')}</h2>
     <table><thead><tr><th>#</th><th>Polski</th><th>English</th>${sentencesVisible ? '<th>Zdanie PL</th><th>Zdanie EN</th>' : ''}</tr></thead><tbody>
     ${u.words.map((w,i)=>{
-      const s = sentencesVisible ? DB.getSentence(currentBookId, w[0]) : null;
+      const s = sentencesVisible ? sentenceFor(currentBookId, w[0]) : null;
       const em = getWordEmojiRaw(w[0]);
       const emPrefix = em ? em + ' ' : '';
       return '<tr><td>'+(i+1)+'</td><td>'+emPrefix+esc(w[0])+'</td><td>'+esc(w[1])+'</td>'
@@ -7617,11 +7756,13 @@ function startStudy(key, forcedPool = null, reviewSort = false) {
   }
   // Nowa sesja — kolejka „wróci za kilka kart” zaczyna się od zera
   Object.values(ws).forEach(s => { s.dueIn = 0; });
-  _sesOk = {}; _sesDueCount = 0;
+  _sesOk = {}; _sesDueCount = 0; _xpRunCount = 0;
+  // 🙈 „znam to doskonale” — nie pojawia się w żadnym trybie (także w „🌍 Wszystkie”)
+  const _ign = i => !!(ws[i] && ws[i].ignored) || isWordIgnored(currentBookId, (activeWords[i] || [])[0]);
 
   if (forcedPool !== null) {
     // Tryb kartkówki / powtórki — tylko wybrane słówka, ignoruj flagę known
-    pool = [...forcedPool];
+    pool = forcedPool.filter(i => !_ign(i));
     if (reviewSort) {
       // „Ucz się dalej": najpierw NAJTRUDNIEJSZE słowa (ostatni błąd → najwięcej
       // pomyłek → najniższa łatwość ef), potem coraz łatwiejsze.
@@ -7641,6 +7782,7 @@ function startStudy(key, forcedPool = null, reviewSort = false) {
     const due = [], learn = [];
     activeWords.forEach((_, i) => {
       const s = ws[i];
+      if (_ign(i)) return;
       if (seen(s) && s.nextReview && s.nextReview <= now) due.push(i);
       else if (s.known) return;
       else if ((s.ok || 0) >= 1 && s.nextReview > now) return;
@@ -7716,6 +7858,7 @@ function collectHardWords(bookId) {
     Object.entries(saved.wordStates).forEach(([idx, st]) => {
       const i = parseInt(idx);
       if (i >= words.length) return;
+      if (st && st.ignored) return;   // 🙈 „znam to doskonale”
       // Trudne: errCount > 0, lastError=true, lub niska ef (<2.0)
       if (st.errCount > 0 || st.lastError || (st.ef && st.ef < 2.0)) {
         hard.push(words[i]);
@@ -8997,6 +9140,7 @@ function renderCard() {
   _cardShownAt = Date.now(); // do oceny FSRS: szybka trafna odpowiedz = Latwe
   const q = getQ(curIdx), a = getA(curIdx);
   hideAreas();
+  _syncIgnoreBtn();   // „🙈 Ignoruj — znam to doskonale”
   // Pokaż/ukryj przycisk „✏️ Edytuj" na fiszce (tylko admin/nauczyciel)
   if (typeof refreshEditWordBtn === 'function') refreshEditWordBtn();
 
@@ -10826,17 +10970,8 @@ function rate(r, noAdvance, selfRated) {
   // Wirtualny pupil: Wpisz karmi, inne tryby (powtórki) dają energię, opanowane słówko = smakołyk
   try { if (!_lesson && window.sfPet) window.sfPet.onAnswer(mode, r, !_wasKnown && st.known); } catch(e) {}
 
-  const xp = _lesson ? 0 : weekendXP(_xpFor(r)); // XP ważone trybem (mniej za „klikanie", więcej za wpisanie); w weekend ×2
-  if (xp) {
-    addXP(xp);
-    // Dzienny XP
-    const daily = DB.addDailyXP(currentUser, xp);
-    if (daily.prev < DAILY_XP_GOAL && daily.now >= DAILY_XP_GOAL) {
-      checkAndUnlock('daily_goal');
-      toast('🌟 Dzienny cel osiągnięty!', 3000);
-    }
-    updateDailyBar();
-  }
+  const xp = _lesson ? 0 : weekendXP(_xpFor(r, selfRated)); // zasady przy XP_TYPE / XP_FIRST; w weekend ×2
+  _grantXP(xp);
 
   // Komunikat: kiedy słówko wróci (w sesji albo realny interwał FSRS) i postęp „umiem x/3”.
   const iv = st.interval;
@@ -10848,7 +10983,8 @@ function rate(r, noAdvance, selfRated) {
   else if (g === 'again') tail = '🔁 wróci za chwilę';
   else if (umiem) tail = '✓ umiem ' + okN + '/' + MASTER_OK + ' · jeszcze raz za kilka kart';
   else tail = '🔁 wróci za kilka kart';
-  toast(xp > 0 ? ('+' + xp + ' XP' + (isWeekendXP() ? ' (×2 weekend)' : '') + ' · ' + tail) : tail);
+  const _run = (xp > 0 && XP_RUN_MODES.has(mode)) ? '🔥 ' + XP_RUN_N + ' z rzędu! ' : '';
+  toast(xp > 0 ? (_run + '+' + xp + ' XP' + (isWeekendXP() ? ' (×2 weekend)' : '') + ' · ' + tail) : tail);
 
   if (mode === 'card') {
     if (r === 'easy' || r === 'good') { particles(true); bounce('cardScene'); }
@@ -11301,6 +11437,17 @@ function confetti() {
 function addXP(a) { const prev=curLvl; const prevXP=totalXP; totalXP+=a; sessXP+=a; curLvl=Math.floor(totalXP/XP_PER)+1; if(curLvl>prev) lvlUp(curLvl); updXP(); try { _checkXpBadges(prevXP, totalXP); } catch(e){} try { if (a > 0 && DB.gainXP) DB.gainXP(a, totalXP, curLvl); } catch(e){} }
 // XP spoza fiszek (gramatyka, czytanki, rozmowa z AI): weekend ×2 + dzienny cel, zapis jak przy nauce.
 function addBonusXP(a) { const x = weekendXP(a); addXP(x); try { DB.addDailyXP(currentUser, x); updateDailyBar(); } catch(e){} return x; }
+// XP za odpowiedź w trybie nauki (+ dzienny cel). xp już z mnożnikiem weekendowym.
+function _grantXP(xp) {
+  if (!xp) return;
+  addXP(xp);
+  const daily = DB.addDailyXP(currentUser, xp);
+  if (daily && daily.prev < DAILY_XP_GOAL && daily.now >= DAILY_XP_GOAL) {
+    checkAndUnlock('daily_goal');
+    toast('🌟 Dzienny cel osiągnięty!', 3000);
+  }
+  updateDailyBar();
+}
 function lvlUp(l) { const d=[...LVLS].reverse().find(b=>l>=b.l)||LVLS[0]; const e=document.getElementById('lf'); document.getElementById('lfI').textContent=d.i; document.getElementById('lfT').textContent='Poziom '+l+'!'; document.getElementById('lfS').textContent=d.n; e.classList.remove('show'); e.offsetHeight; e.classList.add('show'); }
 function updXP() { const iL=totalXP%XP_PER,p=(iL/XP_PER)*100; document.getElementById('xpF').style.width=p+'%'; document.getElementById('xpC').textContent=iL; document.getElementById('xpNx').textContent='/ '+XP_PER+' XP'; document.getElementById('lvlN').textContent=curLvl; let ic='🌱'; for(const b of LVLS) if(curLvl>=b.l) ic=b.i; document.getElementById('lvlI').textContent=ic; const wk=document.getElementById('wkXpBadge'); if(wk) wk.hidden=!isWeekendXP(); }
 function updateDailyBar() { const d=DB.getDailyXP(currentUser); const p=Math.min(100,Math.round((d/DAILY_XP_GOAL)*100)); document.getElementById('dailyFill').style.width=p+'%'; document.getElementById('dailyVal').textContent=d; }
@@ -11324,6 +11471,7 @@ function updateStats() {
 // ══════════════════════════════════════════════
 function showDone() {
   active = false; hideAreas(); hideDiff(); document.getElementById('btnGen').disabled = true;
+  _syncIgnoreBtn();
   document.getElementById('dXP').textContent = 'Zdobyto: ' + sessXP + ' XP';
   document.getElementById('dBadges').innerHTML = LVLS.filter(b=>curLvl>=b.l).map(b=>'<div class="done-badge">'+b.i+' '+b.n+'</div>').join('');
   // Wszystko opanowane — czy tylko „na dziś wystarczy” (reszta wróci na powtórkę w kolejnych dniach)
@@ -12406,7 +12554,7 @@ function onSpeedStudyAnswer(btn, ok, correct) {
   btn.classList.add('correct');
   if (good) {
     r.className = 'type-result ok';
-    r.innerHTML = '✓ Poprawnie! ⚡ +16 XP';
+    r.innerHTML = '✓ Poprawnie! ⚡ +' + weekendXP(XP_FIRST) + ' XP';
     studySpeedSessionScore++;
     document.getElementById('studySpScore').textContent = studySpeedSessionScore;
     particles(true); streak++;
@@ -13203,7 +13351,7 @@ let cwCurUnit = null;
 
 function openCrossword(unitKey) {
   cwCurUnit = unitKey;
-  const units = getUnitsWithCustom(currentBookId);
+  const units = getUnitsForPlay(currentBookId);
   const u = units[unitKey];
   const book = BOOKS[currentBookId] || {};
   document.getElementById('cwTitle').textContent = u.icon + ' ' + u.name + ' — Krzyżówka';
@@ -13285,7 +13433,7 @@ window.cwSetWordLimit = cwSetWordLimit;
 
 function cwGenerate() {
   if (!cwCurUnit) return;
-  const units = getUnitsWithCustom(currentBookId);
+  const units = getUnitsForPlay(currentBookId);
   const u = units[cwCurUnit];
   // All words eligible — strip spaces/apostrophes/hyphens for grid placement
   const allEligible = u.words
@@ -13770,7 +13918,7 @@ let spellItems = []; // [{pl, en, emoji, imgUrl}]
 
 function openSpellCard(unitKey) {
   spellUnitKey = unitKey;
-  const units = getUnitsWithCustom(currentBookId);
+  const units = getUnitsForPlay(currentBookId);
   const u = units[unitKey];
   document.getElementById('spellTitle').textContent = '✍️ ' + u.name + ' — Pisanie graficzne';
   spellBuildWordPanel(u);
@@ -13806,7 +13954,7 @@ function spellGenerate() {
 
   spellItems = chips.map(c => {
     const pl = c.dataset.pl, en = c.dataset.en;
-    const s = DB.getSentence(currentBookId, pl);
+    const s = sentenceFor(currentBookId, pl);
     const emoji = getWordEmojiRaw(pl);
     const imgUrl = getWordPhotoUrl(pl) || '';
     return {pl, en, emoji, imgUrl};
@@ -13862,7 +14010,7 @@ function spellRender() {
 
 function spellPrint() {
   if (!spellItems.length) { toast('Najpierw wygeneruj!'); return; }
-  const units = getUnitsWithCustom(currentBookId);
+  const units = getUnitsForPlay(currentBookId);
   const u = units[spellUnitKey];
   const book = BOOKS[currentBookId];
 
@@ -13935,7 +14083,7 @@ let sbGenerated = []; // [{sentence, xWord, yWord}]
 
 function openSentBuild(unitKey) {
   sbUnitKey = unitKey;
-  const units = getUnitsWithCustom(currentBookId);
+  const units = getUnitsForPlay(currentBookId);
   const u = units[unitKey];
   document.getElementById('sbTitle').textContent = '✏️ ' + u.name + ' — Budowanie zdań';
   sbBuildWordLists(u);
@@ -14053,7 +14201,7 @@ function sbRenderResults() {
 
 function sbPrint() {
   if (!sbGenerated.length) { toast('Najpierw wygeneruj zdania!'); return; }
-  const units = getUnitsWithCustom(currentBookId);
+  const units = getUnitsForPlay(currentBookId);
   const u = units[sbUnitKey];
   const book = BOOKS[currentBookId];
 
@@ -14093,7 +14241,7 @@ let cubesItems = []; // [{pl, en, emoji, imgUrl}]
 
 function openCubes(unitKey) {
   cubesUnitKey = unitKey;
-  const units = getUnitsWithCustom(currentBookId);
+  const units = getUnitsForPlay(currentBookId);
   const u = units[unitKey];
   document.getElementById('cubesTitle').textContent = '🎲 ' + u.name + ' — Speaking Cubes';
   // Reset stanu edycji — nowy unit startuje z auto-selekcja (tylko pojedyncze)
@@ -14121,7 +14269,7 @@ let cubesSource = 'unit';      // 'unit' | 'book'
 let cubesSelectedKeys = null;  // Set<pl> albo null = uzyj auto (pojedyncze slowa)
 
 function cubesGetWordPool() {
-  const units = getUnitsWithCustom(currentBookId);
+  const units = getUnitsForPlay(currentBookId);
   const book = BOOKS[currentBookId];
   let raw = [];
   if (cubesSource === 'book' && book && book.units) {
@@ -14134,7 +14282,7 @@ function cubesGetWordPool() {
     if (u && u.words) raw = [...u.words];
   }
   return raw.map(([pl, en]) => {
-    const s = DB.getSentence(currentBookId, pl);
+    const s = sentenceFor(currentBookId, pl);
     const emoji = getWordEmojiRaw(pl);
     const imgUrl = getWordPhotoUrl(pl) || '';
     const isSingle = !/\s/.test(en.trim()) && !/\s/.test(pl.trim());
@@ -14275,7 +14423,7 @@ function cubesRender() {
 
 function cubesPrint() {
   if (!cubesItems.length) { toast('Najpierw wygeneruj!'); return; }
-  const units = getUnitsWithCustom(currentBookId);
+  const units = getUnitsForPlay(currentBookId);
   const u = units[cubesUnitKey];
   const book = BOOKS[currentBookId];
 
@@ -14329,7 +14477,7 @@ function buildTypeSentMode() {
   if (curIdx === null) return;
   const wordPl = activeWords[curIdx][0];
   const wordEn = activeWords[curIdx][1];
-  const s = DB.getSentence(currentBookId, wordPl);
+  const s = sentenceFor(currentBookId, wordPl);
 
   document.getElementById('tsRes').className = 'type-result';
   document.getElementById('tsRes').innerHTML = '';
@@ -14386,7 +14534,7 @@ function buildDictSentMode() {
   if (curIdx === null) return;
   const wordPl = activeWords[curIdx][0];
   const wordEn = activeWords[curIdx][1];
-  const s = DB.getSentence(currentBookId, wordPl);
+  const s = sentenceFor(currentBookId, wordPl);
 
   document.getElementById('dsRes').className = 'type-result';
   document.getElementById('dsRes').innerHTML = '';
@@ -14442,7 +14590,7 @@ function buildSpeakSentMode() {
   if (curIdx === null) return;
   const wordPl = activeWords[curIdx][0];
   const wordEn = activeWords[curIdx][1];
-  const s = DB.getSentence(currentBookId, wordPl);
+  const s = sentenceFor(currentBookId, wordPl);
 
   document.getElementById('ssRes').className = 'type-result';
   document.getElementById('ssRes').innerHTML = '';
@@ -14568,7 +14716,7 @@ function toggleSentences() {
       if (!plCell) return;
       // Czyste PL z atrybutu data-pl (textContent zawiera emoji prefix → klucz w DB by sie nie zgadzal)
       const pl = plCell.dataset.pl || plCell.textContent.trim();
-      const s = DB.getSentence(currentBookId, pl);
+      const s = sentenceFor(currentBookId, pl);
       if (!s || (!s.sentence_pl && !s.sentence_target)) return;
 
       const sentRow = document.createElement('tr');
@@ -15491,7 +15639,7 @@ function duelSetupRenderWordList() {
   const box = document.getElementById('duelSetupSelectedBox');
   const book = BOOKS[currentBookId];
   if (!book || !book.units) { box.innerHTML = '<div style="font-size:.72rem;color:var(--muted)">Brak słów.</div>'; return; }
-  const units = getUnitsWithCustom(currentBookId);
+  const units = getUnitsForPlay(currentBookId);
   let html = '';
   let wordIdCounter = 0;
   Object.keys(units).forEach(uk => {
@@ -15528,7 +15676,7 @@ window.startDuelFromSetup = function() {
 
   // Zbierz słowa
   let words = [];
-  const units = getUnitsWithCustom(currentBookId);
+  const units = getUnitsForPlay(currentBookId);
   if (_duelSetup.src === 'unit') {
     const u = units[currentUnitKey] || Object.values(units)[0];
     if (!u || !u.words || !u.words.length) { msgEl.textContent = 'Aktualny unit jest pusty.'; return; }
@@ -15662,7 +15810,7 @@ window.donSendInvite = async function() {
   const msg = document.getElementById('donMsg');
   msg.textContent = '';
   if (!_donCfg.guestId) { msg.textContent = 'Wybierz osobę, którą chcesz zaprosić.'; return; }
-  const units = getUnitsWithCustom(currentBookId);
+  const units = getUnitsForPlay(currentBookId);
   let words = [], unitKey = null, title = '';
   const book = BOOKS[currentBookId] || {};
   if (_donCfg.src === 'unit' && currentUnitKey && currentUnitKey !== 'all' && units[currentUnitKey]) {
@@ -17486,7 +17634,7 @@ let sgAnswer = '', sgUserLetters = [];
 
 function openScrGame(unitKey) {
   sgUnitKey = unitKey;
-  const units = getUnitsWithCustom(currentBookId);
+  const units = getUnitsForPlay(currentBookId);
   const u = units[unitKey];
   document.getElementById('scrGameTitle').textContent = '🔀 ' + u.name + ' — Rozsypanka literowa';
   sgWords = shuffle([...u.words]);
@@ -17628,7 +17776,7 @@ function scrGameNext() { sgIdx++; sgRenderWord(); }
 
 function scrGamePrint() {
   if (!sgUnitKey) return;
-  const units = getUnitsWithCustom(currentBookId);
+  const units = getUnitsForPlay(currentBookId);
   const u = units[sgUnitKey];
   const book = BOOKS[currentBookId];
   const words = u.words.slice(0, 25);
@@ -17654,12 +17802,12 @@ let ssgAnswer = [], ssgUserWords = [];
 
 function openSentScrGame(unitKey) {
   ssgUnitKey = unitKey;
-  const units = getUnitsWithCustom(currentBookId);
+  const units = getUnitsForPlay(currentBookId);
   const u = units[unitKey];
   document.getElementById('sentScrGameTitle').textContent = '📜 ' + u.name + ' — Rozsypanka zdaniowa';
 
   ssgPairs = shuffle(u.words.map(([pl, en]) => {
-    const s = DB.getSentence(currentBookId, pl);
+    const s = sentenceFor(currentBookId, pl);
     return {pl, en, sent_pl: s?.sentence_pl || '', sent_en: s?.sentence_target || ''};
   }).filter(p => p.sent_en));
 
@@ -17780,11 +17928,11 @@ function sentScrGameNext() { ssgIdx++; ssgRenderSentence(); }
 
 function sentScrGamePrint() {
   if (!ssgUnitKey) return;
-  const units = getUnitsWithCustom(currentBookId);
+  const units = getUnitsForPlay(currentBookId);
   const u = units[ssgUnitKey];
   const book = BOOKS[currentBookId];
   const pairs = u.words.map(([pl, en]) => {
-    const s = DB.getSentence(currentBookId, pl);
+    const s = sentenceFor(currentBookId, pl);
     return {pl, en, sent_pl: s?.sentence_pl || '', sent_en: s?.sentence_target || ''};
   }).filter(p => p.sent_en).slice(0, 20);
   if (!pairs.length) { toast('Brak zdań!'); return; }
@@ -17822,7 +17970,7 @@ const BOARD_SPECIALS = [
 
 function openBoardGame(unitKey) {
   boardUnitKey = unitKey;
-  const units = getUnitsWithCustom(currentBookId);
+  const units = getUnitsForPlay(currentBookId);
   const u = units[unitKey];
   document.getElementById('boardTitle').textContent = '🎲 ' + u.name + ' — Gra planszowa';
   boardBuildWordPanel(u);
@@ -17864,7 +18012,7 @@ function boardGenerate() {
   const chips = [...document.querySelectorAll('#boardWordChips .cw-word-chip.selected')];
   let words = chips.map(c => [c.dataset.pl, c.dataset.en]);
   if (words.length < 4) {
-    const units = getUnitsWithCustom(currentBookId);
+    const units = getUnitsForPlay(currentBookId);
     words = [...units[boardUnitKey].words];
   }
   words = shuffle(words);
@@ -17882,7 +18030,7 @@ function boardGenerate() {
       boardCells.push({type: 'special', special: sp});
     } else if (wordIdx < totalWords) {
       const [pl, en] = words[wordIdx];
-      const s = DB.getSentence(currentBookId, pl);
+      const s = sentenceFor(currentBookId, pl);
       const emoji = getWordEmojiRaw(pl);
       const imgUrl = getWordPhotoUrl(pl) || '';
       boardCells.push({type: 'word', pl, en, emoji, imgUrl});
@@ -18016,7 +18164,7 @@ function boardRender() {
 function boardPrint() {
   if (!boardCells.length) { toast('Najpierw wygeneruj planszę!'); return; }
   const boardHtml = document.getElementById('boardWrap').innerHTML;
-  const units = getUnitsWithCustom(currentBookId);
+  const units = getUnitsForPlay(currentBookId);
   const u = units[boardUnitKey];
   const book = BOOKS[currentBookId];
   const cols = BOARD_COLS;
@@ -18061,7 +18209,7 @@ async function boardDownloadJPEG() {
     btns.forEach(b => b.style.display = '');
 
     const link = document.createElement('a');
-    const units = getUnitsWithCustom(currentBookId);
+    const units = getUnitsForPlay(currentBookId);
     link.download = (units[boardUnitKey]?.name || 'board').replace(/\s+/g,'_') + '_boardgame.jpg';
     link.href = canvas.toDataURL('image/jpeg', 0.95);
     link.click();
@@ -18086,7 +18234,7 @@ async function boardDownloadPDF() {
     else { imgH = usableH; imgW = usableH*ratio; }
     const pdf = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
     pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', (a4w-imgW)/2, (a4h-imgH)/2, imgW, imgH);
-    const units = getUnitsWithCustom(currentBookId);
+    const units = getUnitsForPlay(currentBookId);
     pdf.save((units[boardUnitKey]?.name || 'board').replace(/\s+/g,'_') + '_boardgame.pdf');
   } catch(e) { toast('Błąd PDF: ' + e.message); }
   finally { if (btn) { btn.disabled = false; btn.textContent = '📄 PDF'; } }
@@ -18103,7 +18251,7 @@ let dobbleSymbols = []; // [{pl, en, emoji, imgUrl}]
 
 function openDobble(unitKey) {
   dobbleUnitKey = unitKey;
-  const units = getUnitsWithCustom(currentBookId);
+  const units = getUnitsForPlay(currentBookId);
   const u = units[unitKey];
   document.getElementById('dobbleTitle').textContent = '🎯 ' + u.name + ' — Karty do gry';
   dobbleBuildWordPanel(u);
@@ -18174,7 +18322,7 @@ function dobbleGenerate() {
   const chips = [...document.querySelectorAll('#dobbleWordChips .cw-word-chip.selected')];
   let words = chips.map(c => ({ pl: c.dataset.pl, en: c.dataset.en }));
   if (words.length < 7) {
-    const units = getUnitsWithCustom(currentBookId);
+    const units = getUnitsForPlay(currentBookId);
     words = units[dobbleUnitKey].words.map(([pl, en]) => ({pl, en}));
   }
   if (words.length < 7) { toast('Potrzeba minimum 7 słów!'); return; }
@@ -18192,7 +18340,7 @@ function dobbleGenerate() {
   while (selected.length < totalSymbols) selected.push(selected[selected.length % words.length]);
 
   dobbleSymbols = selected.map(w => {
-    const s = DB.getSentence(currentBookId, w.pl);
+    const s = sentenceFor(currentBookId, w.pl);
     const emoji = getWordEmojiRaw(w.pl);
     return { pl: w.pl, en: w.en, emoji, imgUrl: getWordPhotoUrl(w.pl) || '' };
   });
@@ -18285,7 +18433,7 @@ function generateSymbolPositions(n) {
 
 function dobblePrint() {
   if (!dobbleCards.length) { toast('Najpierw wygeneruj karty!'); return; }
-  const units = getUnitsWithCustom(currentBookId);
+  const units = getUnitsForPlay(currentBookId);
   const u = units[dobbleUnitKey];
   const book = BOOKS[currentBookId];
   const symbolsPerCard = dobbleCards[0].length;
@@ -18392,7 +18540,7 @@ function hangSVG(errors) {
 
 function openHangman(unitKey) {
   hangUnitKey = unitKey;
-  const units = getUnitsWithCustom(currentBookId);
+  const units = getUnitsForPlay(currentBookId);
   const u = units[unitKey];
   const book = BOOKS[currentBookId] || {};
   document.getElementById('hangTitle').textContent = '🚀 ' + u.name + ' — Wisielec';
@@ -18534,7 +18682,7 @@ function hangNext() {
 
 function hangPrint() {
   if (!hangUnitKey) return;
-  const units = getUnitsWithCustom(currentBookId);
+  const units = getUnitsForPlay(currentBookId);
   const u = units[hangUnitKey];
   const book = BOOKS[currentBookId];
 
@@ -18583,7 +18731,7 @@ let icActiveCard = null; // index of clicked card
 
 function openImageCard(unitKey) {
   icUnitKey = unitKey;
-  const units = getUnitsWithCustom(currentBookId);
+  const units = getUnitsForPlay(currentBookId);
   const u = units[unitKey];
   document.getElementById('icTitle').textContent = '🖼️ ' + u.name + ' — Karta obrazkowa';
   showScreen('sImageCard');
@@ -18592,12 +18740,12 @@ function openImageCard(unitKey) {
 
 function icNewGame() {
   if (!icUnitKey) return;
-  const units = getUnitsWithCustom(currentBookId);
+  const units = getUnitsForPlay(currentBookId);
   const u = units[icUnitKey];
 
   // Zbierz słowa z obrazkami lub emoji
   const all = u.words.map(([pl, en]) => {
-    const s = DB.getSentence(currentBookId, pl);
+    const s = sentenceFor(currentBookId, pl);
     const imgUrl = getWordPhotoUrl(pl) || '';
     const emoji = getWordEmojiRaw(pl);
     return {pl, en, imgUrl, emoji, matched: false};
@@ -18706,13 +18854,13 @@ function icWordClick(wordIdx, btn) {
 
 function icPrint() {
   if (!icUnitKey) return;
-  const units = getUnitsWithCustom(currentBookId);
+  const units = getUnitsForPlay(currentBookId);
   const u = units[icUnitKey];
   const book = BOOKS[currentBookId];
 
   // Zbierz słowa z obrazkami/emoji
   const pairs = u.words.map(([pl, en]) => {
-    const s = DB.getSentence(currentBookId, pl);
+    const s = sentenceFor(currentBookId, pl);
     const imgUrl = getWordPhotoUrl(pl) || '';
     const emoji = getWordEmojiRaw(pl);
     return {pl, en, imgUrl, emoji};
@@ -18769,7 +18917,7 @@ let snakePairs = []; // [{pl, en}] — wybrane pary
 
 function openSnake(unitKey) {
   snakeUnitKey = unitKey;
-  const units = getUnitsWithCustom(currentBookId);
+  const units = getUnitsForPlay(currentBookId);
   const u = units[unitKey];
   document.getElementById('snakeTitle').textContent = '🐍 ' + u.name + ' — Wąż wyrazowy';
   snakeBuildWordPanel(u);
@@ -18845,7 +18993,7 @@ function snakeNewGame() {
     plUp: c.dataset.pl, enUp: c.dataset.en
   }));
   if (pairs.length < 2) {
-    const units = getUnitsWithCustom(currentBookId);
+    const units = getUnitsForPlay(currentBookId);
     const u = units[snakeUnitKey];
     pairs = u.words.map(([pl, en]) => ({
       pl, en,
@@ -18982,7 +19130,7 @@ function snakeBuildSVG(chain, idx, maxChainLen) {
 }
 
 function snakePrint() {
-  const units = getUnitsWithCustom(currentBookId);
+  const units = getUnitsForPlay(currentBookId);
   const u = units[snakeUnitKey];
   const book = BOOKS[currentBookId];
   const isEnSnake = snakeDir === 'en';
@@ -19046,7 +19194,7 @@ async function snakeDownloadPDF() {
     else { imgH = usableH; imgW = usableH*ratio; }
     const pdf = new jsPDF({orientation:'portrait', unit:'mm', format:'a4'});
     pdf.addImage(canvas.toDataURL('image/jpeg',0.95), 'JPEG', (a4w-imgW)/2, margin, imgW, imgH);
-    const units = getUnitsWithCustom(currentBookId);
+    const units = getUnitsForPlay(currentBookId);
     pdf.save((units[snakeUnitKey]?.name || 'waz').replace(/\s+/g,'_') + '_waz.pdf');
   } catch(e) { toast('Błąd PDF: ' + e.message); }
   finally { btn.disabled = false; btn.textContent = '📄 PDF'; }
@@ -19065,7 +19213,7 @@ async function snakeDownloadJPEG() {
     hide.forEach(el => { if (el) el.style.display = ''; });
 
     const link = document.createElement('a');
-    const units = getUnitsWithCustom(currentBookId);
+    const units = getUnitsForPlay(currentBookId);
     link.download = (units[snakeUnitKey]?.name || 'waz').replace(/\s+/g,'_') + '_waz.jpg';
     link.href = canvas.toDataURL('image/jpeg', 0.95);
     link.click();
@@ -19274,7 +19422,7 @@ let memCards = [], memRevealed = [], memMatched = 0, memTotalPairs = 0, memMoves
 
 function openMemory(unitKey) {
   memUnitKey = unitKey;
-  const units = getUnitsWithCustom(currentBookId);
+  const units = getUnitsForPlay(currentBookId);
   const u = units[unitKey];
   const book = BOOKS[currentBookId] || {};
   document.getElementById('memTitle').textContent = '🧠 ' + u.name + ' — Memory';
@@ -19284,7 +19432,7 @@ function openMemory(unitKey) {
 
 function memNewGame() {
   if (!memUnitKey) return;
-  const units = getUnitsWithCustom(currentBookId);
+  const units = getUnitsForPlay(currentBookId);
   const u = units[memUnitKey];
   // Wybierz 8 losowych par (= 16 kart) lub mniej jeśli unit ma mało słów
   const maxPairs = Math.min(8, u.words.length);
@@ -19515,7 +19663,7 @@ function buildGapMode() {
   if (curIdx === null) return;
   const wordPl = activeWords[curIdx][0];
   const wordTarget = activeWords[curIdx][1];
-  const s = DB.getSentence(currentBookId, wordPl);
+  const s = sentenceFor(currentBookId, wordPl);
 
   const sentenceEl = document.getElementById('gapSentence');
   const hintEl = document.getElementById('gapHint');
@@ -19749,7 +19897,7 @@ function buildSentScramble() {
   if (curIdx === null) return;
   const wordPl = activeWords[curIdx][0];
   const wordEn = activeWords[curIdx][1];
-  const s = DB.getSentence(currentBookId, wordPl);
+  const s = sentenceFor(currentBookId, wordPl);
 
   const sentScrEl = document.getElementById('sentScrArea');
   document.getElementById('sentScrRes').className = 'type-result';
@@ -19844,7 +19992,7 @@ function checkSentScr() {
 
 // ─── Druk: Rozsypanka literowa ────────────────
 function printScrambleSheet() {
-  const units = getUnitsWithCustom(currentBookId);
+  const units = getUnitsForPlay(currentBookId);
   const u = units[currentUnitKey];
   const book = BOOKS[currentBookId];
   const words = u.words.slice(0, 25);
@@ -19879,13 +20027,13 @@ function printScrambleSheet() {
 
 // ─── Druk: Rozsypanka zdaniowa ───────────────
 function printSentScrSheet() {
-  const units = getUnitsWithCustom(currentBookId);
+  const units = getUnitsForPlay(currentBookId);
   const u = units[currentUnitKey];
   const book = BOOKS[currentBookId];
 
   // Zbierz słowa z zdaniami
   const pairs = u.words.map(([pl, en]) => {
-    const s = DB.getSentence(currentBookId, pl);
+    const s = sentenceFor(currentBookId, pl);
     return {pl, en, sentence_pl: s?.sentence_pl || '', sentence_target: s?.sentence_target || ''};
   }).filter(p => p.sentence_target);
 
@@ -20005,6 +20153,9 @@ function matchClick(d) {
         x.classList.add('matched');
       });
       inlineMatchDone++;
+      // XP: +5 za każde 5 par z rzędu bez pomyłki (w weekend ×2)
+      const _runXp = _bookIgnored() ? 0 : weekendXP(_xpRunStep(true));
+      if (_runXp) { _grantXP(_runXp); toast('🔥 ' + XP_RUN_N + ' par z rzędu! +' + _runXp + ' XP' + (isWeekendXP() ? ' (×2 weekend)' : ''), 2200); }
       playOk();
       particles(true);
       spkForeign(inlineMatchAct.fr.textContent);
@@ -20019,6 +20170,7 @@ function matchClick(d) {
       }
     } else {
       // Wrong match
+      _xpRunStep(false);   // pomyłka zeruje serię do +5 XP
       [inlineMatchAct.pl, inlineMatchAct.fr].forEach(x => x.classList.add('wrong-flash'));
       playBad();
       setOwl('sad');
@@ -20064,7 +20216,7 @@ async function cwDownloadPDF() {
     else { imgH = usableH; imgW = usableH*ratio; }
     const pdf = new jsPDF({orientation:'portrait', unit:'mm', format:'a4'});
     pdf.addImage(canvas.toDataURL('image/jpeg',0.95), 'JPEG', (a4w-imgW)/2, margin, imgW, imgH);
-    const units = getUnitsWithCustom(currentBookId);
+    const units = getUnitsForPlay(currentBookId);
     const title = (units[cwCurUnit]?.name || 'krzyzowka').replace(/\s+/g,'_');
     pdf.save(title + '_krzyzowka.pdf');
   } catch(e) { toast('Błąd PDF: ' + e.message); }
@@ -20092,7 +20244,7 @@ async function cwDownloadJPEG() {
     document.querySelectorAll('.cw-inp').forEach(inp => { inp.value = inp.dataset.prevVal || ''; if (inp.value) inp.classList.add(inp.value === inp.dataset.ans ? 'cw-ok' : 'cw-err'); });
 
     const link = document.createElement('a');
-    const units = getUnitsWithCustom(currentBookId);
+    const units = getUnitsForPlay(currentBookId);
     link.download = (units[cwCurUnit]?.name || 'krzyzowka').replace(/\s+/g,'_') + '_krzyzowka.jpg';
     link.href = canvas.toDataURL('image/jpeg', 0.95);
     link.click();
@@ -20111,7 +20263,7 @@ let wsFirstCell = null; // for interactive 2-click selection
 
 function openWordsearch(unitKey) {
   wsCurUnit = unitKey;
-  const units = getUnitsWithCustom(currentBookId);
+  const units = getUnitsForPlay(currentBookId);
   const u = units[unitKey];
   const book = BOOKS[currentBookId] || {};
   document.getElementById('wsTitle').textContent = u.icon + ' ' + u.name + ' — Wordsearch';
@@ -20214,7 +20366,7 @@ window.wsSetWordLimit = wsSetWordLimit;
 // ─── Main generate ────────────────────────────
 function wsGenerate() {
   if (!wsCurUnit) return;
-  const units = getUnitsWithCustom(currentBookId);
+  const units = getUnitsForPlay(currentBookId);
   const u = units[wsCurUnit];
 
   const allEligible = u.words
@@ -20513,7 +20665,7 @@ async function wsDownloadPDF() {
     else { imgH = usableH; imgW = usableH*ratio; }
     const pdf = new jsPDF({orientation:'portrait', unit:'mm', format:'a4'});
     pdf.addImage(canvas.toDataURL('image/jpeg',0.95), 'JPEG', (a4w-imgW)/2, margin, imgW, imgH);
-    const units = getUnitsWithCustom(currentBookId);
+    const units = getUnitsForPlay(currentBookId);
     const title = (units[wsCurUnit]?.name || 'wordsearch').replace(/\s+/g,'_');
     pdf.save(title + '_wordsearch.pdf');
   } catch(e) { toast('Błąd PDF: ' + e.message); }
@@ -20543,7 +20695,7 @@ async function wsDownloadJPEG() {
     document.querySelectorAll('.ws-word-item[data-was-f="1"]').forEach(el => { el.classList.add('ws-found-item'); delete el.dataset.wasF; });
 
     const link = document.createElement('a');
-    const units = getUnitsWithCustom(currentBookId);
+    const units = getUnitsForPlay(currentBookId);
     link.download = (units[wsCurUnit]?.name || 'wordsearch').replace(/\s+/g,'_') + '_wordsearch.jpg';
     link.href = canvas.toDataURL('image/jpeg', 0.95);
     link.click();
@@ -29958,7 +30110,7 @@ function buildAlphaKeys(inputId, answer) {
       let sentPl = '', sentEn = '';
       if (typeof wordSentences === 'function'){ const inl = wordSentences(w, book.id); sentPl = inl.sentPl || ''; sentEn = inl.sentEn || ''; }
       if (!sentEn && typeof DB !== 'undefined' && DB.getSentence){
-        const s = DB.getSentence(book.id, pl);
+        const s = sentenceFor(book.id, pl);
         if (s){ sentPl = sentPl || (s.sentence_pl || ''); sentEn = s.sentence_target || ''; }
       }
       if (!sentEn) return;
@@ -30485,7 +30637,7 @@ function buildAlphaKeys(inputId, answer) {
       const inline=wordSentences(w, bookId);
       let sentEn=inline.sentEn, sentPl=inline.sentPl;
       if(!sentEn && typeof DB!=='undefined' && DB.getSentence){
-        try{ const s=DB.getSentence(bookId, pl)||{}; sentEn=s.sentence_target||''; sentPl=sentPl||s.sentence_pl||''; }catch(e){}
+        try{ const s=sentenceFor(bookId, pl)||{}; sentEn=s.sentence_target||''; sentPl=sentPl||s.sentence_pl||''; }catch(e){}
       }
       if(!sentEn) return;
       items.push({pl,en,sentEn,sentPl});

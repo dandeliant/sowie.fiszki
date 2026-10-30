@@ -309,6 +309,8 @@ const DB = (() => {
   function getUser(username) {
     return _profile || emptyProfile(username);
   }
+  // Czy profil i postępy (unit_progress) są już wczytane z bazy
+  function isProfileLoaded() { return !!_profile; }
 
   function getAccounts() {
     // Kompatybilność — nie używane przy Supabase; zwraca pusty obiekt
@@ -469,7 +471,7 @@ const DB = (() => {
     const now = Date.now();
     const due = [];
     Object.entries(prog.wordStates).forEach(([idxStr, s]) => {
-      if (!s || typeof s !== 'object') return;
+      if (!s || typeof s !== 'object' || s.ignored) return;   // 🙈 „znam to doskonale”
       if ((s.reps || 0) < 1) return; // pomijamy nowe i pomylone
       if (s.nextReview && s.nextReview <= now) {
         due.push({ idx: parseInt(idxStr, 10), nextReview: s.nextReview });
@@ -495,7 +497,7 @@ const DB = (() => {
       // mialy wlasciwego nextReview (lub byly pomylone i lecza sie od zera).
       let count = 0;
       Object.values(ws).forEach(s => {
-        if (!s || typeof s !== 'object') return;
+        if (!s || typeof s !== 'object' || s.ignored) return;   // 🙈 „znam to doskonale”
         if ((s.reps || 0) < 1) return; // pomijamy nowe i pomylone
         if (s.nextReview && s.nextReview <= now) {
           count++;
@@ -5331,6 +5333,7 @@ const DB = (() => {
     getWordHint,
     saveWordHint,
     getOriginalPl,
+    isProfileLoaded,
     getBookPrefs,
     isBookIgnored,
     isBookLearning,
