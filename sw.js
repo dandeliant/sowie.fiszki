@@ -5,7 +5,7 @@
 //  cache-first dla fontow i CDN. Nowy SW czeka na zgode klienta
 //  (postMessage SKIP_WAITING) — pokaz banera "Nowa wersja dostepna".
 // ═══════════════════════════════════════════════════════
-const CACHE_NAME = 'sowie-fiszki-v1.210';
+const CACHE_NAME = 'sowie-fiszki-v1.211';
 
 const PRECACHE_ASSETS = [
   './',
@@ -61,6 +61,7 @@ const PRECACHE_ASSETS = [
   './consent.js',
   './game-stats.js',
   './presence.js',
+  './sw-update.js',
   './ai-chat.js',
   './manifest.json',
   './icon.svg',
@@ -98,6 +99,10 @@ self.addEventListener('activate', event => {
 self.addEventListener('message', event => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
+  }
+  // sw-update.js pyta o wersję (wybór wpisów „Co nowego” z whats-new.json)
+  if (event.data && event.data.type === 'GET_VERSION' && event.ports && event.ports[0]) {
+    event.ports[0].postMessage(CACHE_NAME);
   }
 });
 

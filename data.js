@@ -26404,6 +26404,29 @@ const BOOKS = {
     },
   }
 
+  // ─── DESTINATION C1&C2 GRAMMAR AND VOCABULARY (Macmillan Education) ───
+  ,destinationC1C2: {
+    id: 'destinationC1C2',
+    language: 'en', schoolType: 'secondary',
+    name: 'Destination C1&C2 Grammar and Vocabulary',
+    shortName: 'Destination C1&C2',
+    icon: '🎯',
+    color: '#c0392b',
+    description: 'Poziom C1/C2 · Szkoła ponadpodstawowa · Macmillan Education',
+    units: {
+      unit1: {
+        name: 'Unit 1', icon: '⏳', color: '#c0392b',
+        words: [
+          ['w dzisiejszych czasach, obecnie, dzisiaj (t... d...)', 'these days', 'W dzisiejszych czasach dzieci dorastają tak szybko.', 'These days kids grow up so quickly.'],
+          ['w dzisiejszych czasach, obecnie, dzisiaj (n...)', 'nowadays', 'W dzisiejszych czasach wszystko jest takie powolne.', "Everything's so slow nowadays."],
+          ['we współczesnym świecie', 'in the modern world'],
+          ['w dzisiejszych czasach, w obecnych czasach', 'in this day and age'],
+          ['czasami, od czasu do czasu', 'every now and then'],
+        ]
+      },
+    },
+  }
+
 };
 // ─── HELPERS ────────────────────────────────────────────────
 
