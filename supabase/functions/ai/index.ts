@@ -57,6 +57,17 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
 const fail = (code: string, message: string, status = 400) => json({ error: code, message }, status);
 const str = (v: unknown, max = 300) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
+// Uwagi nauczyciela dla AI — dłuższe polecenia, z zachowaniem podziału na linie.
+const NOTES_MAX = 2000;
+const notesOf = (v: unknown) => String(v ?? '').replace(/\r/g, '').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim().slice(0, NOTES_MAX);
+const notesPart = (notes: string) => notes
+  ? `\nTeacher's instructions (follow them carefully; they override the default style above, but keep the JSON format and the content rules):\n${notes}\n`
+  : '';
+// Poziom B2 i wyżej (szkoła średnia, C1/C2) — bez upraszczania jak dla młodszych dzieci.
+const advanced = (level: string) => /^(B2|C1|C2)/.test(level);
+const advancedPart = (level: string) => advanced(level)
+  ? ` The students are advanced secondary-school learners: use natural, varied sentences with vocabulary and structures typical of ${level} (exam level), not simplified language for young children.`
+  : '';
 
 // Zużycie tokenów jednego wywołania (zapisywane w ai_usage — migracja #79, panel kosztów AI).
 type Usage = { in: number; out: number };
@@ -106,7 +117,7 @@ async function doSentences(b: any, acc: Usage) {
   if (!words.length) throw new Error('Brak słówek.');
   const level = str(b.level, 40) || 'A1–A2';
   const out = await chatJSON(acc, RULES,
-    `For each word write ONE short, natural example sentence in ${lang} (level ${level}, 4–10 words) that uses the word exactly as given, ` +
+    `For each word write ONE ${advanced(level) ? '' : 'short, '}natural example sentence in ${lang} (level ${level}, ${advanced(level) ? '6–16' : '4–10'} words) that uses the word exactly as given, ` +
     `and its Polish translation that uses the Polish word. Return {"items":[{"pl":"<polish word as given>","sentPl":"…","sentT":"…"}]} in the same order.\n` +
     `Words (Polish → ${lang}):\n` + words.map((w: any) => `${w.pl} → ${w.t}`).join('\n'));
   const items = (Array.isArray(out.items) ? out.items : []).map((x: any) => ({ pl: str(x.pl, 80), sentPl: str(x.sentPl, 200), sentT: str(x.sentT, 200) }))
@@ -121,13 +132,13 @@ async function doWordlist(b: any, acc: Usage) {
   const count = Math.max(5, Math.min(40, Number(b.count) || 20));
   const level = str(b.level, 20) || 'A1';
   const grade = str(b.grade, 40);
-  const notes = str(b.notes, 300);
+  const notes = notesOf(b.notes);
   const out = await chatJSON(acc, RULES,
     `Create a vocabulary list of exactly ${count} useful words/phrases on the topic "${topic}" for Polish students` +
-    (grade ? ` (${grade})` : '') + `, CEFR level ${level}, target language ${lang}.` + (notes ? ` Teacher's notes: ${notes}.` : '') +
+    (grade ? ` (${grade})` : '') + `, CEFR level ${level}, target language ${lang}.` + advancedPart(level) +
     ` Use the base/dictionary form, nouns without articles unless natural. Avoid duplicates. For each: Polish meaning, ${lang} word, ` +
-    `one fitting emoji (or empty string), a short example sentence in ${lang} (4–10 words) and its Polish translation. ` +
-    `Return {"words":[{"pl":"…","t":"…","emoji":"…","sentT":"…","sentPl":"…"}]}`);
+    `one fitting emoji (or empty string), a short example sentence in ${lang} (${advanced(level) ? '6–16' : '4–10'} words) and its Polish translation. ` +
+    `Return {"words":[{"pl":"…","t":"…","emoji":"…","sentT":"…","sentPl":"…"}]}` + notesPart(notes));
   const seen = new Set<string>();
   const words = (Array.isArray(out.words) ? out.words : []).map((x: any) => ({
     pl: str(x.pl, 80), t: str(x.t, 80), emoji: str(x.emoji, 8), sentT: str(x.sentT, 200), sentPl: str(x.sentPl, 200),
@@ -143,19 +154,20 @@ async function doGrammar(b: any, acc: Usage) {
   const types: string[] = (Array.isArray(b.types) ? b.types : ['abc', 'gap']).filter((t: string) => t === 'abc' || t === 'gap');
   if (!types.length) types.push('abc');
   const level = str(b.level, 40) || 'A1–A2';
-  const notes = str(b.notes, 300);
+  const notes = notesOf(b.notes);
   const words = (Array.isArray(b.words) ? b.words : []).slice(0, 90)
     .map((w: any) => `${str(w.t, 60)} (${str(w.pl, 60)})`).filter((s: string) => s.length > 3);
   const out = await chatJSON(acc, RULES,
     `Create exactly ${count} grammar exercises on "${topic}" in ${lang} for Polish students, level ${level}.` +
-    (notes ? ` Teacher's notes: ${notes}.` : '') +
+    advancedPart(level) + (advanced(level) ? ' Make the wrong options plausible (typical mistakes at this level).' : '') +
     ` Use mainly this vocabulary from the textbook units (target word (Polish)): ${words.join(', ') || '(any simple everyday words)'}.` +
     ` Exercise types to use: ${types.map(t => t === 'abc' ? '"abc" = multiple choice with exactly 3 options A/B/C, one correct' : '"gap" = gap fill: sentence with ___ and the base form of the verb (or a hint) in brackets, e.g. "She ___ (play) tennis."').join('; ')}.` +
     ` Mix the types evenly. Every sentence must contain exactly one ___ gap. Exactly one answer must be correct; for "gap" list all acceptable answers (e.g. contracted and full forms).` +
     ` For each exercise add a short explanation in Polish (1 sentence) why the answer is correct.` +
-    ` Return {"items":[{"type":"abc","q":"…___…","o":["…","…","…"],"a":0,"e":"…"},{"type":"gap","q":"…___… (verb)","a":["…"],"e":"…"}]}`, 6000);
+    ` Return {"items":[{"type":"abc","q":"…___…","o":["…","…","…"],"a":0,"e":"…"},{"type":"gap","q":"…___… (verb)","a":["…"],"e":"…"}]}` +
+    notesPart(notes), 6000);
   const items = (Array.isArray(out.items) ? out.items : []).map((x: any) => {
-    const q = str(x.q, 240), e = str(x.e, 300);
+    const q = str(x.q, 320), e = str(x.e, 300);
     if (!q.includes('___')) return null;
     if (x.type === 'abc') {
       const o = (Array.isArray(x.o) ? x.o : []).map((s: unknown) => str(s, 80)).filter(Boolean).slice(0, 3);
@@ -184,11 +196,14 @@ async function doStory(b: any, acc: Usage) {
     .map((w: any) => `${str(w.t, 60)} (${str(w.pl, 60)})`).filter((s: string) => s.length > 3);
   if (words.length < 3) throw new Error('Za mało słówek w rozdziale.');
   const out = await chatJSON(acc, RULES,
-    `Write a short, engaging story in ${lang} for Polish children, CEFR level ${level}, length ${len} words.` +
+    `Write a short, engaging story in ${lang} for Polish ${advanced(level) ? 'secondary-school students' : 'children'}, CEFR level ${level}, length ${len} words.` +
     (topic ? ` Topic: ${topic}.` : ' Choose a fun everyday topic that fits the words.') +
     (grammar ? ` Use mainly this grammar: ${grammar}.` : '') +
     ` Use as many of these words as naturally possible (at least 8 of them, in the given form or a correct grammatical form): ${words.join(', ')}.` +
-    ` Use short, clear sentences and only simple vocabulary besides the given words. Give it a short title in ${lang}.` +
+    (advanced(level)
+      ? ` Use natural, varied sentences and vocabulary typical of level ${level}.`
+      : ' Use short, clear sentences and only simple vocabulary besides the given words.') +
+    ` Give it a short title in ${lang}.` +
     ` Then write exactly ${n} reading comprehension questions in ${lang} about the story, each with exactly 3 options and exactly one correct answer that can be found in the text.` +
     ` Return {"title":"…","text":"…","questions":[{"q":"…","o":["…","…","…"],"a":0}]}`, 4000);
   const questions = (Array.isArray(out.questions) ? out.questions : []).map((x: any) => {

@@ -32991,11 +32991,24 @@ ${bodyHtml}
   const bookLang = () => (book() && book().language) || 'en';
   const LANG_PL = { en:'angielsku', fr:'francusku', de:'niemiecku', es:'hiszpańsku', it:'włosku', ru:'rosyjsku' };
   const TTS = { en:'en-GB', fr:'fr-FR', de:'de-DE', es:'es-ES', it:'it-IT', ru:'ru-RU' };
-  const LEVELS = ['A1 (młodsze dzieci)','A1','A1–A2','A2','A2–B1','B1','B1–B2'];
+  const LEVELS = ['A1 (młodsze dzieci)','A1','A1–A2','A2','A2–B1','B1','B1–B2','B2','B2–C1','C1','C1–C2','C2'];
+  const NOTES_MAX = 2000;
+  // Poziom z nazwy/opisu podręcznika (np. „Destination C1&C2” → C1–C2, „New Password A2+/B1” → A2–B1).
+  function levelFromName(b){
+    const cefr = ['A1','A2','B1','B2','C1','C2'];
+    const found = String(((b && b.name) || '') + ' ' + ((b && b.description) || '')).toUpperCase().match(/\b[ABC][12]\b/g) || [];
+    const idx = [...new Set(found)].map(x => cefr.indexOf(x)).filter(i => i >= 0).sort((x, y) => x - y);
+    if (!idx.length) return null;
+    const lo = cefr[idx[0]], hi = cefr[idx[idx.length - 1]];
+    const lv = lo === hi ? lo : lo + '–' + hi;
+    return LEVELS.includes(lv) ? lv : (LEVELS.includes(hi) ? hi : null);
+  }
   function levelGuess(b){
     const g = +((b && b.grade) || 0);
+    if (g && g <= 3 && (!b || b.schoolType !== 'secondary')) return 'A1 (młodsze dzieci)';
+    const named = levelFromName(b);
+    if (named) return named;
     if (b && b.schoolType === 'secondary') return 'B1–B2';
-    if (g && g <= 3) return 'A1 (młodsze dzieci)';
     if (g && g <= 6) return 'A1–A2';
     if (g >= 7) return 'A2–B1';
     return 'A1–A2';
@@ -33016,6 +33029,8 @@ ${bodyHtml}
   .ai-help{font-size:.74rem;color:var(--muted);font-weight:600;line-height:1.45;margin:4px 0 10px;}
   .ai-lab{display:block;font-size:.68rem;font-weight:800;color:var(--accent2,#06d6a0);text-transform:uppercase;letter-spacing:.04em;margin:10px 0 4px;}
   .ai-inp{width:100%;padding:8px 10px;border-radius:9px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-family:inherit;font-size:.85rem;font-weight:600;outline:none;box-sizing:border-box;}
+  textarea.ai-notes{resize:vertical;min-height:64px;line-height:1.45;}
+  .ai-count{font-size:.7rem;color:var(--muted);font-weight:600;text-align:right;margin-top:2px;}
   .ai-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
   .ai-chk{display:flex;align-items:center;gap:8px;font-size:.8rem;font-weight:600;color:var(--text);margin:5px 0;cursor:pointer;}
   .ai-msg{font-size:.76rem;font-weight:700;min-height:16px;margin-top:8px;line-height:1.4;}
@@ -33067,7 +33082,8 @@ ${bodyHtml}
     max = max || 90;
     const units = getUnitsWithCustom(bId), keys = unitKeys(bId);
     let idx = keys.indexOf(uKey); if (idx < 0) idx = keys.length - 1;
-    const cur = pairs(units[keys[idx]] && units[keys[idx]].words);
+    let cur = pairs(units[keys[idx]] && units[keys[idx]].words);
+    if (cur.length > 60) cur = shuffle(cur);   // duży rozdział — za każdym razem inne słówka, nie tylko pierwsze 60
     const prev = shuffle(pairs(keys.slice(0, idx).flatMap(k => (units[k] && units[k].words) || [])));
     const seen = new Set(), out = [];
     cur.slice(0, 60).concat(prev).forEach(([pl, t]) => { const k = t.toLowerCase(); if (!seen.has(k) && out.length < max) { seen.add(k); out.push({ pl, t }); } });
@@ -33178,11 +33194,20 @@ ${bodyHtml}
       <label class="ai-chk"><input type="checkbox" id="agAbc" ${f.abc === false ? '' : 'checked'}> A/B/C — wybór poprawnej odpowiedzi</label>
       <label class="ai-chk"><input type="checkbox" id="agGap" ${f.gap === false ? '' : 'checked'}> Luki — uzupełnij poprawną formą wyrazu z nawiasu</label>
       <label class="ai-lab">Uwagi dla AI (opcjonalnie)</label>
-      <input id="agNotes" class="ai-inp" maxlength="250" placeholder="np. tylko he / she / it, bez pytań" value="${E(f.notes || '')}">
+      <textarea id="agNotes" class="ai-inp ai-notes" maxlength="${NOTES_MAX}" rows="3" placeholder="np. tylko he / she / it, bez pytań. Możesz napisać dłuższe polecenie — np. jakie konstrukcje, jaki kontekst, czego unikać." oninput="aiNotesCount(this)">${E(notesVal('agNotes', f))}</textarea>
+      <div class="ai-count" id="agNotesCnt">${notesVal('agNotes', f).length} / ${NOTES_MAX}</div>
       <div id="agMsg" class="ai-msg"></div>
       <div class="modal-btns"><button class="btn-modal-cancel" onclick="document.getElementById('aiGramModal').style.display='none'">Anuluj</button>
       <button class="btn-modal-save" id="agGo" onclick="grammarGenRun()">🤖 Generuj</button></div>`);
     setTimeout(() => { const t = $('agTopic'); if (t) t.focus(); }, 60);
+  };
+  // Wpisane uwagi zostają w pamięci, gdy okno zamknie się przypadkiem (klik obok) — przed generowaniem.
+  const _notesDraft = {};
+  const notesVal = (id, f) => _notesDraft[id] != null ? _notesDraft[id] : (f.notes || '');
+  window.aiNotesCount = function(el){
+    if (!el) return;
+    _notesDraft[el.id] = el.value;
+    const c = $(el.id + 'Cnt'); if (c) c.textContent = el.value.length + ' / ' + NOTES_MAX;
   };
   window.grammarGenRun = async function(){
     const form = { topic: $('agTopic').value.trim(), count: +$('agCount').value, level: $('agLevel').value, notes: $('agNotes').value.trim(), abc: $('agAbc').checked, gap: $('agGap').checked };
@@ -33444,7 +33469,8 @@ ${bodyHtml}
         <div><label class="ai-lab">Poziom</label><select id="awLevel" class="ai-inp">${LEVELS.map(l => `<option${l === (f.level || levelGuess(b)) ? ' selected' : ''}>${l}</option>`).join('')}</select></div>
       </div>
       <label class="ai-lab">Klasa / grupa (opcjonalnie)</label><input id="awGrade" class="ai-inp" maxlength="40" value="${E(f.grade != null ? f.grade : grade)}">
-      <label class="ai-lab">Uwagi dla AI (opcjonalnie)</label><input id="awNotes" class="ai-inp" maxlength="250" placeholder="np. tylko rzeczowniki, bez czasowników" value="${E(f.notes || '')}">
+      <label class="ai-lab">Uwagi dla AI (opcjonalnie)</label><textarea id="awNotes" class="ai-inp ai-notes" maxlength="${NOTES_MAX}" rows="3" placeholder="np. tylko rzeczowniki, bez czasowników. Możesz napisać dłuższe polecenie." oninput="aiNotesCount(this)">${E(notesVal('awNotes', f))}</textarea>
+      <div class="ai-count" id="awNotesCnt">${notesVal('awNotes', f).length} / ${NOTES_MAX}</div>
       <div id="awMsg" class="ai-msg"></div>
       <div class="modal-btns"><button class="btn-modal-cancel" onclick="document.getElementById('aiWordModal').style.display='none'">Anuluj</button>
       <button class="btn-modal-save" id="awGo" onclick="aiWordlistRun()">🤖 Generuj</button></div>`);
