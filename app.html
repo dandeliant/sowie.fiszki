@@ -613,6 +613,21 @@ body.sf-focus-on{overflow:hidden;}
 .difficulty-buttons{display:flex;gap:9px;flex-wrap:wrap;justify-content:center;}
 .btn-diff{font-family:'Nunito',sans-serif;font-size:.83rem;font-weight:800;padding:10px 19px;border:2px solid;border-radius:100px;cursor:pointer;transition:all .18s;display:flex;align-items:center;gap:5px;}
 .btn-diff:active{transform:scale(.94);}
+.btn-diff small{display:block;font-size:.6rem;font-weight:700;opacity:.8;letter-spacing:0;}
+.sent-hint{margin-top:6px;font-size:.88rem;font-weight:700;font-style:normal;color:var(--accent2,#06d6a0);display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;}
+.sent-hint-spk{background:transparent;border:1.5px solid var(--border);border-radius:100px;padding:1px 9px;font-size:.82rem;line-height:1.5;cursor:pointer;color:var(--text);font-family:inherit;}
+.sent-hint-spk:hover{border-color:var(--accent2,#06d6a0);}
+.book-prefs-bar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;width:100%;margin:0 0 12px;}
+.bp-chip{background:var(--surface);border:1.5px solid var(--border);color:var(--text);border-radius:100px;padding:5px 12px;font-size:.72rem;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap;}
+.bp-chip:hover{border-color:var(--accent);}
+.bp-chip.on{background:rgba(255,209,102,.16);border-color:var(--accent);color:var(--accent);}
+.bp-chip.on.warn{background:rgba(116,185,255,.16);border-color:var(--blue,#74b9ff);color:var(--blue,#74b9ff);}
+.bp-chip.del{border-color:rgba(255,118,117,.45);color:var(--danger);}
+.bp-note{font-size:.66rem;color:var(--muted);font-weight:600;line-height:1.4;flex-basis:100%;}
+.bpm-row{display:flex;align-items:center;gap:8px;padding:8px 2px;border-bottom:1px dashed var(--border);}
+.bpm-info{flex:1;min-width:0;} .bpm-info b{display:block;font-size:.84rem;color:var(--text);} .bpm-info small{font-size:.66rem;color:var(--muted);font-weight:600;}
+.bpm-act{display:flex;gap:5px;flex-shrink:0;}
+#diffWrap .btn-diff{flex-direction:column;gap:1px;line-height:1.2;padding:8px 16px;}
 .btn-hard{background:rgba(255,118,117,.1);border-color:rgba(255,118,117,.38);color:var(--danger);}
 .btn-hard:hover{background:rgba(255,118,117,.19);}
 .btn-medium{background:rgba(255,209,102,.1);border-color:rgba(255,209,102,.36);color:var(--accent);}
@@ -1691,6 +1706,14 @@ body.guest-mode .progress-wrap{opacity:.4;}
     <!-- Prośby admina -->
     <div id="adminRequestsList" style="font-size:.72rem;color:var(--muted);font-weight:600;padding:6px 0"></div>
   </div>
+  <!-- 📌 Uczę się — podręczniki, których admin / nauczyciel uczy się sam (migracja #86) -->
+  <div id="learningBooksSection" style="display:none;width:100%;margin-bottom:16px">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+      <div style="font-family:'Playfair Display',serif;font-size:1.05rem;color:var(--accent)">📌 Uczę się</div>
+      <button class="btn-sm" onclick="openBookPrefsManager()" style="font-size:.7rem">⚙️ Moje podręczniki</button>
+    </div>
+    <div class="book-grid" id="learningBooksGrid"></div>
+  </div>
   <!-- Baner powtorek SM-2 (klon z sLang) — widoczny takze przy wyborze podrecznika -->
   <div id="reviewQueueBanner2" style="display:none;width:100%;background:linear-gradient(135deg,rgba(6,214,160,.16),rgba(124,77,255,.12));border:2px solid rgba(6,214,160,.45);border-radius:16px;padding:14px 18px;margin-bottom:14px;cursor:pointer" onclick="openReviewQueue()">
     <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
@@ -1916,6 +1939,8 @@ body.guest-mode .progress-wrap{opacity:.4;}
     </div>
     <button class="btn-sm" onclick="exitToBooks()" style="flex-shrink:0">← Podręczniki</button>
   </div>
+  <!-- Admin / nauczyciel: 📌 Uczę się · 🙈 Nie zapisuj mojej nauki · 🗑️ Usuń mój postęp (migracja #86) -->
+  <div id="bookPrefsBar" class="book-prefs-bar" style="display:none"></div>
   <!-- Notatki admina na poziomie podręcznika (publiczna + prywatna; renderowane jako .admin-note wewnątrz) -->
   <div id="bookNoteUnits" class="admin-note-wrap" style="display:none"></div>
   <!-- Banner Mini-dialogow audio (Feature 4) — pokazany jesli sa dialogi dla biezacego podrecznika -->
@@ -3546,9 +3571,9 @@ szkoła	school"></textarea>
   <div class="difficulty-wrap" id="diffWrap">
     <div class="diff-label">Jak było?</div>
     <div class="difficulty-buttons">
-      <button class="btn-diff btn-hard"   onclick="rate('hard')">😰 Trudne</button>
-      <button class="btn-diff btn-medium" onclick="rate('medium')">🤔 Średnie</button>
-      <button class="btn-diff btn-easy"   onclick="rate('easy')">😎 Łatwe</button>
+      <button class="btn-diff btn-hard"   onclick="rate('hard', false, true)" title="Nie umiem — słówko wróci za kilka kart, licznik „umiem” od zera">😰 Trudne<small>nie umiem · wróci za chwilę</small></button>
+      <button class="btn-diff btn-medium" onclick="rate('medium', false, true)" title="Prawie — słówko wróci później w tej nauce">🤔 Średnie<small>prawie · wróci później</small></button>
+      <button class="btn-diff btn-easy"   onclick="rate('easy', false, true)" title="Umiem — 3× „umiem” w różne dni = opanowane">😎 Łatwe<small id="diffEasySub">umiem ✓</small></button>
     </div>
   </div>
   <div class="bottom-controls">
@@ -3635,8 +3660,11 @@ szkoła	school"></textarea>
     <span class="acc-val" id="speedBestVal">0 pkt</span>
   </div>
   <div class="book-prog-section" style="margin-top:14px;">
-    <h3>Postęp w podręcznikach</h3>
-    <div id="booksProgressList"></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+      <h3 style="margin:0">Postęp w podręcznikach</h3>
+      <button class="btn-sm" id="bookPrefsMgrBtn" onclick="openBookPrefsManager()" style="display:none;font-size:.7rem" title="📌 Uczę się · 🙈 Nie zapisuj mojej nauki · 🗑️ Usuń mój postęp">⚙️ Moje podręczniki</button>
+    </div>
+    <div id="booksProgressList" style="margin-top:8px"></div>
   </div>
   <div class="book-prog-section" style="margin-top:14px;">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:6px">
@@ -4979,6 +5007,13 @@ let currentUnitKey = 'unit1';
 let activeWords = [], pool = [], ws = {};
 let activeAllWords = [];
 let curIdx = null, mode = 'card', revealed = false, flipped = false, active = false;
+let _sesOk = {};       // „umiem” w bieżącej sesji (idx → ile razy) — kroki nauki jak w Anki
+let _sesDueCount = 0;  // ile powtórek na dziś weszło na początek sesji
+// Podręcznik „🙈 Nie zapisuj mojej nauki” (admin / nauczyciel przerabia go na lekcji, migracja #86)
+function _bookIgnored(bId) {
+  const b = bId || currentBookId;
+  return !isGuest && !!b && typeof DB !== 'undefined' && typeof DB.isBookIgnored === 'function' && DB.isBookIgnored(b);
+}
 
 // ── FISZKI KONTEKSTOWE (#59) ──────────────────────────────────────
 // currentCtx = wylosowany kontekst BIEŻĄCEJ ekspozycji fiszki (ten sam na
@@ -6285,6 +6320,7 @@ window.startReviewForUnit = function(bookId, unitKey) {
   // Przygotuj kontekst nauki (jak w selectBook, ale bez przejscia do sUnits)
   currentBookId = bookId;
   if (typeof DB.loadSentences === 'function') DB.loadSentences(bookId);
+  if (typeof DB.loadWordHints === 'function') DB.loadWordHints(bookId);
   if (typeof DB.loadContexts === 'function') DB.loadContexts(bookId);
   if (typeof getBookAllWordsCustom === 'function') {
     activeAllWords = getBookAllWordsCustom(bookId);
@@ -6310,6 +6346,8 @@ function refreshBooks() {
   if (typeof refreshReviewQueueBanner === 'function') refreshReviewQueueBanner();
   // Odswiez globalny baner Trudnych slow (auto-ukrywa sie gdy brak)
   if (typeof refreshGlobalHardWordsBanner === 'function') refreshGlobalHardWordsBanner();
+  // 📌 Uczę się (admin / nauczyciel, #86)
+  try { renderLearningBooks(); } catch(e) {}
   // Fallback: brak kontekstu nawigacji
   // - zwykły użytkownik → przekierowanie na sLang (wybór języka)
   // - admin / nauczyciel → pokazujemy wybór języka pod panelem
@@ -6569,6 +6607,7 @@ function refreshBooks() {
 function selectBook(bookId) {
   currentBookId = bookId;
   DB.loadSentences(bookId); // fire-and-forget — załaduj zdania do cache
+  if (typeof DB.loadWordHints === 'function') DB.loadWordHints(bookId); // wskazówki do fiszek (#86)
   if (typeof DB.loadContexts === 'function') DB.loadContexts(bookId); // fiszki kontekstowe (#59)
   activeAllWords = getBookAllWordsCustom(bookId);
   const book = BOOKS[bookId];
@@ -6583,6 +6622,7 @@ function selectBook(bookId) {
 // ══════════════════════════════════════════════
 function refreshGrid() {
   if (!currentBookId) return;
+  try { renderBookPrefsBar(); } catch(e) {}
   const book = BOOKS[currentBookId];
   const units = getUnitsWithCustom(currentBookId);
   const prog = DB.getBookProgress(currentUser, book);
@@ -7558,6 +7598,9 @@ function startStudy(key, forcedPool = null, reviewSort = false) {
       if (ws[idx]) ws[idx] = {...ws[idx], ...state};
     });
   }
+  // Nowa sesja — kolejka „wróci za kilka kart” zaczyna się od zera
+  Object.values(ws).forEach(s => { s.dueIn = 0; });
+  _sesOk = {}; _sesDueCount = 0;
 
   if (forcedPool !== null) {
     // Tryb kartkówki / powtórki — tylko wybrane słówka, ignoruj flagę known
@@ -7573,13 +7616,27 @@ function startStudy(key, forcedPool = null, reviewSort = false) {
       });
     }
   } else {
-    pool = activeWords.map((_,i) => i).filter(i => !ws[i].known);
-    // Priorytet: błędy z poprzedniej sesji i słowa dawno niepowtarzane
-    pool.sort((a, b) => {
+    // 1) Powtórki na dziś z tego rozdziału — PRZYMUSOWO na początku (także słówka opanowane),
+    // 2) słówka w nauce (błędy najpierw, potem kolejność listy). Słówka umiane, które czekają
+    //    na powtórkę w kolejnym dniu, i opanowane (bez terminu na dziś) pomijamy — jak w Anki.
+    const now = Date.now();
+    const seen = s => (s.reps || 0) > 0 || (s.ok || 0) > 0 || (s.errCount || 0) > 0 || !!s.known;
+    const due = [], learn = [];
+    activeWords.forEach((_, i) => {
+      const s = ws[i];
+      if (seen(s) && s.nextReview && s.nextReview <= now) due.push(i);
+      else if (s.known) return;
+      else if ((s.ok || 0) >= 1 && s.nextReview > now) return;
+      else learn.push(i);
+    });
+    due.sort((a, b) => ws[a].nextReview - ws[b].nextReview);
+    learn.sort((a, b) => {
       if (ws[a].lastError && !ws[b].lastError) return -1;
       if (!ws[a].lastError && ws[b].lastError) return 1;
       return (ws[a].nextReview || 0) - (ws[b].nextReview || 0);
     });
+    pool = due.concat(learn);
+    _sesDueCount = due.length;
   }
 
   clearInterval(studySpeedTimer);
@@ -7588,7 +7645,7 @@ function startStudy(key, forcedPool = null, reviewSort = false) {
   missedInSession = []; sessErrorCount = 0; studySpeedSessionScore = 0;
 
   const book = BOOKS[currentBookId];
-  document.getElementById('unitBadge').textContent = book.icon + ' ' + u.name;
+  document.getElementById('unitBadge').textContent = book.icon + ' ' + u.name + (_bookIgnored() ? ' · 🙈 bez zapisu' : '');
   document.getElementById('rShelf').innerHTML = '';
   document.getElementById('rCount').style.display = 'none';
   document.getElementById('livesBar').classList.remove('visible');
@@ -7610,7 +7667,13 @@ function startStudy(key, forcedPool = null, reviewSort = false) {
   hideAreas(); document.getElementById('cardScene').style.display = '';
   updateDirUI();
   updateOrderUI();
-  setTimeout(() => { setOwl(''); owlSay('Ćwiczymy ' + u.name + '! Wybierz tryb nauki 👇'); }, 250);
+  setTimeout(() => {
+    setOwl('');
+    if (_bookIgnored()) owlSay('Tryb lekcji 🙈 — ta nauka nie zapisze się na Twoim koncie. Wybierz tryb 👇');
+    else if (_sesDueCount > 0) owlSay('Najpierw ' + _sesDueCount + ' ' + plural(_sesDueCount, 'słówko', 'słówka', 'słówek') + ' do powtórki 📅, potem nauka! Wybierz tryb 👇');
+    else if (!pool.length) owlSay('Na dziś wszystko w tym rozdziale 🎉 — wróć jutro na powtórkę albo wybierz „Ucz się dalej”.');
+    else owlSay('Ćwiczymy ' + u.name + '! Wybierz tryb nauki 👇');
+  }, 250);
 }
 
 // „Ucz się dalej" — pełna powtórka wszystkich słów rozdziału, nawet gdy już
@@ -8532,6 +8595,7 @@ function collectAllHardWords() {
   const all = [];
   const byBook = {};
   accessible.forEach(b => {
+    if (_bookIgnored(b.id)) return;   // „🙈 Nie zapisuj mojej nauki” (lekcje)
     const h = collectHardWords(b.id);
     if (h.length === 0) return;
     byBook[b.id] = { name: b.shortName || b.name, count: h.length, icon: b.icon };
@@ -8620,7 +8684,7 @@ function startHardWordsSession(hardWords) {
   activeWords = shuffle([...hardWords]);
   activeAllWords = getBookAllWordsCustom(currentBookId);
   pool = activeWords.map((_, i) => i);
-  ws = {};
+  ws = {}; _sesOk = {}; _sesDueCount = 0;
   activeWords.forEach((_, i) => {
     ws[i] = {ef: 2.5, reps: 0, interval: 1, nextReview: 0, known: false, errCount: 0, lastError: false, dueIn: 0};
   });
@@ -8654,7 +8718,7 @@ function startReviewSession() {
 
   activeWords = reviewWords;
   pool = reviewWords.map((_,i) => i);
-  ws = {};
+  ws = {}; _sesOk = {}; _sesDueCount = 0;
   reviewWords.forEach((_,i) => {
     ws[i] = {ef:2.5, reps:0, interval:1, nextReview:0, known:false, errCount:0, lastError:true, dueIn:0};
   });
@@ -8735,6 +8799,8 @@ function fsrsShortTermS(S, G) {
 }
 // Mapowanie ocen aplikacji -> ocena FSRS 1..4 (Again/Hard/Good/Easy).
 const FSRS_GRADE = { again: 1, hard: 2, medium: 3, good: 3, easy: 4 };
+// Ile razy „umiem” (w różne dni), żeby słówko było „🟢 Opanowane”.
+const MASTER_OK = 3;
 
 // Znacznik czasu pokazania biezacej karty — trafna odpowiedz udzielona szybko
 // (ponizej progu) liczy sie jako "Latwe" (Easy), wolniejsza jako "Dobrze" (Good).
@@ -8786,9 +8852,27 @@ function sm2Update(st, r) {
     }
   }
 
-  // Liczniki zgodne z dawna semantyka (znane = 3 trafienia pod rzad).
+  // Licznik wszystkich trafień (do stanu 🟡 „W trakcie”).
   if (G === 1) { reps = 0; errCount++; lapses++; }
   else reps++;
+
+  // ── Opanowanie (od SW v1.216, jak w Anki): liczą się tylko odpowiedzi „umiem” (good/easy). ──
+  // ok = „umiem” pod rząd; okSpan = któreś z nich innego dnia niż pierwsze (okDay) —
+  // słówka nie da się opanować w jednej sesji. „Nie umiem” (again) zeruje, „prawie” (hard) nie zmienia.
+  const today = _localDay();
+  const umiem = (r === 'good' || r === 'easy');
+  let ok = st.ok || 0, okDay = st.okDay || '', okSpan = !!st.okSpan;
+  if (st.known && st.ok === undefined && G !== 1) {
+    // „Opanowane” sprzed zmiany (zostają — decyzja właściciela): jedno „umiem” utrzymuje status
+    ok = Math.max(ok, MASTER_OK - 1); okSpan = true; okDay = okDay || today;
+  }
+  if (G === 1) { ok = 0; okDay = ''; okSpan = false; }
+  else if (umiem) {
+    if (!ok) { okDay = today; okSpan = false; }
+    else if (okDay !== today) okSpan = true;
+    ok++;
+  }
+  const known = umiem && ok >= MASTER_OK && okSpan;
 
   // Interval kalendarzowy z FSRS (dni), zaokraglony, min 1, cap 365.
   const ivDays = _fsrsClamp(Math.round(fsrsInterval(S, FSRS_RETENTION)), 1, 365);
@@ -8799,10 +8883,11 @@ function sm2Update(st, r) {
     lastReview: now,
     nextReview: now + ivDays * 86400000,
     lastError: G === 1,
-    // Slowo "opanowane" (known = wlicza sie do % unitu): 3 trafienia pod rzad.
-    // Mistrzostwo (mastered): 4+ trafienia i dlugi interval FSRS (>=30 dni).
-    known: reps >= 3,
-    mastered: reps >= 4 && ivDays >= 30,
+    ok, okDay, okSpan,
+    // Słowo „opanowane” (known = wlicza sie do % unitu): MASTER_OK × „umiem”, w różne dni,
+    // ostatnia odpowiedź też „umiem”. Mistrzostwo (mastered): opanowane i interval FSRS >= 30 dni.
+    known,
+    mastered: known && ivDays >= 30,
     // Harmonogram w sesji (ile losowan do ponownego pokazania).
     dueIn: { again: 0, hard: 1, medium: 2, good: 2, easy: 3 }[r]
   };
@@ -8824,11 +8909,12 @@ function wordStage(state) {
   const reps = state.reps || 0;
   const interval = state.interval || 0;
   const conf = reps + Math.floor(interval / 7);
-  if (state.mastered || reps >= 3) {
+  if (state.known || state.mastered) {
     return { stage: 'known', icon: '🟢', label: 'Opanowane', confidence: conf };
   }
-  if (reps >= 1) {
-    return { stage: 'growing', icon: '🟡', label: 'W trakcie', confidence: conf };
+  if (reps >= 1 || (state.ok || 0) >= 1) {
+    const okN = Math.min(state.ok || 0, MASTER_OK);
+    return { stage: 'growing', icon: '🟡', label: 'W trakcie' + (okN ? ' · umiem ' + okN + '/' + MASTER_OK : ''), confidence: conf };
   }
   if (state.lastError) {
     return { stage: 'error', icon: '🔴', label: 'Trudne', confidence: conf };
@@ -9268,6 +9354,10 @@ function openWordEditor(){
   document.getElementById('wordEditPl').value = wordPl;
   document.getElementById('wordEditTarget').value = wordTarget;
   document.getElementById('wordEditTargetLabel').textContent = langName + ' *';
+  const hintInp = document.getElementById('wordEditHint');
+  if (hintInp) hintInp.value = (typeof DB.getWordHint === 'function') ? (DB.getWordHint(currentBookId, wordPl) || '') : '';
+  const hintMsg = document.getElementById('wordEditHintMsg');
+  if (hintMsg) { hintMsg.style.color = ''; hintMsg.textContent = 'Uczeń zobaczy ją na fiszce jako [Wskazówka: …] z przyciskiem 🔊 (lektor nie czyta jej sam). Puste pole + Zapisz = usuń wskazówkę.'; }
   const msg = document.getElementById('wordEditMsg');
   msg.textContent = ''; msg.style.color = '';
   document.getElementById('wordEditModal').style.display = 'flex';
@@ -9282,6 +9372,28 @@ function openWordEditor(){
   if (typeof _waBindEvents === 'function') _waBindEvents();
   // Inicjalizacja sekcji nagrywania (Phase C) — pokazuje status istniejącego nagrania
   if (typeof _waInitForCurrentWord === 'function') _waInitForCurrentWord();
+}
+
+// Zapis wskazówki do fiszki (word_hints, #86) — twórca podręcznika
+async function saveWordHintEdit(){
+  if (curIdx === null || typeof DB.saveWordHint !== 'function') return;
+  const msg = document.getElementById('wordEditHintMsg');
+  const btn = document.getElementById('btnWordHintSave');
+  const wordPl = activeWords[curIdx][0];
+  btn.disabled = true;
+  try {
+    const h = await DB.saveWordHint(currentBookId, wordPl, document.getElementById('wordEditHint').value);
+    msg.style.color = 'var(--success)';
+    msg.textContent = h ? '✓ Zapisano wskazówkę: [Wskazówka: ' + h + ']' : '✓ Wskazówka usunięta.';
+    // Odśwież tylko blok zdania na karcie (bez przerywania odpowiedzi)
+    const html = _sentenceHintHtml();
+    [['cardFrontCtx', 'card'], ['tHint', 'type']].forEach(([id, m]) => {
+      const el = document.getElementById(id);
+      if (el && mode === m) { el.innerHTML = html; el.style.display = html ? '' : 'none'; }
+    });
+  } catch(e) {
+    msg.style.color = 'var(--danger)'; msg.textContent = '❌ ' + e.message;
+  } finally { btn.disabled = false; }
 }
 
 function closeWordEditor(){
@@ -10284,7 +10396,7 @@ function _showDailyDoneMsg(learned) {
 // Zapis pojedynczej odpowiedzi z trybu „Wpisz" (do raportu „Szczegóły Wpisz").
 function _logTypedAns(u, correct) {
   try {
-    if (curIdx === null || !DB.logTypedAnswer || !activeWords[curIdx]) return;
+    if (curIdx === null || !DB.logTypedAnswer || !activeWords[curIdx] || _bookIgnored()) return;
     DB.logTypedAnswer({
       bookId: currentBookId, unitKey: currentUnitKey,
       wordPl: activeWords[curIdx][0], wordEn: activeWords[curIdx][1],
@@ -10389,24 +10501,93 @@ function _typeAdvance() {
 }
 function typeNextNow() { _typeAdvance(); }
 
+// Formy nieregularne (angielski) — żeby znaleźć słówko w zdaniu przykładowym (take → took, think → thought).
+const _GAP_IRREG = (() => {
+  const src = 'be:am is are was were been being|have:has had having|do:does did done doing|go:goes went gone going|make:made|take:took taken|get:got gotten|give:gave given|come:came|see:saw seen|know:knew known|think:thought|bring:brought|buy:bought|catch:caught|teach:taught|keep:kept|leave:left|feel:felt|find:found|tell:told|say:said|stand:stood|understand:understood|run:ran|begin:began begun|break:broke broken|choose:chose chosen|drive:drove driven|eat:ate eaten|fall:fell fallen|forget:forgot forgotten|grow:grew grown|hold:held|lose:lost|meet:met|pay:paid|sit:sat|sleep:slept|speak:spoke spoken|spend:spent|swim:swam swum|throw:threw thrown|wake:woke woken|wear:wore worn|win:won|write:wrote written|draw:drew drawn|fly:flew flown|hear:heard|lead:led|learn:learnt|mean:meant|rise:rose risen|seek:sought|sell:sold|send:sent|shine:shone|shoot:shot|show:shown|sing:sang sung|steal:stole stolen|strike:struck|dig:dug|hang:hung|deal:dealt|bear:bore borne|become:became|build:built|burn:burnt|dream:dreamt|lie:lay lain lying|light:lit|ride:rode ridden|ring:rang rung|shake:shook shaken|sink:sank sunk|stick:stuck|swear:swore sworn|tear:tore torn|bite:bit bitten|blow:blew blown|freeze:froze frozen|hide:hid hidden|forgive:forgave forgiven|overcome:overcame|mistake:mistook mistaken|undertake:undertook undertaken|withdraw:withdrew withdrawn|foresee:foresaw foreseen|feed:fed|fight:fought|flee:fled|lend:lent|bend:bent|bleed:bled|creep:crept|kneel:knelt|leap:leapt|slide:slid|sweep:swept|weep:wept|wind:wound|spring:sprang sprung|arise:arose arisen|beat:beaten|bind:bound|cling:clung|grind:ground|stride:strode|strive:strove striven|tread:trod trodden|uphold:upheld|weave:wove woven|wring:wrung';
+  const m = {}; src.split('|').forEach(p => { const [k, v] = p.split(':'); m[k] = v.split(' '); }); return m;
+})();
+// Zastępniki w hasłach: „somebody / your / yourself…” → dowolne słowo(a) w zdaniu (zostają widoczne).
+const _GAP_ANY = "[\\p{L}\\p{N}'’-]+(?:\\s+[\\p{L}\\p{N}'’-]+){0,2}";
+const _GAP_PH = {
+  somebody: _GAP_ANY, someone: _GAP_ANY, something: _GAP_ANY, sb: _GAP_ANY, sth: _GAP_ANY, smb: _GAP_ANY, smth: _GAP_ANY,
+  "somebody's": "[\\p{L}'’-]+", "someone's": "[\\p{L}'’-]+", "sb's": "[\\p{L}'’-]+", "one's": "[\\p{L}'’-]+",
+  your: "(?:my|your|his|her|its|our|their|one's|[\\p{L}]+['’]s)",
+  yourself: '(?:myself|yourself|himself|herself|itself|ourselves|yourselves|themselves|oneself)',
+  oneself: '(?:myself|yourself|himself|herself|itself|ourselves|yourselves|themselves|oneself)',
+};
+const _reEsc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+// Wzorzec jednego wyrazu hasła: angielski — z odmianami (-s/-ed/-ing/-er/-est/-ly, y→i, e-drop,
+// podwojenie spółgłoski, formy nieregularne); polski — po temacie (końcówki fleksyjne).
+function _gapTokRe(tok, polish) {
+  const t = tok.toLowerCase();
+  if (polish) {
+    if (t.length < 4) return _reEsc(t);
+    return _reEsc(t.slice(0, Math.max(3, t.length - 3))) + '\\p{L}{0,5}';
+  }
+  const f = new Set([t]);
+  (_GAP_IRREG[t] || []).forEach(x => f.add(x));
+  if (/^[a-z]{3,}$/.test(t)) {
+    if (t.endsWith('e')) ['s', 'd', 'r', 'st'].forEach(s => f.add(t + s)), f.add(t.slice(0, -1) + 'ing'), f.add(t.slice(0, -1) + 'ly');
+    else if (/[^aeiou]y$/.test(t)) ['ies', 'ied', 'ier', 'iest', 'ily'].forEach(s => f.add(t.slice(0, -1) + s)), f.add(t + 'ing');
+    else {
+      ['s', 'es', 'ed', 'ing', 'er', 'est', 'ly'].forEach(s => f.add(t + s));
+      if (/[^aeiou][aeiou][bdgklmnprt]$/.test(t)) ['ed', 'ing', 'er'].forEach(s => f.add(t + t.slice(-1) + s));
+    }
+  }
+  return '(?:' + [...f].sort((a, b) => b.length - a.length).map(_reEsc).join('|') + ')';
+}
 // Zamien slowo/zwrot na luke w zdaniu docelowym. Zwraca null, gdy nie znaleziono.
-function _gapSentence(sent, answer) {
+// polish = odpowiedź po polsku (kierunek EN → PL) — dopasowanie po temacie wyrazu.
+function _gapSentence(sent, answer, polish) {
   if (!sent) return null;
-  let core = String(answer || '').split(/[,;/]| lub | albo /i)[0].trim();
-  core = core.replace(/\s*\([^)]*\)\s*/g, ' ').trim();
-  if (!core) return null;
-  const safe = esc(sent);
   const GAP = '<span style="display:inline-block;min-width:60px;border-bottom:2.5px solid var(--accent,#6c5ce7);color:transparent">____</span>';
-  // Kandydaci do dopasowania: pelny zwrot i wariant bez angielskiego „to " (bezokolicznik).
-  const cands = [core];
-  const noTo = core.replace(/^to\s+/i, '').trim();
-  if (noTo && noTo !== core) cands.push(noTo);
-  for (const cand of cands) {
-    const escCore = cand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const reWb = new RegExp('\\b' + escCore + '\\b', 'i'); // z granica slowa (np. „clean", nie „cleaner")
-    if (reWb.test(safe)) return safe.replace(reWb, GAP);
-    const reAny = new RegExp(escCore, 'i');               // fallback bez granicy
-    if (reAny.test(safe)) return safe.replace(reAny, GAP);
+  const raw = String(sent);
+  // Kandydaci: wszystkie warianty („a / b”, „a, b”, „lub”), bez nawiasów, także bez „to ” i przedimka.
+  const cands = [];
+  String(answer || '').split(/[,;/]| lub | albo /i).forEach(v => {
+    const c = v.replace(/\s*\([^)]*\)\s*/g, ' ').replace(/[.!?…]+$/, '').replace(/\s+/g, ' ').trim();
+    if (!c) return;
+    cands.push(c);
+    const bare = c.replace(/^(to|a|an|the)\s+/i, '').trim();
+    if (bare && bare !== c) cands.push(bare);
+  });
+  const B = "[\\p{L}\\p{N}'’]";   // znaki wyrazu (granica słowa także dla polskich liter)
+  const DET = '(?:a|an|the|my|your|his|her|its|our|their|this|that|these|those|some|any)';
+  const WRD = "[\\p{L}\\p{N}'’-]+";
+  // Przebiegi: dokładnie → z odmianami → z wtrąconymi słowami („do ten squats”, „think the offer over”)
+  for (const pass of ['exact', 'forms', 'loose']) {
+    for (const cand of cands) {
+      const toks = cand.split(' ');
+      const usePh = toks.some(t => !_GAP_PH[t.toLowerCase()]);   // samo „your” to hasło, nie zastępnik
+      // Segmenty: wyrazy hasła (→ luka) i to, co zostaje widoczne (zastępniki, wtrącenia)
+      const segs = [];
+      toks.forEach(tok => {
+        const low = tok.toLowerCase(), ph = usePh && _GAP_PH[low];
+        if (ph) { segs.push({ lit: false, re: ph }); return; }
+        const re = pass === 'exact' ? _reEsc(tok)
+          : (!polish && /^(a|an|the)$/.test(low)) ? DET : _gapTokRe(tok, polish);
+        const last = segs[segs.length - 1];
+        if (pass === 'loose' && last && last.lit) segs.push({ lit: false, re: '(?:' + WRD + '\\s+){0,3}', glue: true });
+        const prev = segs[segs.length - 1];
+        if (pass !== 'loose' && prev && prev.lit) prev.re += '\\s+' + re; else segs.push({ lit: true, re });
+      });
+      if (!segs.some(s => s.lit)) continue;
+      if (pass === 'loose' && !segs.some(s => s.glue)) continue;
+      let pat = '(^|[^\\p{L}\\p{N}\'’])';
+      segs.forEach((s, i) => { pat += '(' + s.re + ')' + (s.glue || i === segs.length - 1 ? '' : '\\s+'); });
+      let re;
+      try { re = new RegExp(pat + '(?!' + B + ')', 'iu'); } catch (e) { continue; }
+      const m = re.exec(raw);
+      if (!m) continue;
+      const start = m.index + m[1].length, end = m.index + m[0].length;
+      const parts = [];   // sąsiednie wyrazy hasła (bez wtrącenia) = jedna luka
+      segs.forEach((s, i) => {
+        const t = String(m[i + 2] || '').trim();
+        if (s.lit) { if (parts[parts.length - 1] !== GAP) parts.push(GAP); }
+        else if (t) parts.push(esc(t));
+      });
+      return esc(raw.slice(0, start)) + parts.join(' ') + esc(raw.slice(end));
+    }
   }
   return null;
 }
@@ -10428,8 +10609,9 @@ function _typeSetupHints() {
 }
 
 // Zdanie przykładowe dla bieżącego słówka (tryb Wpisz i przód fiszki):
-// zdanie w języku pytania (pełne, w nawiasie) + zdanie w języku odpowiedzi z luką.
-// '' gdy brak zdania albo wyrażenie ma więcej niż 3 wyrazy.
+// zdanie w języku pytania (pełne, w nawiasie) + zdanie w języku odpowiedzi z luką
+// + wskazówka twórcy fiszek [Wskazówka: …] z 🔊 (migracja #86; lektor jej sam nie czyta).
+// '' gdy nie ma ani zdania, ani wskazówki.
 function _sentenceHintHtml() {
   if (curIdx === null) return '';
   // Fiszka kontekstowa (#59): zdanie z luką (i tłumaczenie PL jako podpowiedź).
@@ -10440,23 +10622,34 @@ function _sentenceHintHtml() {
   }
   const word = activeWords[curIdx], wordPl = word[0];
   const ans = getA(curIdx);
-  const ansWords = String(ans || '').trim().split(/\s+/).filter(Boolean).length;
-  if (ansWords > 3) return '';
+  const promptIsPl = (studyDir === 'pl_en');
   let sPl = '', sEn = '';
   const inline = getInlineSentences(word);
   if (inline.sentPl || inline.sentEn) { sPl = inline.sentPl; sEn = inline.sentEn; }
   else { const s = DB.getSentence(currentBookId, wordPl); if (s) { sPl = s.sentence_pl || ''; sEn = s.sentence_target || ''; } }
-  if (!sPl && !sEn) return '';
-  const promptIsPl = (studyDir === 'pl_en');
   const hintSent   = promptIsPl ? sPl : sEn;
   const answerSent = promptIsPl ? sEn : sPl;
   let html = '';
   if (hintSent) html += '<div style="color:var(--muted,#8a8f98);font-style:italic">(' + esc(hintSent) + ')</div>';
   if (answerSent) {
-    const gapped = _gapSentence(answerSent, ans);
+    const gapped = _gapSentence(answerSent, ans, !promptIsPl);
     if (gapped) html += '<div style="margin-top:4px;color:var(--text)">' + gapped + '</div>';
   }
+  const hint = promptIsPl ? _wordHintText(wordPl) : '';
+  if (hint) html += '<div class="sent-hint">[Wskazówka: ' + esc(hint) + ']'
+    + ' <button type="button" class="sent-hint-spk" onclick="event.stopPropagation();speakWordHint()" title="Przeczytaj wskazówkę" aria-label="Przeczytaj wskazówkę">🔊</button></div>';
   return html;
+}
+// Wskazówka twórcy fiszek (bez „[Wskazówka: … ]”, gdyby ktoś je wpisał)
+function _wordHintText(wordPl) {
+  if (!currentBookId || typeof DB === 'undefined' || typeof DB.getWordHint !== 'function') return '';
+  return String(DB.getWordHint(currentBookId, wordPl) || '')
+    .replace(/^\s*\[?\s*(wskaz[oó]wka\s*:)?\s*/i, '').replace(/\s*\]\s*$/, '').trim();
+}
+function speakWordHint() {
+  if (curIdx === null) return;
+  const h = _wordHintText(activeWords[curIdx][0]);
+  if (h) spkPl('Wskazówka: ' + h.replace(/\.{2,}|…/g, ', '));
 }
 
 // ══════════════════════════════════════════════
@@ -10582,37 +10775,56 @@ function trackMissed() {
 // ══════════════════════════════════════════════
 //  RATE DIFFICULTY
 // ══════════════════════════════════════════════
-function rate(r, noAdvance) {
+// selfRated = przyciski „Jak było?” (samoocena po odwróceniu fiszki / po „Znajdź parę”)
+function rate(r, noAdvance, selfRated) {
   if (curIdx === null) return;
   clearInterval(studySpeedTimer); // zatrzymaj timer speed jeśli aktywny
   _gateTrack(r);                  // blokada gier: licznik słówek dnia (Wpisz / Fiszki / Quiz)
 
+  // Samoocena: 😰 Trudne = nie umiem (jak „Again” w Anki), 🤔 Średnie = prawie (Hard),
+  // 😎 Łatwe = umiem (Good). Pozostałe tryby oceniają same (again / hard / good / easy).
+  const g = selfRated ? ({ hard: 'again', medium: 'hard', easy: 'good' }[r] || r) : r;
+  if (selfRated && g === 'again') { trackMissed(); sessErrorCount++; }
   const _wasKnown = !!(ws[curIdx] && ws[curIdx].known);
-  ws[curIdx] = sm2Update(ws[curIdx], r);
-  if (ws[curIdx].known) pool = pool.filter(i => i !== curIdx);
+  const _prevOk = (ws[curIdx] && ws[curIdx].ok) || 0;
+  ws[curIdx] = sm2Update(ws[curIdx], g);
+  const st = ws[curIdx];
+  const umiem = (g === 'good' || g === 'easy');
+  _sesOk[curIdx] = (g === 'again') ? 0 : (_sesOk[curIdx] || 0) + (umiem ? 1 : 0);
+  // Kolejka w sesji (kroki nauki jak w Anki): nie umiem → wraca za ~3 karty, prawie → za ~5,
+  // pierwsze „umiem” → jeszcze raz za ~10. Na dziś wystarczy 2× „umiem” w sesji (1×, gdy słówko
+  // było już umiane wcześniej) — potem czeka na powtórkę w kolejnym dniu (FSRS).
+  const leaveToday = st.known || (umiem && (_sesOk[curIdx] >= 2 || _prevOk >= 1));
+  if (leaveToday) { pool = pool.filter(i => i !== curIdx); st.dueIn = 0; }
+  else st.dueIn = (g === 'again') ? 4 : (umiem ? 11 : 6);
+  const _lesson = _bookIgnored();   // „Nie zapisuj mojej nauki” (admin / nauczyciel na lekcji)
   // Wave 2: zaloguj opanowane slowo (wyzwania klasowe typu 'words')
-  if (!_wasKnown && ws[curIdx].known) { try { DB.logDailyWords(1); } catch(e) {} }
+  if (!_lesson && !_wasKnown && st.known) { try { DB.logDailyWords(1); } catch(e) {} }
   // Wirtualny pupil: Wpisz karmi, inne tryby (powtórki) dają energię, opanowane słówko = smakołyk
-  try { if (window.sfPet) window.sfPet.onAnswer(mode, r, !_wasKnown && ws[curIdx].known); } catch(e) {}
+  try { if (!_lesson && window.sfPet) window.sfPet.onAnswer(mode, r, !_wasKnown && st.known); } catch(e) {}
 
-  const xp = weekendXP(_xpFor(r)); addXP(xp); // XP ważone trybem (mniej za „klikanie", więcej za wpisanie); w weekend ×2
-
-  // Dzienny XP
-  const daily = DB.addDailyXP(currentUser, xp);
-  if (daily.prev < DAILY_XP_GOAL && daily.now >= DAILY_XP_GOAL) {
-    checkAndUnlock('daily_goal');
-    toast('🌟 Dzienny cel osiągnięty!', 3000);
+  const xp = _lesson ? 0 : weekendXP(_xpFor(r)); // XP ważone trybem (mniej za „klikanie", więcej za wpisanie); w weekend ×2
+  if (xp) {
+    addXP(xp);
+    // Dzienny XP
+    const daily = DB.addDailyXP(currentUser, xp);
+    if (daily.prev < DAILY_XP_GOAL && daily.now >= DAILY_XP_GOAL) {
+      checkAndUnlock('daily_goal');
+      toast('🌟 Dzienny cel osiągnięty!', 3000);
+    }
+    updateDailyBar();
   }
-  updateDailyBar();
 
-  const grad = ws[curIdx].known;
-  // Komunikat z realnym interwalem FSRS (dni do kolejnej powtorki).
-  const iv = ws[curIdx].interval;
+  // Komunikat: kiedy słówko wróci (w sesji albo realny interwał FSRS) i postęp „umiem x/3”.
+  const iv = st.interval;
   const _dni = (n) => n === 1 ? '1 dzień' : (n + ' dni');
+  const okN = Math.min(st.ok || 0, MASTER_OK);
   let tail;
-  if (r === 'again') tail = '🔁 powtórka wkrótce';
-  else if (grad) tail = '🎓 Opanowane! · 📌 za ' + _dni(iv);
-  else tail = '📌 za ' + _dni(iv);
+  if (st.known) tail = (_wasKnown ? '🟢 nadal opanowane' : '🎓 Opanowane!') + ' · 📌 powtórka za ' + _dni(iv);
+  else if (leaveToday) tail = '✓ umiem ' + okN + '/' + MASTER_OK + ((st.ok >= MASTER_OK && !st.okSpan) ? ' — potwierdź w innym dniu' : '') + ' · 📌 powtórka za ' + _dni(iv);
+  else if (g === 'again') tail = '🔁 wróci za chwilę';
+  else if (umiem) tail = '✓ umiem ' + okN + '/' + MASTER_OK + ' · jeszcze raz za kilka kart';
+  else tail = '🔁 wróci za kilka kart';
   toast(xp > 0 ? ('+' + xp + ' XP' + (isWeekendXP() ? ' (×2 weekend)' : '') + ' · ' + tail) : tail);
 
   if (mode === 'card') {
@@ -10626,10 +10838,12 @@ function rate(r, noAdvance) {
   if (streak > 0) { try { DB.recordBestCombo(streak); } catch(e) {} }
   if (streak > 0 && streak % 5 === 0) giveReward();
 
-  // Zapisz postęp do DB
+  // Zapisz postęp do DB (podręcznik „Nie zapisuj mojej nauki” — tylko w tej sesji)
   const kn = Object.values(ws).filter(s => s.known).length;
-  DB.saveUnitProgress(currentUser, currentBookId, currentUnitKey, ws, kn, activeWords.length);
-  _syncWellLearned(); // aktualizuj licznik „bardzo dobrze przyswojonych" do rankingu (throttled)
+  if (!_lesson) {
+    DB.saveUnitProgress(currentUser, currentBookId, currentUnitKey, ws, kn, activeWords.length);
+    _syncWellLearned(); // aktualizuj licznik „bardzo dobrze przyswojonych" do rankingu (throttled)
+  }
 
   checkAchievements();
   hideDiff(); updateStats();
@@ -10642,6 +10856,11 @@ function rate(r, noAdvance) {
 
 function showDiff() {
   if (mode === 'speed') return; // w speed mode nie pokazujemy przycisków oceny
+  const es = document.getElementById('diffEasySub');
+  if (es && curIdx !== null && ws[curIdx]) {
+    const s = ws[curIdx], n = Math.min((s.ok || 0) + 1, MASTER_OK);
+    es.textContent = s.known ? 'umiem ✓ · opanowane' : 'umiem ✓ ' + n + '/' + MASTER_OK;
+  }
   document.getElementById('diffWrap').classList.add('visible');
   document.getElementById('btnGen').disabled = true;
 }
@@ -11084,7 +11303,11 @@ function showDone() {
   active = false; hideAreas(); hideDiff(); document.getElementById('btnGen').disabled = true;
   document.getElementById('dXP').textContent = 'Zdobyto: ' + sessXP + ' XP';
   document.getElementById('dBadges').innerHTML = LVLS.filter(b=>curLvl>=b.l).map(b=>'<div class="done-badge">'+b.i+' '+b.n+'</div>').join('');
-  document.getElementById('doneMsg').textContent = 'Opanowałeś/aś wszystkie słówka z tego rozdziału!';
+  // Wszystko opanowane — czy tylko „na dziś wystarczy” (reszta wróci na powtórkę w kolejnych dniach)
+  const _allKnown = activeWords.length > 0 && activeWords.every((_, i) => ws[i] && ws[i].known);
+  document.getElementById('doneMsg').textContent = _allKnown
+    ? 'Opanowałeś/aś wszystkie słówka z tego rozdziału!'
+    : 'Na dziś wszystko! Słówka, które już umiesz, wrócą na powtórkę w kolejnych dniach — dopiero wtedy zaliczysz je jako opanowane (🟢). Chcesz ćwiczyć dalej? Kliknij „Ucz się dalej”.';
 
   // Odznaka "bezbłędna sesja"
   if (sessErrorCount === 0 && activeWords.length > 0) {
@@ -11116,8 +11339,8 @@ function showDone() {
 
   checkAchievements();
   showScreen('sDone'); confetti(); playOk(); setTimeout(()=>playOk(),300);
-  setTimeout(()=>{ setOwl('happy'); owlSay('NIESAMOWITE! Znasz wszystko! 🏆'); },600);
-  spkPl('Brawo! Opanowałeś wszystkie słówka!');
+  setTimeout(()=>{ setOwl('happy'); owlSay(_allKnown ? 'NIESAMOWITE! Znasz wszystko! 🏆' : 'Świetna robota! Wróć jutro na powtórkę 📅'); },600);
+  spkPl(_allKnown ? 'Brawo! Opanowałeś wszystkie słówka!' : 'Brawo! Na dziś wystarczy. Wróć jutro na powtórkę.');
 }
 
 // ══════════════════════════════════════════════
@@ -11551,10 +11774,10 @@ function renderStats() {
   document.getElementById('accVal').textContent = acc + '% (' + (p.correctAnswers||0) + '/' + (p.totalAnswers||0) + ')';
   document.getElementById('speedBestVal').textContent = DB.getSpeedBest(currentUser) + ' pkt';
 
-  // Przyswojone słówka (przydzielone podręczniki) + ocena tyg./mies.
+  // Przyswojone słówka (przydzielone podręczniki, bez „🙈 Nie zapisuj”) + ocena tyg./mies.
   try {
     const explicit = (DB.getUserBooks ? DB.getUserBooks() : null);
-    const bookIds = _acqAssignedBookIds(explicit);
+    const bookIds = _acqAssignedBookIds(explicit).filter(id => !_bookIgnored(id));
     const acq = _acqCompute(bookIds, (bid, uk) => {
       const pr = DB.getUnitProgress(currentUser, bid, uk);
       return (pr && pr.wordStates) ? pr.wordStates : {};
@@ -11582,8 +11805,14 @@ function renderStats() {
   // Postęp podręczników
   const bpl = document.getElementById('booksProgressList');
   bpl.innerHTML = '';
-  // Pokazuj TYLKO podręczniki przydzielone (user_books) lub zaczęte przez ucznia.
-  const visibleBooks = Object.values(BOOKS).filter(_bookStartedOrAssigned);
+  // Admin / nauczyciel: „⚙️ Moje podręczniki” (📌 Uczę się · 🙈 Nie zapisuj · 🗑️ usuń postęp)
+  const bpm = document.getElementById('bookPrefsMgrBtn');
+  if (bpm) bpm.style.display = _canBookPrefs() ? '' : 'none';
+  // Pokazuj TYLKO podręczniki przydzielone (user_books) lub zaczęte przez ucznia,
+  // bez „🙈 Nie zapisuj mojej nauki”; „📌 Uczę się” na górze.
+  const visibleBooks = Object.values(BOOKS).filter(b => _bookStartedOrAssigned(b) && !_bookIgnored(b.id));
+  const _learnRank = b => (DB.isBookLearning && DB.isBookLearning(b.id)) ? 0 : 1;
+  visibleBooks.sort((a, b) => _learnRank(a) - _learnRank(b));
   if (!visibleBooks.length) {
     bpl.innerHTML = '<div style="color:var(--muted);font-size:.82rem;font-weight:600;padding:10px 4px">Brak przydzielonych lub rozpoczętych podręczników. Zacznij naukę albo poproś nauczyciela o dostęp.</div>';
   }
@@ -11597,7 +11826,7 @@ function renderStats() {
       <div class="bp-row">
         <div class="bp-icon">${book.icon}</div>
         <div class="bp-info">
-          <div class="bp-name">${book.name}</div>
+          <div class="bp-name">${_learnRank(book) === 0 ? '📌 ' : ''}${book.name}</div>
           <div class="bp-pct">${knownW}/${totalW} słówek · ${pct}%</div>
           <div class="bp-bar-bg"><div class="bp-bar-fill" style="width:${pct}%;background:${book.color}"></div></div>
         </div>
@@ -11613,6 +11842,133 @@ function renderStats() {
 
   try { setStatsTab('stats'); } catch(e) {}
 }
+
+// ══════════════════════════════════════════════
+//  MOJE PODRĘCZNIKI (admin / nauczyciel, migracja #86):
+//  📌 Uczę się — na wierzchu ekranu startowego i statystyk;
+//  🙈 Nie zapisuj mojej nauki — podręcznik przerabiany na lekcji (postęp, XP i powtórki się nie zapisują);
+//  🗑️ Usuń mój postęp — kasuje zapisany postęp z tego podręcznika (także ten sprzed tej funkcji).
+// ══════════════════════════════════════════════
+function _canBookPrefs() {
+  return !isGuest && (isCurrentUserAdmin() || isCurrentUserTeacher()) && typeof DB.setBookPref === 'function';
+}
+function _bookHasMyProgress(bookId) {
+  const book = BOOKS[bookId];
+  if (!book || !book.units) return false;
+  return Object.keys(book.units).some(uk => !!DB.getUnitProgress(currentUser, bookId, uk));
+}
+function _bookProgressText(book) {
+  const prog = DB.getBookProgress(currentUser, book);
+  const keys = Object.keys(book.units || {});
+  const total = keys.reduce((s, k) => s + ((book.units[k].words || []).length), 0);
+  const known = keys.reduce((s, k) => s + (prog[k] ? prog[k].known : 0), 0);
+  return { total, known, pct: total ? Math.round(known / total * 100) : 0 };
+}
+function renderBookPrefsBar() {
+  const el = document.getElementById('bookPrefsBar');
+  if (!el) return;
+  if (!_canBookPrefs() || !currentBookId || !BOOKS[currentBookId]) { el.style.display = 'none'; return; }
+  const ign = DB.isBookIgnored(currentBookId), learn = DB.isBookLearning(currentBookId);
+  const note = ign ? 'Tryb lekcji: Twoja nauka w tym podręczniku nie zapisuje się (postęp, XP, powtórki) i nie ma jej w statystykach.'
+    : learn ? 'Ten podręcznik jest na wierzchu ekranu startowego i statystyk.'
+    : 'Ustawienia tylko dla Ciebie — uczniowie ich nie widzą.';
+  el.innerHTML =
+    '<button type="button" class="bp-chip' + (learn ? ' on' : '') + '" onclick="toggleBookPref(\'learning\')" title="Pokazuj ten podręcznik na wierzchu ekranu startowego i statystyk">📌 Uczę się' + (learn ? ' ✓' : '') + '</button>'
+    + '<button type="button" class="bp-chip' + (ign ? ' on warn' : '') + '" onclick="toggleBookPref(\'ignored\')" title="Przerabiam ten podręcznik na lekcji — nie zapisuj mojej nauki">🙈 Nie zapisuj mojej nauki' + (ign ? ' ✓' : '') + '</button>'
+    + (_bookHasMyProgress(currentBookId) ? '<button type="button" class="bp-chip del" onclick="deleteMyBookProgress()" title="Usuń mój zapisany postęp w tym podręczniku">🗑️ Usuń mój postęp</button>' : '')
+    + '<span class="bp-note">' + note + '</span>';
+  el.style.display = '';
+}
+function _refreshBookPrefViews() {
+  const on = id => { const s = document.getElementById(id); return !!(s && s.classList.contains('active')); };
+  try { renderBookPrefsBar(); } catch(e) {}
+  try { if (on('sUnits')) refreshGrid(); } catch(e) {}
+  try { if (on('sStats')) renderStats(); } catch(e) {}
+  try { renderLearningBooks(); } catch(e) {}
+  try { refreshReviewQueueBanner(); refreshGlobalHardWordsBanner(); } catch(e) {}
+  const gm = document.querySelector('#__genericModal__ .modal-title');
+  if (gm && gm.textContent === '⚙️ Moje podręczniki') openBookPrefsManager();
+}
+async function _doDeleteBookProgress(bookId) {
+  try {
+    const n = await DB.deleteBookProgress(bookId);
+    toast('🗑️ Usunięto Twój postęp w „' + (BOOKS[bookId] ? BOOKS[bookId].name : bookId) + '”' + (n ? ' (' + n + ' ' + plural(n, 'rozdział', 'rozdziały', 'rozdziałów') + ')' : '') + '.', 3200);
+  } catch(e) { toast('❌ ' + e.message, 3500); }
+}
+window.toggleBookPref = async function(kind, bookId) {
+  const b = bookId || currentBookId;
+  if (!b || !BOOKS[b] || !_canBookPrefs()) return;
+  const name = BOOKS[b].name;
+  const on = (kind === 'ignored') ? !DB.isBookIgnored(b) : !DB.isBookLearning(b);
+  try {
+    await DB.setBookPref(b, kind, on);
+    if (kind === 'ignored' && on) {
+      toast('🙈 „' + name + '”: Twoja nauka nie będzie zapisywana (tryb lekcji).', 3500);
+      if (_bookHasMyProgress(b) && confirm('Usunąć też Twój dotychczasowy postęp w „' + name + '”?\n\nZnikną zapisane słówka, powtórki, trudne słowa i statystyki z tego podręcznika. Tego nie da się cofnąć.')) {
+        await _doDeleteBookProgress(b);
+      }
+    } else if (kind === 'ignored') toast('✅ „' + name + '”: Twoja nauka znowu się zapisuje.', 3000);
+    else toast(on ? '📌 „' + name + '” — Uczę się (na wierzchu ekranu startowego).' : '📌 Usunięto z „Uczę się”.', 3000);
+    if (!DB.getBookPrefs().synced) setTimeout(() => toast('ℹ️ Zapisano tylko w tej przeglądarce — uruchom migrację #86, żeby działało na wszystkich urządzeniach.', 4500), 900);
+  } catch(e) { toast('❌ ' + e.message, 3500); }
+  _refreshBookPrefViews();
+};
+window.deleteMyBookProgress = async function(bookId) {
+  const b = bookId || currentBookId;
+  if (!b || !BOOKS[b] || !_canBookPrefs()) return;
+  if (!confirm('Usunąć Twój postęp w „' + BOOKS[b].name + '”?\n\nZnikną zapisane słówka (opanowane i w trakcie), powtórki, trudne słowa i statystyki z tego podręcznika. Tego nie da się cofnąć.')) return;
+  await _doDeleteBookProgress(b);
+  _refreshBookPrefViews();
+};
+// Sekcja „📌 Uczę się” na ekranie startowym admina / nauczyciela (sBooks)
+function renderLearningBooks() {
+  const sec = document.getElementById('learningBooksSection'), grid = document.getElementById('learningBooksGrid');
+  if (!sec || !grid) return;
+  const ids = _canBookPrefs() ? DB.getBookPrefs().learning.filter(id => BOOKS[id] && BOOKS[id].units) : [];
+  if (!ids.length) { sec.style.display = 'none'; grid.innerHTML = ''; return; }
+  grid.innerHTML = '';
+  ids.forEach(id => {
+    const book = BOOKS[id], p = _bookProgressText(book);
+    const d = document.createElement('a');
+    d.className = 'book-card';
+    d.href = 'app.html#/book/' + id;
+    d.style.cssText = 'text-decoration:none;color:inherit;border-color:' + (book.color || '#7c4dff') + '88';
+    d.innerHTML = '<div class="book-icon">' + (book.icon || '📖') + '</div>'
+      + '<div class="book-name">' + escHtml(book.name) + '</div>'
+      + '<div class="book-prog" style="color:' + (book.color || 'var(--accent)') + '">' + (p.known ? p.pct + '% opanowane' : 'Zacznij naukę!') + '</div>'
+      + '<div class="book-bar-bg"><div class="book-bar-fill" style="width:' + p.pct + '%;background:' + (book.color || 'var(--accent)') + '"></div></div>';
+    grid.appendChild(d);
+  });
+  sec.style.display = '';
+}
+// Okno „⚙️ Moje podręczniki” — z ekranu startowego i statystyk
+window.openBookPrefsManager = function() {
+  if (!_canBookPrefs()) return;
+  const pr = DB.getBookPrefs();
+  const ids = Object.keys(BOOKS).filter(id => BOOKS[id] && BOOKS[id].units
+    && (_bookHasMyProgress(id) || pr.ignored.includes(id) || pr.learning.includes(id)));
+  const rank = id => pr.learning.includes(id) ? 0 : pr.ignored.includes(id) ? 2 : 1;
+  ids.sort((a, b) => rank(a) - rank(b) || BOOKS[a].name.localeCompare(BOOKS[b].name, 'pl'));
+  let html = '<div style="font-size:.74rem;color:var(--muted);font-weight:600;line-height:1.5;margin-bottom:10px">'
+    + '<b>📌 Uczę się</b> — podręcznik na wierzchu ekranu startowego i statystyk. '
+    + '<b>🙈 Nie zapisuj</b> — przerabiasz go na lekcji: Twoja nauka (postęp, XP, powtórki) się nie zapisuje. '
+    + '<b>🗑️</b> — usuń zapisany postęp (także sprzed włączenia tej opcji). Pozostałe podręczniki ustawisz na ich ekranie (pasek pod tytułem).</div>';
+  if (!ids.length) html += '<div style="color:var(--muted);font-size:.82rem;font-weight:600;padding:10px 0">Nie masz jeszcze postępu w żadnym podręczniku.</div>';
+  html += '<div style="max-height:56vh;overflow:auto">' + ids.map(id => {
+    const book = BOOKS[id], has = _bookHasMyProgress(id), p = has ? _bookProgressText(book) : null;
+    const learn = pr.learning.includes(id), ign = pr.ignored.includes(id);
+    const q = '\'' + id.replace(/'/g, '') + '\'';
+    return '<div class="bpm-row"><div class="bpm-info"><b>' + (book.icon || '📖') + ' ' + escHtml(book.name) + '</b>'
+      + '<small>' + (has ? p.known + '/' + p.total + ' słówek opanowanych' : 'brak zapisanego postępu') + (ign ? ' · 🙈 nie zapisuje się' : '') + '</small></div>'
+      + '<div class="bpm-act">'
+      + '<button type="button" class="bp-chip' + (learn ? ' on' : '') + '" onclick="toggleBookPref(\'learning\',' + q + ')" title="Uczę się">📌</button>'
+      + '<button type="button" class="bp-chip' + (ign ? ' on warn' : '') + '" onclick="toggleBookPref(\'ignored\',' + q + ')" title="Nie zapisuj mojej nauki">🙈</button>'
+      + (has ? '<button type="button" class="bp-chip del" onclick="deleteMyBookProgress(' + q + ')" title="Usuń mój postęp">🗑️</button>' : '')
+      + '</div></div>';
+  }).join('') + '</div>'
+    + '<div style="display:flex;justify-content:center;margin-top:12px"><button class="btn-modal-cancel" onclick="closeGenericModal()">Zamknij</button></div>';
+  openGenericModal('⚙️ Moje podręczniki', html);
+};
 
 function showAchievements() {
   renderStats();
@@ -12203,9 +12559,9 @@ document.addEventListener('keydown', e => {
   }
   // Strzalki oceniaja tylko w trybie Fiszki (nie w trybach z auto-ocena).
   if (revealed && mode==='card') {
-    if (e.key==='ArrowLeft') { e.preventDefault(); rate('hard'); }
-    if (e.key==='ArrowDown') { e.preventDefault(); rate('medium'); }
-    if (e.key==='ArrowRight') { e.preventDefault(); rate('easy'); }
+    if (e.key==='ArrowLeft') { e.preventDefault(); rate('hard', false, true); }
+    if (e.key==='ArrowDown') { e.preventDefault(); rate('medium', false, true); }
+    if (e.key==='ArrowRight') { e.preventDefault(); rate('easy', false, true); }
   }
 });
 
@@ -31402,6 +31758,14 @@ ${bodyHtml}
     <input type="text" class="modal-textarea" id="wordEditPl" placeholder="np. głowa" autocomplete="off" style="height:auto;padding:8px 10px;font-size:.85rem;font-weight:600">
     <div class="modal-label" id="wordEditTargetLabel">Język docelowy *</div>
     <input type="text" class="modal-textarea" id="wordEditTarget" placeholder="np. head" autocomplete="off" autocorrect="off" style="height:auto;padding:8px 10px;font-size:.85rem;font-weight:600">
+
+    <!-- Wskazówka pod zdaniem z luką (Fiszki / Wpisz, migracja #86) — zapisywana osobno -->
+    <div class="modal-label">💡 Wskazówka pod zdaniem z luką (opcjonalnie)</div>
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px">
+      <input type="text" class="modal-textarea" id="wordEditHint" maxlength="200" placeholder="np. u... t... n..." autocomplete="off" autocorrect="off" style="flex:1;min-width:0;height:auto;padding:8px 10px;font-size:.85rem;font-weight:600;margin:0">
+      <button type="button" id="btnWordHintSave" onclick="saveWordHintEdit()" style="background:var(--success);color:#fff;border:none;border-radius:100px;padding:8px 14px;font-weight:800;font-size:.74rem;cursor:pointer;font-family:inherit;white-space:nowrap">💾 Zapisz</button>
+    </div>
+    <div id="wordEditHintMsg" style="font-size:.66rem;color:var(--muted);font-weight:600;line-height:1.4;margin-bottom:10px">Uczeń zobaczy ją na fiszce jako [Wskazówka: …] z przyciskiem 🔊 (lektor nie czyta jej sam). Puste pole + Zapisz = usuń wskazówkę.</div>
 
     <!-- Sekcja nagrywania wymowy — SLOWA + ZDANIA × PL + EN (migracje #41 + #42) -->
     <div class="modal-label">🎙️ Wymowa słówka (nagranie własne)</div>

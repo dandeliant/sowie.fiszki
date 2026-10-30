@@ -31,6 +31,8 @@ const DB = (() => {
   let _hasPet         = false;  // czy istnieje kolumna profiles.pet (migracja pet-sync.sql #70)
   let _petServer      = null;   // stan pupila z serwera {pet, on, ts}
   let _hasXpAtomic    = false;  // migracja #85: XP dodawane w bazie (add_my_xp), bez XP w zapisie profilu
+  let _hasBookPrefs   = false;  // migracja #86: profiles.book_prefs („Uczę się” / „Nie zapisuj mojej nauki”)
+  let _bookPrefs      = { ignored: [], learning: [] };
   let _xpChain        = Promise.resolve();
   let _xpInflight     = 0;
   let _xpSyncFn       = null;   // app.html: aktualizacja paska XP wartością z bazy
@@ -155,6 +157,15 @@ const DB = (() => {
     _hasPet = !!(profRes.data && Object.prototype.hasOwnProperty.call(profRes.data, 'pet'));
     _hasXpAtomic = !!(profRes.data && Object.prototype.hasOwnProperty.call(profRes.data, 'xp_synced_at'));
     _petServer = (_hasPet && profRes.data.pet && typeof profRes.data.pet === 'object') ? profRes.data.pet : null;
+    _hasBookPrefs = !!(profRes.data && Object.prototype.hasOwnProperty.call(profRes.data, 'book_prefs'));
+    _bookPrefs = _bpNorm(_hasBookPrefs ? profRes.data.book_prefs : _bpLocal());
+    if (_hasBookPrefs && !_bookPrefs.ignored.length && !_bookPrefs.learning.length) {
+      const loc = _bpNorm(_bpLocal());   // ustawione przed migracją #86 — przenieś na serwer
+      if (loc.ignored.length || loc.learning.length) {
+        _bookPrefs = loc;
+        supabase.from('profiles').update({ book_prefs: loc }).eq('id', _userId).then(() => {});
+      }
+    }
     _profile = _rowToProfile(profRes.data, unitRes.data || []);
     if (_hasXpAtomic) _xpSend(0);   // XP, które nie zdążyło się zapisać (offline / zamknięta karta)
 
@@ -356,6 +367,7 @@ const DB = (() => {
   // ═══════════════════════════════════════════════════════════════
   function saveUnitProgress(username, bookId, unitKey, wordStates, knownCount, total) {
     if (!_profile || !_userId) return;
+    if (isBookIgnored(bookId)) return;   // „Nie zapisuj mojej nauki” (lekcja) — postęp tylko w tej sesji
     const key = `${bookId}__${unitKey}`;
     _profile.unitProgress[key] = {
       wordStates, knownCount, total, lastStudied: Date.now()
@@ -377,6 +389,50 @@ const DB = (() => {
   function getUnitProgress(username, bookId, unitKey) {
     if (!_profile) return null;
     return _profile.unitProgress[`${bookId}__${unitKey}`] || null;
+  }
+
+  // ── Podręczniki „📌 Uczę się” / „🙈 Nie zapisuj mojej nauki” (admin / nauczyciel, migracja #86) ──
+  // { ignored: [book_id…], learning: [book_id…] } — bez migracji tylko w tej przeglądarce.
+  function _bpLocalKey() { return 'fiszki_book_prefs_' + (_userId || ''); }
+  function _bpLocal() { try { return JSON.parse(localStorage.getItem(_bpLocalKey()) || '{}'); } catch(e) { return {}; } }
+  function _bpNorm(o) {
+    const list = k => Array.isArray(o && o[k]) ? [...new Set(o[k].filter(x => typeof x === 'string' && x))].slice(0, 300) : [];
+    return { ignored: list('ignored'), learning: list('learning') };
+  }
+  function getBookPrefs() {
+    return { ignored: _bookPrefs.ignored.slice(), learning: _bookPrefs.learning.slice(), synced: _hasBookPrefs };
+  }
+  function isBookIgnored(bookId)  { return !!bookId && _bookPrefs.ignored.includes(bookId); }
+  function isBookLearning(bookId) { return !!bookId && _bookPrefs.learning.includes(bookId); }
+  // kind: 'ignored' | 'learning' (wzajemnie się wykluczają); on = true/false
+  async function setBookPref(bookId, kind, on) {
+    if (!_userId || !bookId || !['ignored', 'learning'].includes(kind)) return getBookPrefs();
+    const next = {
+      ignored:  _bookPrefs.ignored.filter(x => x !== bookId),
+      learning: _bookPrefs.learning.filter(x => x !== bookId),
+    };
+    if (on) next[kind].push(bookId);
+    if (_hasBookPrefs) {
+      const { error } = await supabase.from('profiles').update({ book_prefs: next }).eq('id', _userId);
+      if (error) throw new Error(error.message);
+    } else {
+      try { localStorage.setItem(_bpLocalKey(), JSON.stringify(next)); } catch(e) {}
+    }
+    _bookPrefs = next;
+    return getBookPrefs();
+  }
+  // Usuwa MÓJ postęp w podręczniku: unit_progress (słówka, powtórki, trudne słowa)
+  // oraz odpowiedzi z trybu Wpisz i sesje gier z tego podręcznika. Zwraca liczbę rozdziałów.
+  async function deleteBookProgress(bookId) {
+    if (!_userId || !_profile || !bookId) return 0;
+    const { data, error } = await supabase.from('unit_progress').delete()
+      .eq('user_id', _userId).eq('book_key', bookId).select('unit_key');
+    if (error) throw new Error(error.message);
+    Object.keys(_profile.unitProgress).forEach(k => { if (k.startsWith(bookId + '__')) delete _profile.unitProgress[k]; });
+    for (const t of ['typed_answers', 'game_sessions']) {   // #51 / #66 — błąd (brak tabeli) pomijamy
+      try { await supabase.from(t).delete().eq('user_id', _userId).eq('book_id', bookId); } catch(e) {}
+    }
+    return (data || []).length;
   }
 
   function getBookProgress(username, book) {
@@ -433,6 +489,7 @@ const DB = (() => {
       const ws = prog && prog.wordStates;
       if (!ws) return;
       const [bookId, unitKey] = key.split('__');
+      if (isBookIgnored(bookId)) return;   // podręcznik „Nie zapisuj mojej nauki”
       // Tylko slowa, ktore juz byly cwiczone (reps>0) i nadeszly do powtorki.
       // Slowa z reps=0 sa "nowe" — nie liczymy ich do kolejki, bo nigdy nie
       // mialy wlasciwego nextReview (lub byly pomylone i lecza sie od zera).
@@ -1189,6 +1246,37 @@ const DB = (() => {
   /** Zwraca zdanie z cache (synchronicznie). */
   function getSentence(bookId, wordPl) {
     return _sentences[bookId + '__' + wordPl] || null;
+  }
+
+  // ── Wskazówki do fiszek (word_hints, migracja #86) — np. „u... t... n...” ──
+  let _hints = {};          // 'bookId__wordPl' → tekst
+  let _hasHints = true;     // false = brak tabeli (migracja nieuruchomiona)
+  const _missing86 = e => /word_hints|PGRST20[25]|42P01/i.test(((e && e.code) || '') + ' ' + ((e && e.message) || ''));
+  async function loadWordHints(bookId) {
+    if (!bookId || !_hasHints) return;
+    const { data, error } = await supabase.from('word_hints').select('word_pl, hint').eq('book_id', bookId);
+    if (error) { if (_missing86(error)) _hasHints = false; else console.warn('[DB] loadWordHints:', error.message); return; }
+    Object.keys(_hints).forEach(k => { if (k.startsWith(bookId + '__')) delete _hints[k]; });
+    (data || []).forEach(r => { if (r.hint) _hints[bookId + '__' + r.word_pl] = r.hint; });
+  }
+  function getWordHint(bookId, wordPl) { return _hints[bookId + '__' + wordPl] || ''; }
+  /** Twórca podręcznika (RLS #86): zapis wskazówki; pusta = usunięcie. */
+  async function saveWordHint(bookId, wordPl, hint) {
+    const h = String(hint || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+    const NEED = 'Uruchom migrację #86 (word-hints-and-book-prefs.sql) w Supabase.';
+    if (!_hasHints) throw new Error(NEED);
+    const q = h
+      ? supabase.from('word_hints').upsert({ book_id: bookId, word_pl: wordPl, hint: h, updated_by: _userId, updated_at: new Date().toISOString() }, { onConflict: 'book_id,word_pl' }).select('word_pl')
+      : supabase.from('word_hints').delete().eq('book_id', bookId).eq('word_pl', wordPl).select('word_pl');
+    const { data, error } = await q;
+    if (error) {
+      if (_missing86(error)) { _hasHints = false; throw new Error(NEED); }
+      if (/row-level security|42501/i.test(error.message || '')) throw new Error('Wskazówki możesz zmieniać tylko we własnych podręcznikach.');
+      throw new Error(error.message);
+    }
+    if (h && (!data || !data.length)) throw new Error('Brak uprawnień do zapisu wskazówki.');
+    if (h) _hints[bookId + '__' + wordPl] = h; else delete _hints[bookId + '__' + wordPl];
+    return h;
   }
 
   /** Admin: zapisuje / aktualizuje zdanie (UPSERT). */
@@ -5193,6 +5281,14 @@ const DB = (() => {
     // zdania przykładowe
     loadSentences,
     getSentence,
+    loadWordHints,
+    getWordHint,
+    saveWordHint,
+    getBookPrefs,
+    isBookIgnored,
+    isBookLearning,
+    setBookPref,
+    deleteBookProgress,
     saveSentence,
     loadContexts,
     getContexts,

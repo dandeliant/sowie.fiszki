@@ -143,6 +143,7 @@ with c(nr, plik, ok) as (values
   ('83', 'user-presence.sql',                     pg_temp.tab('public.user_presence') and pg_temp.fn('presence_online')),
   ('85', 'friends-and-rivalry.sql',               pg_temp.tab('public.friend_links') and pg_temp.fn('add_my_xp')),
   ('84', 'security-advisor-fixes.sql',            coalesce(not has_function_privilege('anon', to_regprocedure('public._delete_account_rows(uuid)')::oid, 'EXECUTE'), true)),
+  ('86', 'word-hints-and-book-prefs.sql',         pg_temp.tab('public.word_hints') and pg_temp.col('profiles', 'book_prefs')),
   ('x2', 'add-live-games.sql',                    pg_temp.fn('create_live_game')),
   ('x3', 'add-live-time-limit-and-score-rpc.sql', pg_temp.fn('update_live_player_score')),
   ('x4', 'fix-live-join-token.sql + fix-live-join-ambiguous.sql', pg_temp.fn('join_live_game')),
