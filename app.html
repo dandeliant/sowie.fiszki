@@ -6271,6 +6271,7 @@ function showScreen(id) {
   try { _gsSyncScreen(id); } catch(e) {}
   try { if (window.hwOnScreen) window.hwOnScreen(id); } catch(e) {}   // 🎃 Halloween: dekoracje w grach / zaproszenie
   try { if (window._liOnScreen) window._liOnScreen(id); } catch(e) {}  // wiadomości / zaproszenia czekające na koniec kartkówki lub gry (#87)
+  try { if (window._hmwOnScreen) window._hmwOnScreen(id); } catch(e) {}  // okienko „Nowa praca domowa” (#88)
   // Bulk action toolbar — ukryj gdy użytkownik wychodzi z Klasy/Dostępu
   if (id !== 'sClassDetail' && id !== 'sAdminAccess') {
     const tb = document.getElementById('bulkActionsToolbar');
@@ -16889,6 +16890,7 @@ function _liFlush() {
   if (isGuest) return;
   _liRenderResume();
   if (_li.cur || _li.inv || _liBusy()) return;
+  if (window._hmwPopupOpen && window._hmwPopupOpen()) return;   // okienko o pracy domowej (#88) — po jego zamknięciu
   if (_li.msgs.length) { _liShowMsg(_li.msgs.shift()); return; }
   while (_li.invites.length) {
     const inv = _li.invites.shift();
@@ -24244,12 +24246,13 @@ function buildAlphaKeys(inputId, answer) {
 <div class="modal-overlay" id="studentNoteModal" style="display:none" onclick="if(event.target===this)closeStudentNoteModal()">
   <div class="modal-box" style="max-width:540px">
     <div style="font-family:'Playfair Display',serif;font-size:1.15rem;color:var(--accent2,#06d6a0);margin-bottom:4px" id="snModalTitle">👤 Notatka dla ucznia</div>
-    <div style="font-size:.7rem;color:var(--muted);margin-bottom:10px;font-weight:600;line-height:1.45">
+    <div id="snHelp" style="font-size:.7rem;color:var(--muted);margin-bottom:10px;font-weight:600;line-height:1.45">
       Widzi ją <strong>tylko wybrany uczeń</strong> (każdy zaznaczony dostaje własną kopię) — na tej stronie i w banerze na ekranie głównym. Inni uczniowie jej nie widzą. Obsługa: <code>[tekst](url)</code>, <code>**pogrubienie**</code>, linki <code>https://…</code>.
     </div>
+    <div id="snTaskInfo" style="display:none;font-size:.72rem;color:var(--muted);margin-bottom:10px;font-weight:600;line-height:1.45;background:rgba(6,214,160,.08);border:1px solid rgba(6,214,160,.3);border-radius:10px;padding:8px 10px"></div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
-      <label class="btn-sm" style="cursor:pointer"><input type="radio" name="snKind" value="note" checked onchange="snKindChanged()"> 📝 Notatka</label>
-      <label class="btn-sm" style="cursor:pointer"><input type="radio" name="snKind" value="homework" onchange="snKindChanged()"> 📚 Praca domowa</label>
+      <label class="btn-sm" id="snKindNoteLab" style="cursor:pointer"><input type="radio" name="snKind" value="note" checked onchange="snKindChanged()"> 📝 Notatka</label>
+      <label class="btn-sm" id="snKindHwLab" style="cursor:pointer"><input type="radio" name="snKind" value="homework" onchange="snKindChanged()"> 📚 Praca domowa</label>
       <label id="snDueWrap" style="display:none;align-items:center;gap:6px;font-size:.75rem;font-weight:700;color:var(--muted)">Termin:
         <input type="date" id="snDue" style="padding:5px 8px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-family:inherit">
       </label>
@@ -24967,6 +24970,7 @@ function buildAlphaKeys(inputId, answer) {
         <li><strong>Ksywka (dobrowolna):</strong> nazwa wyświetlana innym uczniom zamiast loginu; Nauczyciel lub Administrator może usunąć ksywkę niestosowną.</li>
         <li><strong>Znajomi (dobrowolne, tylko konta uczniów):</strong> lista znajomych i zaproszeń (kto kogo zaprosił, kiedy i czy zaproszenie przyjęto) oraz kod znajomego. Z wyszukiwarki można zaprosić tylko ucznia z klas widocznych w rankingu, a kogoś spoza nich — kodem przekazanym osobiście; zaproszenie trzeba przyjąć. Znajomi widzą nawzajem ksywkę (albo login), wyniki w rankingu, grafikę profilową i pupila oraz mogą zapraszać się do rywalizacji — bez wiadomości i czatu. Znajomość można usunąć w każdej chwili; dane znikają też po usunięciu Konta.</li>
         <li><strong>Wiadomości od Nauczyciela:</strong> krótkie wiadomości (do 500 znaków), które Nauczyciel ucznia lub Administrator wysyła do konkretnego ucznia; wyświetlają się uczniowi w okienku w aplikacji. Zapisujemy treść, nadawcę, odbiorcę, czas wysłania oraz to, czy wiadomość została wyświetlona, oznaczona jako przeczytana albo zamknięta. Wiadomość widzą tylko nadawca i odbiorca, uczeń nie może na nią odpowiedzieć. Wiadomości usuwamy automatycznie po 30 dniach, a także po usunięciu Konta.</li>
+        <li><strong>Notatki i prace domowe od Nauczyciela:</strong> notatki i prace domowe (z terminem i wiadomością), które Nauczyciel ucznia lub Administrator przydziela konkretnemu uczniowi, także ćwiczenia z Platformy (zadania gramatyczne, czytanki). Zapisujemy, czy i kiedy uczeń zobaczył pracę i ją zrobił, a przy ćwiczeniu — najlepszy wynik wraz z odpowiedziami, wynik ostatniego podejścia i liczbę podejść. Widzą je uczeń, Nauczyciel, który przydzielił pracę, oraz Administrator. Dane usuwamy, gdy Nauczyciel usunie pracę, a także po usunięciu Konta.</li>
         <li><strong>Rywalizacja online:</strong> zaproszenia do gry, odpowiedzi i wyniki w pojedynku oraz sygnał, czy gracz jest połączony. Widzi je druga osoba w grze (odpowiedź na pytanie dopiero po udzieleniu własnej). Dane pojedynku usuwamy po 30 dniach, a także po usunięciu Konta.</li>
         <li><strong>Dane w formularzu prośby o dostęp do podręcznika</strong> (dobrowolne, podawane tylko jeśli Użytkownik zdecyduje się wysłać prośbę): imię i nazwisko (wymagane do weryfikacji), szkoła i klasa, wybrany podręcznik oraz opcjonalna wiadomość. Dane te widzi <strong>wyłącznie Administrator</strong> — Nauczyciele nie mają do nich dostępu.</li>
         <li><strong>Dane techniczne:</strong> identyfikatory sesji (cookies Supabase Auth), pliki Service Worker dla działania PWA.</li>
@@ -33007,6 +33011,68 @@ ${bodyHtml}
   }
   const _snCache = {}; // id → notatka (edycja, odświeżanie)
 
+  // ── Prace domowe z zadaniem (#88): 🧠 zestaw gramatyczny / 📖 czytanka z rozdziału ──
+  const HMW_KIND = { grammar: { ic: '🧠', name: 'Zadania gramatyczne' }, reading: { ic: '📖', name: 'Czytanka' } };
+  const _hmwPl = (n, a, b, c) => n === 1 ? a : (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) ? b : c;
+  // Treść pracy, gdy nauczyciel nie dopisał wiadomości (widzi ją też starsza wersja aplikacji)
+  function _hmwDefaultText(kind, title){
+    return kind === 'reading'
+      ? '📖 Przeczytaj czytankę „' + title + '” i odpowiedz na pytania.'
+      : '🧠 Zrób zadania gramatyczne „' + title + '”.';
+  }
+  // Wiadomość od nauczyciela (bez domyślnego tekstu zadania)
+  function _hmwMsg(n){ return n.task_kind && n.content === _hmwDefaultText(n.task_kind, n.task_title || '') ? '' : (n.content || ''); }
+  function _hmwTitle(n){
+    if (n.task_kind) return (HMW_KIND[n.task_kind] || HMW_KIND.grammar).ic + ' ' + (n.task_title || 'Zadanie');
+    const t = String(n.content || '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/\*\*/g, '').split('\n').map(s => s.trim()).find(Boolean) || 'Praca domowa';
+    return '📚 ' + (t.length > 70 ? t.slice(0, 68) + '…' : t);
+  }
+  const _hmwRes = r => (r && r.total) ? r.score + '/' + r.total + ' (' + r.pct + '%)' : '';
+  function _hmwDays(d){ const x = new Date(d + 'T12:00:00'), t = new Date(); t.setHours(12, 0, 0, 0); return Math.round((x - t) / 864e5); }
+  const _hmwLate = n => !!(n.due_date && !n.done_at && _hmwDays(n.due_date) < 0);
+  const _hmwIsTodo = n => n.kind === 'homework' && !n.done_at;
+  // Termin dla ucznia: „na dziś”, „na jutro”, „do 5 lis”, po terminie — ostrzeżenie
+  function _hmwDue(n){
+    if (!n.due_date) return '';
+    const days = _hmwDays(n.due_date);
+    if (!n.done_at && days < 0) return '⚠️ po terminie (' + _snDate(n.due_date) + ')';
+    return '⏰ ' + (days === 0 ? 'na dziś' : days === 1 ? 'na jutro' : 'do ' + _snDate(n.due_date));
+  }
+  function _hmwDateTime(iso){
+    const d = new Date(iso); if (!iso || isNaN(d)) return '';
+    return d.toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' }) + ', ' + d.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' });
+  }
+  const _hmwMine = () => window._snMyNotes || [];
+  // Karta pracy z zadaniem dla ucznia (strona rozdziału i okno „Od nauczyciela”)
+  function _hmwStudentBlock(n, inModal){
+    const r = n.result, msg = _hmwMsg(n);
+    return '<div class="admin-note admin-note-student' + (n.done_at ? ' sn-done' : '') + '"' + (inModal ? ' style="margin:0 0 10px"' : '') + '>'
+      + '<div class="admin-note-vis-badge">📚 Praca domowa' + (inModal ? '' : ' — tylko dla Ciebie') + (n.due_date ? ' · termin ' + _snDate(n.due_date) : '') + '</div>'
+      + (inModal ? '<div style="font-size:.7rem;font-weight:800;color:var(--muted);margin-bottom:4px">' + _snEsc(_snPlace(n.book_id, n.unit_key)) + ' · ' + _snDate(n.created_at) + '</div>' : '')
+      + '<div class="hmw-task-t">' + _snEsc(_hmwTitle(n)) + '</div>'
+      + (msg ? '<div class="admin-note-body">' + renderNoteHtml(msg) + '</div>' : '')
+      + '<div class="hmw-task-st">' + (r ? '✅ Twój najlepszy wynik: <b>' + _hmwRes(r) + '</b> · ' + n.attempts + ' ' + _hmwPl(n.attempts, 'podejście', 'podejścia', 'podejść')
+          : _snEsc(_hmwDue(n) || '⏳ Do zrobienia')) + '</div>'
+      + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"><button class="btn-sm' + (r ? '' : ' accent') + '" onclick="hmwStart(\'' + n.id + '\')">'
+      + (r ? '🔁 Zrób jeszcze raz' : '▶ Zrób teraz') + '</button>'
+      + (inModal && (typeof BOOKS !== 'undefined' && BOOKS[n.book_id]) ? '<button class="btn-sm" onclick="snGoTo(\'' + n.id + '\')">📖 Przejdź do rozdziału</button>' : '')
+      + '</div></div>';
+  }
+  // Nauczyciel: prace z tym samym zestawem zebrane w jeden wiersz (zrobiło x/y → „📊 Wyniki”)
+  function _hmwGroupsHtml(rows){
+    const groups = {};
+    rows.forEach(n => { (groups[n.task_id] = groups[n.task_id] || []).push(n); });
+    return Object.values(groups).map(g => {
+      const n0 = g[0], done = g.filter(x => x.done_at).length;
+      const dues = [...new Set(g.map(x => x.due_date).filter(Boolean))].sort();
+      return '<div class="sn-row"><div class="sn-row-main">'
+        + '<span class="sn-row-who">' + _snEsc(_hmwTitle(n0)) + '</span>'
+        + '<span class="sn-row-meta">📌 zadane ' + g.length + ' ' + (g.length === 1 ? 'uczniowi' : 'uczniom')
+        + (dues.length ? ' · termin ' + _snDate(dues[0]) + (dues.length > 1 ? '…' : '') : '') + ' · zrobiło ' + done + '/' + g.length + '</span></div>'
+        + '<button class="btn-sm" onclick="openTaskResults(\'' + n0.task_kind + '\',\'' + n0.task_id + '\')">📊 Wyniki</button></div>';
+    }).join('');
+  }
+
   async function _studentNotesHtml(bookId, unitKey){
     if (isGuest || !DB.loadStudentNotes) return '';
     let notes;
@@ -33022,6 +33088,7 @@ ${bodyHtml}
     const ctxArgs = "'" + _snEsc(bookId) + "','" + _snEsc(unitKey) + "'";
     // Uczeń: notatki skierowane do niego
     let html = notes.filter(n => n.student_id === me).map(n => {
+      if (n.task_kind) return _hmwStudentBlock(n, false);
       const hw = n.kind === 'homework';
       const badge = hw
         ? '📚 Praca domowa — tylko dla Ciebie' + (n.due_date ? ' · termin ' + _snDate(n.due_date) : '')
@@ -33048,7 +33115,8 @@ ${bodyHtml}
         html += '<div class="admin-note admin-note-student">'
           + '<div class="admin-note-vis-badge">👤 Dla wybranych uczniów — każdy widzi tylko swoją</div>'
           + '<div class="admin-note-actions">' + addBtn + '</div>'
-          + written.map(n => '<div class="sn-row"><div class="sn-row-main">'
+          + _hmwGroupsHtml(written.filter(n => n.task_kind))
+          + written.filter(n => !n.task_kind).map(n => '<div class="sn-row"><div class="sn-row-main">'
               + '<span class="sn-row-who">' + _snStudentName(n.student_id) + '</span>'
               + '<span class="sn-row-meta">' + _snMeta(n) + '</span>'
               + '<div class="sn-row-body">' + renderNoteHtml(n.content) + '</div></div>'
@@ -33060,19 +33128,40 @@ ${bodyHtml}
     return html;
   }
   function _snRefresh(bookId, unitKey){
+    // tylko gdy ta strona jest otwarta (zadanie z widoku „Wszystkie” należy do konkretnego rozdziału)
+    if (bookId !== currentBookId || (unitKey && unitKey !== currentUnitKey)) return;
     loadAndShowBookNote(unitKey ? 'unit' : 'book', bookId, unitKey || '');
   }
 
   let _snCtx = null;
-  window.openStudentNoteEditor = async function(bookId, unitKey, noteId){
+  // task (#88): { kind: 'grammar'|'reading', id, title } — praca domowa z zestawem / czytanką;
+  // after: { results: [kind, taskId] } — po zapisie wróć do okna „📊 Wyniki”.
+  window.openStudentNoteEditor = async function(bookId, unitKey, noteId, task, after){
     if (!_snCanWrite()) return;
     const n = noteId ? _snCache[noteId] : null;
-    _snCtx = { bookId: bookId, unitKey: unitKey || '', id: n ? n.id : null, selected: new Set(), classes: [], visible: [] };
-    document.getElementById('snModalTitle').textContent = (n ? '✏️ Edytuj — ' : '👤 Dla ucznia — ') + _snPlace(bookId, unitKey);
-    const kind = n ? n.kind : 'note';
+    if (n && n.task_kind) task = { kind: n.task_kind, id: n.task_id, title: n.task_title || '' };
+    _snCtx = { bookId: bookId, unitKey: unitKey || '', id: n ? n.id : null, selected: new Set(), classes: [], visible: [],
+               task: task || null, assigned: new Set(), after: after || null };
+    const tk = task ? (HMW_KIND[task.kind] || HMW_KIND.grammar) : null;
+    document.getElementById('snModalTitle').textContent = task
+      ? (n ? '✏️ Edytuj pracę — ' : '📌 Zadaj uczniom — ') + tk.ic + ' ' + task.title
+      : (n ? '✏️ Edytuj — ' : '👤 Dla ucznia — ') + _snPlace(bookId, unitKey);
+    const kind = task ? 'homework' : (n ? n.kind : 'note');
     document.querySelectorAll('input[name="snKind"]').forEach(r => { r.checked = r.value === kind; });
+    ['snKindNoteLab', 'snKindHwLab'].forEach(i => { const el = document.getElementById(i); if (el) el.style.display = task ? 'none' : ''; });
+    const help = document.getElementById('snHelp'), tinfo = document.getElementById('snTaskInfo');
+    if (help) help.style.display = task ? 'none' : '';
+    if (tinfo) {
+      tinfo.style.display = task ? '' : 'none';
+      if (task) tinfo.innerHTML = '<b>' + _snEsc(tk.name) + ' · ' + _snEsc(_snPlace(bookId, unitKey)) + '</b><br>'
+        + 'Każdy zaznaczony uczeń zobaczy pracę na stronie głównej i w okienku z przyciskiem „▶ Przejdź do zadania”. '
+        + 'Wynik zapisze się sam, gdy skończy ćwiczenie — zobaczysz go w „📊 Wyniki”. Wiadomość i termin nie są obowiązkowe.';
+    }
+    const txt = document.getElementById('snText');
+    if (!txt.dataset.ph0) txt.dataset.ph0 = txt.placeholder;
+    txt.placeholder = task ? 'Wiadomość dla uczniów (nie musisz pisać), np. Zrób do piątku — powodzenia! 🦉' : txt.dataset.ph0;
     document.getElementById('snDue').value = n && n.due_date ? n.due_date : '';
-    document.getElementById('snText').value = n ? n.content : '';
+    txt.value = n ? (task ? _hmwMsg(n) : n.content) : '';
     document.getElementById('snModalMsg').textContent = '';
     document.getElementById('snSearch').value = '';
     document.getElementById('snPickWrap').style.display = n ? 'none' : '';
@@ -33087,16 +33176,22 @@ ${bodyHtml}
     if (n) return;
     const list = document.getElementById('snPickList');
     list.innerHTML = '<div style="padding:10px;color:var(--muted);font-size:.78rem">⏳ Ładowanie uczniów…</div>';
+    const ctx = _snCtx;
     try {
       if (!(_allProfiles && _allProfiles.length)) _allProfiles = await DB.loadAllProfiles();
-      try { _snCtx.classes = await DB.loadClasses(); } catch(e) { _snCtx.classes = []; }
+      try { ctx.classes = await DB.loadClasses(); } catch(e) { ctx.classes = []; }
+      // komu ten zestaw jest już zadany — znacznik „już zadane” na liście
+      if (task && DB.loadTaskAssignments) {
+        try { (await DB.loadTaskAssignments(null, null, task.id) || []).forEach(x => ctx.assigned.add(x.student_id)); } catch(e) {}
+      }
     } catch(e) {
       list.innerHTML = '<div style="padding:10px;color:var(--danger);font-size:.78rem">❌ ' + _snEsc(e.message) + '</div>';
       return;
     }
+    if (_snCtx !== ctx) return;   // okno zamknięte w trakcie ładowania
     const sel = document.getElementById('snClass');
     sel.innerHTML = '<option value="">' + (isCurrentUserAdmin() ? 'Wszyscy uczniowie' : 'Wszyscy moi uczniowie') + '</option>'
-      + _snCtx.classes.map(c => '<option value="' + _snEsc(c.id) + '">' + _snEsc(c.name) + ' · ' + (c.class_members || []).length + ' ucz.</option>').join('');
+      + ctx.classes.map(c => '<option value="' + _snEsc(c.id) + '">' + _snEsc(c.name) + ' · ' + (c.class_members || []).length + ' ucz.</option>').join('');
     snRenderPick();
   };
   window.snKindChanged = function(){
@@ -33122,7 +33217,8 @@ ${bodyHtml}
     const list = document.getElementById('snPickList');
     list.innerHTML = all.length
       ? all.slice(0, LIMIT).map(p => '<label><input type="checkbox" ' + (_snCtx.selected.has(p.id) ? 'checked ' : '')
-          + 'onchange="snToggleStudent(\'' + p.id + '\', this.checked)"> <span>' + fmtNameWithLabel(p.id, p.username) + '</span></label>').join('')
+          + 'onchange="snToggleStudent(\'' + p.id + '\', this.checked)"> <span>' + fmtNameWithLabel(p.id, p.username)
+          + (_snCtx.assigned.has(p.id) ? ' <small class="hmw-already">✓ już zadane</small>' : '') + '</span></label>').join('')
         + (all.length > LIMIT ? '<div style="padding:6px;color:var(--muted);font-size:.72rem">Pokazano ' + LIMIT + ' z ' + all.length + ' — zawęź wyszukiwanie.</div>' : '')
       : '<div style="padding:10px;color:var(--muted);font-size:.78rem">' + (cid || q ? 'Brak uczniów dla tego filtra.' : 'Nie masz jeszcze uczniów — utwórz konta w panelu „Klasy”.') + '</div>';
     _snUpdateCount();
@@ -33150,20 +33246,27 @@ ${bodyHtml}
     if (!_snCtx) return;
     const ctx = _snCtx;
     const msg = document.getElementById('snModalMsg');
-    const kind = (document.querySelector('input[name="snKind"]:checked') || {}).value || 'note';
-    const content = document.getElementById('snText').value.trim();
+    const task = ctx.task;
+    const kind = task ? 'homework' : ((document.querySelector('input[name="snKind"]:checked') || {}).value || 'note');
+    let content = document.getElementById('snText').value.trim();
     const dueDate = document.getElementById('snDue').value || null;
+    if (!content && task) content = _hmwDefaultText(task.kind, task.title);
     if (!content) { msg.style.color = 'var(--danger)'; msg.textContent = 'Wpisz treść notatki.'; return; }
     if (!ctx.id && !ctx.selected.size) { msg.style.color = 'var(--danger)'; msg.textContent = 'Zaznacz co najmniej jednego ucznia.'; return; }
     msg.style.color = 'var(--muted)'; msg.textContent = '⏳ Zapisywanie…';
     const btn = document.getElementById('snSaveBtn'); btn.disabled = true;
     try {
       if (ctx.id) await DB.saveStudentNote({ id: ctx.id, kind: kind, content: content, dueDate: dueDate });
-      else await DB.saveStudentNote({ bookId: ctx.bookId, unitKey: ctx.unitKey, studentIds: [...ctx.selected], kind: kind, content: content, dueDate: dueDate });
+      else await DB.saveStudentNote({ bookId: ctx.bookId, unitKey: ctx.unitKey, studentIds: [...ctx.selected], kind: kind, content: content, dueDate: dueDate,
+        taskKind: task ? task.kind : null, taskId: task ? task.id : null });
       const n = ctx.id ? 1 : ctx.selected.size;
       msg.style.color = 'var(--success)';
-      msg.textContent = ctx.id ? '✓ Zapisano.' : '✓ Zapisano dla ' + n + ' ' + (n === 1 ? 'ucznia' : 'uczniów') + '.';
-      setTimeout(() => { closeStudentNoteModal(); _snRefresh(ctx.bookId, ctx.unitKey); }, 650);
+      msg.textContent = ctx.id ? '✓ Zapisano.' : task ? '✓ Zadane ' + n + ' ' + (n === 1 ? 'uczniowi' : 'uczniom') + '.' : '✓ Zapisano dla ' + n + ' ' + (n === 1 ? 'ucznia' : 'uczniów') + '.';
+      setTimeout(() => {
+        closeStudentNoteModal(); _snRefresh(ctx.bookId, ctx.unitKey);
+        if (task && typeof window.aiHmwChanged === 'function') window.aiHmwChanged();
+        if (ctx.after && ctx.after.results) openTaskResults(ctx.after.results[0], ctx.after.results[1]);
+      }, 650);
     } catch(e) {
       msg.style.color = 'var(--danger)'; msg.textContent = '❌ ' + e.message;
     } finally { btn.disabled = false; }
@@ -33192,33 +33295,70 @@ ${bodyHtml}
     } catch(e) { toast('❌ ' + e.message, 3200); }
   };
 
-  // ── Baner ucznia na ekranie głównym (sLang): prace domowe do zrobienia + świeże notatki ──
+  // ── Ekran główny (sLang): karta „📚 Prace domowe” (do zrobienia + wyniki zrobionych zadań)
+  //    albo — gdy są same notatki — dawny baner „📌 Od nauczyciela” ──
   let _snBannerAt = 0;
   window.renderStudentNotesBanner = async function(force){
     const host = document.getElementById('sLang');
     if (!host || isGuest || !DB.loadMyStudentNotes || !DB.getUserId()) return;
-    if (!force && Date.now() - _snBannerAt < 60000) return;
+    if (!force && Date.now() - _snBannerAt < 60000) { _snRenderBanner(); _hmwSchedule(1200); return; }
     _snBannerAt = Date.now();
     let notes;
     try { notes = await DB.loadMyStudentNotes(); } catch(e) { return; }
-    let el = document.getElementById('studentNotesBanner');
     window._snMyNotes = notes || [];
-    const todo = window._snMyNotes.filter(n => n.kind === 'homework' && !n.done_at);
-    const fresh = window._snMyNotes.filter(n => n.kind === 'note' && Date.now() - new Date(n.created_at).getTime() < 14 * 864e5);
-    if (!todo.length && !fresh.length) { if (el) el.remove(); return; }
+    window._snMyNotes.forEach(n => { _snCache[n.id] = n; });
+    _snRenderBanner();
+    _hmwSchedule(1500);   // okienko o nowej pracy domowej (raz)
+  };
+  function _snRenderBanner(){
+    const host = document.getElementById('sLang');
+    if (!host || isGuest) return;
+    const mine = _hmwMine();
+    let el = document.getElementById('studentNotesBanner');
+    const todo = mine.filter(_hmwIsTodo).sort((a, b) =>
+      (a.due_date || '9999') < (b.due_date || '9999') ? -1 : (a.due_date || '9999') > (b.due_date || '9999') ? 1 : new Date(b.created_at) - new Date(a.created_at));
+    const doneT = mine.filter(n => n.task_kind && n.result && n.done_at && Date.now() - new Date(n.result_at || n.done_at).getTime() < 7 * 864e5)
+      .sort((a, b) => new Date(b.result_at || b.done_at) - new Date(a.result_at || a.done_at));
+    const fresh = mine.filter(n => n.kind === 'note' && Date.now() - new Date(n.created_at).getTime() < 14 * 864e5);
+    if (!todo.length && !doneT.length && !fresh.length) { if (el) el.remove(); return; }
     if (!el) {
       el = document.createElement('div');
       el.id = 'studentNotesBanner'; el.style.width = '100%';
       host.insertBefore(el, host.firstChild);
     }
-    const parts = [];
-    if (todo.length) parts.push('📚 ' + todo.length + ' ' + (todo.length === 1 ? 'praca domowa do zrobienia' : (todo.length < 5 ? 'prace domowe do zrobienia' : 'prac domowych do zrobienia')));
-    if (fresh.length) parts.push('👤 ' + fresh.length + ' ' + (fresh.length === 1 ? 'notatka' : (fresh.length < 5 ? 'notatki' : 'notatek')) + ' dla Ciebie');
-    el.innerHTML = '<div onclick="openMyStudentNotes()" style="background:linear-gradient(135deg,rgba(6,214,160,.16),rgba(124,77,255,.10));border:2px solid rgba(6,214,160,.45);border-radius:16px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;gap:12px;cursor:pointer">'
-      + '<div style="font-size:1.8rem">📌</div><div style="flex:1;min-width:0"><div style="font-weight:800;color:var(--text);font-size:.9rem">Od nauczyciela</div>'
-      + '<div style="font-size:.72rem;color:var(--muted);font-weight:700">' + parts.join(' · ') + '</div></div>'
-      + '<div style="font-weight:800;color:var(--accent2,#06d6a0)">→</div></div>';
-  };
+    const noteTxt = fresh.length ? '👤 ' + fresh.length + ' ' + _hmwPl(fresh.length, 'notatka', 'notatki', 'notatek') + ' dla Ciebie' : '';
+    if (!todo.length && !doneT.length) {
+      el.innerHTML = '<div onclick="openMyStudentNotes()" style="background:linear-gradient(135deg,rgba(6,214,160,.16),rgba(124,77,255,.10));border:2px solid rgba(6,214,160,.45);border-radius:16px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;gap:12px;cursor:pointer">'
+        + '<div style="font-size:1.8rem">📌</div><div style="flex:1;min-width:0"><div style="font-weight:800;color:var(--text);font-size:.9rem">Od nauczyciela</div>'
+        + '<div style="font-size:.72rem;color:var(--muted);font-weight:700">' + noteTxt + '</div></div>'
+        + '<div style="font-weight:800;color:var(--accent2,#06d6a0)">→</div></div>';
+      return;
+    }
+    const MAXT = 4, MAXD = 2;
+    const item = n => {
+      const done = !!n.done_at, late = _hmwLate(n);
+      const meta = [_snPlace(n.book_id, n.unit_key)];
+      if (!done && n.due_date) meta.push(_hmwDue(n));
+      if (done && n.result) meta.push(n.attempts + ' ' + _hmwPl(n.attempts, 'podejście', 'podejścia', 'podejść'));
+      const btn = n.task_kind
+        ? '<button class="btn-sm' + (done ? '' : ' accent') + '" onclick="hmwStart(\'' + n.id + '\')">' + (done ? '🔁 Popraw' : '▶ Zrób teraz') + '</button>'
+        : ((typeof BOOKS !== 'undefined' && BOOKS[n.book_id]) ? '<button class="btn-sm" onclick="snGoTo(\'' + n.id + '\')">📖 Otwórz</button>' : '');
+      return '<li class="hmw-item' + (done ? ' done' : '') + (late ? ' late' : '') + '">'
+        + '<div class="hmw-main"><div class="hmw-t">' + _snEsc(_hmwTitle(n)) + '</div>'
+        + '<div class="hmw-m">' + _snEsc(meta.join(' · ')) + '</div></div>'
+        + (done && n.result ? '<div class="hmw-score" title="Twój najlepszy wynik">✅ ' + _snEsc(_hmwRes(n.result)) + '</div>' : '')
+        + btn + '</li>';
+    };
+    const more = todo.length - MAXT;
+    el.innerHTML = '<section class="hmw-card" aria-labelledby="hmwCardTitle">'
+      + '<div class="hmw-card-head"><h2 id="hmwCardTitle">📚 Prace domowe'
+      + (todo.length ? ' <span class="hmw-count">' + todo.length + ' do zrobienia</span>' : '') + '</h2>'
+      + '<button class="btn-sm" onclick="openMyStudentNotes()">Wszystkie →</button></div>'
+      + '<ul class="hmw-list">' + todo.slice(0, MAXT).map(item).join('') + doneT.slice(0, MAXD).map(item).join('') + '</ul>'
+      + (more > 0 || noteTxt ? '<div class="hmw-foot">' + (more > 0 ? '<a href="#" onclick="event.preventDefault();openMyStudentNotes()">+ jeszcze ' + more + ' ' + _hmwPl(more, 'praca', 'prace', 'prac') + '</a>' : '')
+        + (more > 0 && noteTxt ? ' · ' : '') + (noteTxt ? '<a href="#" onclick="event.preventDefault();openMyStudentNotes()">' + noteTxt + '</a>' : '') + '</div>' : '')
+      + '</section>';
+  }
   window.openMyStudentNotes = function(){
     const notes = window._snMyNotes || [];
     notes.forEach(n => { _snCache[n.id] = n; });
@@ -33228,6 +33368,7 @@ ${bodyHtml}
       return new Date(b.created_at) - new Date(a.created_at);
     });
     const html = sorted.length ? sorted.map(n => {
+      if (n.task_kind) return _hmwStudentBlock(n, true);
       const hw = n.kind === 'homework';
       return '<div class="admin-note admin-note-student' + (n.done_at ? ' sn-done' : '') + '" style="margin:0 0 10px">'
         + '<div class="admin-note-vis-badge">' + (hw ? '📚 Praca domowa' + (n.due_date ? ' · termin ' + _snDate(n.due_date) : '') : '👤 Notatka') + '</div>'
@@ -33254,6 +33395,293 @@ ${bodyHtml}
       selectBook(n.book_id);
       if (n.unit_key && BOOKS[n.book_id].units && BOOKS[n.book_id].units[n.unit_key]) setTimeout(() => openWordList(n.unit_key), 150);
     } catch(e) { console.warn('[snGoTo]', e); }
+  };
+
+  // ═══════════════════════════════════════════════
+  //  PRACE DOMOWE Z ZADANIEM (#88) — uczeń robi zestaw / czytankę z rozdziału,
+  //  wynik zapisuje się sam (moduł AI: aiOpenTask, aiHmwReport); okienko
+  //  „📚 Nowa praca domowa od nauczyciela” (raz — seen_at); okno „📊 Wyniki”.
+  // ═══════════════════════════════════════════════
+  const _hmwSt = document.createElement('style');
+  _hmwSt.textContent = `
+  .hmw-card{background:linear-gradient(135deg,rgba(6,214,160,.14),rgba(124,77,255,.08));border:2px solid rgba(6,214,160,.45);border-radius:16px;padding:12px 14px;margin-bottom:14px;text-align:left;}
+  .hmw-card-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;}
+  .hmw-card-head h2{margin:0;font-family:inherit;font-size:.95rem;font-weight:800;color:var(--text);display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .hmw-count{font-size:.66rem;font-weight:800;color:#063b2c;background:var(--accent2,#06d6a0);border-radius:100px;padding:2px 9px;}
+  .hmw-card .btn-sm{padding:5px 12px;font-size:.72rem;flex-shrink:0;}
+  .hmw-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;}
+  .hmw-item{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:8px 10px;}
+  .hmw-item.late{border-color:rgba(255,118,117,.6);}
+  .hmw-item.done{opacity:.88;}
+  .hmw-main{flex:1;min-width:0;}
+  .hmw-t{font-size:.84rem;font-weight:800;color:var(--text);overflow-wrap:anywhere;}
+  .hmw-m{font-size:.68rem;font-weight:700;color:var(--muted);margin-top:1px;overflow-wrap:anywhere;}
+  .hmw-item.late .hmw-m{color:var(--danger);}
+  .hmw-score{font-size:.74rem;font-weight:800;color:var(--accent2,#06d6a0);white-space:nowrap;}
+  .hmw-foot{font-size:.7rem;font-weight:700;color:var(--muted);margin-top:8px;}
+  .hmw-foot a{color:var(--accent2,#06d6a0);font-weight:800;text-decoration:none;}
+  .hmw-task-t{font-size:.9rem;font-weight:800;color:var(--text);margin:2px 0 4px;font-style:normal;}
+  .hmw-task-st{font-size:.74rem;font-weight:700;color:var(--muted);margin-top:4px;font-style:normal;}
+  .hmw-already{color:var(--accent2,#06d6a0);font-weight:800;font-size:.68rem;}
+  .hmw-pop{border-color:var(--accent2,#06d6a0);}
+  .hmw-pop-item{background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:10px 12px;margin:10px 0;}
+  .hmw-pop-t{font-weight:800;font-size:.95rem;color:var(--text);overflow-wrap:anywhere;}
+  .hmw-pop-m{font-size:.72rem;font-weight:700;color:var(--muted);margin:2px 0 6px;overflow-wrap:anywhere;}
+  .hmw-pop-msg{font-size:.82rem;color:var(--text);overflow-wrap:anywhere;margin-bottom:8px;border-left:3px solid var(--accent2,#06d6a0);padding-left:8px;}
+  .hmw-res-sum{font-size:.8rem;font-weight:700;color:var(--muted);margin-bottom:10px;}
+  .hmw-res-row{border:1px solid var(--border);border-radius:12px;padding:8px 10px;margin-bottom:8px;background:var(--surface2);}
+  .hmw-res-top{display:flex;align-items:flex-start;gap:8px;}
+  .hmw-res-info{flex:1;min-width:0;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;}
+  .hmw-res-who{font-weight:800;font-size:.84rem;color:var(--text);}
+  .hmw-res-st{font-size:.7rem;font-weight:800;border-radius:100px;padding:1px 8px;background:rgba(255,255,255,.07);color:var(--muted);}
+  .hmw-res-st.ok{background:rgba(6,214,160,.15);color:var(--accent2,#06d6a0);}
+  .hmw-res-st.late{background:rgba(255,118,117,.14);color:var(--danger);}
+  .hmw-res-sc{font-size:.82rem;font-weight:800;color:var(--text);}
+  .hmw-res-meta{font-size:.68rem;font-weight:700;color:var(--muted);}
+  .hmw-res-acts{display:flex;gap:4px;flex-shrink:0;}
+  .hmw-res-acts .btn-sm{padding:2px 8px;font-size:.7rem;}
+  .hmw-res-ans{margin-top:6px;}
+  .hmw-res-ans summary{cursor:pointer;font-size:.74rem;font-weight:800;color:var(--accent2,#06d6a0);}
+  .hmw-res-ans ol{margin:6px 0 0;padding-left:22px;font-size:.78rem;line-height:1.45;color:var(--text);}
+  .hmw-res-ans li{margin:5px 0;}
+  .hmw-a-ok{color:var(--accent2,#06d6a0);font-weight:900;} .hmw-a-bad{color:var(--danger);font-weight:900;}
+  .hmw-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;}
+  @media(max-width:480px){.hmw-item{flex-wrap:wrap;row-gap:6px}.hmw-main{flex:1 1 100%}.hmw-item .btn-sm{margin-left:auto}}
+  `;
+  document.head.appendChild(_hmwSt);
+
+  // Uczeń: „▶ Zrób teraz” — przejdź do rozdziału (lektor w języku podręcznika) i otwórz ćwiczenie.
+  window.hmwStart = function(id){
+    const n = _snCache[id] || _hmwMine().find(x => x.id === id);
+    if (!n) return;
+    if (!n.task_kind) { snGoTo(id); return; }
+    closeGenericModal();
+    _hmwClose(true);
+    if (typeof window.aiOpenTask !== 'function') { toast('Odśwież stronę, aby otworzyć zadanie.', 3000); return; }
+    const b = (typeof BOOKS !== 'undefined') ? BOOKS[n.book_id] : null;
+    const wl = document.getElementById('sWordList');
+    const onUnit = currentBookId === n.book_id && currentUnitKey === n.unit_key && wl && wl.classList.contains('active');
+    let wait = 0;
+    if (!onUnit && b && b.units && b.units[n.unit_key]) {
+      try { selectBook(n.book_id); setTimeout(() => { try { openWordList(n.unit_key); } catch(e) {} }, 150); wait = 450; }
+      catch(e) { console.warn('[hmwStart]', e); }
+    }
+    setTimeout(() => window.aiOpenTask(n.task_kind, n.task_id), wait);
+  };
+  // Moduł AI: które moje prace domowe dotyczą tego zestawu (po ćwiczeniu → wynik dla nauczyciela)
+  window.hmwTasksFor = function(kind, setId){
+    const me = DB.getUserId && DB.getUserId();
+    if (!me || isGuest || !setId) return [];
+    const by = {};
+    Object.values(_snCache).concat(_hmwMine()).forEach(n => {
+      if (n && n.task_kind === kind && n.task_id === setId && n.student_id === me) by[n.id] = n;
+    });
+    return Object.values(by).slice(0, 5);
+  };
+  // Po zapisaniu wyniku: zaktualizuj kartę na ekranie głównym i notatki przy rozdziale
+  window.hmwAfterSubmit = function(tasks, results){
+    tasks.forEach((t, i) => {
+      const r = results[i]; if (!r) return;
+      [t, _snCache[t.id], _hmwMine().find(x => x.id === t.id)].forEach(n => {
+        if (!n) return;
+        n.attempts = r.attempts; n.done_at = r.done_at; n.result_at = r.result_at;
+        n.seen_at = n.seen_at || new Date().toISOString();
+        n.result = Object.assign({}, r.result);
+      });
+    });
+    _snRenderBanner();
+    const t0 = tasks[0], wl = document.getElementById('sWordList');
+    if (t0 && wl && wl.classList.contains('active')) _snRefresh(t0.book_id, t0.unit_key);
+  };
+
+  // ── Okienko „📚 Nowa praca domowa od nauczyciela” — raz na pracę (seen_at); tylko na ekranie
+  //    głównym / podręcznika / rozdziału — nie w trybie skupienia nauki, grze, kartkówce, LIVE,
+  //    Rywalizacji ani nad innym oknem (jak okno wiadomości od nauczyciela, #87) ──
+  const HMW_SCREENS = new Set(['sLang', 'sSchool', 'sClass', 'sBooks', 'sUnits', 'sWordList', 'sApps']);
+  const _hmwShown = new Set();
+  let _hmwT = null, _hmwTries = 0, _hmwRet = null;
+  const _hmwPopEl = () => document.getElementById('hmwPopup');
+  window._hmwPopupOpen = () => { const o = _hmwPopEl(); return !!(o && o.style.display !== 'none'); };
+  function _hmwNew(){
+    if (!DB.hasHomeworkTasks || DB.hasHomeworkTasks() !== true) return [];   // bez migracji #88 nie ma „widziane”
+    return _hmwMine().filter(n => n.kind === 'homework' && !n.done_at && n.seen_at === null && !_hmwShown.has(n.id)
+      && Date.now() - new Date(n.created_at).getTime() < 30 * 864e5);
+  }
+  function _hmwOverlayOpen(){
+    const pop = _hmwPopEl();
+    const sel = '.modal-overlay,.tmsg-ov,.sf-ov,.sfc-ov,.badge-reveal,.pmenu,#swUpdateBanner,#dailyDoneModal,[role="dialog"],[role="alertdialog"],[aria-modal="true"]';
+    return Array.prototype.some.call(document.querySelectorAll(sel), el => {
+      if (pop && (el === pop || pop.contains(el))) return false;
+      if (!el.getClientRects().length) return false;
+      const cs = getComputedStyle(el);
+      return cs.display !== 'none' && cs.visibility !== 'hidden';
+    });
+  }
+  function _hmwSchedule(ms){
+    if (isGuest || !_hmwNew().length) return;
+    clearTimeout(_hmwT); _hmwT = setTimeout(_hmwTry, ms);
+  }
+  function _hmwTry(){
+    _hmwT = null;
+    if (isGuest || window._hmwPopupOpen() || !_hmwNew().length) return;
+    const a = document.querySelector('.screen.active');
+    if (!a || !HMW_SCREENS.has(a.id) || document.body.classList.contains('sf-focus-on')) return;   // ponowimy po zmianie ekranu
+    if (typeof _liBusy === 'function' && _liBusy()) return;
+    if (document.hidden || _hmwOverlayOpen()) {
+      if (++_hmwTries <= 45) { clearTimeout(_hmwT); _hmwT = setTimeout(_hmwTry, 4000); }
+      return;
+    }
+    _hmwTries = 0;
+    _hmwShow(_hmwNew().slice(0, 3));
+  }
+  function _hmwShow(list){
+    if (!list.length) return;
+    list.forEach(n => { _hmwShown.add(n.id); n.seen_at = new Date().toISOString(); });
+    try { DB.markStudentNotesSeen(list.map(n => n.id)); } catch(e) {}
+    _hmwRet = document.activeElement;
+    let ov = _hmwPopEl();
+    if (!ov) {
+      ov = document.createElement('div');
+      ov.id = 'hmwPopup'; ov.className = 'tmsg-ov'; ov.style.display = 'none';
+      ov.addEventListener('click', e => { if (e.target === ov) _hmwClose(); });
+      document.body.appendChild(ov);
+    }
+    const many = list.length > 1;
+    const item = n => {
+      const msg = _hmwMsg(n), due = _hmwDue(n);
+      const go = n.task_kind ? '▶ Przejdź do zadania' : ((typeof BOOKS !== 'undefined' && BOOKS[n.book_id]) ? '📖 Przejdź do rozdziału' : '');
+      return '<div class="hmw-pop-item"><div class="hmw-pop-t">' + _snEsc(n.task_kind ? _hmwTitle(n) : '📚 Praca domowa') + '</div>'
+        + '<div class="hmw-pop-m">' + _snEsc(_snPlace(n.book_id, n.unit_key)) + (due ? ' · ' + _snEsc(due) : '') + '</div>'
+        + (msg ? '<div class="hmw-pop-msg">' + renderNoteHtml(msg) + '</div>' : '')
+        + (go ? '<button class="btn-sm accent" data-hp="go" data-id="' + _snEsc(n.id) + '">' + go + '</button>' : '')
+        + '</div>';
+    };
+    ov.innerHTML = '<div class="tmsg-box hmw-pop" role="alertdialog" aria-modal="true" aria-labelledby="hmwPopTitle" aria-describedby="hmwPopList">'
+      + '<div style="display:flex;align-items:flex-start;gap:10px">'
+      +   '<div style="font-size:2rem;line-height:1" aria-hidden="true">📚</div>'
+      +   '<div style="flex:1;min-width:0">'
+      +     '<div id="hmwPopTitle" style="font-family:\'Playfair Display\',serif;font-size:1.15rem;color:var(--accent2,#06d6a0);line-height:1.25">'
+      +       (many ? 'Nowe prace domowe od nauczyciela' : 'Nowa praca domowa od nauczyciela') + '</div>'
+      +     '<div style="font-size:.72rem;font-weight:700;color:var(--muted);margin-top:2px">Znajdziesz ' + (many ? 'je' : 'ją') + ' też na stronie głównej w „📚 Prace domowe”.</div>'
+      +   '</div>'
+      +   '<button class="btn-sm" data-hp="later" aria-label="Zamknij — zrobię później" title="Później" style="padding:4px 10px;flex-shrink:0">✕</button>'
+      + '</div>'
+      + '<div id="hmwPopList">' + list.map(item).join('') + '</div>'
+      + '<div style="display:flex;justify-content:flex-end"><button class="btn-sm" data-hp="later">Później</button></div></div>';
+    ov.querySelectorAll('[data-hp]').forEach(b => { b.onclick = () => { if (b.dataset.hp === 'go') _hmwGo(b.dataset.id); else _hmwClose(); }; });
+    if (typeof _liTrap === 'function') _liTrap(ov, () => _hmwClose());
+    ov.style.display = 'flex';
+    setTimeout(() => { try { (ov.querySelector('[data-hp="go"]') || ov.querySelector('[data-hp="later"]')).focus(); } catch(e) {} }, 30);
+  }
+  function _hmwClose(noFocus){
+    const ov = _hmwPopEl();
+    if (!ov || ov.style.display === 'none') return;
+    ov.style.display = 'none'; ov.innerHTML = '';
+    const el = _hmwRet; _hmwRet = null;
+    if (!noFocus) { try { if (el && el !== document.body && document.contains(el) && el.focus) el.focus({ preventScroll: true }); } catch(e) {} }
+    if (typeof _liFlush === 'function') setTimeout(_liFlush, 300);   // wiadomości od nauczyciela czekały na zamknięcie okienka
+    _hmwSchedule(2500);   // kolejne nowe prace (gdy było ich więcej niż 3)
+  }
+  function _hmwGo(id){
+    _hmwClose(true);
+    const n = _snCache[id] || _hmwMine().find(x => x.id === id);
+    if (!n) return;
+    if (n.task_kind) hmwStart(id); else snGoTo(id);
+  }
+  // showScreen → na ekranie startowym / rozdziału pokaż okienko, jeśli czeka nowa praca
+  window._hmwOnScreen = function(id){
+    if (isGuest) return;
+    if (HMW_SCREENS.has(id)) { _hmwTries = 0; _hmwSchedule(1200); }
+    else if (_hmwT) { clearTimeout(_hmwT); _hmwT = null; }
+  };
+  // Powrót do karty: prace doczytywane najwyżej raz na minutę (Supabase Free — mało zapytań)
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden || isGuest) return;
+    const s = document.getElementById('sLang');
+    if (s && s.classList.contains('active')) renderStudentNotesBanner(); else _hmwSchedule(1500);
+  });
+
+  // ── Nauczyciel / admin: „📊 Wyniki” zestawu — kto zrobił, wynik, podejścia, odpowiedzi ✓/✗ ──
+  let _hmwRC = null;   // { kind, taskId, rows, meta: { bookId, unitKey, title } }
+  const _hmwCloseRow = '<div style="text-align:right;margin-top:10px"><button class="btn-modal-cancel" onclick="closeGenericModal()">Zamknij</button></div>';
+  window.openTaskResults = async function(kind, taskId, meta){
+    if (!_snCanWrite() || !taskId) return;
+    const ctx = _hmwRC = { kind: kind, taskId: taskId, rows: [], meta: meta || null };
+    openGenericModal('📊 Wyniki', '<div style="color:var(--muted);font-weight:700;font-size:.82rem" role="status">⏳ Wczytuję wyniki…</div>');
+    let rows;
+    try { rows = await DB.loadTaskAssignments(null, null, taskId); }
+    catch(e) { if (_hmwRC === ctx) openGenericModal('📊 Wyniki', '<div style="color:var(--danger);font-weight:700">❌ ' + _snEsc(e.message) + '</div>' + _hmwCloseRow); return; }
+    if (_hmwRC !== ctx) return;
+    if (rows === null) { openGenericModal('📊 Wyniki', '<div style="color:var(--muted);font-weight:700">Uruchom migrację #88 (homework-tasks.sql) w Supabase.</div>' + _hmwCloseRow); return; }
+    if (!(_allProfiles && _allProfiles.length)) { try { _allProfiles = await DB.loadAllProfiles(); } catch(e) {} }
+    if (_hmwRC !== ctx) return;
+    rows.forEach(n => { _snCache[n.id] = n; });
+    ctx.rows = rows;
+    if (rows[0]) ctx.meta = { bookId: rows[0].book_id, unitKey: rows[0].unit_key, title: rows[0].task_title || (meta && meta.title) || '' };
+    _hmwResRender();
+  };
+  function _hmwResRow(n){
+    const r = n.result, late = !!(n.due_date && _hmwDays(n.due_date) < 0);
+    const doneLate = !!(r && n.due_date && n.done_at && new Date(n.done_at) > new Date(n.due_date + 'T23:59:59'));
+    const st = r ? '<span class="hmw-res-st ok">✅ zrobione' + (doneLate ? ' po terminie' : '') + '</span>'
+      : '<span class="hmw-res-st' + (late ? ' late' : '') + '">' + (late ? '⚠️ nie zrobione — po terminie' : '⏳ nie zrobione') + '</span>';
+    const meta = r
+      ? n.attempts + ' ' + _hmwPl(n.attempts, 'podejście', 'podejścia', 'podejść') + ' · ' + _hmwDateTime(n.result_at || r.at)
+      : (n.due_date ? 'termin ' + _snDate(n.due_date) : 'bez terminu') + ' · zadane ' + _snDate(n.created_at);
+    const ans = (r && Array.isArray(r.answers) ? r.answers : []).slice().sort((x, y) => (+x.i || 0) - (+y.i || 0));
+    const okN = ans.filter(a => a && a.ok).length;
+    return '<div class="hmw-res-row"><div class="hmw-res-top"><div class="hmw-res-info">'
+      + '<span class="hmw-res-who">' + _snStudentName(n.student_id) + '</span>' + st
+      + (r ? '<span class="hmw-res-sc">' + (+r.score || 0) + '/' + (+r.total || 0) + ' · ' + (+r.pct || 0) + '%</span>' : '')
+      + '<span class="hmw-res-meta">' + _snEsc(meta) + '</span></div>'
+      + '<div class="hmw-res-acts"><button class="btn-sm" title="Zmień termin lub wiadomość" aria-label="Zmień termin lub wiadomość" onclick="hmwEditFromResults(\'' + n.id + '\')">✏️</button>'
+      + '<button class="btn-sm" title="Usuń tę pracę" aria-label="Usuń tę pracę" onclick="hmwDeleteFromResults(\'' + n.id + '\')">🗑️</button></div></div>'
+      + (r && r.last ? '<div class="hmw-res-meta" style="margin-top:3px">Ostatnie podejście: ' + (+r.last.score || 0) + '/' + (+r.last.total || 0) + ' (' + (+r.last.pct || 0) + '%) · ' + _snEsc(_hmwDateTime(r.last.at)) + '</div>' : '')
+      + (ans.length ? '<details class="hmw-res-ans"><summary>Odpowiedzi z najlepszego podejścia (' + okN + '/' + ans.length + ' dobrze)</summary><ol>'
+        + ans.map(a => '<li>' + (a.ok ? '<span class="hmw-a-ok" aria-hidden="true">✓</span><span class="hmw-sr">Dobrze:</span> ' : '<span class="hmw-a-bad" aria-hidden="true">✗</span><span class="hmw-sr">Źle:</span> ')
+          + _snEsc(a.q || '') + '<br><span class="hmw-res-meta">Odpowiedź:</span> <b>' + _snEsc(a.ans || '—') + '</b>'
+          + (!a.ok && a.c ? ' <span class="hmw-res-meta">· poprawnie:</span> <b>' + _snEsc(a.c) + '</b>' : '') + '</li>').join('')
+        + '</ol></details>' : '')
+      + '</div>';
+  }
+  function _hmwResRender(){
+    const c = _hmwRC; if (!c) return;
+    const uname = id => { const p = (_allProfiles || []).find(x => x.id === id); return (p && p.username) || ''; };
+    const rows = c.rows.slice().sort((a, b) => uname(a.student_id).localeCompare(uname(b.student_id), 'pl'));
+    const done = rows.filter(n => n.result);
+    const avg = done.length ? Math.round(done.reduce((s, n) => s + (+n.result.pct || 0), 0) / done.length) : null;
+    const k = HMW_KIND[c.kind] || HMW_KIND.grammar;
+    const title = k.ic + ' ' + ((c.meta && c.meta.title) || k.name);
+    let h = '<div class="hmw-res-sum">' + (c.meta ? _snEsc(_snPlace(c.meta.bookId, c.meta.unitKey)) + ' · ' : '')
+      + 'zrobiło <b>' + done.length + ' z ' + rows.length + '</b>' + (avg !== null ? ' · średni wynik <b>' + avg + '%</b>' : '') + '</div>';
+    h += rows.length ? rows.map(_hmwResRow).join('') : '<div style="color:var(--muted);font-weight:700;font-size:.82rem">Nikt nie ma jeszcze tej pracy.</div>';
+    openGenericModal('📊 Wyniki — ' + _snEsc(title), '<div style="max-height:62vh;overflow-y:auto;padding-right:2px">' + h + '</div>'
+      + '<div style="display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap;margin-top:10px">'
+      + (c.meta ? '<button class="btn-sm accent" onclick="hmwAssignMore()">➕ Zadaj kolejnym uczniom</button>' : '<span></span>')
+      + '<button class="btn-modal-cancel" onclick="closeGenericModal()">Zamknij</button></div>');
+  }
+  window.hmwEditFromResults = function(id){
+    const n = _snCache[id], c = _hmwRC; if (!n || !c) return;
+    closeGenericModal();
+    openStudentNoteEditor(n.book_id, n.unit_key, n.id, null, { results: [c.kind, c.taskId] });
+  };
+  window.hmwDeleteFromResults = async function(id){
+    const n = _snCache[id], c = _hmwRC; if (!n || !c) return;
+    if (!confirm('Usunąć tę pracę domową? Uczeń przestanie ją widzieć, a jego wynik zostanie usunięty.')) return;
+    try {
+      await DB.deleteStudentNote(id);
+      delete _snCache[id];
+      c.rows = c.rows.filter(x => x.id !== id);
+      toast('🗑️ Praca usunięta.', 2000);
+      if (_hmwRC === c) _hmwResRender();
+      _snRefresh(n.book_id, n.unit_key);
+      if (typeof window.aiHmwChanged === 'function') window.aiHmwChanged();
+    } catch(e) { toast('❌ ' + e.message, 3200); }
+  };
+  window.hmwAssignMore = function(){
+    const c = _hmwRC; if (!c || !c.meta) return;
+    closeGenericModal();
+    openStudentNoteEditor(c.meta.bookId, c.meta.unitKey, null, { kind: c.kind, id: c.taskId, title: c.meta.title }, { results: [c.kind, c.taskId] });
   };
 
   window.openBookNoteEditor = async function(type, bookId, unitKey, visibility){
@@ -35147,13 +35575,103 @@ ${bodyHtml}
     } catch(e) { toast('❌ ' + e.message, 3500); }
     kind === 'grammar' ? renderGrammarBox() : renderStoryBox();
   };
+  /* ---- prace domowe z zadaniem (migracja #88) ---- */
+  // Nauczyciel/admin: komu zadano zestawy z tego rozdziału — jedno zapytanie dla 🧠 i 📖 (pamięć 30 s).
+  let _hmwAsg = null;
+  function hmwAssignments(bookId, uk){
+    if (!isStaff() || !DB.loadTaskAssignments) return Promise.resolve(null);
+    const key = bookId + '|' + uk;
+    if (_hmwAsg && _hmwAsg.key === key && Date.now() - _hmwAsg.at < 30000) return _hmwAsg.p;
+    const p = DB.loadTaskAssignments(bookId, uk === 'all' ? null : uk).catch(() => null);
+    _hmwAsg = { key, at: Date.now(), p };
+    return p;
+  }
+  window.aiHmwChanged = function(){ _hmwAsg = null; renderGrammarBox(); renderStoryBox(); };
+  const isPublished = s => !s.status || s.status === 'published';
+  // „📌 Zadaj” i „📊 Wyniki · zrobiło x/y” przy opublikowanym zestawie (asg null = brak migracji #88)
+  function hmwBtns(kind, s, asg){
+    if (!asg || !isPublished(s)) return '';
+    const mine = asg.filter(a => a.task_id === s.id), done = mine.filter(a => a.done_at).length;
+    return '<button class="btn-sm" onclick="aiHmwAssign(\'' + kind + '\',\'' + s.id + '\')" title="Zadaj wybranym uczniom jako pracę domową — zobaczysz ich wyniki">📌 Zadaj</button>'
+      + (mine.length ? '<button class="btn-sm" onclick="openTaskResults(\'' + kind + '\',\'' + s.id + '\')" title="Wyniki uczniów">📊 Wyniki · zrobiło ' + done + '/' + mine.length + '</button>' : '');
+  }
+  // Uczeń: ten zestaw jest jego pracą domową
+  function hmwStudentBadge(kind, s){
+    if (isGuest || isStaff() || typeof window.hmwTasksFor !== 'function') return '';
+    const t = window.hmwTasksFor(kind, s.id)[0];
+    if (!t) return '';
+    const r = t.result;
+    return '<div class="rv-badge hmw-badge" data-hmw="' + kind + ':' + E(s.id) + '">📌 Praca domowa od nauczyciela'
+      + (r ? ' · Twój wynik: ' + E(r.score + '/' + r.total + ' (' + r.pct + '%)') : (t.due_date ? ' · termin ' + E(new Date(t.due_date + 'T12:00:00').toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' })) : '') + ' — wynik wyśle się sam')
+      + '</div>';
+  }
+  window.aiHmwAssign = function(kind, id){
+    const s = (kind === 'reading' ? _rsCache : _gsCache).find(x => x.id === id);
+    if (!s || typeof window.openStudentNoteEditor !== 'function') return;
+    window.openStudentNoteEditor(s.book_id, s.unit_key, null, { kind: kind, id: s.id, title: kind === 'reading' ? s.title : s.topic });
+  };
+  // Uczeń: otwórz zestaw / czytankę z pracy domowej (także spoza bieżącego rozdziału)
+  const _hmwSets = {};
+  let _gsLoadP = null, _rsLoadP = null;
+  window.aiOpenTask = async function(kind, id){
+    const isR = kind === 'reading';
+    const find = () => (isR ? _rsCache : _gsCache).find(x => x.id === id) || _hmwSets[id];
+    let s = find();
+    if (!s) {   // rozdział właśnie się wczytuje — poczekaj na jego zestawy zamiast pytać bazę drugi raz
+      const p = isR ? _rsLoadP : _gsLoadP;
+      if (p) { try { await Promise.race([p, new Promise(r => setTimeout(r, 3000))]); } catch(e) {} }
+      s = find();
+    }
+    if (!s && DB.loadTaskSet) s = await DB.loadTaskSet(kind, id);
+    if (!s) { toast('😕 To zadanie jest teraz niedostępne — mogło zostać usunięte albo jest poprawiane. Zapytaj nauczyciela.', 4500); return false; }
+    _hmwSets[id] = s;
+    isR ? window.openStoryRead(id) : window.openGrammarPractice(id);
+    return true;
+  };
+  // Po skończonym ćwiczeniu: wynik do każdej mojej pracy domowej z tym zestawem
+  let _hmwLast = null;
+  function aiHmwReport(kind, setId, score, total, answers, elId, onlyIds){
+    if (isGuest || !total || typeof window.hmwTasksFor !== 'function' || !DB.submitStudentTask) return;
+    const tasks = window.hmwTasksFor(kind, setId).filter(t => !onlyIds || onlyIds.includes(t.id));
+    if (!tasks.length) return;
+    const el = $(elId);
+    if (el) { el.style.color = 'var(--muted)'; el.textContent = '⏳ Wysyłam wynik nauczycielowi…'; }
+    Promise.allSettled(tasks.map(t => DB.submitStudentTask(t.id, { score, total, answers }))).then(st => {
+      const rs = st.map(x => x.status === 'fulfilled' ? x.value : null);
+      const failed = tasks.filter((t, i) => st[i].status === 'rejected');
+      if (!rs.some(Boolean)) {
+        if (!failed.length) { if (el) el.textContent = ''; return; }   // baza bez migracji #88
+        const msg = (st.find(x => x.status === 'rejected').reason || {}).message || 'błąd';
+        _hmwLast = { kind, setId, score, total, answers, elId, only: failed.map(t => t.id) };   // ponów tylko nieudane
+        if (!el) { toast('⚠️ Nie udało się wysłać wyniku: ' + msg, 3600); return; }
+        el.style.color = 'var(--danger)';
+        el.innerHTML = '⚠️ Nie udało się wysłać wyniku: ' + E(msg) + ' <button class="btn-sm" onclick="aiHmwRetry()">🔁 Wyślij jeszcze raz</button>';
+        return;
+      }
+      try { window.hmwAfterSubmit(tasks, rs); } catch(e) {}
+      document.querySelectorAll('[data-hmw="' + kind + ':' + setId + '"]').forEach(b => { b.outerHTML = hmwStudentBadge(kind, { id: setId }); });
+      const r = rs.find(Boolean), best = r && r.result;
+      if (el) {
+        el.style.color = 'var(--accent2,#06d6a0)';
+        el.textContent = '✅ Wynik wysłany nauczycielowi' + (r && !r.best && best ? ' — zostaje Twój najlepszy: ' + best.score + '/' + best.total + ' (' + best.pct + '%)' : '') + '.';
+      }
+      toast('✅ Wynik wysłany nauczycielowi', 2600);
+    });
+  }
+  window.aiHmwRetry = function(){ const l = _hmwLast; if (l) aiHmwReport(l.kind, l.setId, l.score, l.total, l.answers, l.elId, l.only); };
+  const hmwAns = (it, q, ans, c, ok) => ({ i: it, q: String(q || '').slice(0, 200), ans: String(ans == null ? '' : ans).slice(0, 120), c: String(c == null ? '' : c).slice(0, 120), ok: !!ok });
+
   async function renderGrammarBox(){
     const box = $('grammarBox'); if (!box) return;
     const b = book(), uk = currentUnitKey;
     if (!b || !uk || uk === 'mistakes' || !(DB && DB.loadGrammarSets)) { box.style.display = 'none'; return; }
     const req = ++_gsReq;
     let sets;
-    try { sets = await DB.loadGrammarSets(currentBookId, uk === 'all' ? null : uk); } catch(e) { sets = []; }
+    const lp = DB.loadGrammarSets(currentBookId, uk === 'all' ? null : uk);
+    _gsLoadP = lp.catch(() => null);
+    const asgP = hmwAssignments(currentBookId, uk);
+    try { sets = await lp; } catch(e) { sets = []; }
+    const asg = await asgP;
     if (req !== _gsReq) return;
     if (sets === null) {
       if (isCurrentUserAdmin()) { box.innerHTML = '<div class="gram-box"><div class="gram-empty">🧠 Utrwalaj gramatykę: uruchom migrację #73 (ai-features.sql) w Supabase.</div></div>'; box.style.display = ''; }
@@ -35176,8 +35694,9 @@ ${bodyHtml}
       const canDel = isCurrentUserAdmin() || mine;
       h += '<div class="gram-set"><div class="gram-set-info"><b>' + E(s.topic) + '</b><small>' + zadan(items.length) + ' · A/B/C: ' + nA + ' · luki: ' + nG
         + (uk === 'all' ? ' · ' + E(unitName(s.unit_key)) : '') + (s.source === 'ai' ? ' · 🤖 AI' : s.source === 'bank' ? ' · 📚 z banku' : '') + '</small>'
-        + reviewBadge(s) + '</div><div class="gram-set-act">'
+        + reviewBadge(s) + hmwStudentBadge('grammar', s) + '</div><div class="gram-set-act">'
         + '<button class="btn-sm accent" onclick="openGrammarPractice(\'' + s.id + '\')">▶ Ćwicz</button>'
+        + (staff ? hmwBtns('grammar', s, asg) : '')
         + (staff ? '<button class="btn-sm" onclick="printGrammarSetUi(\'' + s.id + '\')">🖨️ Kartkówka</button>' : '')
         + (mine && staff ? shareBtn('grammar', s) : '')
         + (canDel && staff ? '<button class="btn-sm" onclick="editGrammarSetUi(\'' + s.id + '\')" title="Popraw zdania, odpowiedzi i wyjaśnienia">✏️ Edytuj</button>' : '')
@@ -35396,25 +35915,27 @@ ${bodyHtml}
   const fullSentence = (q, ans) => { const s = String(q); return /___\s*\([^)]*\)/.test(s) ? s.replace(/___\s*\([^)]*\)/, ans) : s.replace('___', ans).replace(/\s*\([^)]*\)\s*$/, ''); };
   let _gp = null;
   window.openGrammarPractice = function(id){
-    const s = _gsCache.find(x => x.id === id); if (!s) return;
-    const items = shuffle((s.items || []).map(it => {
-      if (it.type !== 'abc') return it;
+    const s = _gsCache.find(x => x.id === id) || _hmwSets[id]; if (!s) return;
+    const items = shuffle((s.items || []).map((it, k) => {
+      if (it.type !== 'abc') return Object.assign({}, it, { _i: k });   // _i — numer zadania w zestawie (odpowiedzi dla nauczyciela)
       const idx = shuffle(it.o.map((_, i) => i));
-      return Object.assign({}, it, { o: idx.map(i => it.o[i]), a: idx.indexOf(it.a) });
+      return Object.assign({}, it, { o: idx.map(i => it.o[i]), a: idx.indexOf(it.a), _i: k });
     }));
-    _gp = { s, items, i: 0, ok: 0, done: false };
+    _gp = { s, items, i: 0, ok: 0, done: false, answers: [] };
     gpRender();
   };
   function gpRender(){
     const g = _gp; const it = g.items[g.i];
     if (!it) {
-      const pct = Math.round(g.ok / g.items.length * 100);
+      const pct = g.items.length ? Math.round(g.ok / g.items.length * 100) : 0;
       aiModal('gramPracModal', closeBtn('gramPracModal') + `<div class="modal-title">🧠 ${E(g.s.topic)}</div>
         <div style="text-align:center;font-size:3rem;margin:10px 0">${pct >= 90 ? '🏆' : pct >= 70 ? '🎉' : pct >= 50 ? '👍' : '💪'}</div>
         <div style="text-align:center;font-size:1.3rem;font-weight:800;color:var(--text)">${g.ok} / ${g.items.length} · ${pct}%</div>
         <div class="ai-help" style="text-align:center">${pct >= 70 ? 'Świetnie! Gramatyka siedzi. 🦉' : 'Poćwicz jeszcze raz — za każdym razem zadania są w innej kolejności.'}</div>
+        <div id="gpHmw" class="ai-msg" role="status" aria-live="polite" style="text-align:center"></div>
         <div class="modal-btns"><button class="btn-modal-cancel" onclick="document.getElementById('gramPracModal').style.display='none'">Zamknij</button>
         <button class="btn-modal-save" onclick="openGrammarPractice('${g.s.id}')">🔁 Jeszcze raz</button></div>`);
+      if (!g.reported) { g.reported = true; aiHmwReport('grammar', g.s.id, g.ok, g.items.length, g.answers, 'gpHmw'); }
       return;
     }
     const q = E(it.q).replace(/___/g, '<span class="gram-gap">___</span>');
@@ -35431,17 +35952,18 @@ ${bodyHtml}
   window.gpAnswer = function(val){
     const g = _gp; if (!g || g.done) return;
     const it = g.items[g.i];
-    let ok, correct;
+    let ok, correct, given;
     if (it.type === 'abc') {
-      ok = val === it.a; correct = it.o[it.a];
+      ok = val === it.a; correct = it.o[it.a]; given = it.o[val];
       document.querySelectorAll('#gramPracModal .gp-opt').forEach(b => { const i = +b.dataset.i; b.disabled = true; if (i === it.a) b.classList.add('ok'); else if (i === val) b.classList.add('bad'); });
     } else {
       const v = String(val || '').trim(); if (!v) return;
-      ok = (it.a || []).some(a => normAns(a) === normAns(v)); correct = it.a[0];
+      ok = (it.a || []).some(a => normAns(a) === normAns(v)); correct = it.a[0]; given = v;
       const inp = $('gpInp'); if (inp) { inp.disabled = true; inp.classList.add(ok ? 'correct-inp' : 'wrong-inp'); }
       const chk = $('gpChk'); if (chk) chk.style.display = 'none';
     }
     g.done = true; if (ok) g.ok++;
+    if (g.answers) g.answers.push(hmwAns(it._i, it.q, given, correct, ok));
     try { if (ok && typeof playOk === 'function') playOk(); else if (!ok && typeof playBad === 'function') playBad(); } catch(e) {}
     try { if (ok && !isGuest && typeof addXP === 'function') (typeof addBonusXP === 'function' ? addBonusXP(4) : addXP(4)); } catch(e) {}
     try { if (window.sfPet) window.sfPet.onAnswer('grammar', ok ? 'good' : 'hard', false); } catch(e) {}
@@ -35736,6 +36258,7 @@ ${bodyHtml}
   stStyle.textContent = `
   .rv-badge{font-size:.7rem;font-weight:700;border-radius:8px;padding:4px 8px;margin-top:4px;line-height:1.4;}
   .rv-pend{background:rgba(255,209,102,.14);color:var(--accent);} .rv-rej{background:rgba(255,118,117,.12);color:var(--danger);}
+  .hmw-badge{background:rgba(6,214,160,.13);color:var(--accent2,#06d6a0);}
   .rd-box{border-left-color:#7c4dff !important;border-color:rgba(124,77,255,.35) !important;}
   .rd-text{font-size:1.02rem;line-height:1.8;color:var(--text);background:var(--surface2);border-radius:12px;padding:12px 14px;margin:8px 0;white-space:pre-wrap;}
   .rd-w{background:rgba(124,77,255,.18);border-bottom:2px solid #7c4dff;border-radius:4px;padding:0 2px;cursor:pointer;}
@@ -35762,7 +36285,11 @@ ${bodyHtml}
     if (!b || !uk || uk === 'mistakes' || !(DB && DB.loadReadingSets)) { box.style.display = 'none'; return; }
     const req = ++_rsReq;
     let sets;
-    try { sets = await DB.loadReadingSets(currentBookId, uk === 'all' ? null : uk); } catch(e) { sets = []; }
+    const lp = DB.loadReadingSets(currentBookId, uk === 'all' ? null : uk);
+    _rsLoadP = lp.catch(() => null);
+    const asgP = hmwAssignments(currentBookId, uk);   // to samo zapytanie co w 🧠 (pamięć 30 s)
+    try { sets = await lp; } catch(e) { sets = []; }
+    const asg = await asgP;
     if (req !== _rsReq) return;
     const staff = isStaff();
     if (sets === null) {
@@ -35781,8 +36308,9 @@ ${bodyHtml}
       const nq = Array.isArray(s.questions) ? s.questions.length : 0;
       h += '<div class="gram-set"><div class="gram-set-info"><b>' + E(s.title) + '</b><small>' + (s.level ? E(s.level) + ' · ' : '') + pytan(nq)
         + (uk === 'all' ? ' · ' + E(unitName(s.unit_key)) : '') + (s.source === 'ai' ? ' · 🤖 AI' : s.source === 'bank' ? ' · 📚 z banku' : '') + '</small>'
-        + reviewBadge(s) + '</div><div class="gram-set-act">'
+        + reviewBadge(s) + hmwStudentBadge('reading', s) + '</div><div class="gram-set-act">'
         + '<button class="btn-sm accent" onclick="openStoryRead(\'' + s.id + '\')">▶ Czytaj</button>'
+        + (staff ? hmwBtns('reading', s, asg) : '')
         + (staff ? '<button class="btn-sm" onclick="printStory(\'' + s.id + '\')">🖨️ Drukuj</button>' : '')
         + (mine && staff ? shareBtn('reading', s) : '')
         + (canDel ? '<button class="btn-sm" onclick="deleteStoryUi(\'' + s.id + '\')" title="Usuń czytankę">🗑️</button>' : '')
@@ -35910,8 +36438,8 @@ ${bodyHtml}
       ${withQuiz ? qs.map((q, i) => `<div class="rd-q">${i + 1}. ${E(q.q)}</div><div class="gp-opts" id="rdQ${i}">${q.o.map((o, j) => `<button class="gp-opt" onclick="storyAnswer(${i},${j})"><b>${'ABCD'[j]})</b> ${E(o)}</button>`).join('')}</div>`).join('') : ''}`;
   }
   window.openStoryRead = function(id){
-    const s = _rsCache.find(x => x.id === id); if (!s) return;
-    _rd = { s, answered: {}, ok: 0 };
+    const s = _rsCache.find(x => x.id === id) || _hmwSets[id]; if (!s) return;
+    _rd = { s, answered: {}, ok: 0, answers: [] };
     const qs = Array.isArray(s.questions) ? s.questions : [];
     aiModal('storyReadModal', closeBtn('storyReadModal') + `<div class="modal-title">📖 ${E(s.title)}</div>
       <div class="gram-set-act" style="margin:4px 0">
@@ -35938,6 +36466,7 @@ ${bodyHtml}
     if (!_rd || _rd.answered[i] != null) return;
     const q = _rd.s.questions[i]; if (!q) return;
     _rd.answered[i] = j; const ok = j === q.a; if (ok) _rd.ok++;
+    if (_rd.answers) _rd.answers.push(hmwAns(i, q.q, q.o[j], q.o[q.a], ok));
     const box = $('rdQ' + i);
     if (box) box.querySelectorAll('.gp-opt').forEach((b, k) => { b.disabled = true; if (k === q.a) b.classList.add('ok'); else if (k === j) b.classList.add('bad'); });
     try { if (ok && typeof playOk === 'function') playOk(); else if (!ok && typeof playBad === 'function') playBad(); } catch(e) {}
@@ -35947,7 +36476,9 @@ ${bodyHtml}
     if (done === total) {
       const pct = Math.round(_rd.ok / total * 100);
       $('rdRes').innerHTML = `<div class="gp-res ${pct >= 60 ? 'ok' : 'bad'}">${pct >= 80 ? '🏆' : pct >= 60 ? '🎉' : '💪'} Wynik: ${_rd.ok} / ${total} (${pct}%) ${pct >= 60 ? '— świetnie przeczytane!' : '— przeczytaj jeszcze raz i spróbuj ponownie.'}</div>
+        <div id="rdHmw" class="ai-msg" role="status" aria-live="polite"></div>
         <div class="modal-btns"><button class="btn-modal-save" onclick="openStoryRead('${_rd.s.id}')">🔁 Jeszcze raz</button></div>`;
+      aiHmwReport('reading', _rd.s.id, _rd.ok, total, _rd.answers, 'rdHmw');
     }
   };
 

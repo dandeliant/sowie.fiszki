@@ -4025,16 +4025,33 @@ const DB = (() => {
   // RLS: uczeń widzi swoje, autor — napisane przez siebie, admin — wszystko.
   // null = brak migracji (UI chowa funkcję).
   const _SN_COLS = 'id, book_id, unit_key, student_id, author_id, kind, content, due_date, done_at, created_at, updated_at';
+  // Prace domowe z zadaniem (migracja #88): zestaw gramatyczny / czytanka, wynik, „widziane”.
+  const _SN_TASK_COLS = _SN_COLS + ', task_kind, task_id, task_title, result, result_at, attempts, seen_at';
+  let _snHasTasks = null;   // null = jeszcze nie wiadomo, true / false = jest / brak migracji #88
   function _snMissing(error) {
     return !!error && /student_notes|PGRST205|42P01/i.test((error.code || '') + ' ' + (error.message || ''));
   }
+  function _snNoTaskCols(error) {   // brak kolumny (select: 42703, insert: PGRST204)
+    const m = error ? (error.code || '') + ' ' + (error.message || '') : '';
+    return /42703|PGRST204/.test(m) && /task_kind|task_id|task_title|seen_at|result_at|attempts|result/i.test(m);
+  }
+  // Zapytanie z kolumnami #88; bez migracji — z dawnymi (wynik zapytania supabase-js).
+  async function _snSelect(build) {
+    if (_snHasTasks !== false) {
+      const r = await build(_SN_TASK_COLS);
+      if (!_snNoTaskCols(r.error)) { if (!r.error) _snHasTasks = true; return r; }
+      _snHasTasks = false;
+    }
+    return build(_SN_COLS);
+  }
+  function hasHomeworkTasks() { return _snHasTasks; }
 
   // Notatki przy podręczniku (unitKey '') lub unicie — moje (jako uczeń) i napisane przeze mnie.
   async function loadStudentNotes(bookId, unitKey) {
     if (!_userId || !bookId) return [];
-    const { data, error } = await supabase.from('student_notes').select(_SN_COLS)
+    const { data, error } = await _snSelect(cols => supabase.from('student_notes').select(cols)
       .eq('book_id', bookId).eq('unit_key', unitKey || '')
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false }));
     if (_snMissing(error)) return null;
     if (error) throw new Error(error.message);
     return data || [];
@@ -4043,17 +4060,38 @@ const DB = (() => {
   // Wszystkie notatki skierowane do mnie (baner ucznia na ekranie głównym).
   async function loadMyStudentNotes() {
     if (!_userId) return [];
-    const { data, error } = await supabase.from('student_notes').select(_SN_COLS)
+    const { data, error } = await _snSelect(cols => supabase.from('student_notes').select(cols)
       .eq('student_id', _userId)
-      .order('created_at', { ascending: false }).limit(100);
+      .order('created_at', { ascending: false }).limit(100));
     if (_snMissing(error)) return null;
     if (error) throw new Error(error.message);
     return data || [];
   }
 
+  // Prace z zadaniem przy podręczniku (unitKeys: klucz / tablica / null = cały podręcznik) albo przy
+  // jednym zestawie (taskId) — dla nauczyciela/admina („📌 Zadaj”, „📊 Wyniki”). RLS: nauczyciel widzi
+  // tylko prace, które sam zadał. null = brak migracji #69 / #88.
+  async function loadTaskAssignments(bookId, unitKeys, taskId) {
+    if (!_userId || (!bookId && !taskId)) return [];
+    if (_snHasTasks === false) return null;
+    let q = supabase.from('student_notes').select(_SN_TASK_COLS);
+    if (taskId) q = q.eq('task_id', taskId);
+    else {
+      q = q.eq('book_id', bookId).not('task_id', 'is', null);
+      if (Array.isArray(unitKeys)) q = q.in('unit_key', unitKeys); else if (unitKeys) q = q.eq('unit_key', unitKeys);
+    }
+    const { data, error } = await q.order('created_at', { ascending: false }).limit(1000);
+    if (_snNoTaskCols(error) || _snMissing(error)) { _snHasTasks = false; return null; }
+    if (error) throw new Error(error.message);
+    _snHasTasks = true;
+    return data || [];
+  }
+
   // Nowa notatka dla jednego lub wielu uczniów (osobny wiersz na ucznia) albo edycja istniejącej (id).
-  async function saveStudentNote({ id, bookId, unitKey, studentIds, kind, content, dueDate }) {
+  // taskKind / taskId (#88) — praca domowa z zestawem gramatycznym ('grammar') albo czytanką ('reading').
+  async function saveStudentNote({ id, bookId, unitKey, studentIds, kind, content, dueDate, taskKind, taskId }) {
     if (!_profile?.isAdmin && !_profile?.isTeacher) throw new Error('Notatki dla ucznia może dodawać admin lub nauczyciel.');
+    if (taskId) kind = 'homework';
     const fields = {
       kind: kind === 'homework' ? 'homework' : 'note',
       content: String(content || '').trim(),
@@ -4061,19 +4099,57 @@ const DB = (() => {
       updated_at: new Date().toISOString()
     };
     if (!fields.content) throw new Error('Wpisz treść notatki.');
+    const cols = _snHasTasks === false ? _SN_COLS : _SN_TASK_COLS;
     if (id) {
-      const { data, error } = await supabase.from('student_notes').update(fields).eq('id', id).select(_SN_COLS);
+      let { data, error } = await supabase.from('student_notes').update(fields).eq('id', id).select(cols);
+      if (_snNoTaskCols(error)) { _snHasTasks = false; ({ data, error } = await supabase.from('student_notes').update(fields).eq('id', id).select(_SN_COLS)); }
       if (error) throw new Error(error.message);
       if (!data || !data.length) throw new Error('Brak uprawnień do edycji tej notatki.');
       return data;
     }
     const ids = [...new Set(studentIds || [])].filter(Boolean);
     if (!ids.length) throw new Error('Wybierz co najmniej jednego ucznia.');
-    const rows = ids.map(sid => ({ ...fields, book_id: bookId, unit_key: unitKey || '', student_id: sid, author_id: _userId }));
-    const { data, error } = await supabase.from('student_notes').insert(rows).select(_SN_COLS);
+    if (taskId && _snHasTasks === false) throw new Error('Uruchom migrację #88 (homework-tasks.sql) w Supabase.');
+    const task = taskId ? { task_kind: taskKind === 'reading' ? 'reading' : 'grammar', task_id: taskId } : {};
+    const rows = ids.map(sid => ({ ...fields, ...task, book_id: bookId, unit_key: unitKey || '', student_id: sid, author_id: _userId }));
+    const { data, error } = await supabase.from('student_notes').insert(rows).select(taskId ? _SN_TASK_COLS : cols);
+    if (taskId && _snNoTaskCols(error)) { _snHasTasks = false; throw new Error('Uruchom migrację #88 (homework-tasks.sql) w Supabase.'); }
     if (_snMissing(error)) throw new Error('Uruchom migrację #69 (student-notes.sql) w Supabase.');
-    if (error) throw new Error(/row-level security/i.test(error.message) ? 'Możesz pisać tylko do swoich uczniów.' : error.message);
+    if (error) {
+      const m = error.message || '';
+      if (/row-level security/i.test(m)) throw new Error('Możesz pisać tylko do swoich uczniów.');
+      if (/TASK_NOT_PUBLISHED/.test(m)) throw new Error('Ten zestaw czeka jeszcze na zatwierdzenie — zadać można tylko opublikowany.');
+      if (/TASK_NOT_FOUND|TASK_REQUIRED/.test(m)) throw new Error('Nie znaleziono tego zestawu — mógł zostać usunięty.');
+      throw new Error(m);
+    }
     return data || [];
+  }
+
+  // Uczeń: zapis podejścia do pracy z zadaniem (#88) — najlepszy wynik zostaje.
+  // → { best, attempts, done_at, result_at, result:{score,total,pct,at,last?} }; null = brak migracji.
+  async function submitStudentTask(id, { score, total, answers }) {
+    const { data, error } = await supabase.rpc('student_task_submit',
+      { p_id: id, p_score: Math.round(score) || 0, p_total: Math.round(total) || 0, p_answers: Array.isArray(answers) ? answers : [] });
+    if (error) {
+      if (/student_task_submit|PGRST202|42883/i.test((error.code || '') + ' ' + (error.message || ''))) return null;
+      throw new Error(/NOT_FOUND/.test(error.message) ? 'Nie znaleziono tej pracy domowej — mogła zostać usunięta.' : error.message);
+    }
+    return data;
+  }
+  // Uczeń: okienko „Nowa praca domowa” zostało pokazane (#88).
+  async function markStudentNotesSeen(ids) {
+    const list = [...new Set(ids || [])].filter(Boolean).slice(0, 100);
+    if (!list.length || _snHasTasks !== true) return 0;
+    const { data, error } = await supabase.rpc('student_notes_seen', { p_ids: list });
+    return error ? 0 : (data || 0);
+  }
+  // Jeden zestaw gramatyczny / czytanka po id (praca domowa otwierana z ekranu głównego).
+  // null = nie ma albo uczeń go nie widzi (usunięty / czeka na zatwierdzenie — RLS #78).
+  async function loadTaskSet(kind, id) {
+    if (!id) return null;
+    const { data, error } = await supabase.from(kind === 'reading' ? 'reading_sets' : 'grammar_sets').select('*').eq('id', id).limit(1);
+    if (error) return null;
+    return (data && data[0]) || null;
   }
 
   async function deleteStudentNote(id) {
@@ -5516,6 +5592,7 @@ const DB = (() => {
     saveStudentNote,
     deleteStudentNote,
     setStudentNoteDone,
+    hasHomeworkTasks, loadTaskAssignments, submitStudentTask, markStudentNotesSeen, loadTaskSet,
     saveBookNote,
     deleteBookNote,
     // book access requests
