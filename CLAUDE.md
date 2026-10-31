@@ -12,13 +12,13 @@
 - **Hosting:** Vercel → **https://sowiefiszki.com** (custom domain, od 29.04.2026; wcześniej GitHub Pages)
 - **Backend:** Supabase (auth + Postgres + RLS), projekt `kofenaaeleyhwhbkytcz`
 - **Charakter:** osoba fizyczna prowadząca Platformę; **model freemium** (30-dniowy trial Premium → Free / Premium po opłacie). Wcześniej projekt był non-commercial — od ~2026-04-29 przygotowywany do monetyzacji.
-- **Service Worker:** aktualnie `v1.220` (`CACHE_NAME` w `sw.js`). Format `vMAJOR.NNN` (3-cyfrowy minor z zerami wiodącymi): `v1.220` → `v1.221` … `v1.999` → `v2.000`.
+- **Service Worker:** aktualnie `v1.223` (`CACHE_NAME` w `sw.js`). Format `vMAJOR.NNN` (3-cyfrowy minor z zerami wiodącymi): `v1.223` → `v1.224` … `v1.999` → `v2.000`.
 - **Promocja Premium:** **wszyscy zalogowani użytkownicy mają Premium za darmo do 30.11.2026** (override po stronie kodu w `db.js isPremium()` — `isPromoActive()` zwraca `true` gdy `Date.now() < 2026-12-01 00:00`). Po 30.11.2026 promocja (przedłużona 25.10.2026 z 31.10) samoczynnie wygasa — wraca normalna logika: nowi użytkownicy mają 30-dniowy trial gratis, reszta przechodzi na Free.
 
 ## 📚 Dokumentacja szczegółowa (`docs/`)
 
 Ten plik to skrót. Szczegóły funkcji są w `docs/` — **przed zmianą danej funkcji znajdź jej opis Grepem** (np. nazwę funkcji JS, tabeli lub pliku) i przeczytaj tylko ten fragment:
-- `docs/MIGRACJE.md` — migracje #1–#86: tabele, RPC, RLS, API db.js, UI.
+- `docs/MIGRACJE.md` — migracje #1–#87: tabele, RPC, RLS, API db.js, UI.
 - `docs/FUNKCJE.md` — Fiszki/FSRS i „Opanowane”, XP, Ignoruj, oceny, tryb skupienia, AI (OpenAI, rozmowy, głos), pupil, rankingi, statystyki, SEO, koszty i terminy, status funkcji, skrypty (sync, kopia zapasowa).
 - `docs/GRAMMAR-CITY.md` — Grammar City 3D (silnik, auta, mapy, sklep, policja, pory roku…).
 - `docs/GRY-INNE.md` — gry i losowanki z INNE, Wyścig słówek 3D, blokada gier, gry z listy unitów, nazwa „Karty do gry”.
@@ -45,7 +45,7 @@ Po dodaniu funkcji dopisz jej opis do właściwego pliku w `docs/` (nie do CLAUD
 
 ## 🗄️ Migracje SQL do Supabase
 
-- Ostatnia: **#86** (`word-hints-and-book-prefs.sql`). Pełna lista z opisami: `docs/MIGRACJE.md`.
+- Ostatnia: **#87** (`teacher-messages-and-live-invites.sql`). Pełna lista z opisami: `docs/MIGRACJE.md`.
 - Nowa migracja: sprawdź wolny numer na świeżym `origin/main`, plik idempotentny (`if not exists`, `create or replace`, `drop … if exists`), dopisz wiersz w `sprawdz-migracje.sql` i opis w `docs/MIGRACJE.md`, testuj na PGlite.
 - Kod klienta działa bez nowej migracji (fail-soft: `null` = brak migracji → UI chowa funkcję).
 - **Zawsze przypominaj użytkownikowi** o uruchomieniu nowej migracji w Supabase, kiedy tworzysz nową.

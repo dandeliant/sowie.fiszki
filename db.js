@@ -294,6 +294,7 @@ const DB = (() => {
    */
   async function logout() {
     try { await presenceLeave(); } catch(e) {}   // „🟢 Teraz online” (#83) — wyszedł
+    try { unsubscribeInbox(); } catch(e) {}      // wiadomości / zaproszenia na żywo (#87)
     // Tylko to urządzenie — wylogowanie w szkole nie może zrywać sesji na telefonie
     // (inaczej otwarta karta dalej liczy XP, ale nic się nie zapisuje).
     await supabase.auth.signOut({ scope: 'local' });
@@ -2836,6 +2837,105 @@ const DB = (() => {
   async function duelAnswer(id, index, correct, ms) {
     const { error } = await supabase.rpc('duel_answer', { p_id: id, p_index: index, p_correct: !!correct, p_ms: Math.round(ms || 0) });
     if (error) throw new Error(_niceRpcError(error));
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  WIADOMOŚCI NAUCZYCIELA + ZAPROSZENIA NA ŻYWO (migracja #87
+  //  teacher-messages-and-live-invites.sql)
+  //  Dostarczanie: Realtime postgres_changes (INSERT z filtrem na
+  //  zalogowanego) + zapasowe live_inbox() przy starcie / powrocie do karty /
+  //  co 60 s. Bez migracji: duel_state → null (aplikacja używa duel_get).
+  // ═══════════════════════════════════════════════════════════════
+  let _liveMissing = false;
+  function _liveIsMissing(error) {
+    return !!error && /function .* does not exist|Could not find the function|schema cache/i.test(error.message || '');
+  }
+  function _liveErr(error) {
+    if (_liveIsMissing(error)) return 'Funkcja wymaga migracji #87 (teacher-messages-and-live-invites.sql) w Supabase.';
+    return (error && error.message) || 'Błąd';
+  }
+  async function teacherMessageSend(toUserId, body) {
+    if (!_userId) throw new Error('Musisz być zalogowany.');
+    const { data, error } = await supabase.rpc('teacher_message_send', { p_to: toUserId, p_body: String(body || '') });
+    if (error) throw new Error(_liveErr(error));
+    return data;
+  }
+  // Nauczyciel: ostatnie wiadomości do ucznia ze statusem. null = brak migracji.
+  async function teacherMessagesSent(toUserId, limit) {
+    if (!_userId) return [];
+    const { data, error } = await supabase.rpc('teacher_messages_sent', { p_to: toUserId || null, p_limit: limit || 10 });
+    if (error) { if (_liveIsMissing(error)) return null; throw new Error(error.message); }
+    return data || [];
+  }
+  // Uczeń: action = 'shown' | 'read' | 'dismiss'.
+  async function teacherMessageMark(id, action) {
+    if (!_userId || !id) return;
+    const { error } = await supabase.rpc('teacher_message_mark', { p_id: id, p_action: action });
+    if (error) console.warn('[teacherMessageMark]', error.message);
+  }
+  // { messages:[{id,sender_name,body,created_at}], invites:[{id,title,n,host_name,host_staff,expires_in}] }
+  // null = brak migracji #87 (wtedy tylko duel_my_invites).
+  async function liveInbox() {
+    if (_liveMissing) return null;
+    if (!_userId) return { messages: [], invites: [], active: null };
+    const { data, error } = await supabase.rpc('live_inbox');
+    if (error) {
+      if (_liveIsMissing(error)) { _liveMissing = true; return null; }
+      throw new Error(error.message);
+    }
+    return data || { messages: [], invites: [] };
+  }
+  // Stan pojedynku dla widoku podzielonego. null = brak migracji (użyj duelGet).
+  async function duelState(id, full) {
+    if (_liveMissing) return null;
+    const { data, error } = await supabase.rpc('duel_state', { p_id: id, p_full: full !== false });
+    if (error) {
+      if (_liveIsMissing(error)) { _liveMissing = true; return null; }
+      throw new Error(_niceRpcError(error));
+    }
+    return data || null;
+  }
+  // Odpowiedź: choice = indeks opcji (−1 = czas minął). Zwraca {accepted, ok, c, pts}.
+  async function duelAnswer2(id, index, choice, ms) {
+    const { data, error } = await supabase.rpc('duel_answer2', { p_id: id, p_index: index, p_choice: choice, p_ms: Math.round(ms || 0) });
+    if (error) throw new Error(_niceRpcError(error));
+    return data || null;
+  }
+  // Wyjście: zaproszenie — anulowane/odrzucone, w trakcie gry — druga osoba gra dalej.
+  async function duelLeave(id) {
+    const { data, error } = await supabase.rpc('duel_leave', { p_id: id });
+    if (error) {
+      if (_liveIsMissing(error)) { await duelCancel(id); return 'cancelled'; }
+      console.warn('[duelLeave]', error.message);
+      return null;
+    }
+    return data;
+  }
+  // Realtime: nowe wiadomości do mnie i nowe zaproszenia do gry (tylko INSERT,
+  // filtr po zalogowanym — RLS w bazie decyduje, kto dostaje zdarzenie).
+  // handlers: { onMessage(row), onInvite(row), onStatus(status) }.
+  let _inboxCh = null;
+  function subscribeInbox(handlers) {
+    unsubscribeInbox();
+    if (!_userId || !supabase.channel) return null;
+    const h = handlers || {};
+    try {
+      _inboxCh = supabase.channel('inbox-' + _userId)
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'teacher_messages', filter: 'recipient_id=eq.' + _userId },
+            p => { try { h.onMessage && h.onMessage(p && p.new); } catch(e) {} })
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'duels', filter: 'guest_id=eq.' + _userId },
+            p => { try { h.onInvite && h.onInvite(p && p.new); } catch(e) {} })
+        .subscribe(status => { try { h.onStatus && h.onStatus(status); } catch(e) {} });
+    } catch(e) {
+      console.warn('[subscribeInbox]', e.message || e);
+      _inboxCh = null;
+    }
+    return _inboxCh;
+  }
+  function unsubscribeInbox() {
+    if (!_inboxCh) return;
+    try { supabase.removeChannel(_inboxCh); } catch(e) {}
+    _inboxCh = null;
   }
   // ═══════════════════════════════════════════════════════════════
   //  ZDJĘCIE PROFILOWE (migracja #62 profile-avatars.sql)
@@ -5520,6 +5620,16 @@ const DB = (() => {
     duelRespond,
     duelCancel,
     duelAnswer,
+    // wiadomości nauczyciela + zaproszenia na żywo (#87)
+    teacherMessageSend,
+    teacherMessagesSent,
+    teacherMessageMark,
+    liveInbox,
+    duelState,
+    duelAnswer2,
+    duelLeave,
+    subscribeInbox,
+    unsubscribeInbox,
     recordBestCombo,
     updateWellLearned,
     logDailyWords,
