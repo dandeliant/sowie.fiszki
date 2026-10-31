@@ -96,6 +96,11 @@ body.boost .vignette{box-shadow:inset 0 0 220px #000c}
 .lbl.gone{background:rgba(60,64,76,.86);border-color:#8a90a0}
 #leads{position:absolute;inset:0;width:100%;height:100%;z-index:29;pointer-events:none;overflow:visible}
 #leads line{stroke:#bff6ff;stroke-width:2.5;stroke-linecap:round;opacity:0}
+/* 🎯 linia naprowadzająca: gdzie auto przejedzie linię obręczy (nie podpowiada odpowiedzi) + „celownik” na napisie */
+#aim{position:absolute;inset:0;width:100%;height:100%;z-index:28;pointer-events:none;overflow:visible}
+#aim line{stroke:#d6faff;stroke-width:3.5;stroke-linecap:round;stroke-dasharray:10 11;opacity:0;filter:drop-shadow(0 0 5px rgba(110,230,255,.95))}
+#aim ellipse{fill:rgba(190,246,255,.18);stroke:#e6fcff;stroke-width:2.5;opacity:0;filter:drop-shadow(0 0 6px rgba(110,230,255,.95))}
+.lbl.tgt{border-color:#fff;box-shadow:0 0 0 2px var(--c,var(--neon)),0 0 22px var(--c,var(--neon)),0 6px 16px #0008}
 
 /* Message */
 #msg{position:absolute;z-index:40;top:44%;left:50%;transform:translate(-50%,-50%) scale(.8);font-family:'Orbitron',sans-serif;
@@ -271,6 +276,7 @@ body.retyping #nitroBtn,body.retyping #carChip,body.retyping #touch{visibility:h
   <canvas id="cv"></canvas>
   <div class="boostfx" aria-hidden="true"></div>
   <div class="vignette"></div>
+  <svg id="aim" aria-hidden="true"><line id="aimLine"/><ellipse id="aimEnd" rx="9" ry="4"/></svg>
   <svg id="leads" aria-hidden="true"></svg>
 
   <div class="hud">
@@ -655,9 +661,9 @@ function animRing(r,w,dt){
   r.g.visible=true;r.g.position.set(r.x,0,w.z);r.g.scale.setScalar(sc);
   r.dash.rotation.z+=dt*r.spin;
   const d=Math.abs(w.z-camera.position.z), far=Math.max(0,Math.min(1,(560-d)/160));   // wyłanianie z mgły
-  const pul=.8+.2*Math.sin(T*7+r.ph);
+  const pul=.8+.2*Math.sin(T*7+r.ph), tg=r===aim.ring?1.5:1;               // obręcz na celowniku — mocniejsza poświata
   r.core.material.opacity=op;
-  r.glow.material.opacity=op*far*pul;r.dash.material.opacity=op*far*.95;r.film.material.opacity=op*far*(.5+.15*Math.sin(T*11+r.ph));r.pad.material.opacity=op*far*.85;
+  r.glow.material.opacity=op*far*pul*tg;r.dash.material.opacity=op*far*.95;r.film.material.opacity=op*far*(.5+.15*Math.sin(T*11+r.ph));r.pad.material.opacity=op*far*.85;
   r.lop=r.state==='ok'?Math.max(0,1-r.t*1.4):op;
 }
 
@@ -678,7 +684,8 @@ function placeLabels(){
       v3.applyMatrix4(camera.projectionMatrix);
       const op=Math.min(1,(340-d)/80)*Math.max(0,Math.min(1,(d-5)/9))*r.lop;  // tuż przed autem napis gaśnie
       if(op<=.01){hideLbl(r);continue}
-      items.push({r,ax:(v3.x*.5+.5)*W,ay:(-v3.y*.5+.5)*H,sc:Math.max(.5,Math.min(1.25,26/d)),op,bw:+r.label.dataset.w||110,bh:+r.label.dataset.h||38});
+      // z daleka napis nie maleje (min. ~23 px — czytelny przy Nitro), z bliska rośnie do 1,35×
+      items.push({r,ax:(v3.x*.5+.5)*W,ay:(-v3.y*.5+.5)*H,sc:Math.max(1.05,Math.min(1.35,46/d)),op,bw:+r.label.dataset.w||110,bh:+r.label.dataset.h||38});
     }
     if(!items.length)continue;
     items.sort((a,b)=>a.ax-b.ax);
@@ -1199,6 +1206,41 @@ function updateWaves(dt,dz,pxPrev){
     if(w.z>32||w.rings.every(r=>r.state==='off')){w.rings.forEach(freeRing);waves.splice(i,1)}}
 }
 
+/* ── 🎯 linia naprowadzająca ──
+   Pokazuje, przez które miejsce auto przejedzie linię obręczy — nie podpowiada odpowiedzi.
+   Cel = pozycja, w której auto stanie w poziomie po puszczeniu strzałki (px + droga hamowania vx);
+   obręcz na tym pasie dostaje „celownik” (mocniejsza poświata, biała ramka napisu). Przy Nitro wyraźniejsza. */
+const aim={x:0,op:0,ring:null,x0:0,y0:0,x1:0,y1:0,e:.5};
+const aimLine=document.getElementById('aimLine'), aimEnd=document.getElementById('aimEnd');
+function aimHide(){aim.op=0;aim.ring=null;aimLine.style.opacity=0;aimEnd.style.opacity=0}
+function updateAim(dt){
+  const w=curWave(), zRef=-player.G.cOff;
+  const live=!!(w&&!w.resolved&&run&&!crashing&&w.z<zRef-3&&w.rings.some(r=>r.state==='in'||r.state==='idle'));
+  const lim=ROAD_HALF+SHOULDER-1.15;
+  const ax=Math.max(-lim,Math.min(lim,px+vx*Math.abs(vx)/(2*22)));            // 22 m/s² — hamowanie boczne jak w update()
+  aim.x+=(ax-aim.x)*Math.min(1,dt*14);
+  let tgt=null;
+  if(live){let bd=1e9;for(const r of w.rings){const d=Math.abs(r.x-aim.x);if(d<bd){bd=d;tgt=r}}if(bd>LANE_W/2)tgt=null}
+  for(const r of (w?w.rings:[]))if(r.state==='in'||r.state==='idle')r.label.classList.toggle('tgt',r===tgt);
+  aim.ring=tgt;
+  const goal=live?(.42+.3*boostK+(tgt?.14:0)):0;
+  aim.op+=(goal-aim.op)*Math.min(1,dt*(goal>aim.op?6:10));
+  if(live){
+    const W=innerWidth,H=innerHeight,v3=_lv.a||(_lv.a=new THREE.Vector3());
+    v3.set(px,.05,zRef-3.2).project(camera);aim.x0=(v3.x*.5+.5)*W;aim.y0=(-v3.y*.5+.5)*H;
+    v3.set(aim.x,.05,w.z).project(camera);aim.x1=(v3.x*.5+.5)*W;aim.y1=(-v3.y*.5+.5)*H;
+    aim.e=Math.max(.35,Math.min(1.6,40/Math.max(8,zRef-w.z)));               // znacznik na końcu — mniejszy z daleka
+  }
+  if(aim.op<.01){aimLine.style.opacity=0;aimEnd.style.opacity=0;return}
+  aimLine.setAttribute('x1',aim.x0.toFixed(1));aimLine.setAttribute('y1',aim.y0.toFixed(1));
+  aimLine.setAttribute('x2',aim.x1.toFixed(1));aimLine.setAttribute('y2',aim.y1.toFixed(1));
+  aimLine.style.strokeDashoffset=(-dist*3).toFixed(1);                        // kreski płyną w stronę obręczy
+  aimLine.style.opacity=aim.op.toFixed(3);
+  aimEnd.setAttribute('cx',aim.x1.toFixed(1));aimEnd.setAttribute('cy',aim.y1.toFixed(1));
+  aimEnd.setAttribute('transform',`translate(${aim.x1.toFixed(1)} ${aim.y1.toFixed(1)}) scale(${aim.e.toFixed(2)}) translate(${(-aim.x1).toFixed(1)} ${(-aim.y1).toFixed(1)})`);
+  aimEnd.style.opacity=Math.min(1,aim.op*1.6).toFixed(3);
+}
+
 /* ── nitro ── */
 function canNitro(){
   if(!run||crashing||paused||nitro.state==='boost'||!player)return false;
@@ -1264,7 +1306,7 @@ const _vp={};
 function update(dt){
   dt=Math.min(MAX_DT,Math.max(0,dt||0));
   if(paused){updateShowroom(dt);return}
-  if(held){tickCountdown(dt);placeLabels();updateNitroUi();return}           // przepisywanie / odliczanie: wszystko stoi
+  if(held){tickCountdown(dt);aimHide();placeLabels();updateNitroUi();return}  // przepisywanie / odliczanie: wszystko stoi
   T+=dt;
   const up=keys.ArrowUp||keys.w, down=keys.ArrowDown||keys.s, left=keys.ArrowLeft||keys.a, right=keys.ArrowRight||keys.d;
   // ── prędkość: gaz / hamulec / tempo podróżne / nitro ──
@@ -1339,6 +1381,7 @@ function update(dt){
   if(post){const vp=_vp.v||(_vp.v=new THREE.Vector3());vp.set(camera.position.x,1.2,camera.position.z-400).project(camera);post.mat.uniforms.uC.value.set(vp.x*.5+.5,Math.max(.35,Math.min(.75,vp.y*.5+.5)))}
   updateFx(dt,dz);
   updateNitroUi();
+  updateAim(dt);
   placeLabels();
 }
 function setFov(f,k){if(Math.abs(camera.fov-f)>.05){camera.fov+=(f-camera.fov)*k;camera.updateProjectionMatrix()}}
@@ -1353,7 +1396,7 @@ function updateShowroom(dt){
   setFov(portrait?62:48,k);
   for(const w of player.wheels)if(w.front)w.pivot.rotation.y*=1-k;
   sky.position.copy(camera.position);camera.updateMatrixWorld();
-  boostK=0;updateFx(dt,0);placeLabels();
+  boostK=0;updateFx(dt,0);aimHide();placeLabels();
 }
 
 /* ── wybór samochodu ── */
