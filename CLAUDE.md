@@ -12,7 +12,7 @@
 - **Hosting:** Vercel → **https://sowiefiszki.com** (custom domain, od 29.04.2026; wcześniej GitHub Pages)
 - **Backend:** Supabase (auth + Postgres + RLS), projekt `kofenaaeleyhwhbkytcz`
 - **Charakter:** osoba fizyczna prowadząca Platformę; **model freemium** (30-dniowy trial Premium → Free / Premium po opłacie). Wcześniej projekt był non-commercial — od ~2026-04-29 przygotowywany do monetyzacji.
-- **Service Worker:** aktualnie `v1.227` (`CACHE_NAME` w `sw.js`). Format `vMAJOR.NNN` (3-cyfrowy minor z zerami wiodącymi): `v1.227` → `v1.228` … `v1.999` → `v2.000`.
+- **Service Worker:** aktualnie `v1.228` (`CACHE_NAME` w `sw.js`). Format `vMAJOR.NNN` (3-cyfrowy minor z zerami wiodącymi): `v1.228` → `v1.229` … `v1.999` → `v2.000`.
 - **Promocja Premium:** **wszyscy zalogowani użytkownicy mają Premium za darmo do 30.11.2026** (override po stronie kodu w `db.js isPremium()` — `isPromoActive()` zwraca `true` gdy `Date.now() < 2026-12-01 00:00`). Po 30.11.2026 promocja (przedłużona 25.10.2026 z 31.10) samoczynnie wygasa — wraca normalna logika: nowi użytkownicy mają 30-dniowy trial gratis, reszta przechodzi na Free.
 
 ## 📚 Dokumentacja szczegółowa (`docs/`)
