@@ -558,9 +558,11 @@ const SHIP_Y=4.2;                                                         // wys
 const RING_R=1.72, RING_Y=SHIP_Y+.1, RING_DIST=255, RING_POOL=9;         // krąg: promień (szer. = pas), środek, odległość pojawienia
 const RING_COLORS=[0x38e8ff,0xb36bff,0xffb14e];                          // cyjan, fiolet, bursztyn — losowo na kręgach fali (kolor nie podpowiada)
 const MAX_DT=.1;                                                          // większy krok czasu niż 0,1 s jest przycinany
-// Pierścień (tor): środek łuku C=(ORB,0,0), pasma od RING_IN do RING_OUT od środka. Saturn (promień SAT_R) stoi
-// z przodu po prawej w odległości SAT_D — tak, żeby jego ogromny okrąg był widoczny z prawej strony ekranu.
-const ORB=1080, RING_IN=960, RING_OUT=2300, SAT_R=1000, SAT_D=2300, SKY_TURN=.12;  // SKY_TURN — jak szybko obraca się niebo na zakręcie
+// Pierścień (tor) otacza Saturna: planeta (promień SAT_R) stoi w środku łuku C=(ORB,0,0), pasma od RING_IN do
+// RING_OUT od jej środka — tor biegnie dookoła planety i znika za jej brzegiem. Kamera patrzy lekko w prawo
+// (CAM_YAW, na telefonie w pionie mocniej), żeby ogromny okrąg Saturna był w kadrze po prawej.
+const ORB=1080, SAT_R=930, RING_IN=952, RING_OUT=2300, SKY_TURN=.12;  // SKY_TURN — jak szybko obraca się niebo na zakręcie
+const CAM_YAW=.16, CAM_YAW_PORTRAIT=.27;                                  // rad (ok. 9° / 15°)
 const R3={ready:false};
 let renderer,scene,camera,clock,post=null,SUN;
 let ringMesh,ringMat,saturn,satAtmo,skyGrp,starMat,dust,dustData=[],dustMat,debris=[],sparks,sparkData=[],streaks,streakData=[],tunnel,warp,warpMat;
@@ -568,7 +570,7 @@ let player=null,playerType=DEFAULT_SHIP;
 let dist=0, v=18, vx=0, px=laneX(2), pitch=0, prevV=18, shake=0, crashing=false, crashT=0, T=0, theta=0, thrS=.5, camRoll=0;
 let waves=[], ringPool=[], roundId=0, nextRoundIn=0, lastResolve=null;
 const nitro={state:'off',t:0};                                            // off | boost (rozpędzanie i trzymanie 700) | ease (powrót)
-let boostK=0, flameK=.5, fovKick=0, nitroUi='', boostCss=-1, satYaw=0;
+let boostK=0, flameK=.5, fovKick=0, nitroUi='', boostCss=-1;
 const camLook={x:0,y:SHIP_Y+.5,z:-20};
 const dummy={}, FX={}, RG={}, SHIP_CACHE={};
 
@@ -649,7 +651,7 @@ const RING_VS='varying vec2 vUv;varying vec3 vL;varying vec3 vW;void main(){vUv=
 const RING_FS=`uniform sampler2D uProf,uGrain;uniform float uR0,uR1,uN1,uN2,uSatR;uniform vec3 uSatC,uSun,uEng,uEngCol;uniform float uEngK;
   varying vec2 vUv;varying vec3 vL;varying vec3 vW;
   void main(){
-    if(length(vW-uSatC)<uSatR*1.1)discard;                                // wokół Saturna pusta przerwa (pierścień w niego nie wchodzi)
+    if(length(vW-uSatC)<uSatR)discard;                                    // zabezpieczenie: pierścień nie wchodzi w planetę
     float r=length(vL.xz);
     vec4 pr=texture2D(uProf,vec2((r-uR0)/(uR1-uR0),0.5));
     float g1=texture2D(uGrain,vec2(vUv.x*uN1,r/7.0)).r;
@@ -739,12 +741,9 @@ function makeSaturn(){
     transparent:true,blending:THREE.AdditiveBlending,depthWrite:false}));
   satAtmo.scale.y=.9;satAtmo.renderOrder=-5;scene.add(satAtmo);
 }
-// Saturn stoi z przodu po prawej (względem statku — leci razem z nami, jak środek łuku toru). Kierunek dobierany do
-// proporcji ekranu: lewy brzeg planety mniej więcej w połowie między środkiem a prawą krawędzią (także na telefonie w pionie).
+// Saturn w środku pierścienia (środek łuku toru — leci razem ze statkiem, pierścień obraca się wokół niego).
 function placeSaturn(){
-  const asp=camera.aspect,vf=asp<.8?74:58,halfH=Math.atan(Math.tan(vf*Math.PI/360)*asp);
-  satYaw=Math.atan(.5*Math.tan(halfH))+Math.asin(SAT_R/SAT_D);           // azymut środka Saturna (od kierunku lotu w prawo)
-  const c=new THREE.Vector3(Math.sin(satYaw)*SAT_D,0,-Math.cos(satYaw)*SAT_D);
+  const c=new THREE.Vector3(ORB,0,0);
   saturn.position.copy(c);satAtmo.position.copy(c);ringMat.uniforms.uSatC.value.copy(c);
 }
 
@@ -1741,11 +1740,11 @@ function update(dt){
   camera.position.x+=(tx-camera.position.x)*k;camera.position.y+=(ty-camera.position.y)*k;camera.position.z+=(tz-camera.position.z)*k;
   const sh=shake*.5+boostK*.09;
   if(sh>.001){camera.position.x+=(Math.random()-.5)*sh;camera.position.y+=(Math.random()-.5)*sh*.7}
-  const ahead=trk(40,px*.85);
-  camLook.x+=(ahead.x-camLook.x)*kl;camLook.y+=(SHIP_Y+.55-camLook.y)*kl;camLook.z+=(-20-camLook.z)*kl;
+  const ahead=trk(40,px*.85), portrait=camera.aspect<.8;
+  const yawX=20*Math.tan(portrait?CAM_YAW_PORTRAIT:CAM_YAW);               // spojrzenie lekko w prawo — Saturn w kadrze
+  camLook.x+=(ahead.x+yawX-camLook.x)*kl;camLook.y+=(SHIP_Y+.55-camLook.y)*kl;camLook.z+=(-20-camLook.z)*kl;
   camera.lookAt(camLook.x,camLook.y,camLook.z);
   camRoll+=((-vx*.012)-camRoll)*Math.min(1,dt*4);camera.rotateZ(camRoll);
-  const portrait=camera.aspect<.8;
   setFov((portrait?74:58)+Math.min(8,Math.max(0,v-V_CRUISE)*.45)+boostK*(portrait?10:16)+fovKick*6,k);   // telefon w pionie — szerszy kadr
   camera.updateMatrixWorld();
   if(post){const vp=_vp.v||(_vp.v=new THREE.Vector3());vp.set(camera.position.x,SHIP_Y,camera.position.z-400).project(camera);post.blur.uniforms.uC.value.set(vp.x*.5+.5,Math.max(.35,Math.min(.75,vp.y*.5+.5)))}
