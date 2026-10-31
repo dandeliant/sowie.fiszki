@@ -123,6 +123,28 @@ header{width:100%;display:flex;align-items:flex-start;justify-content:space-betw
 
 /* ── BOOK SELECTION ── */
 .book-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;width:100%;margin-bottom:14px;}
+/* 🔎 wyszukiwarka podręczników (sBooks, admin / nauczyciel) */
+.bs-box{width:100%;margin-bottom:16px;}
+.bs-field{display:flex;align-items:center;gap:8px;background:var(--surface);border:2px solid var(--border);border-radius:14px;padding:0 12px;transition:border-color .2s,box-shadow .2s;}
+.bs-field:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px rgba(255,209,102,.14);}
+.bs-ico{font-size:1rem;opacity:.8;}
+.bs-field input{flex:1;min-width:0;background:transparent;border:none;outline:none;color:var(--text);font-family:inherit;font-size:.92rem;font-weight:700;padding:12px 0;}
+.bs-field input::placeholder{color:var(--muted);font-weight:600;}
+.bs-kbd{font-family:inherit;font-size:.68rem;font-weight:800;color:var(--muted);border:1.5px solid var(--border);border-radius:6px;padding:1px 7px;}
+.bs-field:focus-within .bs-kbd{display:none;}
+@media (hover:none){.bs-kbd{display:none;}}
+.bs-results{margin-top:6px;background:var(--surface);border:1.5px solid var(--border);border-radius:14px;padding:5px;max-height:min(60vh,460px);overflow-y:auto;}
+.bs-item{display:flex;align-items:center;gap:11px;padding:9px 10px;border-radius:10px;text-decoration:none;color:inherit;cursor:pointer;}
+.bs-item:hover,.bs-item.on{background:var(--surface2);}
+.bs-item.on{box-shadow:inset 3px 0 0 var(--accent);}
+.bs-item-ico{font-size:1.5rem;width:34px;text-align:center;flex-shrink:0;}
+.bs-item-txt{flex:1;min-width:0;}
+.bs-item-name{font-size:.88rem;font-weight:800;color:var(--text);line-height:1.3;}
+.bs-item-name mark{background:none;color:var(--accent);}
+.bs-item-meta{font-size:.68rem;color:var(--muted);font-weight:600;margin-top:2px;line-height:1.4;}
+.bs-chip{display:inline-block;font-size:.62rem;font-weight:800;border:1px solid var(--border);border-radius:100px;padding:0 6px;margin-left:4px;color:var(--muted);vertical-align:1px;}
+.bs-go{font-size:.85rem;color:var(--muted);flex-shrink:0;}
+.bs-empty{padding:12px;font-size:.78rem;color:var(--muted);font-weight:600;text-align:center;}
 .book-card{background:var(--surface);border:2px solid var(--border);border-radius:var(--r);padding:26px 18px;text-align:center;cursor:pointer;transition:all .22s;display:flex;flex-direction:column;align-items:center;gap:9px;position:relative;overflow:hidden;}
 .book-card::before{content:'';position:absolute;inset:0;opacity:0;transition:opacity .22s;background:linear-gradient(135deg,rgba(162,155,254,.13),rgba(255,209,102,.07));pointer-events:none;}
 .book-card:hover{transform:translateY(-3px);box-shadow:0 10px 28px rgba(0,0,0,.4);}
@@ -1974,6 +1996,17 @@ html[data-theme="paper"] .hw-inv-box{background-image:radial-gradient(ellipse 80
     </div>
     <!-- Prośby admina -->
     <div id="adminRequestsList" style="font-size:.72rem;color:var(--muted);font-weight:600;padding:6px 0"></div>
+  </div>
+  <!-- 🔎 Wyszukiwarka podręczników (admin / nauczyciel) — szybkie przejście do podręcznika -->
+  <div id="bookSearchBox" class="bs-box" style="display:none">
+    <div class="bs-field">
+      <span class="bs-ico" aria-hidden="true">🔎</span>
+      <input id="bookSearchInp" type="search" autocomplete="off" spellcheck="false" placeholder="Szukaj podręcznika: nazwa, skrót, wydawnictwo, klasa…"
+        role="combobox" aria-label="Szukaj podręcznika" aria-autocomplete="list" aria-expanded="false" aria-controls="bookSearchResults"
+        oninput="bookSearchRender()" onkeydown="bookSearchKey(event)">
+      <kbd class="bs-kbd" title="Naciśnij /, aby zacząć szukać">/</kbd>
+    </div>
+    <div id="bookSearchResults" class="bs-results" role="listbox" aria-label="Znalezione podręczniki" style="display:none"></div>
   </div>
   <!-- 📌 Uczę się — podręczniki, których admin / nauczyciel uczy się sam (migracja #86) -->
   <div id="learningBooksSection" style="display:none;width:100%;margin-bottom:16px">
@@ -6745,7 +6778,25 @@ window.startReviewForUnit = function(bookId, unitKey) {
 // ══════════════════════════════════════════════
 //  BOOK GRID
 // ══════════════════════════════════════════════
+// Czy zalogowany widzi podręcznik (filtr z refreshBooks; wyszukiwarka dokłada własne podręczniki nauczyciela).
+// assigned = Set id z user_books (opcjonalnie — inaczej liczony tutaj).
+function bookAllowedForMe(b, assigned) {
+  if (isCurrentUserAdmin()) return true;
+  if (!assigned) { const my = DB.getUserBooks(); assigned = new Set(Array.isArray(my) ? my : []); }
+  if (assigned.has(b.id)) return true; // wprost przydzielony — zawsze widoczny
+  const eff = getEffectiveBookAccess(b);
+  // Widoczność per rola
+  let roleAllowed;
+  if (isGuest)                                                                     roleAllowed = eff.visibleToGuest;
+  else if (typeof isCurrentUserParent === 'function' && isCurrentUserParent())     roleAllowed = eff.visibleToParent;
+  else if (isCurrentUserTeacher())                                                 roleAllowed = eff.visibleToTeacher;
+  else                                                                             roleAllowed = eff.visibleToStudent;
+  const isPremium = (typeof hasPremiumAccess === 'function') ? hasPremiumAccess() : false;
+  return !!roleAllowed && ((eff.tier !== 'premium') || isPremium);
+}
+
 function refreshBooks() {
+  try { renderBookSearchBox(); } catch(e) {}
   const g = document.getElementById('bookGrid');
   const titleEl = document.getElementById('booksScreenTitle');
   const subEl = document.getElementById('booksScreenSub');
@@ -6861,17 +6912,7 @@ function refreshBooks() {
   // zalogowanym użytkownikom z kłódką, żeby wiedzieli co można zakupić.
   const lockedBooks = [];
   const allowedBooks = allBooks.filter(b => {
-    if (isAdmin) return true;
-    if (assigned.has(b.id)) return true; // wprost przydzielony — zawsze widoczny
-    const eff = getEffectiveBookAccess(b);
-    // Widoczność per rola
-    let roleAllowed;
-    if (isGuest)        roleAllowed = eff.visibleToGuest;
-    else if (isParent)  roleAllowed = eff.visibleToParent;
-    else if (isTeacher) roleAllowed = eff.visibleToTeacher;
-    else                roleAllowed = eff.visibleToStudent;
-    const tierOk = (eff.tier !== 'premium') || isPremium;
-    if (roleAllowed && tierOk) return true;
+    if (bookAllowedForMe(b, assigned)) return true;
     // Niedostępne — ale dla kategorii „Kursy tematyczne" (courses) i
     // „Gramatyka i dodatki" (grammar) pokazujemy zalogowanym nie-Premium
     // użytkownikom kafelek z kłódką (możliwość zakupu/przydzielenia).
@@ -11001,8 +11042,8 @@ function _gapTokRe(tok, polish) {
 }
 // Zamien slowo/zwrot na luke w zdaniu docelowym. Zwraca null, gdy nie znaleziono.
 // polish = odpowiedź po polsku (kierunek EN → PL) — dopasowanie po temacie wyrazu.
-function _gapSentence(sent, answer, polish) {
 const _GAP_HTML = '<span style="display:inline-block;min-width:60px;border-bottom:2.5px solid var(--accent,#6c5ce7);color:transparent">____</span>';
+function _gapSentence(sent, answer, polish) {
   if (!sent) return null;
   const GAP = _GAP_HTML;
   const raw = String(sent);
@@ -11116,7 +11157,6 @@ function speakWordHint() {
   if (h) spkPl('Wskazówka: ' + h.replace(/\.{2,}|…/g, ', '));
 }
 
-// ══════════════════════════════════════════════
 // 🔊 przy zdaniach (przód fiszki, tryb Wpisz): 'hint' = zdanie w języku pytania (pełne —
 // nie zdradza odpowiedzi), 'gap' = zdanie z luką — lektor robi w miejscu luki pauzę z cichym „bip”.
 function _sentSpkBtn(kind) {
@@ -11182,6 +11222,7 @@ function _speakWithGaps(parts, lang) {
   next();
 }
 
+// ══════════════════════════════════════════════
 //  MISSING LETTERS
 // ══════════════════════════════════════════════
 function checkMissing() {
@@ -11706,8 +11747,8 @@ function getV(lang) {
 }
 function spk(txt, lang, rate) {
   if (!('speechSynthesis' in window)) return;
-  speechSynthesis.cancel();
   try { _gapSpkId++; } catch(e) {}   // przerwij czytanie zdania z luką
+  speechSynthesis.cancel();
   if (rate === undefined) {
     // Uzyj preferencji uzytkownika (Premium) albo domyslnej 0.85 (Free)
     const pref = effectiveVoicePref();
@@ -12475,6 +12516,133 @@ function renderLearningBooks() {
   });
   sec.style.display = '';
 }
+
+// ── 🔎 Wyszukiwarka podręczników na ekranie startowym admina / nauczyciela (sBooks) ──
+// Szuka po nazwie, skrócie (BOOK_ALIASES), wydawnictwie, języku, kategorii i klasie
+// („7”, „kl 7”, „liceum”, „macmillan”…); wszystkie wpisane słowa muszą pasować.
+// ↑↓ wybór, Enter — otwiera podręcznik (#/book/id), Esc — czyści; „/” ustawia kursor w polu.
+const _BS_SCHOOL = {
+  primary: 'Szkoła podstawowa', secondary: 'Szkoła ponadpodstawowa', courses: 'Kursy tematyczne',
+  grammar: 'Gramatyka i dodatki', other: 'Inne'
+};
+let _bsActive = 0;
+function _bsNorm(s) {
+  return String(s || '').toLowerCase().replace(/ł/g, 'l').normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+function _bsCanSearch() { return !isGuest && (isCurrentUserAdmin() || isCurrentUserTeacher()); }
+function _bsBooks() {
+  const myId = DB.getUserId ? DB.getUserId() : null;
+  const my = DB.getUserBooks(), assigned = new Set(Array.isArray(my) ? my : []);
+  return Object.values(BOOKS).filter(b => b && b.id && b.units
+    && (bookAllowedForMe(b, assigned) || (myId && b.createdBy === myId)));
+}
+function renderBookSearchBox() {
+  const box = document.getElementById('bookSearchBox');
+  if (!box) return;
+  const on = _bsCanSearch();
+  box.style.display = on ? '' : 'none';
+  if (on) bookSearchRender();
+}
+function bookSearchRender() {
+  const inp = document.getElementById('bookSearchInp'), out = document.getElementById('bookSearchResults');
+  if (!inp || !out) return;
+  const q = _bsNorm(inp.value).trim();
+  const toks = q.split(/[\s,·]+/).filter(Boolean);
+  if (!toks.length) { out.style.display = 'none'; out.innerHTML = ''; inp.setAttribute('aria-expanded', 'false'); return; }
+  const myId = DB.getUserId ? DB.getUserId() : null;
+  const hits = [];
+  _bsBooks().forEach(b => {
+    const alias = BOOK_ALIASES[b.id] || '', pub = getPublisherForBook(b.id), lang = _LANG_META[b.language];
+    const school = _BS_SCHOOL[b.schoolType] || '';
+    const name = _bsNorm(b.name);
+    const hay = [b.name, b.shortName, b.id, alias, pub && pub.name, lang && lang.name, school, b.desc,
+      b.schoolType === 'primary' && b.grade ? 'klasa ' + b.grade + ' kl ' + b.grade + ' kl' + b.grade + ' sp ' + b.grade : '',
+      b.schoolType === 'secondary' ? 'liceum technikum branżowa' : '',
+      myId && b.createdBy === myId ? 'mój własny moje' : ''].map(_bsNorm).join(' | ');
+    if (!toks.every(t => hay.includes(t))) return;
+    let score = 0;
+    if (name.startsWith(q)) score += 100;
+    if (_bsNorm(alias) === q.replace(/\s+/g, '')) score += 90;
+    if (name.split(/[\s&/,()-]+/).some(w => w.startsWith(toks[0]))) score += 40;
+    score += toks.filter(t => name.includes(t)).length * 10;
+    hits.push({ b, score, alias, pub, lang, school, own: !!(myId && b.createdBy === myId) });
+  });
+  hits.sort((x, y) => y.score - x.score || x.b.name.localeCompare(y.b.name, 'pl'));
+  inp.setAttribute('aria-expanded', 'true');
+  out.style.display = '';
+  if (!hits.length) {
+    out.innerHTML = '<div class="bs-empty">Nie znaleziono podręcznika „' + escHtml(inp.value.trim()) + '”. Spróbuj nazwy, skrótu (np. B6) albo klasy (np. 7).</div>';
+    inp.removeAttribute('aria-activedescendant');
+    return;
+  }
+  const shown = hits.slice(0, 12);
+  _bsActive = Math.min(_bsActive, shown.length - 1);
+  // Podświetlenie pierwszego dopasowania w nazwie (indeks w znormalizowanej nazwie = indeks w oryginale)
+  const mark = (name) => {
+    const n = _bsNorm(name);
+    let i = n.indexOf(q), len = q.length;
+    if (i < 0) { const t = toks.find(t => n.includes(t)); if (t) { i = n.indexOf(t); len = t.length; } }
+    if (i < 0 || n.length !== name.length) return escHtml(name);
+    return escHtml(name.slice(0, i)) + '<mark>' + escHtml(name.slice(i, i + len)) + '</mark>' + escHtml(name.slice(i + len));
+  };
+  const learning = (DB.getBookPrefs && _canBookPrefs()) ? DB.getBookPrefs().learning : [];
+  out.innerHTML = shown.map((h, i) => {
+    const b = h.b, units = Object.keys(b.units).length;
+    const where = h.school + (b.schoolType === 'primary' && b.grade ? ', klasa ' + b.grade : '');
+    const meta = [h.lang ? h.lang.name : '', where, h.pub ? h.pub.name : '', units + (units === 1 ? ' rozdział' : units < 5 ? ' rozdziały' : ' rozdziałów')]
+      .filter(Boolean).map(escHtml).join(' · ');
+    const chips = (h.alias ? '<span class="bs-chip">' + escHtml(h.alias) + '</span>' : '')
+      + (h.own ? '<span class="bs-chip">✏️ Twój</span>' : '')
+      + (learning.includes(b.id) ? '<span class="bs-chip">📌 Uczę się</span>' : '')
+      + (b.adminOnly ? '<span class="bs-chip">👑 tylko admin</span>' : '');
+    return '<a class="bs-item' + (i === _bsActive ? ' on' : '') + '" id="bsOpt' + i + '" role="option" aria-selected="' + (i === _bsActive) + '"'
+      + ' href="app.html#/book/' + encodeURIComponent(b.id) + '" onclick="bookSearchDone()">'
+      + '<span class="bs-item-ico" aria-hidden="true">' + (b.icon || '📖') + '</span>'
+      + '<span class="bs-item-txt"><span class="bs-item-name">' + mark(b.name) + chips + '</span>'
+      + '<span class="bs-item-meta" style="display:block">' + meta + '</span></span>'
+      + '<span class="bs-go" aria-hidden="true">→</span></a>';
+  }).join('') + (hits.length > shown.length
+    ? '<div class="bs-empty">…i jeszcze ' + (hits.length - shown.length) + '. Dopisz kolejne słowo, żeby zawęzić.</div>' : '');
+  inp.setAttribute('aria-activedescendant', 'bsOpt' + _bsActive);
+}
+function bookSearchKey(e) {
+  const out = document.getElementById('bookSearchResults');
+  const opts = out ? [...out.querySelectorAll('.bs-item')] : [];
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    if (!opts.length) return;
+    e.preventDefault();
+    _bsActive = (_bsActive + (e.key === 'ArrowDown' ? 1 : -1) + opts.length) % opts.length;
+    opts.forEach((o, i) => { o.classList.toggle('on', i === _bsActive); o.setAttribute('aria-selected', String(i === _bsActive)); });
+    opts[_bsActive].scrollIntoView({ block: 'nearest' });
+    e.target.setAttribute('aria-activedescendant', 'bsOpt' + _bsActive);
+  } else if (e.key === 'Enter') {
+    const o = opts[_bsActive] || opts[0];
+    if (!o) return;
+    e.preventDefault(); bookSearchDone();
+    const h = o.getAttribute('href').replace(/^app\.html/, '');
+    if (location.hash === h) selectBook(decodeURIComponent(h.split('/').pop()));   // ten sam hash — hashchange nie przyjdzie
+    else location.hash = h;
+  } else if (e.key === 'Escape') {
+    if (e.target.value) { e.preventDefault(); e.stopPropagation(); e.target.value = ''; _bsActive = 0; bookSearchRender(); }
+  } else {
+    _bsActive = 0;   // nowe litery — od pierwszego wyniku
+  }
+}
+// Po wyborze: pole puste, lista schowana (po „← Wróć” ekran startowy jest czysty)
+function bookSearchDone() {
+  const inp = document.getElementById('bookSearchInp');
+  setTimeout(() => { if (inp) { inp.value = ''; inp.blur(); } _bsActive = 0; bookSearchRender(); }, 0);
+}
+// „/” — kursor w wyszukiwarce (tylko na ekranie startowym admina / nauczyciela, poza polami tekstowymi)
+document.addEventListener('keydown', e => {
+  if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return;
+  const t = e.target, tag = t && t.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (t && t.isContentEditable)) return;
+  const s = document.getElementById('sBooks'), inp = document.getElementById('bookSearchInp');
+  if (!s || !s.classList.contains('active') || !inp || !inp.offsetParent) return;
+  if (document.querySelector('.modal-overlay[style*="flex"]')) return;
+  e.preventDefault(); inp.focus();
+});
 // Okno „⚙️ Moje podręczniki” — z ekranu startowego i statystyk
 window.openBookPrefsManager = function() {
   if (!_canBookPrefs()) return;
