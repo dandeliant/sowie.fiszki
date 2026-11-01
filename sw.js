@@ -5,7 +5,7 @@
 //  cache-first dla fontow i CDN. Nowy SW czeka na zgode klienta
 //  (postMessage SKIP_WAITING) — pokaz banera "Nowa wersja dostepna".
 // ═══════════════════════════════════════════════════════
-const CACHE_NAME = 'sowie-fiszki-v1.231';
+const CACHE_NAME = 'sowie-fiszki-v1.232';
 
 const PRECACHE_ASSETS = [
   './',
@@ -28,6 +28,7 @@ const PRECACHE_ASSETS = [
   './space-racer.html',
   './underwater-racer.html',
   './mine-racer.html',
+  './snowboard-racer.html',
   './halloween-quiz.html',
   './present-simple-continuous.html',
   './how-often.html',
