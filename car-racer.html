@@ -86,16 +86,16 @@ body.boost .vignette{box-shadow:inset 0 0 220px #000c}
 #task small{opacity:.65;letter-spacing:2px;font-weight:800;font-size:11px}
 #word{font-size:34px;font-weight:900;text-transform:uppercase;margin-top:2px;text-shadow:0 2px 14px #000,0 0 22px #38e8ff66}
 
-/* Napisy nad obręczami — elementy HTML (ostry tekst) rzutowane co klatkę; jedna fala = jeden rząd w kolejności pasów */
+/* Napisy fali — „tablica” u góry ekranu pod pytaniem (elementy HTML, układ liczony raz na falę — placeLabels / lblLayout) */
 .lbl{position:absolute;left:0;top:0;z-index:29;pointer-events:none;white-space:nowrap;font-weight:900;font-size:22px;color:#fff;
-  background:rgba(9,14,30,.88);border:3px solid var(--c,var(--neon));border-radius:12px;padding:4px 13px;transform-origin:50% 100%;
+  background:rgba(9,14,30,.88);border:3px solid var(--c,var(--neon));border-radius:12px;padding:4px 13px;transform-origin:50% 50%;
   box-shadow:0 6px 16px #0008;text-shadow:0 1px 3px #000;opacity:0;will-change:transform,opacity}
 .lbl.ok{background:rgba(18,150,80,.93);border-color:#8affc0}
 .lbl.hint{background:rgba(18,120,70,.9);border-color:#8affc0}
 .lbl.bad{background:rgba(190,30,50,.93);border-color:#ff8095}
 .lbl.gone{background:rgba(60,64,76,.86);border-color:#8a90a0}
 #leads{position:absolute;inset:0;width:100%;height:100%;z-index:29;pointer-events:none;overflow:visible}
-#leads line{stroke:#bff6ff;stroke-width:2.5;stroke-linecap:round;opacity:0}
+#leads line{stroke:#bff6ff;stroke-width:1.6;stroke-linecap:round;opacity:0}
 /* 🎯 linia naprowadzająca: gdzie auto przejedzie linię obręczy (nie podpowiada odpowiedzi) + „celownik” na napisie */
 #aim{position:absolute;inset:0;width:100%;height:100%;z-index:28;pointer-events:none;overflow:visible}
 #aim line{stroke:#d6faff;stroke-width:3.5;stroke-linecap:round;stroke-dasharray:10 11;opacity:0;filter:drop-shadow(0 0 5px rgba(110,230,255,.95))}
@@ -397,7 +397,24 @@ function nitroSound(){
 }
 function loadV(){voices=speechSynthesis?.getVoices?.()||[]} if("speechSynthesis"in window){loadV();speechSynthesis.onvoiceschanged=loadV}
 function best(lang){loadV();let a=voices.filter(v=>v.lang.toLowerCase().startsWith(lang.toLowerCase()));return a.find(v=>/google/i.test(v.name))||a.find(v=>/natural|online/i.test(v.name))||a[0]}
-function speak(t,lang,force){if((!speech&&!force)||!("speechSynthesis"in window))return;speechSynthesis.cancel();let u=new SpeechSynthesisUtterance(t);u.lang=lang;u.voice=best(lang)||null;u.rate=.86;speechSynthesis.speak(u)}
+function utter(t,lang){let u=new SpeechSynthesisUtterance(t);u.lang=lang;u.voice=best(lang)||null;u.rate=.86;speechSynthesis.speak(u)}
+function speak(t,lang,force){ttsDrop();if((!speech&&!force)||!("speechSynthesis"in window))return;speechSynthesis.cancel();utter(t,lang)}
+// Pytanie nowej rundy (i quizu) czeka, aż lektor dokończy poprawną odpowiedź (po trafieniu, pudle, przepisywaniu) — bez cancel();
+// sprawdzanie co 120 ms, zabezpieczenie 6 s. Wyłączenie lektora albo nowa gra — oczekujące czytanie przepada.
+let ttsWait=null;
+function ttsBusy(){try{return !!(speechSynthesis.speaking||speechSynthesis.pending)}catch(e){return false}}
+function ttsDrop(){if(ttsWait){clearTimeout(ttsWait.tm);ttsWait=null}}
+function speakAfter(t,lang){
+  ttsDrop();if(!speech||!("speechSynthesis"in window))return;
+  const q={until:performance.now()+6000,tm:0};ttsWait=q;
+  (function go(){
+    if(ttsWait!==q)return;
+    if(!speech){ttsWait=null;return}
+    if(ttsBusy()&&performance.now()<q.until){q.tm=setTimeout(go,120);return}
+    ttsWait=null;if(ttsBusy())speechSynthesis.cancel();                     // 6 s minęło — lektor „zawiesił się”
+    utter(t,lang);
+  })();
+}
 function shuffle(a){return [...a].sort(()=>Math.random()-.5)}
 const pick=a=>a[Math.floor(Math.random()*a.length)];
 function show(t,ok){msg.textContent=t;msg.className='';void msg.offsetWidth;msg.classList.add(ok?'ok':'bad');msg.classList.add("flash")}
@@ -648,7 +665,7 @@ function setRingState(r,s){
   else if(s==='bad'){tintRing(r,0xff3048);relabel(r,'✗ '+r.ans,'bad')}
   else if(s==='gone'){relabel(r,r.ans,'gone')}
 }
-function freeRing(r){r.state='off';r.g.visible=false;r.label.style.opacity=0;r.label.style.display='none';r.lead.style.opacity=0;if(!ringPool.includes(r))ringPool.push(r)}
+function freeRing(r){r.state='off';r.ak=0;r.g.visible=false;r.label.style.opacity=0;r.label.style.display='none';r.lead.style.opacity=0;if(!ringPool.includes(r))ringPool.push(r)}
 function animRing(r,w,dt){
   if(r.state==='off'){r.g.visible=false;return}
   r.t+=dt;
@@ -667,47 +684,64 @@ function animRing(r,w,dt){
   r.lop=r.state==='ok'?Math.max(0,1-r.t*1.4):op;
 }
 
-// Napisy nad obręczami. Jedna fala = jeden rząd: kolejność jak pasy (lewa obręcz — lewy napis),
-// rozsuwane w poziomie, gdy nachodzą (z daleka obręcze są blisko siebie); kreska łączy napis z obręczą.
-const _lv={};
+// Napisy fali = „tablica” u góry ekranu, pod HUD-em i kartą z pytaniem (nie nad obręczami — nie zasłaniają celu).
+// Układ liczony raz na falę (lblLayout: nowa fala, zmiana rozmiaru okna), nie co klatkę — napisy nie skaczą.
+// Wszystkie mieszczą się w jednym wierszu → jeden wiersz w kolejności pasów; inaczej krótsze wyżej, dłuższe niżej
+// (wiersz wypełniany, ile się zmieści, w wierszu kolejność pasów; same długie — jeden pod drugim, najkrótszy na górze).
+// Skala stała (~23 px; wąski ekran — tylko tyle mniejsza, żeby najdłuższy się zmieścił); napis na celowniku do 1,15× od środka
+// (miejsce zarezerwowane w układzie). Cienka linia (#leads) łączy dół napisu z obręczą; z bliska napis i linia gasną.
+const _lv={}, LBL={s:1.05,aim:1.15,gap:16,vgap:9,m:10,vw:0,vh:0};
+const taskEl=document.getElementById('task');
 function hideLbl(r){r.label.style.opacity=0;r.lead.style.opacity=0}
-function placeLabels(){
+function lblAnchor(r,w,v,fin){return v.set(r.x,RING_Y+RING_R*RING_SY*(fin?1:r.g.scale.x),w.z)}   // górny brzeg obręczy (fin — w pełnym rozmiarze)
+function lblLayout(w){
+  w.lay=1;
+  const W=innerWidth,H=innerHeight,items=[],v=_lv.l||(_lv.l=new THREE.Vector3());
+  for(const r of w.rings)if(r.state!=='off')items.push({r,bw:r.label.offsetWidth||110,bh:r.label.offsetHeight||38});
+  if(!items.length)return;
+  const av=W-2*LBL.m,gap=W<600?10:LBL.gap;
+  let top=0;for(const el of [hudEl,taskEl]){const b=el.getBoundingClientRect();if(b.height)top=Math.max(top,b.bottom)}
+  let zone=H;for(const o of items){lblAnchor(o.r,w,v,true).project(camera);if(v.z<1)zone=Math.min(zone,(-v.y*.5+.5)*H-8)}   // tablica kończy się nad celami fali
+  const s0=Math.min(LBL.s,av/Math.max(...items.map(o=>o.bw)));               // wąski ekran: najdłuższy mieści się w szerokości
+  for(let s=s0;;s*=.94)if(lblRows(items,s,top,av,gap,W)<=zone||s<s0*.8)break;  // niski ekran: trochę mniejsze (maks. ~0,8×), żeby nie zasłaniały celów
+}
+// Wiersze tablicy przy skali s (pozycje r.lx/r.ly); zwraca dół tablicy
+function lblRows(items,s,top,av,gap,W){
+  for(const o of items){o.sw=o.bw*s*LBL.aim;o.h=o.bh*s}
+  const rowW=a=>a.reduce((t,o)=>t+o.sw,0)+gap*(a.length-1),pad=Math.max(...items.map(o=>o.h))*(LBL.aim-1)/2;   // zapas na powiększony napis
+  let rows=[items];
+  if(rowW(items)>av){rows=[];for(const o of [...items].sort((a,b)=>a.bw-b.bw)){const L=rows[rows.length-1];if(L&&rowW([...L,o])<=av)L.push(o);else rows.push([o])}}
+  top+=10+pad;
+  for(const row of rows){
+    row.sort((a,b)=>a.r.x-b.r.x);
+    const rh=Math.max(...row.map(o=>o.h));let x=(W-rowW(row))/2;
+    for(const o of row){o.r.lx=x+o.sw/2;o.r.ly=top+rh/2;o.r.lh=o.bh;o.r.ls=s;o.r.lam=Math.max(1,Math.min(LBL.aim,av/(o.bw*s)));x+=o.sw+gap}
+    top+=rh+LBL.vgap;
+  }
+  return top-LBL.vgap+pad;
+}
+function placeLabels(dt){
   const W=innerWidth,H=innerHeight,v3=_lv.v||(_lv.v=new THREE.Vector3());
+  if(W!==LBL.vw||H!==LBL.vh){LBL.vw=W;LBL.vh=H;for(const w of waves)w.lay=0}
   for(const w of waves){
-    const items=[];
+    if(!w.lay)lblLayout(w);
     for(const r of w.rings){
       if(r.state==='off'){hideLbl(r);continue}
-      v3.set(r.x,RING_Y+RING_R*RING_SY*r.g.scale.x+.3,w.z);
+      lblAnchor(r,w,v3);
       const d=camera.position.distanceTo(v3);
       v3.applyMatrix4(camera.matrixWorldInverse);
       if(v3.z>-.5||d>340){hideLbl(r);continue}                               // za kamerą albo za daleko
       v3.applyMatrix4(camera.projectionMatrix);
-      const op=Math.min(1,(340-d)/80)*Math.max(0,Math.min(1,(d-5)/9))*r.lop;  // tuż przed autem napis gaśnie
+      const op=Math.min(1,(340-d)/80)*Math.max(0,Math.min(1,(d-5)/9))*r.lop;  // tuż przed autem napis i linia gasną
       if(op<=.01){hideLbl(r);continue}
-      // z daleka napis nie maleje (min. ~23 px — czytelny przy Nitro), z bliska rośnie do 1,35×
-      items.push({r,ax:(v3.x*.5+.5)*W,ay:(-v3.y*.5+.5)*H,sc:Math.max(1.05,Math.min(1.35,46/d)),op,bw:+r.label.dataset.w||110,bh:+r.label.dataset.h||38});
-    }
-    if(!items.length)continue;
-    items.sort((a,b)=>a.ax-b.ax);
-    const gap=8,margin=10,n=items.length;
-    const tot=items.reduce((s,it)=>s+it.bw*it.sc,0);
-    if(tot+gap*(n-1)>W-2*margin){const f=(W-2*margin-gap*(n-1))/tot;items.forEach(it=>it.sc*=f)}   // wąski ekran — mniejsze napisy
-    items.forEach(it=>{it.w=it.bw*it.sc;it.h=it.bh*it.sc});
-    const xs=items.map(it=>it.ax);
-    for(let i=1;i<n;i++){const mn=xs[i-1]+(items[i-1].w+items[i].w)/2+gap;if(xs[i]<mn)xs[i]=mn}
-    const shift=(items.reduce((s,it)=>s+it.ax,0)-xs.reduce((s,x)=>s+x,0))/n;
-    for(let i=0;i<n;i++)xs[i]+=shift;
-    const lft=xs[0]-items[0].w/2,rgt=xs[n-1]+items[n-1].w/2;
-    if(lft<margin)for(let i=0;i<n;i++)xs[i]+=margin-lft;
-    else if(rgt>W-margin)for(let i=0;i<n;i++)xs[i]-=rgt-(W-margin);
-    const base=Math.min(...items.map(it=>it.ay))-6;
-    items.forEach((it,i)=>{
-      const s=it.r.label.style;s.opacity=it.op.toFixed(3);
-      s.transform=`translate(${xs[i].toFixed(1)}px,${base.toFixed(1)}px) translate(-50%,-100%) scale(${it.sc.toFixed(3)})`;
-      const ln=it.r.lead;
-      if(Math.abs(xs[i]-it.ax)>3||it.ay-base>14){ln.setAttribute('x1',xs[i].toFixed(1));ln.setAttribute('y1',base.toFixed(1));ln.setAttribute('x2',it.ax.toFixed(1));ln.setAttribute('y2',it.ay.toFixed(1));ln.style.opacity=(it.op*.9).toFixed(3)}
+      r.ak=(r.ak||0)+((r===aim.ring?1:0)-(r.ak||0))*Math.min(1,(dt||0)*12);     // celownik — płynne powiększenie
+      const sc=r.ls*(1+(r.lam-1)*r.ak),ax=(v3.x*.5+.5)*W,ay=(-v3.y*.5+.5)*H,by=r.ly+r.lh*sc/2;
+      const s=r.label.style;s.opacity=op.toFixed(3);
+      s.transform=`translate(${r.lx.toFixed(1)}px,${r.ly.toFixed(1)}px) translate(-50%,-50%) scale(${sc.toFixed(3)})`;
+      const ln=r.lead;
+      if(ay>by+6){ln.setAttribute('x1',r.lx.toFixed(1));ln.setAttribute('y1',by.toFixed(1));ln.setAttribute('x2',ax.toFixed(1));ln.setAttribute('y2',ay.toFixed(1));ln.style.opacity=(op*.6).toFixed(3)}
       else ln.style.opacity=0;
-    });
+    }
   }
 }
 
@@ -936,7 +970,7 @@ function newRound(){
   let choices=shuffle(WORDS);
   cur=choices.find(x=>x[1]!=last)||choices[0];last=cur[1];
   word.textContent=cur[0];
-  speak(cur[0],"pl-PL");
+  speakAfter(cur[0],"pl-PL");                                                // po odpowiedzi z poprzedniej rundy (nie ucina jej)
   spawnWave(roundId);
 }
 function spawnWave(id){
@@ -1150,7 +1184,7 @@ function quizQ(){
     <div><button class="btn sm" type="button" data-act="next" hidden>Dalej ➜</button></div>
     <p class="hint">${COARSE?'Dotknij właściwej odpowiedzi.':'Kliknij odpowiedź albo naciśnij <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd>.'} Zaliczenie: min. ${QZ_PASS} z ${n}.</p>`;
   focusFirst('#qzWord');
-  speak(q.w[0],'pl-PL');
+  speakAfter(q.w[0],'pl-PL');
 }
 function answerQuiz(i){
   const q=QZ.on&&QZ.qs[QZ.i];
@@ -1306,7 +1340,7 @@ const _vp={};
 function update(dt){
   dt=Math.min(MAX_DT,Math.max(0,dt||0));
   if(paused){updateShowroom(dt);return}
-  if(held){tickCountdown(dt);aimHide();placeLabels();updateNitroUi();return}  // przepisywanie / odliczanie: wszystko stoi
+  if(held){tickCountdown(dt);aimHide();placeLabels(dt);updateNitroUi();return}  // przepisywanie / odliczanie: wszystko stoi
   T+=dt;
   const up=keys.ArrowUp||keys.w, down=keys.ArrowDown||keys.s, left=keys.ArrowLeft||keys.a, right=keys.ArrowRight||keys.d;
   // ── prędkość: gaz / hamulec / tempo podróżne / nitro ──
@@ -1382,7 +1416,7 @@ function update(dt){
   updateFx(dt,dz);
   updateNitroUi();
   updateAim(dt);
-  placeLabels();
+  placeLabels(dt);
 }
 function setFov(f,k){if(Math.abs(camera.fov-f)>.05){camera.fov+=(f-camera.fov)*k;camera.updateProjectionMatrix()}}
 // Gra wstrzymana (wybór auta): kamera podjeżdża z przodu z boku, żeby było widać wybrany model.
@@ -1396,7 +1430,7 @@ function updateShowroom(dt){
   setFov(portrait?62:48,k);
   for(const w of player.wheels)if(w.front)w.pivot.rotation.y*=1-k;
   sky.position.copy(camera.position);camera.updateMatrixWorld();
-  boostK=0;updateFx(dt,0);aimHide();placeLabels();
+  boostK=0;updateFx(dt,0);aimHide();placeLabels(dt);
 }
 
 /* ── wybór samochodu ── */
@@ -1457,11 +1491,12 @@ bindPad("tl","ArrowLeft");bindPad("tr","ArrowRight");bindPad("tu","ArrowUp");bin
 nitroBtn.addEventListener('pointerdown',e=>{e.preventDefault();activateNitro()});
 nitroBtn.addEventListener('click',e=>{if(e.detail===0)activateNitro()});           // klawiatura (Enter na przycisku)
 
-document.querySelector("#speech").onclick=()=>{speech=!speech;document.querySelector("#speech").classList.toggle("off",!speech);if(!speech)speechSynthesis?.cancel()};
+document.querySelector("#speech").onclick=()=>{speech=!speech;document.querySelector("#speech").classList.toggle("off",!speech);if(!speech){ttsDrop();speechSynthesis?.cancel()}};
 startBtn.onclick=()=>{if(!R3.ready)return;unlockAudio();restart()};
 
 function restart(){
   clearTimeout(crashTimer);clearTimeout(QZ.t);QZ.on=false;replayOk=false;
+  ttsDrop();try{speechSynthesis.cancel()}catch(e){}                           // nowa gra — lektor od nowa
   retypeEl.classList.remove('open');document.body.classList.remove('retyping');rtWord=null;
   held=false;cdT=0;cdN=0;lives=LIVES;errWords=[];renderLives(false);
   score=0;combo=0;last="";keys={};px=laneX(2);vx=0;v=Math.max(v,22);crashing=false;crashT=0;shake=0;nextRoundIn=0;

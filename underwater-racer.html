@@ -150,9 +150,9 @@ body.boost .vignette{box-shadow:inset 0 0 210px #01121fcc}
 #task small{opacity:.7;letter-spacing:2px;font-weight:800;font-size:11px}
 #word{font-size:32px;font-weight:900;text-transform:uppercase;margin-top:2px;text-shadow:0 2px 14px #000,0 0 22px #3ef0e066;word-break:break-word}
 
-/* Napisy nad bańkami — elementy HTML rzutowane co klatkę; jedna fala = jeden rząd w kolejności pasów */
+/* Napisy fali — „tablica” u góry ekranu pod pytaniem (elementy HTML, układ liczony raz na falę — placeLabels / lblLayout) */
 .lbl{position:absolute;left:0;top:0;z-index:29;pointer-events:none;white-space:nowrap;font-weight:900;font-size:22px;color:#fff;
-  background:rgba(3,20,36,.88);border:3px solid var(--c,var(--neon));border-radius:14px;padding:4px 13px;transform-origin:50% 100%;
+  background:rgba(3,20,36,.88);border:3px solid var(--c,var(--neon));border-radius:14px;padding:4px 13px;transform-origin:50% 50%;
   box-shadow:0 6px 16px #0008,0 0 14px color-mix(in srgb,var(--c,#3ef0e0) 40%,transparent);text-shadow:0 1px 3px #000;opacity:0;will-change:transform,opacity}
 /* bańka, przez którą łódź przepłynie przy obecnym sterowaniu (nie zdradza odpowiedzi — to tylko „celownik”) */
 .lbl.aim{background:rgba(10,36,56,.95);box-shadow:0 6px 16px #0008,0 0 0 3px rgba(225,250,255,.55),0 0 20px rgba(191,246,255,.6)}
@@ -161,7 +161,7 @@ body.boost .vignette{box-shadow:inset 0 0 210px #01121fcc}
 .lbl.bad{background:rgba(190,30,50,.93);border-color:#ff8095}
 .lbl.gone{background:rgba(40,56,70,.86);border-color:#8a9aa8}
 #leads{position:absolute;inset:0;width:100%;height:100%;z-index:29;pointer-events:none;overflow:visible}
-#leads line{stroke:#bff6ff;stroke-width:2.5;stroke-linecap:round;opacity:0}
+#leads line{stroke:#bff6ff;stroke-width:1.6;stroke-linecap:round;opacity:0}
 
 #msg{position:absolute;z-index:40;top:44%;left:50%;transform:translate(-50%,-50%) scale(.8);font-family:'Orbitron',sans-serif;
   font-size:clamp(24px,8vw,52px);font-weight:900;opacity:0;pointer-events:none;text-shadow:0 4px 20px #000;white-space:nowrap}
@@ -489,7 +489,24 @@ function nitroSound(){
 }
 function loadV(){voices=speechSynthesis?.getVoices?.()||[]} if("speechSynthesis"in window){loadV();speechSynthesis.onvoiceschanged=loadV}
 function best(lang){loadV();let a=voices.filter(v=>v.lang.toLowerCase().startsWith(lang.toLowerCase()));return a.find(v=>/google/i.test(v.name))||a.find(v=>/natural|online/i.test(v.name))||a[0]}
-function speak(t,lang,force){if((!speech&&!force)||!("speechSynthesis"in window))return;speechSynthesis.cancel();let u=new SpeechSynthesisUtterance(t);u.lang=lang;u.voice=best(lang)||null;u.rate=.86;speechSynthesis.speak(u)}
+function utter(t,lang){let u=new SpeechSynthesisUtterance(t);u.lang=lang;u.voice=best(lang)||null;u.rate=.86;speechSynthesis.speak(u)}
+function speak(t,lang,force){ttsDrop();if((!speech&&!force)||!("speechSynthesis"in window))return;speechSynthesis.cancel();utter(t,lang)}
+// Pytanie nowej rundy (i quizu) czeka, aż lektor dokończy poprawną odpowiedź (po trafieniu, pudle, przepisywaniu) — bez cancel();
+// sprawdzanie co 120 ms, zabezpieczenie 6 s. Wyłączenie lektora albo nowa gra — oczekujące czytanie przepada.
+let ttsWait=null;
+function ttsBusy(){try{return !!(speechSynthesis.speaking||speechSynthesis.pending)}catch(e){return false}}
+function ttsDrop(){if(ttsWait){clearTimeout(ttsWait.tm);ttsWait=null}}
+function speakAfter(t,lang){
+  ttsDrop();if(!speech||!("speechSynthesis"in window))return;
+  const q={until:performance.now()+6000,tm:0};ttsWait=q;
+  (function go(){
+    if(ttsWait!==q)return;
+    if(!speech){ttsWait=null;return}
+    if(ttsBusy()&&performance.now()<q.until){q.tm=setTimeout(go,120);return}
+    ttsWait=null;if(ttsBusy())speechSynthesis.cancel();                     // 6 s minęło — lektor „zawiesił się”
+    utter(t,lang);
+  })();
+}
 function shuffle(a){return [...a].sort(()=>Math.random()-.5)}
 const pick=a=>a[Math.floor(Math.random()*a.length)];
 function show(t,ok){msg.textContent=t;msg.className='';void msg.offsetWidth;msg.classList.add(ok?'ok':'bad');msg.classList.add("flash")}
@@ -1262,48 +1279,64 @@ function animRing(r,w,dt){
   r.lop=r.state==='ok'?Math.max(0,1-r.t*2.2):r.state==='bad'?Math.max(0,1-r.t*1.2):op;
 }
 
-// Napisy nad bańkami. Jedna fala = jeden rząd: kolejność jak pasy (lewa bańka — lewy napis),
-// rozsuwane w poziomie, gdy nachodzą (z daleka bańki są blisko siebie); kreska łączy napis z bańką.
-const _lv={};
+// Napisy fali = „tablica” u góry ekranu, pod HUD-em z pytaniem (nie nad bańkami — nie zasłaniają celu).
+// Układ liczony raz na falę (lblLayout: nowa fala, zmiana rozmiaru okna), nie co klatkę — napisy nie skaczą.
+// Wszystkie mieszczą się w jednym wierszu → jeden wiersz w kolejności pasów; inaczej krótsze wyżej, dłuższe niżej
+// (wiersz wypełniany, ile się zmieści, w wierszu kolejność pasów; same długie — jeden pod drugim, najkrótszy na górze).
+// Skala stała (~23 px; wąski ekran — tylko tyle mniejsza, żeby najdłuższy się zmieścił); napis na celowniku do 1,15× od środka
+// (miejsce zarezerwowane w układzie). Cienka linia (#leads) łączy dół napisu z bańką; z bliska napis i linia gasną.
+const _lv={}, LBL={s:1.05,aim:1.15,gap:16,vgap:9,m:10,vw:0,vh:0};
+const taskEl=document.getElementById('task');
 function hideLbl(r){r.label.style.opacity=0;r.lead.style.opacity=0}
+function lblAnchor(r,w,v,fin){return v.set(r.g.position.x,(fin?RING_Y:r.body.position.y)+RING_R*(fin?1:r.sc),r.g.position.z)}   // górny brzeg bańki (fin — w pełnym rozmiarze)
+function lblLayout(w){
+  w.lay=1;
+  const W=innerWidth,H=innerHeight,items=[],v=_lv.l||(_lv.l=new THREE.Vector3());
+  for(const r of w.rings)if(r.state!=='off')items.push({r,bw:r.label.offsetWidth||110,bh:r.label.offsetHeight||38});
+  if(!items.length)return;
+  const av=W-2*LBL.m,gap=W<600?10:LBL.gap;
+  let top=0;for(const el of [hudEl,taskEl]){const b=el.getBoundingClientRect();if(b.height)top=Math.max(top,b.bottom)}
+  let zone=H;for(const o of items){lblAnchor(o.r,w,v,true).project(camera);if(v.z<1)zone=Math.min(zone,(-v.y*.5+.5)*H-8)}   // tablica kończy się nad celami fali
+  const s0=Math.min(LBL.s,av/Math.max(...items.map(o=>o.bw)));               // wąski ekran: najdłuższy mieści się w szerokości
+  for(let s=s0;;s*=.94)if(lblRows(items,s,top,av,gap,W)<=zone||s<s0*.8)break;  // niski ekran: trochę mniejsze (maks. ~0,8×), żeby nie zasłaniały celów
+}
+// Wiersze tablicy przy skali s (pozycje r.lx/r.ly); zwraca dół tablicy
+function lblRows(items,s,top,av,gap,W){
+  for(const o of items){o.sw=o.bw*s*LBL.aim;o.h=o.bh*s}
+  const rowW=a=>a.reduce((t,o)=>t+o.sw,0)+gap*(a.length-1),pad=Math.max(...items.map(o=>o.h))*(LBL.aim-1)/2;   // zapas na powiększony napis
+  let rows=[items];
+  if(rowW(items)>av){rows=[];for(const o of [...items].sort((a,b)=>a.bw-b.bw)){const L=rows[rows.length-1];if(L&&rowW([...L,o])<=av)L.push(o);else rows.push([o])}}
+  top+=10+pad;
+  for(const row of rows){
+    row.sort((a,b)=>a.r.x-b.r.x);
+    const rh=Math.max(...row.map(o=>o.h));let x=(W-rowW(row))/2;
+    for(const o of row){o.r.lx=x+o.sw/2;o.r.ly=top+rh/2;o.r.lh=o.bh;o.r.ls=s;o.r.lam=Math.max(1,Math.min(LBL.aim,av/(o.bw*s)));x+=o.sw+gap}
+    top+=rh+LBL.vgap;
+  }
+  return top-LBL.vgap+pad;
+}
 function placeLabels(){
   const W=innerWidth,H=innerHeight,v3=_lv.v||(_lv.v=new THREE.Vector3());
+  if(W!==LBL.vw||H!==LBL.vh){LBL.vw=W;LBL.vh=H;for(const w of waves)w.lay=0}
   for(const w of waves){
-    const items=[];
+    if(!w.lay)lblLayout(w);
     for(const r of w.rings){
       if(r.state==='off'){hideLbl(r);continue}
-      v3.set(r.g.position.x,r.body.position.y+RING_R*r.sc+.3,r.g.position.z);
+      lblAnchor(r,w,v3);
       const d=camera.position.distanceTo(v3);
       v3.applyMatrix4(camera.matrixWorldInverse);
       if(v3.z>-.5||d>340){hideLbl(r);continue}                               // za kamerą albo za daleko
       v3.applyMatrix4(camera.projectionMatrix);
-      const op=Math.min(1,(340-d)/80)*Math.max(0,Math.min(1,(d-5)/9))*r.lop;  // tuż przed łodzią napis gaśnie
+      const op=Math.min(1,(340-d)/80)*Math.max(0,Math.min(1,(d-5)/9))*r.lop;  // tuż przed łodzią napis i linia gasną
       if(op<=.01){hideLbl(r);continue}
       r.label.classList.toggle('aim',r.aim>.5&&(r.state==='in'||r.state==='idle'));
-      // z daleka napis nie maleje (~23 px), z bliska rośnie; celownik — o 13% większy
-      items.push({r,ax:(v3.x*.5+.5)*W,ay:(-v3.y*.5+.5)*H,sc:Math.max(1.05,Math.min(1.35,46/d))*(1+.13*r.aim),op,bw:+r.label.dataset.w||110,bh:+r.label.dataset.h||38});
-    }
-    if(!items.length)continue;
-    items.sort((a,b)=>a.ax-b.ax);
-    const gap=8,margin=10,n=items.length;
-    const tot=items.reduce((s,it)=>s+it.bw*it.sc,0);
-    if(tot+gap*(n-1)>W-2*margin){const f=(W-2*margin-gap*(n-1))/tot;items.forEach(it=>it.sc*=f)}   // wąski ekran — mniejsze napisy
-    items.forEach(it=>{it.w=it.bw*it.sc;it.h=it.bh*it.sc});
-    const xs=items.map(it=>it.ax);
-    for(let i=1;i<n;i++){const mn=xs[i-1]+(items[i-1].w+items[i].w)/2+gap;if(xs[i]<mn)xs[i]=mn}
-    const shift=(items.reduce((s,it)=>s+it.ax,0)-xs.reduce((s,x)=>s+x,0))/n;
-    for(let i=0;i<n;i++)xs[i]+=shift;
-    const lft=xs[0]-items[0].w/2,rgt=xs[n-1]+items[n-1].w/2;
-    if(lft<margin)for(let i=0;i<n;i++)xs[i]+=margin-lft;
-    else if(rgt>W-margin)for(let i=0;i<n;i++)xs[i]-=rgt-(W-margin);
-    const base=Math.min(...items.map(it=>it.ay))-6;
-    items.forEach((it,i)=>{
-      const s=it.r.label.style;s.opacity=it.op.toFixed(3);
-      s.transform=`translate(${xs[i].toFixed(1)}px,${base.toFixed(1)}px) translate(-50%,-100%) scale(${it.sc.toFixed(3)})`;
-      const ln=it.r.lead;
-      if(Math.abs(xs[i]-it.ax)>3||it.ay-base>14){ln.setAttribute('x1',xs[i].toFixed(1));ln.setAttribute('y1',base.toFixed(1));ln.setAttribute('x2',it.ax.toFixed(1));ln.setAttribute('y2',it.ay.toFixed(1));ln.style.opacity=(it.op*.9).toFixed(3)}
+      const sc=r.ls*(1+(r.lam-1)*r.aim),ax=(v3.x*.5+.5)*W,ay=(-v3.y*.5+.5)*H,by=r.ly+r.lh*sc/2;   // celownik — 1,15×
+      const s=r.label.style;s.opacity=op.toFixed(3);
+      s.transform=`translate(${r.lx.toFixed(1)}px,${r.ly.toFixed(1)}px) translate(-50%,-50%) scale(${sc.toFixed(3)})`;
+      const ln=r.lead;
+      if(ay>by+6){ln.setAttribute('x1',r.lx.toFixed(1));ln.setAttribute('y1',by.toFixed(1));ln.setAttribute('x2',ax.toFixed(1));ln.setAttribute('y2',ay.toFixed(1));ln.style.opacity=(op*.6).toFixed(3)}
       else ln.style.opacity=0;
-    });
+    }
   }
 }
 
@@ -1730,7 +1763,7 @@ function newRound(){
   let choices=shuffle(WORDS);
   cur=choices.find(x=>x[1]!=last)||choices[0];last=cur[1];
   word.textContent=cur[0];
-  speak(cur[0],"pl-PL");
+  speakAfter(cur[0],"pl-PL");                                                // po odpowiedzi z poprzedniej rundy (nie ucina jej)
   spawnWave(roundId);
   pingT=0;pingSound();
 }
@@ -1940,7 +1973,7 @@ function quizQ(){
     <div><button class="btn sm" type="button" data-act="next" hidden>Dalej ➜</button></div>
     <p class="hint">${COARSE?'Dotknij właściwej odpowiedzi.':'Kliknij odpowiedź albo naciśnij <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd>.'} Zaliczenie: min. ${QZ_PASS} z ${n}.</p>`;
   focusFirst('#qzWord');
-  speak(q.w[0],'pl-PL');
+  speakAfter(q.w[0],'pl-PL');
 }
 function answerQuiz(i){
   const q=QZ.on&&QZ.qs[QZ.i];
@@ -2210,11 +2243,12 @@ bindPad("tl","ArrowLeft");bindPad("tr","ArrowRight");bindPad("tu","ArrowUp");bin
 nitroBtn.addEventListener('pointerdown',e=>{e.preventDefault();activateNitro()});
 nitroBtn.addEventListener('click',e=>{if(e.detail===0)activateNitro()});
 
-document.querySelector("#speech").onclick=()=>{speech=!speech;document.querySelector("#speech").classList.toggle("off",!speech);if(!speech)speechSynthesis?.cancel()};
+document.querySelector("#speech").onclick=()=>{speech=!speech;document.querySelector("#speech").classList.toggle("off",!speech);if(!speech){ttsDrop();speechSynthesis?.cancel()}};
 startBtn.onclick=()=>{if(!R3.ready)return;unlockAudio();restart()};
 
 function restart(){
   clearTimeout(crashTimer);clearTimeout(QZ.t);QZ.on=false;replayOk=false;
+  ttsDrop();try{speechSynthesis.cancel()}catch(e){}                           // nowa gra — lektor od nowa
   retypeEl.classList.remove('open');document.body.classList.remove('retyping');rtWord=null;
   held=false;cdT=0;cdN=0;lives=LIVES;errWords=[];renderLives(false);
   score=0;combo=0;last="";keys={};px=laneX(2);vx=0;v=Math.max(v,22);crashing=false;crashT=0;shake=0;nextRoundIn=0;raceT=0;
