@@ -67,6 +67,7 @@ begin
              'join_live_game',               -- LIVE: uczeń dołącza PIN-em bez konta
              'update_live_player_score',
              'penpal_submit', 'penpal_get_own', 'penpal_update_own',   -- Listy przyjaźni
+             'sowizwiad_get_form', 'sowizwiad_submit',                 -- SowiZwiad (#90)
              'notesownik_get_board', 'sowiemysli_get_map')             -- tablice z linku
        -- funkcja użyta w jakiejkolwiek polityce RLS (też storage / realtime)
        and not exists (

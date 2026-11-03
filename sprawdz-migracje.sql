@@ -147,6 +147,7 @@ with c(nr, plik, ok) as (values
   ('87', 'teacher-messages-and-live-invites.sql', pg_temp.tab('public.teacher_messages') and pg_temp.fn('duel_state') and pg_temp.fn('live_inbox')),
   ('88', 'homework-tasks.sql',                    pg_temp.col('student_notes', 'task_id') and pg_temp.fn('student_task_submit')),
   ('89', 'student-start-mode.sql',                pg_temp.col('profiles', 'start_mode') and pg_temp.fn('set_students_start_mode') and pg_temp.trg('profiles_start_mode_guard')),
+  ('90', 'sowizwiad.sql',                         pg_temp.tab('public.sowizwiad_responses') and pg_temp.fn('sowizwiad_submit') and pg_temp.fn('sowizwiad_save_questions')),
   ('x2', 'add-live-games.sql',                    pg_temp.fn('create_live_game')),
   ('x3', 'add-live-time-limit-and-score-rpc.sql', pg_temp.fn('update_live_player_score')),
   ('x4', 'fix-live-join-token.sql + fix-live-join-ambiguous.sql', pg_temp.fn('join_live_game')),
