@@ -22084,6 +22084,7 @@ async function wsDownloadJPEG() {
 // ══════════════════════════════════════════════
 let _accessUserId = null;
 let _accessUsername = '';
+let _accessInitialPlan = '';   // radio planu zaznaczone przy otwarciu (''= czasowe/wygasłe — nic nie zaznaczone)
 
 async function openAdminAccess() {
   // Ekran „Dostęp" jest dostępny tylko dla administratora. Nauczyciel
@@ -22144,7 +22145,7 @@ function buildAccessUserCard(u) {
       <input type="checkbox" ${isSelected?'checked':''} onchange="bulkToggleUser('${u.id}', this.checked)" style="accent-color:var(--accent2);width:16px;height:16px;cursor:pointer">
     </label>
     <div style="min-width:0;flex:1">
-      <div style="font-size:.88rem;font-weight:700;color:var(--text)">${_avatarModHtml(u.id, u.avatar_url)}${fmtNameWithLabel(u.id, u.username)} ${roleBadge} ${_nickBadgeHtml(u.id, u.nickname)}</div>
+      <div style="font-size:.88rem;font-weight:700;color:var(--text)">${_avatarModHtml(u.id, u.avatar_url)}${fmtNameWithLabel(u.id, u.username)} ${roleBadge}${_planBadgeHtml(u)} ${_nickBadgeHtml(u.id, u.nickname)}</div>
       <div style="font-size:.65rem;color:var(--muted);display:flex;gap:10px;flex-wrap:wrap;margin-top:3px">
         <span>📅 Utworzone: <strong>${esc(created)}</strong></span>
         <span>🔑 Logowanie: ${loginTxt}</span>
@@ -22337,6 +22338,60 @@ async function teacherSearchStudent() {
   }
 }
 
+// Stan planu z wiersza profiles (bez promocji do 30.11.2026):
+//   'admin' · 'teacher' (stary typ konta) · 'premium' (na stałe, bez daty) ·
+//   'trial' (Premium z datą końca) · 'expired' (data minęła — przy najbliższym
+//   wejściu ucznia aplikacja przełączy go na Free, downgradePlanIfExpired) · 'free'
+function _planStateOf(p) {
+  if (!p) return 'free';
+  if (p.is_admin) return 'admin';
+  if (p.plan === 'teacher') return 'teacher';
+  if (p.plan === 'premium') {
+    if (!p.plan_expires_at) return 'premium';
+    return new Date(p.plan_expires_at).getTime() > Date.now() ? 'trial' : 'expired';
+  }
+  return 'free';
+}
+function _planStateLabel(p) {
+  const st = _planStateOf(p);
+  const d = (p && p.plan_expires_at) ? new Date(p.plan_expires_at).toLocaleDateString('pl-PL') : '';
+  if (st === 'admin')   return '🛡️ Admin';
+  if (st === 'teacher') return '👩‍🏫 Teacher';
+  if (st === 'premium') return '⭐ Premium na stałe';
+  if (st === 'trial')   return '⏳ Premium czasowe do ' + d + ' (potem Free)';
+  if (st === 'expired') return '⌛ Premium wygasło ' + d + ' (przy wejściu → Free)';
+  return 'Free';
+}
+// Dopisek o promocji: do 30.11.2026 każdy zalogowany ma Premium niezależnie od planu.
+function _planPromoNote() {
+  if (!(DB.isPromoActive && DB.isPromoActive())) return '';
+  const end = DB.getPromoEndDate ? DB.getPromoEndDate() : null;
+  const last = end ? new Date(end.getTime() - 86400000).toLocaleDateString('pl-PL') : '30.11.2026';
+  return '🎁 Do ' + last + ' trwa promocja — każdy zalogowany ma Premium, niezależnie od tego ustawienia. Ustawiony tu typ konta zacznie działać po promocji.';
+}
+// Mała plakietka planu + 🔕 na karcie ucznia (tylko admin) — widać od razu, czy zapis się trzymał.
+function _planBadgeHtml(p) {
+  if (!p || !(typeof isCurrentUserAdmin === 'function' && isCurrentUserAdmin())) return '';
+  const st = _planStateOf(p);
+  if (st === 'admin') return '';
+  const d = p.plan_expires_at ? new Date(p.plan_expires_at).toLocaleDateString('pl-PL') : '';
+  const map = {
+    premium: ['⭐ Premium', 'var(--accent)', 'rgba(255,209,102,.15)', 'Premium na stałe'],
+    trial:   ['⏳ Premium do ' + d, 'var(--accent)', 'rgba(255,209,102,.08)', 'Premium czasowe — po ' + d + ' konto wróci na Free'],
+    expired: ['⌛ Free (Premium wygasło)', 'var(--muted)', 'var(--surface2)', 'Premium wygasło ' + d + ' — przy najbliższym wejściu ucznia konto przełączy się na Free'],
+    teacher: ['👩‍🏫 Teacher', 'var(--purple)', 'rgba(162,155,254,.12)', 'Stary typ konta „Teacher”'],
+    free:    ['Free', 'var(--muted)', 'var(--surface2)', 'Konto Free']
+  };
+  const m = map[st] || map.free;
+  const hide = p.hide_premium_banners === true
+    ? ' <span title="Bannery Premium ukryte" style="font-size:.6rem">🔕</span>' : '';
+  return ` <span title="${escHtml(m[3])}" style="font-size:.58rem;font-weight:700;color:${m[1]};background:${m[2]};padding:1px 6px;border-radius:100px;margin-left:4px;white-space:nowrap;vertical-align:middle">${esc(m[0])}</span>${hide}`;
+}
+window._planStateOf = _planStateOf;
+window._planStateLabel = _planStateLabel;
+window._planBadgeHtml = _planBadgeHtml;
+window._planPromoNote = _planPromoNote;
+
 async function openAccessDetail(userId, username, returnTo) {
   _accessUserId = userId;
   _accessUsername = username;
@@ -22364,15 +22419,23 @@ async function openAccessDetail(userId, username, returnTo) {
   try {
     // Plan użytkownika
     const userProfile = _allProfiles.find(p => p.id === userId);
-    const currentPlan = userProfile?.plan || 'free';
+    // Radio zaznaczamy tylko dla stanu, który da się nim wyrazić. Premium czasowe /
+    // wygasłe = nic nie zaznaczone (zapis bez zmiany planu); „⭐ Premium” = na stałe.
+    const _pst = _planStateOf(userProfile);
+    const currentPlan = (_pst === 'free' || _pst === 'premium' || _pst === 'teacher') ? _pst : '';
+    _accessInitialPlan = currentPlan;
     listEl.innerHTML = '';
 
     // Selektor planu (tylko admin)
     if (isCurrentUserAdmin()) {
       const planDiv = document.createElement('div');
       planDiv.style.cssText = 'margin-bottom:12px;padding:12px 16px;background:var(--surface);border:1px solid var(--border);border-radius:12px;';
+      const _promo = _planPromoNote();
+      const _planHint = (_pst === 'trial' || _pst === 'expired') ? ' Zaznacz „⭐ Premium”, aby dać Premium na stałe.' : '';
       planDiv.innerHTML = `
         <div style="font-size:.72rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Plan konta</div>
+        <div style="font-size:.7rem;font-weight:700;color:var(--text);margin-bottom:6px">Teraz: ${esc(userProfile ? _planStateLabel(userProfile) : '—')}<span style="color:var(--muted);font-weight:600">${esc(_planHint)}</span></div>
+        ${_promo ? `<div style="font-size:.64rem;color:var(--muted);font-weight:600;line-height:1.4;margin-bottom:6px">${esc(_promo)}</div>` : ''}
         <div style="display:flex;gap:6px">
           <label style="flex:1;display:flex;align-items:center;gap:6px;padding:8px;border:1.5px solid ${currentPlan==='free'?'var(--accent2)':'var(--border)'};border-radius:8px;cursor:pointer;background:${currentPlan==='free'?'rgba(6,214,160,.08)':'transparent'}">
             <input type="radio" name="userPlan" value="free" ${currentPlan==='free'?'checked':''} style="accent-color:var(--accent2)">
@@ -22496,18 +22559,26 @@ async function saveUserAccess() {
       selected = hidden && hidden.value ? hidden.value.split(',').filter(Boolean) : [];
     }
     await DB.adminSetUserBooks(_accessUserId, selected);
-    // Zapisz plan (jeśli admin)
+    // Sprawdź, czy baza ma dokładnie te podręczniki (RLS potrafi po cichu nic nie zrobić)
+    let booksOk = true;
+    try {
+      const now = await DB.adminLoadUserBooks(_accessUserId);
+      booksOk = now.length === new Set(selected).size && selected.every(b => now.includes(b));
+    } catch(e) { console.warn('[saveUserAccess] verify', e); }
+    // Zapisz plan (jeśli admin) — tylko gdy zmieniony. Dawniej zapis przy każdym
+    // „💾 Zapisz” zdejmował rolę nauczyciela (setUserPlan free/premium → is_teacher=false).
     const planRadio = document.querySelector('input[name="userPlan"]:checked');
-    if (planRadio && isCurrentUserAdmin()) {
-      await DB.setUserPlan(_accessUserId, planRadio.value);
+    if (planRadio && isCurrentUserAdmin() && planRadio.value !== _accessInitialPlan) {
+      const row = (planRadio.value === 'teacher')
+        ? await DB.setUserPlan(_accessUserId, 'teacher')
+        : (await DB.adminSetPlanMany([_accessUserId], planRadio.value))[0];
+      if (!row || row.plan !== planRadio.value) throw new Error('Plan nie zapisał się w bazie — sprawdź uprawnienia (RLS).');
       // Aktualizuj lokalny cache, żeby UI pokazywało nowy plan i rolę po powrocie
       const cached = _allProfiles.find(p => p.id === _accessUserId);
-      if (cached) {
-        cached.plan = planRadio.value;
-        cached.is_teacher = (planRadio.value === 'teacher');
-      }
+      if (cached) Object.assign(cached, row);
     }
-    toast('✅ Zapisano dostęp i plan dla ' + _accessUsername + '!');
+    if (!booksOk) toast('⚠️ Podręczniki dla ' + _accessUsername + ' zapisały się tylko częściowo — otwórz ponownie i sprawdź.', 4200);
+    else toast('✅ Zapisano dostęp i plan dla ' + _accessUsername + '!');
     // Wracaj do tego ekranu, z którego otwarto: 'class' → Klasa, 'access' → lista użytkowników
     if (_accessReturnTo === 'class' && typeof openClassDetail === 'function' && _curClassId) {
       openClassDetail(_curClassId, _curClassName);
@@ -22870,7 +22941,7 @@ function renderClassStudents(memberIds, allProfiles) {
       <div class="student-card-avatar">${idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : '👤'}</div>
       <div class="student-card-body" style="flex:1">
         <div style="display:flex;align-items:center;justify-content:space-between">
-          <div class="student-card-name">${_avatarModHtml(profile.id, profile.avatar_url)}${fmtNameWithLabel(profile.id, profile.username)} ${_nickBadgeHtml(profile.id, profile.nickname)}${_smBadge(profile.start_mode)}</div>
+          <div class="student-card-name">${_avatarModHtml(profile.id, profile.avatar_url)}${fmtNameWithLabel(profile.id, profile.username)} ${_nickBadgeHtml(profile.id, profile.nickname)}${_smBadge(profile.start_mode)}${_planBadgeHtml(profile)}</div>
           <div style="display:flex;gap:5px">
             <button class="btn-sm" style="font-size:.65rem;padding:4px 9px" title="Prywatna etykieta" onclick="event.stopPropagation();openUserLabelModal('${profile.id}','${esc(profile.username)}',()=>renderClassStudents(_curClassMembers,_allProfiles))">✏️</button>
             <button class="btn-sm" style="font-size:.65rem;padding:4px 9px" title="Ustawienia konta (plan, bannery)" onclick="event.stopPropagation();openUserSettingsModal('${profile.id}','${esc(profile.username)}','${profile.plan||'free'}',${profile.hide_premium_banners===true},()=>renderClassStudents(_curClassMembers,_allProfiles))">⚙️</button>
@@ -25465,14 +25536,15 @@ function buildAlphaKeys(inputId, answer) {
     <div style="font-size:.72rem;color:var(--muted);margin-bottom:14px;font-weight:600;line-height:1.45">
       Akcja zostanie zastosowana do <b id="bulkPlanCount">0</b> zaznaczonych uczniów.
     </div>
+    <div id="bulkPlanNow" role="status" style="font-size:.72rem;font-weight:700;color:var(--text);margin:-6px 0 12px;padding:8px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:9px;line-height:1.5"></div>
     <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
       <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;cursor:pointer;background:var(--surface2)">
-        <input type="radio" name="bulkPlan" value="free" checked style="accent-color:var(--accent2)">
+        <input type="radio" name="bulkPlan" value="free" style="accent-color:var(--accent2)">
         <span style="font-size:.86rem;font-weight:700">Free</span>
       </label>
       <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;cursor:pointer;background:var(--surface2)">
         <input type="radio" name="bulkPlan" value="premium" style="accent-color:var(--accent)">
-        <span style="font-size:.86rem;font-weight:700">⭐ Premium</span>
+        <span style="font-size:.86rem;font-weight:700">⭐ Premium <span style="font-size:.7rem;color:var(--muted);font-weight:600">(na stałe, bez daty końca)</span></span>
       </label>
       <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;cursor:pointer;background:var(--surface2)">
         <input type="radio" name="bulkPlan" value="teacher" style="accent-color:var(--purple)">
@@ -25494,9 +25566,10 @@ function buildAlphaKeys(inputId, answer) {
     <div style="font-size:.72rem;color:var(--muted);margin-bottom:14px;font-weight:600;line-height:1.45">
       Akcja zostanie zastosowana do <b id="bulkBannersCount">0</b> zaznaczonych uczniów.
     </div>
+    <div id="bulkBannersNow" role="status" style="font-size:.72rem;font-weight:700;color:var(--text);margin:-6px 0 12px;padding:8px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:9px;line-height:1.5"></div>
     <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
       <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;cursor:pointer;background:var(--surface2)">
-        <input type="radio" name="bulkBanners" value="show" checked style="accent-color:var(--accent2)">
+        <input type="radio" name="bulkBanners" value="show" style="accent-color:var(--accent2)">
         <span style="font-size:.86rem;font-weight:700">🔔 Pokazuj bannery (domyślnie)</span>
       </label>
       <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;cursor:pointer;background:var(--surface2)">
@@ -25537,6 +25610,7 @@ function buildAlphaKeys(inputId, answer) {
     <div style="font-size:.72rem;color:var(--muted);margin-bottom:10px;font-weight:600;line-height:1.45">
       Akcja zostanie zastosowana do <b id="bulkBooksCount">0</b> zaznaczonych uczniów.
     </div>
+    <div id="bulkBooksNow" role="status" style="font-size:.72rem;font-weight:700;color:var(--text);margin:-2px 0 10px;padding:8px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:9px;line-height:1.5"></div>
     <div style="font-size:.66rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Tryb działania</div>
     <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">
       <label style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;cursor:pointer;background:var(--surface2)">
@@ -25605,6 +25679,7 @@ function buildAlphaKeys(inputId, answer) {
           <div style="font-size:.64rem;color:var(--muted);font-weight:600;margin-top:2px;line-height:1.4">Pełny dostęp: gry INNE, przydzielanie podręczników dzieciom itd. <b>Nauczyciel ma pełny dostęp z racji roli</b>, niezależnie od tego pola. Trial czasowy nadaj przyciskiem 🎁 poniżej.</div>
         </div>
       </label>
+      <div id="userSettingsPlanNow" role="status" style="font-size:.68rem;font-weight:700;color:var(--text);margin-top:6px;line-height:1.45"></div>
     </div>
 
     <!-- Bannery Premium — TYLKO admin -->
@@ -28447,36 +28522,117 @@ function buildAlphaKeys(inputId, answer) {
   // Ukryj toolbar przy przejściu na inny ekran
   window.addEventListener('click', () => { /* placeholder for future */ }, false);
 
+  // ── Wspólne dla okienek bulk: obecny stan zaznaczonych (z _allProfiles — bez zapytań) ──
+  function _bulkProfilesOf(ids) {
+    const byId = new Map((_allProfiles || []).map(p => [p.id, p]));
+    return ids.map(id => byId.get(id) || null);
+  }
+  function _bulkNamesOf(ids) {
+    const byId = new Map((_allProfiles || []).map(p => [p.id, p]));
+    const names = ids.map(id => (byId.get(id) || {}).username || id);
+    return names.slice(0, 8).join(', ') + (names.length > 8 ? ' … (+' + (names.length - 8) + ')' : '');
+  }
+  // Scal wiersze zwrócone przez zapis z pamięcią — po ponownym otwarciu widać nowy stan.
+  function _bulkMergeRows(rows) {
+    const byId = new Map((_allProfiles || []).map(p => [p.id, p]));
+    (rows || []).forEach(r => { const p = byId.get(r.id); if (p) Object.assign(p, r); });
+  }
+  const _bulkSubNote = t => '<div style="font-size:.64rem;color:var(--muted);font-weight:600;margin-top:3px;line-height:1.45">' + t + '</div>';
+
   // ── Modal: Plan ──
+  function _bulkPlanSummary(ids) {
+    const groups = {}; let unknown = 0;
+    _bulkProfilesOf(ids).forEach(p => {
+      if (!p) { unknown++; return; }
+      const st = _planStateOf(p);
+      const g = groups[st] || (groups[st] = { n: 0, dates: [] });
+      g.n++;
+      if (p.plan_expires_at) g.dates.push(new Date(p.plan_expires_at).getTime());
+    });
+    const fmt = t => new Date(t).toLocaleDateString('pl-PL');
+    const rng = g => {
+      if (!g.dates.length) return '';
+      const a = fmt(Math.min(...g.dates)), b = fmt(Math.max(...g.dates));
+      return a === b ? a : a + '–' + b;
+    };
+    const lbl = {
+      premium: () => '⭐ Premium na stałe',
+      trial:   g => '⏳ Premium czasowe do ' + rng(g),
+      expired: g => '⌛ Premium wygasłe ' + rng(g) + ' (przy wejściu → Free)',
+      free:    () => 'Free',
+      teacher: () => '👩‍🏫 Teacher',
+      admin:   () => '🛡️ Admin'
+    };
+    const parts = [];
+    ['premium', 'trial', 'expired', 'free', 'teacher', 'admin'].forEach(st => {
+      if (groups[st]) parts.push(groups[st].n + ' × ' + lbl[st](groups[st]));
+    });
+    if (unknown) parts.push(unknown + ' × brak danych');
+    const states = Object.keys(groups);
+    return { text: parts.join(' · '), same: (states.length === 1 && !unknown) ? states[0] : null, groups };
+  }
+  function _bulkPlanRenderNow(ids) {
+    const sum = _bulkPlanSummary(ids);
+    let html = 'Teraz: ' + esc(sum.text || '—');
+    if (sum.groups.trial || sum.groups.expired) {
+      html += _bulkSubNote('Premium czasowe (np. 30-dniowy trial nowego konta) po dacie końca samo wraca na Free. Wybierz „⭐ Premium”, aby ustawić je na stałe.');
+    }
+    const promo = _planPromoNote();
+    if (promo) html += _bulkSubNote(esc(promo));
+    document.getElementById('bulkPlanNow').innerHTML = html;
+    return sum;
+  }
   window.openBulkPlanModal = function() {
     if (!_bulkSelected.size) return;
     if (typeof isCurrentUserAdmin !== 'function' || !isCurrentUserAdmin()) {
       if (typeof toast === 'function') toast('⚠️ Tylko admin może zmieniać typ konta.', 2200);
       return;
     }
-    document.getElementById('bulkPlanCount').textContent = _bulkSelected.size;
+    const ids = Array.from(_bulkSelected);
+    document.getElementById('bulkPlanCount').textContent = ids.length;
     document.getElementById('bulkPlanMsg').textContent = '';
-    document.querySelectorAll('input[name="bulkPlan"]').forEach((r,i) => { r.checked = (i === 0); });
+    // Zaznacz obecny typ tylko, gdy wszyscy mają ten sam (inaczej nic — trzeba wybrać,
+    // dawniej domyślne „Free” + „Zastosuj” cofało Premium całej grupie).
+    const sum = _bulkPlanRenderNow(ids);
+    const pre = (sum.same === 'free' || sum.same === 'premium' || sum.same === 'teacher') ? sum.same : '';
+    document.querySelectorAll('input[name="bulkPlan"]').forEach(r => { r.checked = (r.value === pre); });
     document.getElementById('bulkPlanModal').style.display = 'flex';
   };
   window.closeBulkPlanModal = function() { document.getElementById('bulkPlanModal').style.display = 'none'; };
   window.applyBulkPlan = async function() {
-    const plan = document.querySelector('input[name="bulkPlan"]:checked')?.value || 'free';
+    const plan = document.querySelector('input[name="bulkPlan"]:checked')?.value;
     const userIds = Array.from(_bulkSelected);
     const btn = document.getElementById('bulkPlanApplyBtn');
     const msg = document.getElementById('bulkPlanMsg');
+    if (!plan) { msg.style.color = 'var(--danger)'; msg.textContent = '⚠️ Wybierz typ konta.'; return; }
+    if (!userIds.length) return;
     btn.disabled = true;
-    let ok = 0, fail = 0;
-    for (const uid of userIds) {
-      msg.style.color = 'var(--muted)';
-      msg.textContent = '⏳ ' + (ok+fail+1) + '/' + userIds.length + '…';
-      try { await DB.setUserPlan(uid, plan); ok++; }
-      catch(e) { fail++; console.error('[bulkPlan]', uid, e); }
+    msg.style.color = 'var(--muted)';
+    msg.textContent = '⏳ Zapisuję…';
+    try {
+      if (!DB.adminSetPlanMany) throw new Error('Zaktualizuj aplikację (brak DB.adminSetPlanMany).');
+      const rows = await DB.adminSetPlanMany(userIds, plan);
+      _bulkMergeRows(rows);
+      // Sprawdź zwrócone wiersze: każdy zaznaczony ma mieć nowy plan i brak daty końca.
+      const got = new Map(rows.map(r => [r.id, r]));
+      const bad = userIds.filter(id => { const r = got.get(id); return !r || r.plan !== plan || !!r.plan_expires_at; });
+      await bulkRefreshAfterApply();
+      if (bad.length) {
+        _bulkPlanRenderNow(userIds);
+        msg.style.color = 'var(--danger)';
+        msg.textContent = '⚠️ Zapisano u ' + (userIds.length - bad.length) + ' z ' + userIds.length + '. Bez zmian: ' + _bulkNamesOf(bad) + ' — sprawdź uprawnienia (RLS) w bazie.';
+        return;
+      }
+      const name = { free: 'Free', premium: '⭐ Premium na stałe', teacher: '👩‍🏫 Teacher' }[plan] || plan;
+      if (typeof toast === 'function') toast(`✅ Typ konta: ${userIds.length} × ${name} — zapisane w bazie`, 2600);
+      closeBulkPlanModal();
+    } catch(e) {
+      console.error('[bulkPlan]', e);
+      msg.style.color = 'var(--danger)';
+      msg.textContent = '❌ ' + (e.message || e);
+    } finally {
+      btn.disabled = false;
     }
-    btn.disabled = false;
-    if (typeof toast === 'function') toast(`✅ Plan: ${ok} OK${fail?', '+fail+' błąd':''}`, 2400);
-    closeBulkPlanModal();
-    await bulkRefreshAfterApply();
   };
 
   // ── Modal: Bannery ──
@@ -28486,64 +28642,194 @@ function buildAlphaKeys(inputId, answer) {
       if (typeof toast === 'function') toast('⚠️ Tylko admin może zarządzać bannerami Premium.', 2200);
       return;
     }
-    document.getElementById('bulkBannersCount').textContent = _bulkSelected.size;
+    const ids = Array.from(_bulkSelected);
+    document.getElementById('bulkBannersCount').textContent = ids.length;
     document.getElementById('bulkBannersMsg').textContent = '';
-    document.querySelectorAll('input[name="bulkBanners"]').forEach((r,i) => { r.checked = (i === 0); });
+    const st = _bulkBannersRenderNow(ids);
+    // Obecny stan zaznaczony tylko, gdy wszyscy mają to samo (inaczej trzeba wybrać).
+    const pre = (st.unknown || (st.hidden && st.shown)) ? '' : (st.hidden ? 'hide' : 'show');
+    document.querySelectorAll('input[name="bulkBanners"]').forEach(r => { r.checked = (r.value === pre); });
     document.getElementById('bulkBannersModal').style.display = 'flex';
   };
+  function _bulkBannersRenderNow(ids) {
+    let hidden = 0, shown = 0, unknown = 0;
+    _bulkProfilesOf(ids).forEach(p => { if (!p) unknown++; else if (p.hide_premium_banners === true) hidden++; else shown++; });
+    const parts = [];
+    if (hidden) parts.push(hidden + ' × 🔕 bannery ukryte');
+    if (shown) parts.push(shown + ' × 🔔 bannery widoczne');
+    if (unknown) parts.push(unknown + ' × brak danych');
+    document.getElementById('bulkBannersNow').innerHTML = 'Teraz: ' + esc(parts.join(' · ') || '—');
+    return { hidden, shown, unknown };
+  }
   window.closeBulkBannersModal = function() { document.getElementById('bulkBannersModal').style.display = 'none'; };
   window.applyBulkBanners = async function() {
-    const mode = document.querySelector('input[name="bulkBanners"]:checked')?.value || 'show';
-    const value = (mode === 'hide');
+    const mode = document.querySelector('input[name="bulkBanners"]:checked')?.value;
     const userIds = Array.from(_bulkSelected);
     const btn = document.getElementById('bulkBannersApplyBtn');
     const msg = document.getElementById('bulkBannersMsg');
+    if (!mode) { msg.style.color = 'var(--danger)'; msg.textContent = '⚠️ Wybierz, czy bannery mają być widoczne.'; return; }
+    if (!userIds.length) return;
+    const value = (mode === 'hide');
     btn.disabled = true;
-    let ok = 0, fail = 0;
-    for (const uid of userIds) {
-      msg.style.color = 'var(--muted)';
-      msg.textContent = '⏳ ' + (ok+fail+1) + '/' + userIds.length + '…';
-      try { await DB.adminSetHideBanners(uid, value); ok++; }
-      catch(e) { fail++; console.error('[bulkBanners]', uid, e); }
+    msg.style.color = 'var(--muted)';
+    msg.textContent = '⏳ Zapisuję…';
+    try {
+      if (!DB.adminSetHideBannersMany) throw new Error('Zaktualizuj aplikację (brak DB.adminSetHideBannersMany).');
+      const rows = await DB.adminSetHideBannersMany(userIds, value);
+      _bulkMergeRows(rows);
+      const got = new Map(rows.map(r => [r.id, r]));
+      const bad = userIds.filter(id => { const r = got.get(id); return !r || (r.hide_premium_banners === true) !== value; });
+      await bulkRefreshAfterApply();
+      if (bad.length) {
+        _bulkBannersRenderNow(userIds);
+        msg.style.color = 'var(--danger)';
+        msg.textContent = '⚠️ Zapisano u ' + (userIds.length - bad.length) + ' z ' + userIds.length + '. Bez zmian: ' + _bulkNamesOf(bad) + ' — sprawdź migrację #32 i uprawnienia.';
+        return;
+      }
+      if (typeof toast === 'function') toast(`✅ Bannery Premium: ${userIds.length} × ${value ? '🔕 ukryte' : '🔔 widoczne'} — zapisane w bazie`, 2600);
+      closeBulkBannersModal();
+    } catch(e) {
+      console.error('[bulkBanners]', e);
+      msg.style.color = 'var(--danger)';
+      msg.textContent = '❌ ' + (e.message || e);
+    } finally {
+      btn.disabled = false;
     }
-    btn.disabled = false;
-    if (typeof toast === 'function') toast(`✅ Bannery: ${ok} OK${fail?', '+fail+' błąd':''}`, 2400);
-    closeBulkBannersModal();
-    await bulkRefreshAfterApply();
   };
 
   // ── Modal: Podręczniki (3 tryby: add/replace/remove) ──
-  window.openBulkBooksModal = function() {
-    if (!_bulkSelected.size) return;
-    document.getElementById('bulkBooksCount').textContent = _bulkSelected.size;
-    document.getElementById('bulkBooksMsg').textContent = '';
-    document.querySelectorAll('input[name="bulkBooksMode"]').forEach((r,i) => { r.checked = (i === 0); });
-    // Renderuj listę podręczników z checkboxami
+  // Przy otwarciu JEDNYM zapytaniem pobieramy przydziały zaznaczonych (user_books)
+  // i przy każdym podręczniku pokazujemy, ilu z nich już go ma („✓ 13/13”, „5/13”).
+  // W trybie „Zastąp całą listę” od razu zaznaczone są podręczniki, które mają wszyscy.
+  let _bulkBooks = null;   // { ids, have: { bookId: Set(userId) } | null, err, touched, token }
+  function _bulkBooksHaveFrom(map) {
+    const have = {};
+    Object.keys(map || {}).forEach(uid => (map[uid] || []).forEach(bid => { (have[bid] = have[bid] || new Set()).add(uid); }));
+    return have;
+  }
+  function _bulkBooksMode() { return document.querySelector('input[name="bulkBooksMode"]:checked')?.value || 'add'; }
+  function _bulkBooksCnt(bid) { return (_bulkBooks && _bulkBooks.have && _bulkBooks.have[bid]) ? _bulkBooks.have[bid].size : 0; }
+  // Domyślne zaznaczenie zależne od trybu — tylko dopóki admin sam nic nie kliknął na liście.
+  function _bulkBooksApplyPreset() {
+    if (!_bulkBooks || _bulkBooks.touched || !_bulkBooks.have) return;
+    const n = _bulkBooks.ids.length, replace = _bulkBooksMode() === 'replace';
+    document.querySelectorAll('#bulkBooksList input[type="checkbox"]').forEach(c => {
+      c.checked = replace && n > 0 && _bulkBooksCnt(c.value) >= n;
+    });
+  }
+  function _bulkBooksRenderNow() {
+    const el = document.getElementById('bulkBooksNow');
+    if (!el || !_bulkBooks) return;
+    if (!_bulkBooks.have) {
+      el.innerHTML = _bulkBooks.err
+        ? '⚠️ Nie udało się sprawdzić obecnych przydziałów: ' + esc(_bulkBooks.err)
+        : '⏳ Sprawdzam, jakie podręczniki mają zaznaczeni uczniowie…';
+      return;
+    }
+    const n = _bulkBooks.ids.length;
+    const nm = bid => { const b = BOOKS[bid]; return b ? (b.shortName || b.name || bid) : bid; };
+    const all = [], part = [];
+    Object.keys(_bulkBooks.have).forEach(bid => {
+      const c = _bulkBooks.have[bid].size;
+      if (c >= n) all.push(nm(bid)); else if (c > 0) part.push(nm(bid) + ' (' + c + '/' + n + ')');
+    });
+    if (!all.length && !part.length) {
+      el.innerHTML = 'Teraz: żaden z zaznaczonych uczniów nie ma przydzielonego podręcznika (widzą tylko ogólnodostępne).';
+      return;
+    }
+    const withAny = new Set();
+    Object.values(_bulkBooks.have).forEach(s => s.forEach(u => withAny.add(u)));
+    const none = _bulkBooks.ids.filter(u => !withAny.has(u)).length;
+    const cmp = (a, b) => a.localeCompare(b, 'pl');
+    let h = 'Teraz:';
+    if (all.length) h += ' <span style="color:var(--success)">✓ wszyscy mają</span>: ' + esc(all.sort(cmp).join(', '));
+    if (part.length) h += (all.length ? ' · ' : ' ') + '<span style="color:var(--accent)">część ma</span>: ' + esc(part.sort(cmp).join(', '));
+    if (none) h += ' · bez żadnego przydziału: ' + none + ' z ' + n;
+    el.innerHTML = h;
+  }
+  function _bulkBooksRenderList() {
     const listEl = document.getElementById('bulkBooksList');
-    listEl.innerHTML = '';
+    if (!_bulkBooks.have && !_bulkBooks.err) {
+      listEl.innerHTML = '<div style="font-size:.72rem;color:var(--muted);padding:14px;text-align:center;font-weight:600">⏳ Wczytuję przydziały…</div>';
+      return;
+    }
+    const prev = new Set(Array.from(listEl.querySelectorAll('input[type="checkbox"]:checked')).map(c => c.value));
+    const n = _bulkBooks.ids.length;
     const myBooks = (typeof currentUserAccessibleBooks === 'function')
       ? currentUserAccessibleBooks()
       : Object.values(BOOKS);
-    // Sortuj po nazwie
-    const sorted = myBooks.slice().sort((a,b) => (a.name||'').localeCompare(b.name||'', 'pl'));
+    // Przydziały spoza listy (np. podręcznik, którego już nie ma) też pokazujemy —
+    // inaczej „Zastąp całą listę” usuwałby je bez wiedzy admina.
+    const known = new Set(myBooks.map(b => b.id));
+    const extra = Object.keys(_bulkBooks.have || {}).filter(bid => !known.has(bid))
+      .map(bid => Object.assign({ id: bid, name: bid, icon: '❔' }, BOOKS[bid] || {}, { _extra: true }));
+    // Najpierw te, które ktoś z zaznaczonych już ma; dalej alfabetycznie.
+    const sorted = myBooks.concat(extra).sort((a, b) =>
+      ((_bulkBooksCnt(b.id) > 0) - (_bulkBooksCnt(a.id) > 0)) || (a.name || '').localeCompare(b.name || '', 'pl'));
+    listEl.innerHTML = '';
     if (!sorted.length) {
       listEl.innerHTML = '<div style="font-size:.72rem;color:var(--muted);padding:14px;text-align:center;font-weight:600">Brak dostępnych podręczników.</div>';
-    } else {
-      sorted.forEach(b => {
-        const row = document.createElement('label');
-        row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;cursor:pointer;background:var(--surface);border:1px solid var(--border);margin-bottom:4px';
-        row.innerHTML = `
-          <input type="checkbox" value="${esc(b.id)}" style="accent-color:var(--accent2);width:16px;height:16px;flex-shrink:0;cursor:pointer">
-          <span style="font-size:.8rem;font-weight:700;color:var(--text);flex:1">${b.icon || '📖'} ${esc(b.name)}</span>
-          <span style="font-size:.62rem;color:var(--muted);font-weight:600;font-family:monospace">${esc(b.id)}</span>`;
-        listEl.appendChild(row);
-      });
+      return;
     }
+    sorted.forEach(b => {
+      const c = _bulkBooksCnt(b.id);
+      let badge = '';
+      if (_bulkBooks.have && c >= n && n > 0) {
+        badge = `<span title="Mają go wszyscy zaznaczeni" style="font-size:.64rem;font-weight:800;color:var(--success);background:rgba(6,214,160,.12);padding:2px 7px;border-radius:100px;white-space:nowrap">✓ ${c}/${n}</span>`;
+      } else if (_bulkBooks.have && c > 0) {
+        badge = `<span title="Ma go ${c} z ${n} zaznaczonych" style="font-size:.64rem;font-weight:800;color:var(--accent);background:rgba(255,209,102,.12);padding:2px 7px;border-radius:100px;white-space:nowrap">${c}/${n}</span>`;
+      }
+      const row = document.createElement('label');
+      row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;cursor:pointer;background:var(--surface);border:1px solid ' + (c > 0 ? 'rgba(6,214,160,.35)' : 'var(--border)') + ';margin-bottom:4px';
+      row.innerHTML = `
+        <input type="checkbox" value="${escHtml(b.id)}" ${prev.has(b.id) ? 'checked' : ''} style="accent-color:var(--accent2);width:16px;height:16px;flex-shrink:0;cursor:pointer">
+        <span style="font-size:.8rem;font-weight:700;color:var(--text);flex:1">${b.icon || '📖'} ${esc(b.name || b.id)}${b._extra ? ' <span style="font-size:.6rem;color:var(--muted);font-weight:600">(spoza listy)</span>' : ''}</span>
+        ${badge}
+        <span style="font-size:.62rem;color:var(--muted);font-weight:600;font-family:monospace">${esc(b.id)}</span>`;
+      listEl.appendChild(row);
+    });
+  }
+  async function _bulkBooksLoad() {
+    const st = _bulkBooks;
+    try {
+      if (!DB.adminLoadUserBooksMany) throw new Error('Zaktualizuj aplikację (brak DB.adminLoadUserBooksMany).');
+      const map = await DB.adminLoadUserBooksMany(st.ids);
+      if (_bulkBooks !== st) return;   // okienko zamknięte / otwarte dla innej grupy
+      st.have = _bulkBooksHaveFrom(map); st.err = null;
+    } catch(e) {
+      if (_bulkBooks !== st) return;
+      console.warn('[bulkBooks] load', e);
+      st.err = (e && e.message) || String(e);
+    }
+    _bulkBooksRenderNow();
+    _bulkBooksRenderList();
+    _bulkBooksApplyPreset();
+    return st;
+  }
+  window.openBulkBooksModal = function() {
+    if (!_bulkSelected.size) return;
+    const ids = Array.from(_bulkSelected);
+    _bulkBooks = { ids, have: null, err: null, touched: false };
+    document.getElementById('bulkBooksCount').textContent = ids.length;
+    document.getElementById('bulkBooksMsg').textContent = '';
+    document.querySelectorAll('input[name="bulkBooksMode"]').forEach((r, i) => {
+      r.checked = (i === 0);
+      r.onchange = _bulkBooksApplyPreset;
+    });
+    const listEl = document.getElementById('bulkBooksList');
+    listEl.innerHTML = '';
+    listEl.onchange = (e) => { if (e.target && e.target.type === 'checkbox' && _bulkBooks) _bulkBooks.touched = true; };
+    _bulkBooksRenderNow();
+    _bulkBooksRenderList();
     document.getElementById('bulkBooksModal').style.display = 'flex';
+    _bulkBooksLoad();
   };
-  window.closeBulkBooksModal = function() { document.getElementById('bulkBooksModal').style.display = 'none'; };
+  window.closeBulkBooksModal = function() {
+    document.getElementById('bulkBooksModal').style.display = 'none';
+    _bulkBooks = null;
+  };
   window.applyBulkBooks = async function() {
-    const mode = document.querySelector('input[name="bulkBooksMode"]:checked')?.value || 'add';
+    const mode = _bulkBooksMode();
     const checked = Array.from(document.querySelectorAll('#bulkBooksList input[type="checkbox"]:checked')).map(c => c.value);
     const userIds = Array.from(_bulkSelected);
     const msg = document.getElementById('bulkBooksMsg');
@@ -28553,10 +28839,20 @@ function buildAlphaKeys(inputId, answer) {
       msg.textContent = '⚠️ Zaznacz co najmniej jeden podręcznik.';
       return;
     }
+    if (!userIds.length) return;
+    if (mode === 'replace' && _bulkBooks && _bulkBooks.have) {
+      // Ostrzeż, jeśli zastąpienie zabierze komuś podręczniki, których nie ma na liście zaznaczonych.
+      const lost = Object.keys(_bulkBooks.have).filter(bid => !checked.includes(bid) && _bulkBooks.have[bid].size);
+      if (lost.length) {
+        const nm = bid => { const b = BOOKS[bid]; return b ? (b.shortName || b.name || bid) : bid; };
+        if (!confirm('„Zastąp całą listę” zabierze zaznaczonym uczniom także:\n' + lost.map(b => '• ' + nm(b) + ' (' + _bulkBooks.have[b].size + '/' + userIds.length + ')').join('\n') + '\n\nKontynuować?')) return;
+      }
+    }
     btn.disabled = true;
     msg.style.color = 'var(--muted)';
-    msg.textContent = '⏳ Przetwarzanie…';
+    msg.textContent = '⏳ Zapisuję…';
     try {
+      let summary = '';
       if (mode === 'add') {
         // Dla każdego podręcznika — bulk grant dla wszystkich userów (1 zapytanie/podręcznik)
         let totalAdded = 0;
@@ -28564,27 +28860,41 @@ function buildAlphaKeys(inputId, answer) {
           const r = await DB.adminGrantBookAccess(userIds, bid);
           totalAdded += r.added;
         }
-        if (typeof toast === 'function') toast(`✅ Dodano ${totalAdded} przypisań do ${userIds.length} uczniów`, 2800);
+        summary = `✅ Dodano ${totalAdded} nowych przypisań (${userIds.length} uczniów)`;
       } else if (mode === 'remove') {
         let totalRemoved = 0;
         for (const bid of checked) {
           const r = await DB.adminRevokeBookAccess(userIds, bid);
           totalRemoved += r.removed;
         }
-        if (typeof toast === 'function') toast(`🗑️ Usunięto ${totalRemoved} przypisań od ${userIds.length} uczniów`, 2800);
+        summary = `🗑️ Usunięto ${totalRemoved} przypisań (${userIds.length} uczniów)`;
       } else if (mode === 'replace') {
-        // Per-user: nadpisz całą listę (DELETE wszystkich + INSERT zaznaczonych)
-        let ok = 0, fail = 0;
-        for (let i = 0; i < userIds.length; i++) {
-          msg.textContent = '⏳ ' + (i+1) + '/' + userIds.length + '…';
-          try { await DB.adminSetUserBooks(userIds[i], checked); ok++; }
-          catch(e) { fail++; console.error('[bulkBooksReplace]', userIds[i], e); }
-        }
-        if (typeof toast === 'function') toast(`🔄 Zastąpiono: ${ok} OK${fail?', '+fail+' błąd':''}`, 2800);
+        if (!DB.adminReplaceBooksMany) throw new Error('Zaktualizuj aplikację (brak DB.adminReplaceBooksMany).');
+        await DB.adminReplaceBooksMany(userIds, checked);
+        summary = `🔄 Ustawiono ${checked.length} podręcznik(ów) dla ${userIds.length} uczniów`;
       }
+      // Sprawdź w bazie (1 zapytanie), czy stan zgadza się z wybraną akcją.
+      msg.textContent = '⏳ Sprawdzam zapis…';
+      const map = await DB.adminLoadUserBooksMany(userIds);
+      const bad = userIds.filter(uid => {
+        const has = new Set(map[uid] || []);
+        if (mode === 'add') return checked.some(b => !has.has(b));
+        if (mode === 'remove') return checked.some(b => has.has(b));
+        return has.size !== checked.length || checked.some(b => !has.has(b));
+      });
+      if (bad.length) {
+        _bulkBooks = { ids: userIds, have: _bulkBooksHaveFrom(map), err: null, touched: true };
+        _bulkBooksRenderNow();
+        _bulkBooksRenderList();
+        msg.style.color = 'var(--danger)';
+        msg.textContent = '⚠️ U ' + bad.length + ' z ' + userIds.length + ' uczniów stan w bazie nie zgadza się z akcją: ' + _bulkNamesOf(bad) + ' — sprawdź uprawnienia (RLS).';
+        return;
+      }
+      if (typeof toast === 'function') toast(summary + ' — sprawdzone w bazie ✓', 3000);
       closeBulkBooksModal();
       await bulkRefreshAfterApply();
     } catch(e) {
+      console.error('[bulkBooks]', e);
       msg.style.color = 'var(--danger)';
       msg.textContent = '❌ ' + (e.message || e);
     } finally {
@@ -28592,17 +28902,15 @@ function buildAlphaKeys(inputId, answer) {
     }
   };
 
-  // Po wykonanej akcji bulk — odśwież listę i wyczyść zaznaczenie
+  // Po wykonanej akcji bulk — przerysuj listę z pamięci. Wiersze zwrócone przez zapis
+  // są już scalone z _allProfiles (_bulkMergeRows), więc nie pobieramy od nowa
+  // wszystkich profili (limit operacji dysku Supabase Free). Zaznaczenie zostaje —
+  // można od razu otworzyć okienko i zobaczyć nowy stan albo wykonać kolejną akcję.
   async function bulkRefreshAfterApply() {
     if (_bulkContext === 'class') {
-      // Reload _allProfiles żeby zaktualizować plan/hide_premium_banners
-      try { _allProfiles = await DB.loadAllProfiles(); } catch(e) {}
-      _bulkSelected.clear();
       bulkRefreshToolbar();
       if (typeof _curClassMembers !== 'undefined') renderClassStudents(_curClassMembers, _allProfiles);
     } else if (_bulkContext === 'access') {
-      try { _allProfiles = await DB.loadAllProfiles(); } catch(e) {}
-      _bulkSelected.clear();
       bulkRefreshToolbar();
       renderAccessUserList();
     }
@@ -28668,18 +28976,23 @@ function buildAlphaKeys(inputId, answer) {
     _userSettingsTargetUsername = username;
     _userSettingsAfterSave = afterSaveCb || null;
     _userSettingsInitialPlan = currentPlan || 'free';
-    _userSettingsInitialHide = currentHide === true;
 
     document.getElementById('userSettingsTargetName').textContent = username || '—';
 
-    // Rola + Premium: tylko admin może zmieniać. Ustal stan początkowy z profilu.
+    // Rola + Premium: tylko admin może zmieniać. Ustal stan początkowy z profilu
+    // (z _allProfiles — tam trafiają też wyniki zapisów masowych; argumenty z przycisku
+    // ⚙️ są z chwili rysowania listy i mogą być nieaktualne).
     const roleSection = document.getElementById('userSettingsRoleSection');
     const _tProf = (typeof _allProfiles !== 'undefined' && Array.isArray(_allProfiles))
       ? _allProfiles.find(p => p.id === userId) : null;
+    _userSettingsInitialHide = _tProf ? (_tProf.hide_premium_banners === true) : (currentHide === true);
     let _initRole = 'student';
     if (_tProf) { if (_tProf.is_teacher) _initRole = 'teacher'; else if (_tProf.is_parent) _initRole = 'parent'; }
     else if (_userSettingsInitialPlan === 'teacher') _initRole = 'teacher';
-    const _initPremium = _tProf ? (_tProf.plan === 'premium') : (_userSettingsInitialPlan === 'premium');
+    // Pole „⭐ Premium (permanentny)”: ✓ = Premium na stałe; ▬ (nieokreślone) = Premium
+    // czasowe (trial) — zostaje bez zmian, dopóki admin nie kliknie; ☐ = Free / wygasłe.
+    const _pst = _tProf ? _planStateOf(_tProf) : (_userSettingsInitialPlan === 'premium' ? 'premium' : 'free');
+    const _initPremium = (_pst === 'premium');
     const _targetIsAdmin = !!(_tProf && _tProf.is_admin);
     _userSettingsInitialRole = _initRole;
     _userSettingsInitialPremium = _initPremium;
@@ -28688,7 +29001,16 @@ function buildAlphaKeys(inputId, answer) {
       const rr = document.querySelectorAll('input[name="userSettingsRole"]');
       rr.forEach(r => { r.checked = (r.value === _initRole); });
       const prem = document.getElementById('userSettingsPremium');
-      if (prem) prem.checked = _initPremium;
+      if (prem) { prem.checked = _initPremium; prem.indeterminate = (_pst === 'trial'); }
+      const planNow = document.getElementById('userSettingsPlanNow');
+      if (planNow) {
+        const hint = (_pst === 'trial') ? ' Kliknij pole, aby dać Premium na stałe.'
+          : (_pst === 'expired') ? ' Zaznacz pole, aby dać Premium na stałe.' : '';
+        const promo = _planPromoNote();
+        planNow.innerHTML = 'Teraz: ' + esc(_tProf ? _planStateLabel(_tProf) : (_initPremium ? '⭐ Premium' : 'Free'))
+          + '<span style="color:var(--muted);font-weight:600">' + esc(hint) + '</span>'
+          + (promo ? '<div style="font-size:.62rem;color:var(--muted);font-weight:600;margin-top:2px">' + esc(promo) + '</div>' : '');
+      }
       const paintRole = () => {
         const v = document.querySelector('input[name="userSettingsRole"]:checked')?.value;
         document.querySelectorAll('[data-userset-role-wrap]').forEach(w => {
@@ -28727,8 +29049,10 @@ function buildAlphaKeys(inputId, answer) {
         } else if (expiresAt && expiresAt > now) {
           const daysLeft = Math.ceil((expiresAt - now) / (1000*60*60*24));
           stateLine = `Aktualny Premium: do <b>${expiresAt.toLocaleDateString('pl-PL')}</b> (za ${daysLeft} ${daysLeft===1?'dzień':'dni'}). Klik przedłuży o 30 dni.`;
+        } else if (profile && profile.plan === 'premium' && expiresAt) {
+          stateLine = `Premium wygasło <b>${expiresAt.toLocaleDateString('pl-PL')}</b> — przy najbliższym wejściu konto przełączy się na Free. Klik aktywuje 30 dni od dziś.`;
         } else if (profile && profile.plan === 'premium') {
-          stateLine = 'Plan Premium bez daty wygaśnięcia. Klik nada nowe 30 dni od dziś.';
+          stateLine = 'Plan Premium na stałe (bez daty). <b>Uwaga:</b> klik zamieni go na 30 dni od dziś — potem konto wróci na Free.';
         } else {
           stateLine = 'Plan Free / wygasły. Klik aktywuje 30 dni Premium od dziś.';
         }
@@ -28810,44 +29134,49 @@ function buildAlphaKeys(inputId, answer) {
     msg.textContent = ''; msg.style.color = 'var(--muted)';
     try {
       const isAdmin = (typeof isCurrentUserAdmin === 'function') && isCurrentUserAdmin();
+      // Rola/Premium tylko, gdy sekcja była widoczna (dla konta admina jest schowana,
+      // a radio mogło zostać zaznaczone z poprzedniego otwarcia).
+      const roleSec = document.getElementById('userSettingsRoleSection');
+      const roleVisible = isAdmin && !!roleSec && roleSec.style.display !== 'none';
       // Bannery Premium — flaga tylko dla admina; nauczyciel/opiekun nie zmienia
       const newHide = isAdmin
         ? document.getElementById('userSettingsHideBanners').checked
         : _userSettingsInitialHide;
-      const newRole = isAdmin
+      const newRole = roleVisible
         ? (document.querySelector('input[name="userSettingsRole"]:checked')?.value || _userSettingsInitialRole)
         : _userSettingsInitialRole;
-      const newPremium = isAdmin
-        ? !!document.getElementById('userSettingsPremium')?.checked
-        : _userSettingsInitialPremium;
+      const premEl = document.getElementById('userSettingsPremium');
+      // ▬ (nieokreślone) = Premium czasowe, którego admin nie ruszał → plan bez zmian
+      const premUntouched = !roleVisible || !premEl || premEl.indeterminate;
+      const newPremium = premUntouched ? _userSettingsInitialPremium : !!premEl.checked;
 
+      const updated = {};
       // Rola + Premium: zapisz tylko jeśli admin i coś się zmieniło.
-      if (isAdmin && (newRole !== _userSettingsInitialRole || newPremium !== _userSettingsInitialPremium)) {
+      if (roleVisible && (newRole !== _userSettingsInitialRole || (!premUntouched && newPremium !== _userSettingsInitialPremium))) {
         if (!DB.adminSetAccount) throw new Error('Zaktualizuj aplikację (brak DB.adminSetAccount).');
-        await DB.adminSetAccount(_userSettingsTargetId, { role: newRole, premium: newPremium });
+        const row = await DB.adminSetAccount(_userSettingsTargetId, { role: newRole, premium: premUntouched ? null : newPremium });
+        Object.assign(updated, row || {});
       }
-      // Bannery: zmien jesli admin i wartosc sie zmienila
+      // Bannery: zmien jesli admin i wartosc sie zmienila — i sprawdź zwrócony wiersz
       if (isAdmin && newHide !== _userSettingsInitialHide) {
-        if (!DB.adminSetHideBanners) {
-          throw new Error('RPC niedostępny — uruchom migrację #32 (add-hide-premium-banners.sql)');
+        if (DB.adminSetHideBannersMany) {
+          const rows = await DB.adminSetHideBannersMany([_userSettingsTargetId], newHide);
+          const r = (rows || []).find(x => x.id === _userSettingsTargetId);
+          if (!r || (r.hide_premium_banners === true) !== newHide) throw new Error('Ustawienie bannerów nie zapisało się w bazie (migracja #32 / uprawnienia).');
+          updated.hide_premium_banners = r.hide_premium_banners === true;
+        } else {
+          if (!DB.adminSetHideBanners) throw new Error('RPC niedostępny — uruchom migrację #32 (add-hide-premium-banners.sql)');
+          await DB.adminSetHideBanners(_userSettingsTargetId, newHide);
+          updated.hide_premium_banners = newHide;
         }
-        await DB.adminSetHideBanners(_userSettingsTargetId, newHide);
       }
       const cb = _userSettingsAfterSave;
-      // Odswiez cache _allProfiles jesli istnieje
+      // Odswiez cache _allProfiles wierszami zwróconymi przez bazę
       if (typeof _allProfiles !== 'undefined' && Array.isArray(_allProfiles)) {
         const idx = _allProfiles.findIndex(p => p.id === _userSettingsTargetId);
-        if (idx >= 0) {
-          _allProfiles[idx].hide_premium_banners = newHide;
-          if (isAdmin) {
-            _allProfiles[idx].is_teacher = (newRole === 'teacher');
-            _allProfiles[idx].is_parent  = (newRole === 'parent');
-            _allProfiles[idx].plan = newPremium ? 'premium' : 'free';
-            _allProfiles[idx].plan_expires_at = null;
-          }
-        }
+        if (idx >= 0) Object.assign(_allProfiles[idx], updated);
       }
-      if (typeof toast === 'function') toast('✅ Zapisano ustawienia konta', 1800);
+      if (typeof toast === 'function') toast(Object.keys(updated).length ? '✅ Zapisano ustawienia konta' : 'ℹ️ Bez zmian', 1800);
       closeUserSettingsModal();
       if (cb) try { cb(); } catch(e) {}
     } catch(e) {

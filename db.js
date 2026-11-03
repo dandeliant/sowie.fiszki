@@ -849,16 +849,18 @@ const DB = (() => {
   async function adminSetAccount(userId, opts) {
     if (!_profile?.isAdmin) throw new Error('Brak uprawnień');
     const role = (opts && opts.role) || 'student';
-    const premium = !!(opts && opts.premium);
     const updates = {
       is_teacher: role === 'teacher',
-      is_parent:  role === 'parent',
-      plan: premium ? 'premium' : 'free'
+      is_parent:  role === 'parent'
     };
+    // premium: null/undefined = plan bez zmian (np. zmiana samej roli przy czasowym Premium).
     // Premium ustawione ręcznie = permanentne (bez daty). Free = też czyścimy
     // datę, żeby nie ciągnął się stary trial. Czasowy trial nadaje się osobno
     // przyciskiem „🎁 Aktywuj 30 dni" (admin_grant_trial, migracja #36).
-    updates.plan_expires_at = null;
+    if (opts && opts.premium != null) {
+      updates.plan = opts.premium ? 'premium' : 'free';
+      updates.plan_expires_at = null;
+    }
     const { data, error } = await supabase
       .from('profiles')
       .update(updates)
@@ -875,17 +877,76 @@ const DB = (() => {
     if (!_profile?.isAdmin) throw new Error('Brak uprawnień');
     // Plan 'teacher' automatycznie nadaje rolę nauczyciela (is_teacher=true);
     // pozostałe plany (free/premium) ją zdejmują. is_admin pozostaje bez zmian.
-    const updates = { plan, is_teacher: plan === 'teacher' };
+    // plan_expires_at = null: plan nadany przez admina nie ma daty końca. Bez tego
+    // zostawała data trialu i przy następnym wejściu ucznia downgradePlanIfExpired()
+    // przełączał go z powrotem na Free.
+    const updates = { plan, is_teacher: plan === 'teacher', plan_expires_at: null };
     const { data, error } = await supabase
       .from('profiles')
       .update(updates)
       .eq('id', userId)
-      .select('id, plan, is_teacher');
+      .select('id, plan, is_teacher, is_parent, plan_expires_at');
     if (error) throw new Error(error.message);
     if (!data || data.length === 0) {
       throw new Error('Nie udało się zapisać planu — sprawdź uprawnienia (RLS) w bazie.');
     }
     return data[0];
+  }
+
+  // Masowo (pasek zaznaczonych w Klasie / Dostępie): typ konta wielu osobom jednym
+  // zapytaniem. 'free' / 'premium' — bez daty końca (Premium na stałe), rola
+  // (nauczyciel / opiekun) zostaje bez zmian. 'teacher' — stary typ konta: plan
+  // 'teacher' + rola nauczyciela. Zwraca wiersze po zapisie (do sprawdzenia wyniku).
+  async function adminSetPlanMany(userIds, plan) {
+    if (!_profile?.isAdmin) throw new Error('Brak uprawnień');
+    if (!['free', 'premium', 'teacher'].includes(plan)) throw new Error('Nieznany typ konta: ' + plan);
+    const ids = Array.from(new Set((userIds || []).filter(Boolean)));
+    const updates = { plan, plan_expires_at: null };
+    if (plan === 'teacher') updates.is_teacher = true;
+    const out = [];
+    for (let i = 0; i < ids.length; i += 100) {
+      const { data, error } = await supabase
+        .from('profiles')
+        .update(updates)
+        .in('id', ids.slice(i, i + 100))
+        .select('id, plan, plan_expires_at, is_teacher, is_parent');
+      if (error) throw new Error(error.message);
+      out.push(...(data || []));
+    }
+    return out;
+  }
+
+  // Masowo: flaga „ukryj bannery Premium” (#32) jednym zapytaniem. Konta, których
+  // UPDATE nie zwrócił (np. brak polityki admina w bazie), ustawiamy jeszcze przez RPC
+  // i odczytujemy ponownie. Zwraca wiersze { id, hide_premium_banners } po zapisie.
+  async function adminSetHideBannersMany(userIds, value) {
+    if (!_profile?.isAdmin) throw new Error('Brak uprawnień');
+    const ids = Array.from(new Set((userIds || []).filter(Boolean)));
+    const v = !!value;
+    const out = [];
+    for (let i = 0; i < ids.length; i += 100) {
+      const { data, error } = await supabase
+        .from('profiles')
+        .update({ hide_premium_banners: v })
+        .in('id', ids.slice(i, i + 100))
+        .select('id, hide_premium_banners');
+      if (error) throw new Error(error.message);
+      out.push(...(data || []));
+    }
+    const got = new Set(out.map(r => r.id));
+    const missing = ids.filter(id => !got.has(id));
+    if (missing.length) {
+      for (const id of missing) {
+        const { error } = await supabase.rpc('admin_set_hide_premium_banners', { p_user_id: id, p_value: v });
+        if (error) console.warn('[adminSetHideBannersMany]', id, error.message);
+      }
+      for (let i = 0; i < missing.length; i += 100) {
+        const { data } = await supabase.from('profiles')
+          .select('id, hide_premium_banners').in('id', missing.slice(i, i + 100));
+        out.push(...(data || []));
+      }
+    }
+    return out;
   }
 
   function getAdminRequests() {
@@ -4453,15 +4514,68 @@ const DB = (() => {
 
   async function adminSetUserBooks(userId, bookIds) {
     if (!_profile?.isAdmin && !_profile?.isTeacher) throw new Error('Brak uprawnień');
-    // Usuń stare wpisy
-    const { error: delErr } = await supabase
-      .from('user_books').delete().eq('user_id', userId);
-    if (delErr) throw new Error(delErr.message);
-    // Dodaj nowe
-    if (bookIds.length > 0) {
-      const rows = bookIds.map(bid => ({ user_id: userId, book_id: bid }));
-      const { error: insErr } = await supabase.from('user_books').insert(rows);
-      if (insErr) throw new Error(insErr.message);
+    return adminReplaceBooksMany([userId], bookIds || []);
+  }
+
+  // Podręczniki wielu osób jednym zapytaniem (po 50 osób, strony po 1000 wierszy).
+  // Zwraca { user_id: [book_id, …] } — także pustą listę dla osób bez przydziałów.
+  async function adminLoadUserBooksMany(userIds) {
+    if (!_profile?.isAdmin && !_profile?.isTeacher) return {};
+    const ids = Array.from(new Set((userIds || []).filter(Boolean)));
+    const map = {};
+    ids.forEach(id => { map[id] = []; });
+    for (let i = 0; i < ids.length; i += 50) {
+      const chunk = ids.slice(i, i + 50);
+      for (let from = 0; ; from += 1000) {
+        const { data, error } = await supabase
+          .from('user_books').select('user_id, book_id')
+          .in('user_id', chunk)
+          .order('user_id').order('book_id')
+          .range(from, from + 999);
+        if (error) throw new Error(error.message);
+        (data || []).forEach(r => {
+          const a = map[r.user_id] || (map[r.user_id] = []);
+          if (!a.includes(r.book_id)) a.push(r.book_id);
+        });
+        if (!data || data.length < 1000) break;
+      }
+    }
+    return map;
+  }
+
+  // „Zastąp całą listę”: każda z osób ma mieć dokładnie te podręczniki. Najpierw
+  // dopisujemy brakujące (UPSERT bez duplikatów), potem usuwamy pozostałe — uczeń
+  // nie zostaje ani na chwilę bez podręczników, a dla klasy to 2 zapytania zamiast 2 na osobę.
+  async function adminReplaceBooksMany(userIds, bookIds) {
+    if (!_profile?.isAdmin && !_profile?.isTeacher) throw new Error('Brak uprawnień');
+    const ids = Array.from(new Set((userIds || []).filter(Boolean)));
+    const books = Array.from(new Set((bookIds || []).filter(Boolean)));
+    if (!ids.length) return;
+    const inList = '(' + books.map(b => '"' + String(b).replace(/["\\]/g, '\\$&') + '"').join(',') + ')';
+    for (let i = 0; i < ids.length; i += 100) {
+      const chunk = ids.slice(i, i + 100);
+      if (books.length) {
+        const rows = [];
+        chunk.forEach(uid => books.forEach(bid => rows.push({ user_id: uid, book_id: bid })));
+        const { error: upErr } = await supabase.from('user_books')
+          .upsert(rows, { onConflict: 'user_id,book_id', ignoreDuplicates: true });
+        if (upErr) {
+          // Baza bez UNIQUE(user_id, book_id) (#25) — dawny sposób: usuń wszystko i wstaw od nowa.
+          if (!/on conflict|unique|exclusion/i.test(upErr.message || '')) throw new Error(upErr.message);
+          for (const uid of chunk) {
+            const { error: delErr } = await supabase.from('user_books').delete().eq('user_id', uid);
+            if (delErr) throw new Error(delErr.message);
+            const { error: insErr } = await supabase.from('user_books')
+              .insert(books.map(bid => ({ user_id: uid, book_id: bid })));
+            if (insErr) throw new Error(insErr.message);
+          }
+          continue;
+        }
+      }
+      let q = supabase.from('user_books').delete().in('user_id', chunk);
+      if (books.length) q = q.not('book_id', 'in', inList);
+      const { error: delErr } = await q;
+      if (delErr) throw new Error(delErr.message);
     }
   }
 
@@ -5609,6 +5723,8 @@ const DB = (() => {
     getHidePremiumBanners,
     setUserPlan,
     adminSetAccount,
+    adminSetPlanMany,
+    adminSetHideBannersMany,
     addAdminRequest,
     getAdminRequests,
     approveAdminRequest,
@@ -5645,7 +5761,9 @@ const DB = (() => {
     // admin — dostęp do podręczników
     getUserBooks,
     adminLoadUserBooks,
+    adminLoadUserBooksMany,
     adminSetUserBooks,
+    adminReplaceBooksMany,
     adminGrantBookAccess,
     adminRevokeBookAccess,
     adminListUsersWithBook,
