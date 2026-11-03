@@ -5591,6 +5591,7 @@ function getBookAllWordsCustom(bId) {
 // Bezpieczne (try/catch) — gdy migracja activity_events nie jest uruchomiona,
 // po prostu poleci tylko stara ścieżka recordAnswer.
 function _recordAnswerLogged(correct, opts){
+  try { if (!opts) { _pace.answerAt = Date.now(); _pace.answerIdx = curIdx; } } catch(e) {}   // 🐢 chwila odpowiedzi (rate() bywa wołane 1,5 s później)
   try { DB.recordAnswer(currentUser, correct); } catch(e) {}
   if (!DB.logWordAnswer) return;
   let pl = null, en = null;
@@ -9771,6 +9772,7 @@ function flipCard() {
   }
   if (!active || mode !== 'card' || revealed) return;
   revealed = true; flipped = true;
+  _pace.flippedAt = Date.now();   // 🐢 ocena dopiero, gdy odpowiedź się odsłoni (PACE_MIN_LOOK)
   document.getElementById('cardScene').classList.add('flipped');
   playFlip(); showDiff();
   showCardSentence();
@@ -11416,12 +11418,106 @@ function trackMissed() {
 }
 
 // ══════════════════════════════════════════════
+//  🐢 STRAŻNIK TEMPA (#93) — za szybkie odpowiedzi się nie liczą
+//  Zgłoszenie właściciela: uczeń klikał na zmianę Spację i → w Fiszkach, żeby szybko
+//  „nabić” poziom. Nikogo nie karzemy: odpowiedź szybsza, niż da się przeczytać słówko,
+//  po prostu się nie liczy — bez XP, serii 🎯, nagród, postępu „umiem” / „Opanowane”,
+//  pupila, licznika gier i słówek dnia (karta wraca później w tej nauce).
+//  • Fiszki: ocena wcześniej niż PACE_MIN_LOOK po odwróceniu karty jest ignorowana
+//    (odpowiedź jeszcze się nie odsłoniła); przytrzymany klawisz (e.repeat) — też.
+//  • „Za szybko”: od pokazania pytania do odpowiedzi < PACE_FAST (Fiszki 1 s, Gramatyka
+//    1 s, Quiz / Speed / Prawda-Fałsz 0,5 s). Tryby z wpisywaniem i mówieniem — bez zmian.
+//  • Seria: ≥ 4 z 6 ostatnich za szybkich albo (Fiszki) mediana 8 ostatnich < 1,2 s →
+//    przerwa PACE_COOL (25 s), w której nic się nie liczy, i raz komunikat 🐢. Każda kolejna
+//    seria przedłuża przerwę; 3 spokojne odpowiedzi (≥ 2 s) kończą ją wcześniej.
+//  • Licznik serii: localStorage['fiszki_pace_<login>'] (dzień); do bazy (report_fast_answers,
+//    #93) najwyżej raz na 10 min i tylko gdy była seria. Gość — nic nie wysyłamy.
+// ══════════════════════════════════════════════
+const PACE_MIN_LOOK = 450;
+const PACE_FAST = { card: 1000, grammar: 1000, other: 500 };
+const PACE_MED = { card: 1200 };
+const PACE_KIND = { card: 'card', quiz: 'other', speed: 'other', tf: 'other' };
+const PACE_WIN = 6, PACE_WIN_FAST = 4, PACE_MED_N = 8, PACE_COOL = 25000, PACE_CALM = 2000, PACE_REPORT_MS = 600000;
+const PACE_MSG = '🐢 Zwolnij trochę! Przeczytaj słówko i zastanów się — za bardzo szybkie odpowiedzi się nie liczą.';
+const _pace = { hist: {}, coolUntil: 0, flippedAt: 0, answerAt: 0, answerIdx: null, warnedAt: 0, lastFast: false };
+function _paceCooling() { return Date.now() < _pace.coolUntil; }
+function _paceKey() { return 'fiszki_pace_' + (currentUser || 'guest'); }
+function _paceStore() {
+  let o = {};
+  try { o = JSON.parse(localStorage.getItem(_paceKey()) || '{}') || {}; } catch(e) {}
+  if (o.day !== _localDay()) o = { day: _localDay(), bursts: 0, blocked: 0, sentB: 0, sentN: 0, sentAt: o.sentAt || 0, modes: [] };
+  if (!Array.isArray(o.modes)) o.modes = [];
+  return o;
+}
+function _paceNote(burst, label) {
+  const o = _paceStore();
+  if (burst) o.bursts++; else o.blocked++;
+  if (label && !o.modes.includes(label)) o.modes.push(label);
+  try { localStorage.setItem(_paceKey(), JSON.stringify(o)); } catch(e) {}
+  // do bazy: tylko gdy była seria, najwyżej raz na 10 min (Disk IO)
+  if (isGuest || !(o.bursts > o.sentB) || Date.now() - (o.sentAt || 0) < PACE_REPORT_MS) return;
+  if (typeof DB === 'undefined' || !DB.reportFastAnswers) return;
+  const db = o.bursts - o.sentB, dn = Math.max(0, o.blocked - o.sentN);
+  o.sentB = o.bursts; o.sentN = o.blocked; o.sentAt = Date.now();
+  try { localStorage.setItem(_paceKey(), JSON.stringify(o)); } catch(e) {}
+  DB.reportFastAnswers(db, dn, o.modes.join(','));
+}
+function _paceWarn() {
+  _pace.warnedAt = Date.now();
+  toast(PACE_MSG, 5200);
+  try { setOwl('think'); owlMsg('🐢 Zwolnij trochę!', 3200); setTimeout(() => setOwl(''), 1600); } catch(e) {}
+}
+// Czy odpowiedź się liczy? kind: 'card' | 'grammar' | 'other'; ms — czas od pokazania pytania.
+function _paceCheck(kind, ms, label) {
+  const now = Date.now();
+  const fast = ms < (PACE_FAST[kind] || PACE_FAST.other);
+  _pace.lastFast = fast;
+  const h = _pace.hist[kind] || (_pace.hist[kind] = []);
+  h.push({ ms, fast });
+  while (h.length > PACE_MED_N) h.shift();
+  const last = h.slice(-PACE_WIN);
+  let burst = last.filter(x => x.fast).length >= PACE_WIN_FAST;
+  if (!burst && PACE_MED[kind] && h.length >= PACE_MED_N) {
+    const s = h.map(x => x.ms).sort((a, b) => a - b);
+    burst = (s[PACE_MED_N / 2 - 1] + s[PACE_MED_N / 2]) / 2 < PACE_MED[kind];
+  }
+  const wasCooling = _paceCooling();
+  if (burst || (wasCooling && fast)) _pace.coolUntil = now + PACE_COOL;
+  else if (wasCooling && h.length >= 3 && h.slice(-3).every(x => x.ms >= PACE_CALM)) _pace.coolUntil = 0;   // uspokoił się
+  if (burst && !wasCooling) { _paceNote(true, label || kind); _paceWarn(); }
+  const counts = !fast && !_paceCooling();
+  if (!counts) _paceNote(false, label || kind);
+  return counts;
+}
+// rate(): czy ta odpowiedź się liczy (Fiszki, Quiz, Speed, Prawda/Fałsz)
+function _paceAnswer() {
+  const kind = PACE_KIND[mode];
+  if (!kind || _bookIgnored()) return true;   // „Nie zapisuj mojej nauki” — i tak nic się nie zapisuje
+  const end = (mode !== 'card' && _pace.answerIdx === curIdx && _pace.answerAt >= _cardShownAt) ? _pace.answerAt : Date.now();
+  return _paceCheck(kind, end - (_cardShownAt || 0), mode);
+}
+// Odpowiedź „nie liczy się”: bez zmian w postępie, seria przerwana, słówko wróci za kilka kart.
+function _rateNeutral(noAdvance) {
+  streak = 0;
+  if (ws[curIdx]) ws[curIdx].dueIn = 4;
+  if (Date.now() - _pace.warnedAt > 4500) toast(_pace.lastFast ? '🐢 Nie liczy się — za szybko. Przeczytaj słówko spokojnie!'
+    : '🐢 Tak trzymaj, spokojnie! Jeszcze 1–2 karty i odpowiedzi znów się liczą.', 2200);
+  hideDiff(); updateStats();
+  if (noAdvance) return;
+  if (!pool.length) { setTimeout(showDone, 800); return; }
+  setTimeout(generate, 50);
+}
+
+// ══════════════════════════════════════════════
 //  RATE DIFFICULTY
 // ══════════════════════════════════════════════
 // selfRated = przyciski „Jak było?” (samoocena po odwróceniu fiszki / po „Znajdź parę”)
 function rate(r, noAdvance, selfRated) {
   if (curIdx === null) return;
+  // 🐢 Fiszki: ocena, zanim odpowiedź się odsłoniła (< 0,45 s po odwróceniu) — ignorujemy
+  if (mode === 'card' && selfRated && Date.now() - _pace.flippedAt < PACE_MIN_LOOK) return;
   clearInterval(studySpeedTimer); // zatrzymaj timer speed jeśli aktywny
+  if (!_paceAnswer()) { _rateNeutral(noAdvance); return; }   // 🐢 za szybko — nie liczy się
   _gateTrack(r);                  // blokada gier: licznik słówek dnia (Wpisz / Fiszki / Quiz)
 
   // Samoocena: 😰 Trudne = nie umiem (jak „Again” w Anki), 🤔 Średnie = prawie (Hard),
@@ -13326,7 +13422,8 @@ document.addEventListener('keydown', e => {
   if (!studyActive) return;
   if (document.getElementById('sStudy').classList.contains('sf-pick')) return; // wybór trybu — skróty tylko w trybie skupienia
   if (!active) return;
-  if (e.code === 'Space') { e.preventDefault(); if (mode==='card'&&!revealed) flipCard(); }
+  // 🐢 przytrzymany klawisz (auto-powtarzanie) nie odwraca ani nie ocenia kart
+  if (e.code === 'Space') { e.preventDefault(); if (!e.repeat && mode==='card'&&!revealed) flipCard(); }
   // „Dalej" w trybie Wpisz podczas 10-sekundowego pokazania poprawnej odpowiedzi.
   if (mode==='type' && e.key==='Enter') {
     const nx = document.getElementById('btnTypeNext');
@@ -13334,6 +13431,7 @@ document.addEventListener('keydown', e => {
   }
   // Strzalki oceniaja tylko w trybie Fiszki (nie w trybach z auto-ocena).
   if (revealed && mode==='card') {
+    if (e.repeat && /^Arrow(Left|Down|Right)$/.test(e.key)) { e.preventDefault(); return; }
     if (e.key==='ArrowLeft') { e.preventDefault(); rate('hard', false, true); }
     if (e.key==='ArrowDown') { e.preventDefault(); rate('medium', false, true); }
     if (e.key==='ArrowRight') { e.preventDefault(); rate('easy', false, true); }
@@ -21541,7 +21639,7 @@ function matchClick(d) {
       });
       inlineMatchDone++;
       // XP: +5 za każde 5 par z rzędu bez pomyłki (w weekend ×2)
-      const _runXp = _bookIgnored() ? 0 : weekendXP(_xpRunStep(true));
+      const _runXp = (_bookIgnored() || _paceCooling()) ? 0 : weekendXP(_xpRunStep(true));   // 🐢 przerwa po serii za szybkich — bez XP
       if (_runXp) { _grantXP(_runXp); toast('🔥 ' + XP_RUN_N + ' par z rzędu! +' + _runXp + ' XP' + (isWeekendXP() ? ' (×2 weekend)' : ''), 2200); }
       playOk();
       particles(true);
@@ -23083,6 +23181,166 @@ function renderStudentSearchList(query) {
   });
 }
 
+// ══════════════════════════════════════════════
+//  🛡️ TEMPO I KOREKTA XP (#93) — nauczyciel / admin
+//  Alerty z bazy (xp_flags): 🐢 serie za szybkich odpowiedzi (zgłasza aplikacja),
+//  ⛔ XP odrzucone przez limit tempa, 📈 bardzo dużo XP jednego dnia. Korekta
+//  (admin_adjust_xp): −/+ XP z powodem — także dzienny log (rankingi 📅 tydzień /
+//  🗓️ miesiąc) — i obniżenie rekordu serii 🎯; każda korekta zapisana w historii.
+//  sfOpenXpGuard(id, login) — jeden uczeń; sfOpenXpGuard() — wszyscy z alertami (30 dni).
+//  Bez migracji #93 — komunikat zamiast danych.
+// ══════════════════════════════════════════════
+(function () {
+  const MODE_PL = { card: '🃏 Fiszki', quiz: '🎯 Quiz', speed: '⚡ Speed Quiz', tf: '✅ Prawda/Fałsz', grammar: '🧠 Gramatyka' };
+  const plN = (n, a, b, c) => n === 1 ? a : (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) ? b : c;
+  const iso = d => String(d || '').slice(0, 10);
+  const fmtDay = d => { const p = iso(d).split('-'); return p.length === 3 ? p[2] + '.' + p[1] + '.' + p[0] : escHtml(String(d || '')); };
+  const who = r => escHtml(r.nickname ? r.nickname + ' (' + r.username + ')' : (r.username || '?'));
+  const box = (t, inner) => '<div style="margin:12px 0 0"><div style="font-size:.74rem;font-weight:800;color:var(--accent);margin-bottom:6px">' + t + '</div>' + inner + '</div>';
+  const row = h => '<div style="font-size:.78rem;line-height:1.45;padding:6px 9px;background:var(--surface2);border-radius:9px;margin-bottom:5px;color:var(--text)">' + h + '</div>';
+  const NO93 = '<div style="font-size:.82rem;color:var(--muted);font-weight:600;line-height:1.5">Ta funkcja wymaga migracji <b>#93</b> (<code>xp-anticheat.sql</code>) w Supabase.<br>Do czasu jej uruchomienia: aplikacja i tak nie liczy za szybkich odpowiedzi 🐢, a dawne przypadki pokaże raport <code>wykryj-podejrzane-xp.sql</code>.</div>';
+  function flagHtml(f) {
+    const d = '<b>' + fmtDay(f.day) + '</b> · ';
+    if (f.kind === 'fast') {
+      const m = String(f.info || '').split(',').filter(Boolean).map(x => MODE_PL[x] || x).join(', ');
+      return d + '🐢 za szybkie odpowiedzi: ' + f.events + ' ' + plN(f.events, 'seria', 'serie', 'serii') + ', ' + f.blocked
+        + ' ' + plN(f.blocked, 'odpowiedź nie liczyła', 'odpowiedzi nie liczyły', 'odpowiedzi nie liczyło') + ' się' + (m ? ' · ' + escHtml(m) : '');
+    }
+    if (f.kind === 'limit') return d + '⛔ limit tempa XP: odrzucono ' + f.dropped_xp + ' XP (' + f.events + '×)' + (f.day_xp != null ? ' · XP tego dnia: ' + f.day_xp : '');
+    if (f.kind === 'day_high') return d + '📈 bardzo dużo XP jednego dnia: ' + (f.day_xp || 0) + ' XP';
+    return d + escHtml(f.kind);
+  }
+
+  // ── wszyscy uczniowie z alertami ──
+  async function openAll() {
+    openGenericModal('🛡️ Podejrzane tempo nauki', '<div style="color:var(--muted);font-size:.8rem;padding:10px">⏳ Ładowanie…</div>');
+    let rows;
+    try { rows = await DB.xpGuardList(null, 30); } catch(e) { rows = e; }
+    let html;
+    if (rows === null) html = NO93;
+    else if (rows instanceof Error) html = '<div style="color:var(--accent);font-size:.82rem">❌ ' + escHtml(rows.message) + '</div>';
+    else {
+      const by = {};
+      rows.forEach(f => {
+        const u = by[f.user_id] || (by[f.user_id] = { f, days: new Set(), bursts: 0, blocked: 0, dropped: 0, high: 0, last: f.last_at });
+        u.days.add(iso(f.day));
+        if (f.kind === 'fast') { u.bursts += f.events; u.blocked += f.blocked; }
+        if (f.kind === 'limit') u.dropped += f.dropped_xp;
+        if (f.kind === 'day_high') u.high++;
+      });
+      const list = Object.values(by);
+      html = '<div style="font-size:.74rem;color:var(--muted);font-weight:600;line-height:1.5;margin-bottom:8px">Ostatnie 30 dni. Kliknij ucznia, żeby zobaczyć szczegóły i ewentualnie poprawić punkty.'
+        + ' 🐢 = serie za szybkich odpowiedzi (nie liczyły się), ⛔ = XP odrzucone przez limit, 📈 = bardzo dużo XP jednego dnia.</div>';
+      html += list.length ? list.map(u => '<div role="button" tabindex="0" style="cursor:pointer" onclick="sfOpenXpGuard(\'' + u.f.user_id + '\',\'' + escHtml(u.f.username || '').replace(/'/g, '') + '\')">'
+          + row('<b>' + who(u.f) + '</b> · poz. ' + u.f.level + ' · ' + u.f.xp + ' XP · 🎯 ' + u.f.best_combo
+            + '<br><span style="color:var(--muted)">' + u.days.size + ' ' + plN(u.days.size, 'dzień', 'dni', 'dni') + ' z alertem'
+            + (u.bursts ? ' · 🐢 ' + u.bursts + ' ' + plN(u.bursts, 'seria', 'serie', 'serii') : '')
+            + (u.dropped ? ' · ⛔ ' + u.dropped + ' XP' : '') + (u.high ? ' · 📈 ' + u.high + '×' : '')
+            + ' · ostatnio ' + fmtDay(iso(u.last)) + '</span>') + '</div>').join('')
+        : '<div style="font-size:.82rem;color:var(--muted);font-weight:600;padding:8px 0">Brak alertów — nikt nie klikał podejrzanie szybko. ✅</div>';
+    }
+    html += '<div style="display:flex;justify-content:center;margin-top:12px"><button class="btn-modal-cancel" onclick="closeGenericModal()">Zamknij</button></div>';
+    openGenericModal('🛡️ Podejrzane tempo nauki', html);
+  }
+
+  // ── jeden uczeń: alerty, XP z ostatnich dni, korekta, historia ──
+  async function openOne(userId, login) {
+    const title = '🛡️ Tempo i punkty — ' + escHtml(login || '');
+    openGenericModal(title, '<div style="color:var(--muted);font-size:.8rem;padding:10px">⏳ Ładowanie…</div>');
+    let flags, hist, days, prof;
+    try {
+      [flags, hist, days, prof] = await Promise.all([
+        DB.xpGuardList(userId, 90),
+        DB.xpAdjustHistory(userId).catch(() => []),
+        DB.getDailyXpHistory ? DB.getDailyXpHistory(userId, 21).catch(() => []) : Promise.resolve([]),
+        DB.fetchProfileById ? DB.fetchProfileById(userId).catch(() => null) : Promise.resolve(null)
+      ]);
+    } catch(e) {
+      openGenericModal(title, '<div style="color:var(--accent);font-size:.82rem">❌ ' + escHtml(e.message || String(e)) + '</div>');
+      return;
+    }
+    const cached = (Array.isArray(_allProfiles) ? _allProfiles : []).find(p => p.id === userId) || {};
+    const p = Object.assign({}, cached, prof || {});
+    const combo = (flags && flags[0] && flags[0].best_combo != null) ? flags[0].best_combo : cached.best_correct_streak;
+    let html = '<div style="display:flex;gap:8px;flex-wrap:wrap;font-size:.8rem;font-weight:700;color:var(--text)">'
+      + '<span>⭐ Poziom ' + (p.level || 1) + '</span><span>· ' + (p.xp || 0) + ' XP</span>'
+      + (combo != null ? '<span>· 🎯 rekord serii ' + combo + '</span>' : '') + '</div>';
+    if (flags === null) {
+      html += box('🐢 Alerty', NO93);
+    } else {
+      html += box('🐢 Alerty (90 dni)', flags.length ? flags.map(f => row(flagHtml(f))).join('')
+        : '<div style="font-size:.8rem;color:var(--muted);font-weight:600">Brak alertów — tempo nauki wygląda normalnie. ✅</div>');
+    }
+    const act = (days || []).filter(d => (d.xp || 0) > 0).slice(-21).reverse();
+    if (act.length) {
+      html += box('📅 XP w ostatnich dniach', '<div style="max-height:180px;overflow:auto"><table style="width:100%;font-size:.74rem;border-collapse:collapse">'
+        + '<tr style="color:var(--muted);text-align:left"><th style="padding:3px 6px">Dzień</th><th style="padding:3px 6px">XP</th><th style="padding:3px 6px">Minuty</th><th style="padding:3px 6px">XP / min</th></tr>'
+        + act.map(d => {
+          const m = d.minutes || 0, r = m > 0 ? Math.round(d.xp / m) : null;
+          const hot = (r === null && d.xp >= 300) || (r !== null && r > 150);
+          return '<tr' + (hot ? ' style="color:var(--accent);font-weight:800"' : '') + '><td style="padding:3px 6px">' + fmtDay(d.day) + '</td><td style="padding:3px 6px">' + d.xp
+            + '</td><td style="padding:3px 6px">' + (m || '—') + '</td><td style="padding:3px 6px">' + (r === null ? '—' : r) + (hot ? ' ⚠️' : '') + '</td></tr>';
+        }).join('') + '</table></div>'
+        + '<div style="font-size:.68rem;color:var(--muted);margin-top:4px">⚠️ = ponad 150 XP na minutę nauki (albo dużo XP bez zapisanych minut) — warto sprawdzić.</div>');
+    }
+    if (flags !== null) {
+      const lastFlagDay = flags.length ? iso(flags[0].day) : '';
+      const today = _localDay();
+      html += box('➖ Korekta punktów',
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:.74rem;font-weight:700;color:var(--muted)">'
+        + '<label>Co zrobić<select id="xgDir" class="ai-inp" style="width:100%;margin-top:3px"><option value="-1">➖ Odejmij XP</option><option value="1">➕ Przywróć XP</option></select></label>'
+        + '<label>Ile XP<input id="xgAmt" class="ai-inp" type="number" min="0" max="100000" step="1" placeholder="np. 300" style="width:100%;margin-top:3px"></label>'
+        + '<label>Od dnia (rankingi tydzień / miesiąc)<input id="xgDay" class="ai-inp" type="date" max="' + today + '" value="' + escHtml(lastFlagDay || today) + '" style="width:100%;margin-top:3px"></label>'
+        + '<label>🎯 Rekord serii — ustaw na<input id="xgCombo" class="ai-inp" type="number" min="0" step="1" placeholder="bez zmian" style="width:100%;margin-top:3px"></label>'
+        + '<label style="grid-column:1/-1">Powód (zapisze się w historii)<input id="xgWhy" class="ai-inp" maxlength="300" placeholder="np. klikanie Spacja + → bez czytania słówek, 28.10" style="width:100%;margin-top:3px"></label>'
+        + '</div>'
+        + '<div style="font-size:.68rem;color:var(--muted);line-height:1.45;margin-top:6px">XP znika najpierw z wybranego dnia, potem z najnowszych dni (poprawią się też rankingi 📅 tydzień i 🗓️ miesiąc); poziom przeliczy się sam. Rekord serii można tylko obniżyć. Najpierw porozmawiaj z uczniem — chodzi o naukę, nie o karę. 🦉</div>'
+        + '<div style="display:flex;justify-content:flex-end;margin-top:8px"><button class="btn-sm accent" id="xgSave">💾 Zapisz korektę</button></div>');
+      if (hist && hist.length) {
+        html += box('📜 Historia korekt', hist.map(h => row('<b>' + fmtDay(iso(h.at)) + '</b> · ' + (h.delta > 0 ? '+' : '') + h.delta + ' XP'
+          + (h.combo_to != null ? ' · 🎯 ' + h.combo_from + ' → ' + h.combo_to : '') + ' · ' + escHtml(h.by_name || '?')
+          + '<br><span style="color:var(--muted)">' + escHtml(h.reason || '') + (h.day ? ' · od dnia ' + fmtDay(h.day) : '') + ' · XP ' + h.xp_before + ' → ' + h.xp_after + '</span>')).join(''));
+      }
+    }
+    html += '<div style="display:flex;justify-content:center;gap:8px;margin-top:12px;flex-wrap:wrap">'
+      + '<button class="btn-sm" onclick="sfOpenXpGuard()">👥 Wszyscy z alertami</button>'
+      + '<button class="btn-modal-cancel" onclick="closeGenericModal()">Zamknij</button></div>';
+    openGenericModal(title, html);
+    const btn = document.getElementById('xgSave');
+    if (btn) btn.onclick = async () => {
+      const dir = +document.getElementById('xgDir').value || -1;
+      const amt = Math.max(0, Math.round(+document.getElementById('xgAmt').value || 0));
+      const day = document.getElementById('xgDay').value || null;
+      const cRaw = document.getElementById('xgCombo').value.trim();
+      const setCombo = cRaw === '' ? null : Math.max(0, Math.round(+cRaw || 0));
+      const why = document.getElementById('xgWhy').value.trim();
+      if (!amt && setCombo === null) { toast('Wpisz, ile XP odjąć (albo przywrócić), lub nowy rekord serii.', 3000); return; }
+      if (why.length < 3) { toast('Wpisz powód korekty — zapisze się w historii.', 3000); document.getElementById('xgWhy').focus(); return; }
+      const parts = [];
+      if (amt) parts.push((dir < 0 ? 'odjąć ' : 'przywrócić ') + amt + ' XP' + (day ? ' (od dnia ' + fmtDay(day) + ')' : ''));
+      if (setCombo !== null) parts.push('ustawić rekord serii 🎯 na ' + setCombo);
+      if (!confirm('Na pewno ' + parts.join(' i ') + ' — konto „' + (login || '') + '”?\nPowód: ' + why)) return;
+      btn.disabled = true;
+      try {
+        const res = await DB.adminAdjustXp(userId, dir * amt, why, day, setCombo);
+        try { if (cached && cached.id) { cached.xp = res.new_xp; cached.level = res.new_level; if (setCombo !== null) cached.best_correct_streak = res.combo_after; } } catch(e) {}
+        toast('✅ Zapisano korektę: ' + (res.applied > 0 ? '+' : '') + res.applied + ' XP · poziom ' + res.new_level
+          + (res.combo_after !== res.combo_before ? ' · 🎯 ' + res.combo_after : ''), 4200);
+        openOne(userId, login);
+      } catch(e) {
+        btn.disabled = false;
+        toast('❌ ' + (e.message || e), 4200);
+      }
+    };
+  }
+
+  window.sfOpenXpGuard = function (userId, login) {
+    if (isGuest || !(isCurrentUserAdmin() || isCurrentUserTeacher())) { toast('Ten panel jest dostępny tylko dla nauczyciela / admina.', 3000); return; }
+    if (!DB.xpGuardList) { toast('Odśwież stronę (Ctrl+Shift+R), żeby włączyć tę funkcję.', 3000); return; }
+    return userId ? openOne(userId, login) : openAll();
+  };
+})();
+
 // _studProgReturnTo — gdzie wracac z ekranu postepu ucznia.
 // 'class' (default) = sClassDetail (dla nauczyciela/admina);
 // 'parent' = sParentPanel (dla opiekuna).
@@ -23177,6 +23435,9 @@ async function openStudentProgress(userId, username, returnTo) {
       const trBox = document.createElement('div');
       trBox.style.cssText = 'margin:0 0 14px';
       trBox.innerHTML = '<button class="btn-sm" onclick="_showTypedReport(\'' + userId + '\',\'' + esc(username) + '\')">🔎 Szczegóły „Wpisz"</button>';
+      // 🛡️ Tempo i korekta XP (#93) — tylko nauczyciel / admin (nie opiekun)
+      if (_studProgReturnTo !== 'parent' && (isCurrentUserAdmin() || isCurrentUserTeacher()))
+        trBox.innerHTML += ' <button class="btn-sm" title="Za szybkie odpowiedzi, limit XP i korekta punktów" onclick="sfOpenXpGuard(\'' + userId + '\',\'' + esc(username) + '\')">🛡️ Tempo i korekta XP</button>';
       unitsEl.appendChild(trBox);
     } catch(e) { console.warn('[acq stud]', e); }
 
@@ -24492,6 +24753,7 @@ function buildAlphaKeys(inputId, answer) {
         aichats:          () => (typeof openAiChatLogs==='function')       && openAiChatLogs(),
         petphrases:       () => window.sfOpenPetPhrases && window.sfOpenPetPhrases(),
         rankings:         () => window.sfOpenStaffRank && window.sfOpenStaffRank(),
+        xpGuard:          () => window.sfOpenXpGuard && window.sfOpenXpGuard(),
         newBook:          () => (typeof openAdminBookModal==='function')   && openAdminBookModal(),
         premium:          () => (typeof openPremiumPricingModal==='function') && openPremiumPricingModal(),
       };
@@ -37102,6 +37364,7 @@ ${bodyHtml}
   };
   function gpRender(){
     const g = _gp; const it = g.items[g.i];
+    g.shownAt = Date.now();   // 🐢 strażnik tempa: czas od pokazania zadania do odpowiedzi
     if (!it) {
       const pct = g.items.length ? Math.round(g.ok / g.items.length * 100) : 0;
       aiModal('gramPracModal', closeBtn('gramPracModal') + `<div class="modal-title">🧠 ${E(g.s.topic)}</div>
@@ -37141,8 +37404,11 @@ ${bodyHtml}
     g.done = true; if (ok) g.ok++;
     if (g.answers) g.answers.push(hmwAns(it._i, it.q, given, correct, ok));
     try { if (ok && typeof playOk === 'function') playOk(); else if (!ok && typeof playBad === 'function') playBad(); } catch(e) {}
-    try { if (ok && !isGuest && typeof addXP === 'function') (typeof addBonusXP === 'function' ? addBonusXP(4) : addXP(4)); } catch(e) {}
-    try { if (window.sfPet) window.sfPet.onAnswer('grammar', ok ? 'good' : 'hard', false); } catch(e) {}
+    // 🐢 wybór A/B/C szybciej, niż da się przeczytać zdanie — bez XP i pupila (wynik zostaje)
+    let paceOk = true;
+    try { if (it.type === 'abc' && typeof _paceCheck === 'function') paceOk = _paceCheck('grammar', Date.now() - (g.shownAt || 0), 'grammar'); } catch(e) {}
+    try { if (ok && paceOk && !isGuest && typeof addXP === 'function') (typeof addBonusXP === 'function' ? addBonusXP(4) : addXP(4)); } catch(e) {}
+    try { if (paceOk && window.sfPet) window.sfPet.onAnswer('grammar', ok ? 'good' : 'hard', false); } catch(e) {}
     speak(fullSentence(it.q, correct));
     $('gpRes').innerHTML = `<div class="gp-res ${ok ? 'ok' : 'bad'}">${ok ? '✓ Dobrze!' : '✗ Poprawnie: <b>' + E(correct) + '</b>'}
       <div class="gp-exp">${E(fullSentence(it.q, correct))}${it.e ? '<br>💡 ' + E(it.e) : ''}</div></div>

@@ -34,6 +34,7 @@ const DB = (() => {
   let _hasBookPrefs   = false;  // migracja #86: profiles.book_prefs („Uczę się” / „Nie zapisuj mojej nauki”)
   let _bookPrefs      = { ignored: [], learning: [] };
   let _hasStartMode   = null;   // migracja #89: profiles.start_mode („🚀 Tryb na start” od nauczyciela); null = profil niewczytany
+  let _hasComboEpoch  = false;  // migracja #93: profiles.combo_epoch — po korekcie serii stara karta nie przywróci rekordu
   let _xpChain        = Promise.resolve();
   let _xpInflight     = 0;
   let _xpSyncFn       = null;   // app.html: aktualizacja paska XP wartością z bazy
@@ -77,6 +78,7 @@ const DB = (() => {
       totalAnswers:  row.total_answers   || 0,
       correctAnswers:row.correct_answers || 0,
       bestCorrectStreak: row.best_correct_streak || 0,
+      comboEpoch:    row.combo_epoch     || 0,      // migracja #93 — odsyłana w zapisie profilu
       wellLearnedWords: row.well_learned_words || 0,
       achievements:  row.achievements    || [],
       dailyXP:       row.daily_xp        || 0,
@@ -119,6 +121,8 @@ const DB = (() => {
     // Tylko gdy kolumna istnieje (migracja add-ranking-stats.sql), inaczej upsert
     // by sie wywalil i przestalby zapisywac XP/streak.
     if (_hasBestCombo) payload.best_correct_streak = _profile.bestCorrectStreak || 0;
+    // #93: „epoka” rekordu serii — po korekcie nauczyciela baza odrzuci rekord z tej (starej) karty
+    if (_hasComboEpoch) payload.combo_epoch = _profile.comboEpoch || 0;
     if (_hasWellLearned) payload.well_learned_words = _profile.wellLearnedWords || 0;
     return payload;
   }
@@ -161,6 +165,7 @@ const DB = (() => {
     _petServer = (_hasPet && profRes.data.pet && typeof profRes.data.pet === 'object') ? profRes.data.pet : null;
     _hasBookPrefs = !!(profRes.data && Object.prototype.hasOwnProperty.call(profRes.data, 'book_prefs'));
     _hasStartMode = !!(profRes.data && Object.prototype.hasOwnProperty.call(profRes.data, 'start_mode'));
+    _hasComboEpoch = !!(profRes.data && Object.prototype.hasOwnProperty.call(profRes.data, 'combo_epoch'));
     _bookPrefs = _bpNorm(_hasBookPrefs ? profRes.data.book_prefs : _bpLocal());
     if (_hasBookPrefs && !_bookPrefs.ignored.length && !_bookPrefs.learning.length) {
       const loc = _bpNorm(_bpLocal());   // ustawione przed migracją #86 — przenieś na serwer
@@ -2439,6 +2444,39 @@ const DB = (() => {
         if (error) console.warn('[DB] Błąd zapisu pupila:', error.message);
       });
     }, 800);
+  }
+
+  // ── 🛡️ Strażnik XP (migracja #93) ──
+  // Zgłoszenie z aplikacji: seria za szybkich odpowiedzi 🐢 (app.html wysyła najwyżej raz na 10 min).
+  function reportFastAnswers(bursts, blocked, info) {
+    if (!_userId) return;
+    try {
+      supabase.rpc('report_fast_answers', { p_bursts: Math.max(0, bursts | 0), p_blocked: Math.max(0, blocked | 0), p_info: info || null })
+        .then(() => {}, () => {});
+    } catch(e) {}
+  }
+  // null = brak migracji #93 (UI chowa funkcję); inne błędy — wyjątek z komunikatem z bazy.
+  const _missing93 = e => /PGRST202|42883|42P01|Could not find the function|does not exist/i.test(((e && e.code) || '') + ' ' + ((e && e.message) || ''));
+  async function xpGuardList(userId, days) {
+    const { data, error } = await supabase.rpc('xp_guard_list', { p_user: userId || null, p_days: days || 30 });
+    if (error) { if (_missing93(error)) return null; throw new Error(error.message); }
+    return data || [];
+  }
+  async function xpAdjustHistory(userId) {
+    const { data, error } = await supabase.rpc('xp_adjust_history', { p_user: userId });
+    if (error) { if (_missing93(error)) return null; throw new Error(error.message); }
+    return data || [];
+  }
+  async function adminAdjustXp(userId, delta, reason, day, setCombo) {
+    const { data, error } = await supabase.rpc('admin_adjust_xp', {
+      p_user: userId, p_delta: delta | 0, p_reason: String(reason || ''),
+      p_day: day || null, p_set_combo: (setCombo === null || setCombo === undefined || setCombo === '') ? null : Math.max(0, setCombo | 0)
+    });
+    if (error) {
+      if (_missing93(error)) throw new Error('Brak migracji #93 (xp-anticheat.sql) w Supabase.');
+      throw new Error(error.message);
+    }
+    return Array.isArray(data) ? data[0] : data;
   }
 
   // ── 🔔 Powiadomienia push (migracja #91 + Edge Function „push-reminders”) ──
@@ -5973,6 +6011,10 @@ const DB = (() => {
     subscribeInbox,
     unsubscribeInbox,
     recordBestCombo,
+    reportFastAnswers,   // 🛡️ strażnik XP (#93)
+    xpGuardList,
+    xpAdjustHistory,
+    adminAdjustXp,
     updateWellLearned,
     logDailyWords,
     listClassChallenges,

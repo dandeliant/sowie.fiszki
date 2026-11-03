@@ -150,6 +150,7 @@ with c(nr, plik, ok) as (values
   ('90', 'sowizwiad.sql',                         pg_temp.tab('public.sowizwiad_responses') and pg_temp.fn('sowizwiad_submit') and pg_temp.fn('sowizwiad_save_questions')),
   ('91', 'push-reminders.sql',                    pg_temp.tab('public.push_subscriptions') and pg_temp.fn('push_due_now') and pg_temp.fn('push_subscribe')),
   ('92', 'staff-class-rankings.sql',              pg_temp.fn('staff_rank_classes') and pg_temp.body('staff_class_rankings', 'p_top')),
+  ('93', 'xp-anticheat.sql',                      pg_temp.tab('public.xp_flags') and pg_temp.fn('admin_adjust_xp') and pg_temp.body('add_my_xp', 'cap_min')),
   ('x2', 'add-live-games.sql',                    pg_temp.fn('create_live_game')),
   ('x3', 'add-live-time-limit-and-score-rpc.sql', pg_temp.fn('update_live_player_score')),
   ('x4', 'fix-live-join-token.sql + fix-live-join-ambiguous.sql', pg_temp.fn('join_live_game')),
