@@ -33,6 +33,7 @@ const DB = (() => {
   let _hasXpAtomic    = false;  // migracja #85: XP dodawane w bazie (add_my_xp), bez XP w zapisie profilu
   let _hasBookPrefs   = false;  // migracja #86: profiles.book_prefs („Uczę się” / „Nie zapisuj mojej nauki”)
   let _bookPrefs      = { ignored: [], learning: [] };
+  let _hasStartMode   = null;   // migracja #89: profiles.start_mode („🚀 Tryb na start” od nauczyciela); null = profil niewczytany
   let _xpChain        = Promise.resolve();
   let _xpInflight     = 0;
   let _xpSyncFn       = null;   // app.html: aktualizacja paska XP wartością z bazy
@@ -91,6 +92,7 @@ const DB = (() => {
       nickname:      row.nickname        || null,   // migracja #61
       avatarUrl:     row.avatar_url      || null,   // migracja #62
       avatarPath:    row.avatar_path     || null,
+      startMode:     row.start_mode      || null,   // migracja #89 — ustawia nauczyciel (RPC), nie wysyłamy w zapisie profilu
       unitProgress
     };
   }
@@ -158,6 +160,7 @@ const DB = (() => {
     _hasXpAtomic = !!(profRes.data && Object.prototype.hasOwnProperty.call(profRes.data, 'xp_synced_at'));
     _petServer = (_hasPet && profRes.data.pet && typeof profRes.data.pet === 'object') ? profRes.data.pet : null;
     _hasBookPrefs = !!(profRes.data && Object.prototype.hasOwnProperty.call(profRes.data, 'book_prefs'));
+    _hasStartMode = !!(profRes.data && Object.prototype.hasOwnProperty.call(profRes.data, 'start_mode'));
     _bookPrefs = _bpNorm(_hasBookPrefs ? profRes.data.book_prefs : _bpLocal());
     if (_hasBookPrefs && !_bookPrefs.ignored.length && !_bookPrefs.learning.length) {
       const loc = _bpNorm(_bpLocal());   // ustawione przed migracją #86 — przenieś na serwer
@@ -3887,10 +3890,17 @@ const DB = (() => {
       // Sortuj od najnowszych do najstarszych (created_at malejaco)
       return q.order('created_at', { ascending: false, nullsFirst: false });
     };
-    // Ksywka (#61) i zdjęcie profilowe (#62) — bez migracji kolumn nie ma, więc fallback bez nich.
-    let { data, error } = await run(COLS + ', nickname, avatar_url');
-    if (error && /avatar_url/i.test(error.message)) ({ data, error } = await run(COLS + ', nickname'));
-    if (error && /nickname/i.test(error.message)) ({ data, error } = await run(COLS));
+    // Ksywka (#61), zdjęcie profilowe (#62) i „🚀 Tryb na start” (#89) — bez migracji kolumn
+    // nie ma, więc ponawiamy bez kolumny, której brakuje.
+    const extra = ['nickname', 'avatar_url'];
+    if (_hasStartMode !== false) extra.push('start_mode');   // własny profil (select *) już powiedział, czy jest #89
+    let { data, error } = await run(COLS + ', ' + extra.join(', '));
+    while (error && extra.length) {
+      const miss = extra.findIndex(c => new RegExp('\\b' + c + '\\b', 'i').test(error.message || ''));
+      if (miss < 0) break;
+      extra.splice(miss, 1);
+      ({ data, error } = await run(extra.length ? COLS + ', ' + extra.join(', ') : COLS));
+    }
     if (error) throw new Error(error.message);
     return data || [];
   }
@@ -4136,6 +4146,41 @@ const DB = (() => {
     }
     return data;
   }
+  // ── 🚀 Tryb na start (#89): nauczyciel / admin ustawia uczniom tryb nauki, do którego
+  //    uczeń trafia raz dziennie przy pierwszym wejściu (rozdział — ostatnio uczony) ──
+  // Tryby jak setMode('…') w app.html; ta sama lista co CHECK w student-start-mode.sql.
+  const START_MODES = ['card', 'quiz', 'tf', 'match', 'type', 'missing', 'gap', 'scramble', 'sentscr', 'typeSent',
+    'dictate', 'dictSent', 'speak', 'speakSent'];
+  // null = profil jeszcze niewczytany, false = brak migracji #89 (UI chowa funkcję), true = jest.
+  function hasStartMode() { return _hasStartMode; }
+  // Tryb startowy zalogowanego (z profilu wczytanego w init — bez dodatkowego zapytania); null = brak.
+  function getMyStartMode() {
+    const m = _profile && _profile.startMode;
+    return (_hasStartMode && m && START_MODES.includes(m)) ? m : null;
+  }
+  // Nauczyciel / admin: ustaw (mode) albo wyłącz (null / '') tryb startowy uczniom z listy (max 200).
+  // → liczba uczniów, którym tryb jest teraz ustawiony / wyłączony (pominięci: nie moi uczniowie,
+  //   konta nauczycieli / opiekunów); null = brak migracji #89.
+  async function setStudentsStartMode(studentIds, mode) {
+    const ids = [...new Set((studentIds || []).filter(x => typeof x === 'string' && x))];
+    const m = mode ? String(mode).trim() : '';
+    if (m && !START_MODES.includes(m)) throw new Error('Nieznany tryb nauki.');
+    if (!ids.length) return 0;
+    if (ids.length > 200) throw new Error('Za dużo uczniów naraz — zaznacz najwyżej 200.');
+    if (_hasStartMode === false) return null;
+    const { data, error } = await supabase.rpc('set_students_start_mode', { p_student_ids: ids, p_mode: m || null });
+    if (error) {
+      const msg = (error.code || '') + ' ' + (error.message || '');
+      if (/set_students_start_mode|PGRST202|42883/i.test(msg) && !/NOT_ALLOWED|BAD_MODE|TOO_MANY|AUTH/.test(msg)) return null;
+      if (/NOT_ALLOWED/.test(msg)) throw new Error('Tryb na start mogą ustawiać tylko nauczyciel i administrator.');
+      if (/BAD_MODE/.test(msg)) throw new Error('Nieznany tryb nauki.');
+      if (/TOO_MANY/.test(msg)) throw new Error('Za dużo uczniów naraz — zaznacz najwyżej 200.');
+      if (/AUTH/.test(msg)) throw new Error('Zaloguj się ponownie.');
+      throw new Error(error.message || 'Nie udało się zapisać trybu na start.');
+    }
+    return typeof data === 'number' ? data : (parseInt(data, 10) || 0);
+  }
+
   // Uczeń: okienko „Nowa praca domowa” zostało pokazane (#88).
   async function markStudentNotesSeen(ids) {
     const list = [...new Set(ids || [])].filter(Boolean).slice(0, 100);
@@ -5593,6 +5638,7 @@ const DB = (() => {
     deleteStudentNote,
     setStudentNoteDone,
     hasHomeworkTasks, loadTaskAssignments, submitStudentTask, markStudentNotesSeen, loadTaskSet,
+    hasStartMode, getMyStartMode, setStudentsStartMode,
     saveBookNote,
     deleteBookNote,
     // book access requests

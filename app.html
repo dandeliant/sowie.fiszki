@@ -4307,6 +4307,7 @@ szkoła	school"></textarea>
         <button class="btn-sm accent" onclick="openClassLeaderboard()" title="Rankingi: XP dziś/tydzień/miesiąc, streak, seria">🏆 Rankingi</button>
         <button class="btn-sm accent" onclick="openClassChallenges()" title="Wspólne wyzwania klasy">🎯 Wyzwania</button>
         <button class="btn-sm accent" onclick="openQuizCreate(_curClassId)" title="Kartkówka online z automatycznym sprawdzaniem">📝 Kartkówka</button>
+        <button class="btn-sm accent" id="btnClassStartMode" onclick="openStartModeModal()" title="Zaznaczeni uczniowie raz dziennie, przy pierwszym wejściu, trafią od razu do wybranego trybu nauki" style="display:none">🚀 Tryb na start</button>
         <button class="btn-sm" onclick="showScreen('sAdminClasses')">← Klasy</button>
       </div>
     </div>
@@ -6329,6 +6330,7 @@ function showScreen(id) {
   try { if (window.hwOnScreen) window.hwOnScreen(id); } catch(e) {}   // 🎃 Halloween: dekoracje w grach / zaproszenie
   try { if (window._liOnScreen) window._liOnScreen(id); } catch(e) {}  // wiadomości / zaproszenia czekające na koniec kartkówki lub gry (#87)
   try { if (window._hmwOnScreen) window._hmwOnScreen(id); } catch(e) {}  // okienko „Nowa praca domowa” (#88)
+  try { if (window._smOnScreen) window._smOnScreen(id); } catch(e) {}    // „🚀 Tryb na start” (#89): uczeń sam poszedł dalej
   // Bulk action toolbar — ukryj gdy użytkownik wychodzi z Klasy/Dostępu
   if (id !== 'sClassDetail' && id !== 'sAdminAccess') {
     const tb = document.getElementById('bulkActionsToolbar');
@@ -22806,6 +22808,10 @@ function renderClassStudents(memberIds, allProfiles) {
     const anyHasPass = members.some(m => !!m.generated_password);
     printBtn.style.display = anyHasPass ? '' : 'none';
   }
+  // „🚀 Tryb na start” (#89) — bez migracji przycisk schowany
+  const smHdrBtn = document.getElementById('btnClassStartMode');
+  if (smHdrBtn) smHdrBtn.style.display = (members.length && typeof window.startModeAvailable === 'function' && window.startModeAvailable()) ? '' : 'none';
+  const _smBadge = m => (typeof window.startModeBadgeHtml === 'function') ? window.startModeBadgeHtml(m) : '';
 
   if (!members.length) {
     el.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:.82rem;padding:32px;font-weight:600">Klasa jest pusta.<br>Użyj 🆕 Nowy uczeń, 👥 Generuj wielu lub 🔗 Dołącz istniejącego, aby dodać uczniów.</div>';
@@ -22862,7 +22868,7 @@ function renderClassStudents(memberIds, allProfiles) {
       <div class="student-card-avatar">${idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : '👤'}</div>
       <div class="student-card-body" style="flex:1">
         <div style="display:flex;align-items:center;justify-content:space-between">
-          <div class="student-card-name">${_avatarModHtml(profile.id, profile.avatar_url)}${fmtNameWithLabel(profile.id, profile.username)} ${_nickBadgeHtml(profile.id, profile.nickname)}</div>
+          <div class="student-card-name">${_avatarModHtml(profile.id, profile.avatar_url)}${fmtNameWithLabel(profile.id, profile.username)} ${_nickBadgeHtml(profile.id, profile.nickname)}${_smBadge(profile.start_mode)}</div>
           <div style="display:flex;gap:5px">
             <button class="btn-sm" style="font-size:.65rem;padding:4px 9px" title="Prywatna etykieta" onclick="event.stopPropagation();openUserLabelModal('${profile.id}','${esc(profile.username)}',()=>renderClassStudents(_curClassMembers,_allProfiles))">✏️</button>
             <button class="btn-sm" style="font-size:.65rem;padding:4px 9px" title="Ustawienia konta (plan, bannery)" onclick="event.stopPropagation();openUserSettingsModal('${profile.id}','${esc(profile.username)}','${profile.plan||'free'}',${profile.hide_premium_banners===true},()=>renderClassStudents(_curClassMembers,_allProfiles))">⚙️</button>
@@ -24020,6 +24026,233 @@ function buildAlphaKeys(inputId, answer) {
 })();
 
 // ══════════════════════════════════════════════
+//  🚀 TRYB NA START (#89) — nauczyciel / admin zaznacza uczniów klasy i wybiera tryb nauki;
+//  uczeń raz dziennie (pierwsze wejście danego dnia, data lokalna) trafia od razu do tego
+//  trybu w rozdziale, którego ostatnio się uczył (unit_progress.lastStudied — już w pamięci,
+//  bez dodatkowych zapytań). „← Wróć” / „← Zmień” działają jak zwykle.
+// ══════════════════════════════════════════════
+(function(){
+  // Tryby jak setMode('…') — ta sama lista co CHECK w student-start-mode.sql (bez gier,
+  // bez ⚡ Speed Quizu, który czeka na start, i bez 🤖 Napisz zdanie z AI).
+  const GROUPS = [
+    ['📚 Nauka', ['card', 'quiz', 'tf', 'match']],
+    ['✏️ Pisanie', ['type', 'missing', 'gap', 'scramble', 'sentscr', 'typeSent']],
+    ['🎧 Słuchanie i mówienie', ['dictate', 'dictSent', 'speak', 'speakSent']]
+  ];
+  const MODES = GROUPS.reduce((a, g) => a.concat(g[1]), []);
+  const label = m => (typeof FOCUS_MODE_LABELS !== 'undefined' && FOCUS_MODE_LABELS[m]) || m;
+  const isStaffProfile = p => !!(p && (p.is_admin || p.is_teacher || p.is_parent));
+
+  // ── Nauczyciel / admin ─────────────────────────────────────────
+  window.startModeAvailable = function(){
+    return !isGuest && typeof DB !== 'undefined' && !!DB.hasStartMode && DB.hasStartMode() === true
+      && (isCurrentUserAdmin() || isCurrentUserTeacher());
+  };
+  // Plakietka przy uczniu na liście klasy
+  window.startModeBadgeHtml = function(m){
+    if (!m || !MODES.includes(m) || !window.startModeAvailable()) return '';
+    const l = escHtml(label(m));
+    return ' <span class="sm-badge" title="🚀 Tryb na start: ' + l + ' — raz dziennie, przy pierwszym wejściu"'
+      + ' style="display:inline-block;font-size:.6rem;font-weight:800;padding:2px 7px;border-radius:999px;background:rgba(124,77,255,.14);border:1px solid rgba(124,77,255,.45);color:var(--text);vertical-align:middle;white-space:nowrap">🚀 ' + l + '</span>';
+  };
+
+  let _sel = [], _ret = null;
+  function selectedIds(){
+    const members = Array.isArray(_curClassMembers) ? _curClassMembers : [];
+    return Array.from(_bulkSelected).filter(id => members.includes(id));
+  }
+  window.openStartModeModal = function(){
+    if (!window.startModeAvailable()) { toast('Tryb na start wymaga migracji #89 (student-start-mode.sql) w Supabase.', 3400); return; }
+    const ids = selectedIds();
+    if (!ids.length) { toast('☑️ Najpierw zaznacz uczniów na liście („Zaznacz” u góry — cała klasa).', 3400); return; }
+    _sel = ids;
+    const profs = ids.map(id => (_allProfiles || []).find(p => p.id === id)).filter(Boolean);
+    const studs = profs.filter(p => !isStaffProfile(p));
+    const staffN = profs.length - studs.length;
+    const cnt = {}; let none = 0;
+    studs.forEach(p => { if (MODES.includes(p.start_mode)) cnt[p.start_mode] = (cnt[p.start_mode] || 0) + 1; else none++; });
+    const now = Object.keys(cnt).map(m => cnt[m] + ' × ' + escHtml(label(m)));
+    if (none) now.push(none + ' bez trybu');
+    document.getElementById('startModeCount').innerHTML = '👥 Zaznaczeni uczniowie: <b>' + studs.length + '</b>'
+      + (now.length ? ' · teraz: ' + now.join(', ') : '')
+      + (staffN ? '<br><span style="color:var(--muted);font-weight:600">Konta nauczycieli / opiekunów (' + staffN + ') zostaną pominięte.</span>' : '');
+    // wszyscy mają ten sam tryb → zaznacz go
+    const same = new Set(studs.map(p => MODES.includes(p.start_mode) ? p.start_mode : ''));
+    const pre = same.size === 1 ? [...same][0] : '';
+    const opt = (val, txt, extra) => '<label style="display:flex;align-items:center;gap:8px;padding:7px 10px;border:1.5px solid var(--border);border-radius:9px;cursor:pointer;background:var(--surface2);font-size:.8rem;font-weight:700;color:var(--text)">'
+      + '<input type="radio" name="startMode" value="' + val + '"' + (pre && pre === val ? ' checked' : '') + ' style="accent-color:var(--accent);flex-shrink:0">'
+      + '<span>' + txt + (extra || '') + '</span></label>';
+    const grid = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:5px;margin-bottom:8px';
+    const hdr = 'font-size:.6rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin:2px 2px 4px';
+    let html = '';
+    GROUPS.forEach(g => {
+      html += '<div style="' + hdr + '">' + g[0] + '</div><div style="' + grid + '">'
+        + g[1].map(m => opt(m, escHtml(label(m)), (typeof PREMIUM_MODES !== 'undefined' && PREMIUM_MODES.includes(m)) ? ' <span title="Tryb Premium" aria-label="tryb Premium">⭐</span>' : '')).join('')
+        + '</div>';
+    });
+    html += '<div style="' + grid + '">' + opt('', '— wyłącz (zwykły start) —') + '</div>';
+    document.getElementById('startModeList').innerHTML = html;
+    const msg = document.getElementById('startModeMsg'); msg.textContent = ''; msg.style.color = '';
+    document.getElementById('startModeApplyBtn').disabled = false;
+    _ret = document.activeElement;
+    const ov = document.getElementById('startModeModal');
+    ov.style.display = 'flex';
+    if (!ov._smKeys) {
+      ov._smKeys = true;
+      ov.addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); window.closeStartModeModal(); } });
+    }
+    setTimeout(() => { try { (ov.querySelector('input[name="startMode"]:checked') || ov.querySelector('input[name="startMode"]')).focus(); } catch(e) {} }, 30);
+  };
+  window.closeStartModeModal = function(){
+    document.getElementById('startModeModal').style.display = 'none';
+    const el = _ret; _ret = null;
+    try { if (el && el !== document.body && document.contains(el) && el.focus) el.focus({ preventScroll: true }); } catch(e) {}
+  };
+  window.applyStartMode = async function(){
+    const r = document.querySelector('#startModeList input[name="startMode"]:checked');
+    const msg = document.getElementById('startModeMsg'), btn = document.getElementById('startModeApplyBtn');
+    if (!r) { msg.style.color = 'var(--danger)'; msg.textContent = '⚠️ Wybierz tryb albo „wyłącz”.'; return; }
+    const mode = r.value || null, ids = _sel.slice();
+    if (!ids.length) { window.closeStartModeModal(); return; }
+    btn.disabled = true; msg.style.color = 'var(--muted)'; msg.textContent = '⏳ Zapisuję…';
+    let n;
+    try { n = await DB.setStudentsStartMode(ids, mode); }
+    catch(e) { msg.style.color = 'var(--danger)'; msg.textContent = '❌ ' + (e.message || e); btn.disabled = false; return; }
+    btn.disabled = false;
+    if (n === null) { msg.style.color = 'var(--danger)'; msg.textContent = 'Uruchom migrację #89 (student-start-mode.sql) w Supabase.'; return; }
+    // Lista klasy — zmiana na miejscu (bez ponownego wczytywania wszystkich profili, mniej zapytań do bazy);
+    // gdy baza pominęła kogoś, kogo uznaliśmy za ucznia — wczytaj profile od nowa.
+    const studs = ids.map(id => (_allProfiles || []).find(p => p.id === id)).filter(p => p && !isStaffProfile(p));
+    if (n === studs.length) studs.forEach(p => { p.start_mode = mode; });
+    else { try { _allProfiles = await DB.loadAllProfiles(); } catch(e) {} }
+    window.closeStartModeModal();
+    const skipped = ids.length - n;
+    toast((mode ? '🚀 Tryb na start: ' + label(mode) + ' — ' : '🚀 Wyłączono tryb na start — ')
+      + 'dla ' + n + ' ' + plural(n, 'ucznia', 'uczniów', 'uczniów') + (skipped > 0 ? ' (pominięto: ' + skipped + ')' : ''), 3600);
+    _bulkSelected.clear();
+    if (typeof bulkRefreshToolbar === 'function') bulkRefreshToolbar();
+    renderClassStudents(_curClassMembers, _allProfiles);
+  };
+
+  // ── Uczeń: przy starcie aplikacji ──────────────────────────────
+  let _arm = null, _t = null, _going = false;
+  const dayKey = () => 'fiszki_start_mode_day_' + ((DB.getUserId && DB.getUserId()) || '');
+  // Adres z linku (?go=, ?game=, ?pin=, #/…) ma pierwszeństwo — wtedy bez przekierowania.
+  function deepLink(){
+    if ((location.hash || '').replace(/^#\/?/, '')) return true;
+    try {
+      const p = new URLSearchParams(location.search);
+      return ['go', 'game', 'book', 'unit', 'pin', 'live_pin', 'duel', 'halloween'].some(k => p.has(k));
+    } catch(e) { return false; }
+  }
+  // Rozdział, którego uczeń ostatnio się uczył (najnowsze lastStudied). Klucze techniczne
+  // (np. „💪 Powtórka błędów”) pomijamy; brak dostępu do podręcznika → null (zwykły start).
+  function lastUnit(){
+    const up = (DB.getUser(currentUser) || {}).unitProgress || {};
+    let best = null;
+    Object.keys(up).forEach(k => {
+      const i = k.indexOf('__');
+      if (i <= 0) return;
+      const bookId = k.slice(0, i), unitKey = k.slice(i + 2);
+      const v = up[k] && up[k].lastStudied;
+      const t = typeof v === 'number' ? v : (Number(v) || Date.parse(v) || 0);
+      if (!t) return;
+      const b = BOOKS[bookId];
+      if (b && unitKey !== 'all' && !(b.units && b.units[unitKey])) return;
+      if (!best || t > best.t) best = { bookId: bookId, unitKey: unitKey, t: t };
+    });
+    if (!best) return null;
+    const book = BOOKS[best.bookId];
+    if (!book || !bookAllowedForMe(book)) return null;
+    const u = getUnitsWithCustom(best.bookId)[best.unitKey];
+    if (!u || !(u.words || []).length) return null;
+    return { bookId: best.bookId, unitKey: best.unitKey };
+  }
+  const WAIT_SEL = '.modal-overlay,.tmsg-ov,.sf-ov,.sfc-ov,.badge-reveal,.pmenu,#swUpdateBanner,#dailyDoneModal,[role="dialog"],[role="alertdialog"],[aria-modal="true"]';
+  function overlayOpen(){
+    return Array.prototype.some.call(document.querySelectorAll(WAIT_SEL), el => {
+      if (el.id === 'sowie-cookie-banner' || !el.getClientRects().length) return false;   // pasek o danych na dole nie blokuje
+      const cs = getComputedStyle(el);
+      return cs.display !== 'none' && cs.visibility !== 'hidden';
+    });
+  }
+  // Wywoływane z BOOT po wczytaniu profilu i postępów (przed obsługą ?go=, która czyści adres).
+  window.startModeBoot = function(){
+    if (isGuest || typeof DB === 'undefined' || !DB.getMyStartMode) return;
+    if (isCurrentUserAdmin() || isCurrentUserTeacher() || isCurrentUserParent()) return;   // tylko uczniowie
+    const mode = DB.getMyStartMode();
+    if (!mode || !MODES.includes(mode) || deepLink()) return;
+    const day = _localDay(), key = dayKey();
+    try { if (localStorage.getItem(key) === day) return; } catch(e) { return; }   // bez pamięci „raz dziennie” nie przekierowujemy
+    const last = lastUnit();
+    if (!last || isPremiumMode(mode)) return;   // jeszcze żaden rozdział / brak dostępu / tryb Premium u ucznia Free → zwykły start
+    try { localStorage.setItem(key, day); } catch(e) { return; }
+    _arm = { mode: mode, bookId: last.bookId, unitKey: last.unitKey, t0: Date.now(), tries: 0 };
+    clearTimeout(_t); _t = setTimeout(tryGo, 1200);
+  };
+  // showScreen → uczeń sam wybrał coś innego, zanim zdążyliśmy przejść — nie przeszkadzamy
+  window._smOnScreen = function(id){
+    if (_arm && !_going && id !== 'sLang') { _arm = null; clearTimeout(_t); _t = null; }
+  };
+  function tryGo(){
+    _t = null;
+    const a = _arm;
+    if (!a) return;
+    const act = document.querySelector('.screen.active');
+    if (!act || act.id !== 'sLang' || document.body.classList.contains('sf-focus-on')) { _arm = null; return; }
+    // Najpierw okienka startowe: nowa praca domowa (#88), wiadomość od nauczyciela / zaproszenie (#87),
+    // „Co nowego”, pupil… — przejdziemy po ich zamknięciu (uczeń nadal na ekranie startowym).
+    const hw = typeof window._hmwStartPending === 'function' ? window._hmwStartPending() : '';
+    const busy = document.hidden || overlayOpen() || hw === 'new' || (hw === 'loading' && Date.now() - a.t0 < 8000)
+      || (typeof _liBusy === 'function' && _liBusy());
+    if (busy) {
+      if (++a.tries <= 60) _t = setTimeout(tryGo, 1500); else _arm = null;
+      return;
+    }
+    _arm = null;
+    go(a);
+  }
+  function go(a){
+    const book = BOOKS[a.bookId];
+    if (!book || !bookAllowedForMe(book) || isPremiumMode(a.mode)) return;
+    const u = getUnitsWithCustom(a.bookId)[a.unitKey];
+    if (!u || !(u.words || []).length) return;
+    _going = true;
+    try {
+      // jak kliknięcie podręcznika (#/book/…): „wstecz” w przeglądarce / na Androidzie wraca na ekran startowy
+      // (powrót do wpisu z pushState nie wywołuje hashchange — stąd jednorazowy popstate)
+      try {
+        history.pushState(null, '', location.pathname + (location.search || '') + '#/book/' + a.bookId);
+        const back = () => {
+          if ((location.hash || '').replace(/^#\/?/, '')) return;   // pozostałe adresy #/… obsługuje router
+          window.removeEventListener('popstate', back);
+          showScreen('sLang');
+        };
+        window.addEventListener('popstate', back);
+      } catch(e) {}
+      selectBook(a.bookId);
+      startStudy(a.unitKey);
+    } catch(e) {
+      console.warn('[start mode]', e && e.message || e);
+      return;
+    } finally { _going = false; }
+    const where = (book.icon ? book.icon + ' ' : '') + u.name;
+    if (!pool.length) {   // na dziś wszystko w tym rozdziale — zostaje wybór trybu (sowa podpowiada „Ucz się dalej”)
+      toast('👩‍🏫 Nauczyciel ustawił Ci na start: ' + label(a.mode) + ' · ' + where + ' — na dziś wszystko tu zrobione 🎉', 4800);
+      return;
+    }
+    toast('👩‍🏫 Nauczyciel ustawił Ci na start: ' + label(a.mode) + ' · ' + where, 4200);
+    // chwila na zdania / fiszki kontekstowe podręcznika (wczytuje je selectBook), potem „klik” w tryb
+    setTimeout(() => {
+      const s = document.getElementById('sStudy');
+      if (!s || !s.classList.contains('active') || document.body.classList.contains('sf-focus-on')) return;   // uczeń wybrał sam
+      if (currentBookId !== a.bookId || currentUnitKey !== a.unitKey) return;
+      try { setMode(a.mode); } catch(e) { console.warn('[start mode setMode]', e && e.message || e); }
+    }, 600);
+  }
+})();
+
+// ══════════════════════════════════════════════
 //  BOOT
 // ══════════════════════════════════════════════
 (async function() {
@@ -24134,6 +24367,10 @@ function buildAlphaKeys(inputId, answer) {
     const e = document.getElementById('owlMsg');
     if (e) { e.textContent = 'Cześć! Wybierz podręcznik! 📖'; e.classList.add('show'); setTimeout(() => e.classList.remove('show'), 4200); }
   }, 350);
+
+  // 🚀 Tryb na start (#89): uczeń raz dziennie trafia od razu do trybu ustawionego przez nauczyciela.
+  // Przed obsługą ?go= / ?game= (czyszczą adres) — adres z linku ma pierwszeństwo.
+  try { if (!isGuest && typeof window.startModeBoot === 'function') window.startModeBoot(); } catch(e) { console.warn('[BOOT] start mode:', e.message || e); }
 
   // ═══ Obsluga linkow z teacher.html (URL ?go=xxx) ═══
   // teacher.html jest osobna strona z menu kafelkow — kazdy linkuje
@@ -25208,6 +25445,7 @@ function buildAlphaKeys(inputId, answer) {
   <button class="btn-sm" id="bulkBtnPlan" onclick="openBulkPlanModal()" title="Zmień typ konta zaznaczonym" style="font-size:.74rem">🎫 Typ konta</button>
   <button class="btn-sm" id="bulkBtnBanners" onclick="openBulkBannersModal()" title="Włącz/wyłącz bannery Premium" style="font-size:.74rem">🔕 Bannery</button>
   <button class="btn-sm" onclick="openBulkBooksModal()" title="Przydziel podręczniki" style="font-size:.74rem">📚 Podręczniki</button>
+  <button class="btn-sm" id="bulkBtnStartMode" onclick="openStartModeModal()" title="Tryb nauki, do którego zaznaczeni uczniowie trafią raz dziennie przy pierwszym wejściu" style="font-size:.74rem;display:none">🚀 Tryb na start</button>
   <button class="btn-sm" id="bulkBtnRemoveClass" onclick="bulkRemoveFromClass()" title="Usuń zaznaczone osoby z tej klasy (konta zostają)" style="font-size:.74rem;display:none">🚪 Usuń z klasy</button>
   <button class="btn-sm" id="bulkBtnDelete" onclick="bulkDeleteUsers()" title="Usuń zaznaczone konta z bazy danych na stałe" style="font-size:.74rem;color:var(--danger);border-color:rgba(255,118,117,.45)">🗑️ Usuń z bazy</button>
   <button class="btn-sm" onclick="bulkClearSelection()" title="Wyczyść zaznaczenie" style="font-size:.74rem;color:var(--muted)">✕</button>
@@ -25263,6 +25501,24 @@ function buildAlphaKeys(inputId, answer) {
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button class="btn-modal-cancel" onclick="closeBulkBannersModal()">Anuluj</button>
       <button class="btn-modal-save" id="bulkBannersApplyBtn" onclick="applyBulkBanners()">Zastosuj</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ Modal: 🚀 Tryb na start (#89) — nauczyciel / admin, zaznaczeni uczniowie klasy ══ -->
+<div class="modal-overlay" id="startModeModal" style="display:none" onclick="if(event.target===this)closeStartModeModal()">
+  <div class="modal-box" style="max-width:480px" role="dialog" aria-modal="true" aria-labelledby="startModeTitle">
+    <div id="startModeTitle" style="font-family:'Playfair Display',serif;font-size:1.15rem;color:var(--accent);margin-bottom:6px">🚀 Tryb na start</div>
+    <div style="font-size:.74rem;color:var(--muted);margin-bottom:10px;font-weight:600;line-height:1.5">
+      Raz dziennie, przy pierwszym wejściu, uczeń trafi od razu do tego trybu w rozdziale, którego ostatnio się uczył. Może z niego wyjść „← Wróć” i korzystać z aplikacji jak zwykle.
+    </div>
+    <div id="startModeCount" style="font-size:.74rem;font-weight:700;color:var(--text);margin-bottom:10px;line-height:1.45"></div>
+    <div id="startModeList" role="radiogroup" aria-labelledby="startModeTitle" style="max-height:50vh;overflow-y:auto;margin-bottom:10px"></div>
+    <div style="font-size:.64rem;color:var(--muted);font-weight:600;margin-bottom:8px;line-height:1.45">⭐ — tryb Premium: uczeń z kontem Free trafi wtedy na zwykły ekran startowy. Zwykły start także wtedy, gdy uczeń nie uczył się jeszcze żadnego rozdziału.</div>
+    <div id="startModeMsg" role="status" style="font-size:.72rem;min-height:14px;font-weight:600;margin-bottom:8px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn-modal-cancel" onclick="closeStartModeModal()">Anuluj</button>
+      <button class="btn-modal-save" id="startModeApplyBtn" onclick="applyStartMode()">Zapisz</button>
     </div>
   </div>
 </div>
@@ -27914,6 +28170,9 @@ function buildAlphaKeys(inputId, answer) {
       // „Usuń z klasy" tylko w kontekście klasy (w „Dostęp" nie ma klasy)
       const rmClassBtn = document.getElementById('bulkBtnRemoveClass');
       if (rmClassBtn) rmClassBtn.style.display = (_bulkContext === 'class') ? '' : 'none';
+      // „🚀 Tryb na start” (#89) — w klasie, gdy baza ma migrację
+      const smBtn = document.getElementById('bulkBtnStartMode');
+      if (smBtn) smBtn.style.display = (_bulkContext === 'class' && typeof window.startModeAvailable === 'function' && window.startModeAvailable()) ? '' : 'none';
     } else {
       tb.style.display = 'none';
     }
@@ -33629,6 +33888,14 @@ ${bodyHtml}
   let _hmwT = null, _hmwTries = 0, _hmwRet = null;
   const _hmwPopEl = () => document.getElementById('hmwPopup');
   window._hmwPopupOpen = () => { const o = _hmwPopEl(); return !!(o && o.style.display !== 'none'); };
+  // „🚀 Tryb na start” (#89) przechodzi do nauki dopiero po tym okienku: 'loading' — prace jeszcze
+  // się wczytują, 'new' — okienko otwarte albo czeka nowa praca do pokazania, '' — nic nie czeka.
+  window._hmwStartPending = function(){
+    if (isGuest || !DB.loadMyStudentNotes) return '';
+    if (window._hmwPopupOpen()) return 'new';
+    if (!Array.isArray(window._snMyNotes)) return 'loading';
+    return _hmwNew().length ? 'new' : '';
+  };
   function _hmwNew(){
     if (!DB.hasHomeworkTasks || DB.hasHomeworkTasks() !== true) return [];   // bez migracji #88 nie ma „widziane”
     return _hmwMine().filter(n => n.kind === 'homework' && !n.done_at && n.seen_at === null && !_hmwShown.has(n.id)
