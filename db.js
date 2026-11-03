@@ -522,6 +522,23 @@ const DB = (() => {
     return { totalDue, unitsDue: perUnit, nextDueDays };
   }
 
+  // Prognoza powtórek (powiadomienia push, #91): ile słówek będzie do powtórki w podanych
+  // chwilach (ms) — te same zasady co getReviewQueue (ćwiczone, nie „🙈”, bez ignorowanych podręczników).
+  function getDueForecast(times) {
+    const ts = (Array.isArray(times) ? times : []).map(Number);
+    const out = ts.map(() => 0);
+    if (!_profile || !_profile.unitProgress || !ts.length) return out;
+    Object.entries(_profile.unitProgress).forEach(([key, prog]) => {
+      const ws = prog && prog.wordStates;
+      if (!ws || isBookIgnored(key.split('__')[0])) return;
+      Object.values(ws).forEach(s => {
+        if (!s || typeof s !== 'object' || s.ignored || (s.reps || 0) < 1 || !s.nextReview) return;
+        for (let i = 0; i < ts.length; i++) if (s.nextReview <= ts[i]) out[i]++;
+      });
+    });
+    return out;
+  }
+
   // ═══════════════════════════════════════════════════════════════
   //  SERIA DNI
   // ═══════════════════════════════════════════════════════════════
@@ -2361,6 +2378,56 @@ const DB = (() => {
         if (error) console.warn('[DB] Błąd zapisu pupila:', error.message);
       });
     }, 800);
+  }
+
+  // ── 🔔 Powiadomienia push (migracja #91 + Edge Function „push-reminders”) ──
+  // false = brak migracji #91, null = inny błąd (np. sieć) — aplikacja zostaje wtedy
+  // przy lokalnych przypomnieniach (timer w otwartej karcie).
+  const _missing91 = e => /push_subscribe|push_update|push_unsubscribe|PGRST202|42883|42P01/i.test(((e && e.code) || '') + ' ' + ((e && e.message) || ''));
+  async function _pushRpc(fn, args) {
+    if (!_userId) return null;
+    try {
+      const { data, error } = await supabase.rpc(fn, args);
+      if (error) {
+        if (_missing91(error)) return false;
+        console.warn('[DB] ' + fn + ':', error.message);
+        return null;
+      }
+      return data;
+    } catch (e) { return null; }
+  }
+  // Zapis subskrypcji tej przeglądarki (endpoint przechodzi na bieżące konto) → {ok, server}.
+  // server = Edge Function działa (uruchomiła się w ostatnich 3 h).
+  async function pushSubscribe({ endpoint, p256dh, auth, hour, tz, ua }) {
+    return _pushRpc('push_subscribe', { p_endpoint: endpoint, p_p256dh: p256dh, p_auth: auth,
+      p_hour: Math.round(hour) || 17, p_tz: tz || null, p_ua: ua ? String(ua).slice(0, 200) : null });
+  }
+  // Tani zapis prognozy (godzina, słówka do powtórki dziś / w kolejnych dniach, pupil) → {found, server}.
+  async function pushUpdate({ endpoint, hour, due, ahead, on, pet, tz }) {
+    return _pushRpc('push_update', { p_endpoint: endpoint, p_hour: Math.round(hour) || null,
+      p_due_count: Math.max(0, Math.round(due) || 0), p_pet: pet || null,
+      p_due_ahead: Array.isArray(ahead) ? ahead.slice(0, 7).map(n => Math.max(0, Math.round(n) || 0)) : null,
+      p_due_on: on || null, p_tz: tz || null });
+  }
+  async function pushUnsubscribe(endpoint) {
+    if (!endpoint) return null;
+    return _pushRpc('push_unsubscribe', { p_endpoint: endpoint });
+  }
+  // Próbne powiadomienie na własne urządzenia (Edge Function, tryb „test”). Rzuca Error z polskim komunikatem.
+  async function pushTest() {
+    if (!_userId) throw new Error('Zaloguj się.');
+    const { data, error } = await supabase.functions.invoke('push-reminders', { body: { action: 'test' } });
+    if (error) {
+      let msg = error.message || 'Nie udało się wysłać próbnego powiadomienia.';
+      try {
+        const body = error.context && typeof error.context.json === 'function' ? await error.context.json() : null;
+        if (body && body.message) msg = body.message;
+      } catch (e) { /* zostaje ogólny komunikat */ }
+      if (/Failed to send|FunctionsFetchError|not found|404/i.test(msg)) msg = 'Powiadomienia push nie są jeszcze włączone na serwerze (Edge Function „push-reminders”).';
+      throw new Error(msg);
+    }
+    if (data && data.error) throw new Error(data.message || data.error);
+    return data || {};
   }
 
   // ── AI (Supabase Edge Function „ai”, migracja #73) ──
@@ -5519,6 +5586,7 @@ const DB = (() => {
     saveUnitProgress,
     getUnitProgress,
     getReviewQueue,
+    getDueForecast,
     getDueIndicesForUnit,
     getBookProgress,
     // seria
@@ -5619,6 +5687,7 @@ const DB = (() => {
     loadBookNotesBoth,
     getPetServer,
     savePetServer,
+    pushSubscribe, pushUpdate, pushUnsubscribe, pushTest,
     aiCall,
     loadGrammarSets,
     saveGrammarSet,

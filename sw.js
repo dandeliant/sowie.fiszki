@@ -5,7 +5,7 @@
 //  cache-first dla fontow i CDN. Nowy SW czeka na zgode klienta
 //  (postMessage SKIP_WAITING) — pokaz banera "Nowa wersja dostepna".
 // ═══════════════════════════════════════════════════════
-const CACHE_NAME = 'sowie-fiszki-v1.241';
+const CACHE_NAME = 'sowie-fiszki-v1.242';
 
 const PRECACHE_ASSETS = [
   './',
@@ -74,6 +74,11 @@ const PRECACHE_ASSETS = [
   './manifest.json',
   './icon.svg',
   './icon-maskable.svg',
+  './apple-touch-icon.png',
+  './icon-192.png',
+  './icon-512.png',
+  './icon-maskable-512.png',
+  './badge-96.png',
   './og-image.svg',
   './MyTracingFont.ttf',
   'https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Playfair+Display:wght@700&display=swap',
@@ -112,23 +117,67 @@ self.addEventListener('message', event => {
   if (event.data && event.data.type === 'GET_VERSION' && event.ports && event.ports[0]) {
     event.ports[0].postMessage(CACHE_NAME);
   }
+  // app.html pyta, czy aktywny SW obsługuje powiadomienia push (#91). Starsza wersja SW
+  // nie odpowie — wtedy aplikacja nie zapisuje subskrypcji (push bez obsługi = „cichy” push,
+  // za który iOS cofa zgodę) i czeka na aktualizację.
+  if (event.data && event.data.type === 'PUSH_CAPS' && event.ports && event.ports[0]) {
+    event.ports[0].postMessage({ push: true });
+  }
+});
+
+// Powiadomienia push — codzienne przypomnienia z Edge Function „push-reminders”
+// (migracja #91). Treść: JSON {title, body, url, tag, action}. Powiadomienie
+// pokazujemy ZAWSZE (także przy pustej / zepsutej treści) — iOS cofa zgodę
+// na powiadomienia po „cichych” pushach.
+self.addEventListener('push', event => {
+  let d = null;
+  try { d = event.data ? event.data.json() : null; } catch (e) {
+    try { d = { body: event.data ? event.data.text() : '' }; } catch (e2) { d = null; }
+  }
+  if (!d || typeof d !== 'object') d = {};
+  const title = String(d.title || '🦉 Sowie Fiszki').slice(0, 120);
+  const url = (typeof d.url === 'string' && /^\/(?!\/)/.test(d.url)) ? d.url : '/app.html';
+  event.waitUntil(self.registration.showNotification(title, {
+    body: String(d.body || '📚 Czas na krótką powtórkę angielskiego!').slice(0, 400),
+    icon: '/icon-192.png',
+    badge: '/badge-96.png',
+    tag: String(d.tag || 'sowie-daily').slice(0, 64),
+    data: { url, action: d.action === 'review' ? 'review' : 'open' }
+  }));
+});
+
+// Przeglądarka wymieniła subskrypcję (np. wygasła) — zapisz nową z tym samym kluczem
+// VAPID i daj znać otwartym kartom; aplikacja przy następnym wejściu zapisze ją w bazie.
+self.addEventListener('pushsubscriptionchange', event => {
+  event.waitUntil((async () => {
+    try {
+      const old = event.oldSubscription;
+      const key = old && old.options && old.options.applicationServerKey;
+      if (!event.newSubscription && key) {
+        await self.registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+      }
+      const cs = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      cs.forEach(c => c.postMessage({ type: 'PUSH_SUBSCRIPTION_CHANGED' }));
+    } catch (e) { /* aplikacja odnowi subskrypcję przy następnym wejściu */ }
+  })());
 });
 
 // Notification click — otwiera aplikacje (jezeli juz otwarta -> focus,
-// jezeli nie -> nowa karta z #/review). Uzywane przez „Codzienne
-// przypomnienia" — uczen klika powiadomienie i ladnie ladowane jest
-// na ekran „Powtorki na dzis".
+// jezeli nie -> nowa karta z adresem z powiadomienia, np. /app.html?push=review).
+// Uzywane przez „Codzienne przypomnienia" (lokalne i push) — uczen klika
+// powiadomienie i trafia na ekran „Powtorki na dzis".
 self.addEventListener('notificationclick', event => {
   event.notification.close();
-  const targetUrl = (event.notification.data && event.notification.data.url) || '/app.html';
+  const data = event.notification.data || {};
+  const targetUrl = (typeof data.url === 'string' && /^\/(?!\/)/.test(data.url)) ? data.url : '/app.html';
   event.waitUntil((async () => {
     const allClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    // Jezeli karta z app.html juz otwarta -> focus
+    // Jezeli karta aplikacji juz otwarta (/app.html albo /app z manifestu) -> focus
     for (const c of allClients) {
-      if (c.url.includes('/app.html') && 'focus' in c) {
-        if (event.notification.data && event.notification.data.action === 'review') {
-          c.postMessage({ type: 'OPEN_REVIEW_QUEUE' });
-        }
+      let path = '';
+      try { path = new URL(c.url).pathname; } catch (e) {}
+      if ((path === '/app' || /\/app\.html$/.test(path)) && 'focus' in c) {
+        if (data.action === 'review') c.postMessage({ type: 'OPEN_REVIEW_QUEUE' });
         return c.focus();
       }
     }

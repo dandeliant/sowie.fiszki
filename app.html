@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-title" content="Sowie Fiszki">
 <meta name="application-name" content="Sowie Fiszki">
 <link rel="icon" type="image/svg+xml" href="icon.svg">
-<link rel="apple-touch-icon" href="icon.svg">
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
 <style>
 :root{
@@ -5268,6 +5268,8 @@ const isGuest = currentUser === '__guest__';
 async function logout() {
   if (!isGuest) {
     try { await DB.flush(); } catch(e) { /* ignoruj przy wylogowaniu */ }
+    // Przypomnienia push (#91): to urządzenie przestaje je dostawać dla tego konta (max 2,5 s)
+    try { if (typeof window._pushOnLogout === 'function') await window._pushOnLogout(); } catch(e) {}
   }
   await DB.logout();
   sessionStorage.removeItem('fiszki_user');
@@ -25123,16 +25125,18 @@ function buildAlphaKeys(inputId, answer) {
       <div id="brandingHint" style="font-size:.68rem;color:var(--muted);font-weight:600;margin-top:8px;line-height:1.4">💡 Logo i nazwa pojawią się w nagłówku PDF kart pracy i listy loginów uczniów.</div>
     </div>
 
-    <!-- Codzienne przypomnienia (PWA Notification API) -->
+    <!-- Codzienne przypomnienia (Web Push z Supabase #91 + lokalne Notification API w otwartej karcie) -->
     <div id="dailyReminderSection" style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:12px 16px;margin-bottom:14px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:8px;flex-wrap:wrap">
         <div style="font-size:.82rem;font-weight:800;color:var(--text)">🔔 Codzienne przypomnienia</div>
         <span id="reminderStatusBadge" style="font-size:.6rem;font-weight:800;color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:100px;padding:2px 9px">—</span>
       </div>
       <div style="font-size:.7rem;color:var(--muted);font-weight:600;line-height:1.45;margin-bottom:10px">
-        🦉 Dostaniesz powiadomienie o stałej porze (domyślnie 17:00) — gdy będziesz mieć słówka do powtórki albo Twój pupil będzie głodny, znudzony lub zmęczony (np. „🐼 Pandzia prosi o jedzenie – 5 minut nauki?”).
+        🦉 Codziennie o wybranej porze (domyślnie 17:00) przypomnimy Ci o nauce: ile słówek czeka na powtórkę i czego potrzebuje Twój pupil (np. „🐼 Pandzia prosi o jedzenie – 5 minut nauki?”).
       </div>
-      <label style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--surface);border:1px solid var(--border);border-radius:8px;cursor:pointer;margin-bottom:8px">
+      <!-- iPhone / iPad: powiadomienia tylko w aplikacji z ekranu początkowego (iOS 16.4+) — wypełnia refreshReminderUI() -->
+      <div id="reminderIosCard" style="display:none;background:rgba(116,185,255,.1);border:1px solid rgba(116,185,255,.4);border-radius:10px;padding:10px 12px;margin-bottom:8px;font-size:.72rem;color:var(--text);font-weight:600;line-height:1.5"></div>
+      <label id="reminderToggleRow" style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--surface);border:1px solid var(--border);border-radius:8px;cursor:pointer;margin-bottom:8px">
         <input type="checkbox" id="reminderEnabled" onchange="toggleDailyReminder()" style="accent-color:var(--accent2);width:16px;height:16px;cursor:pointer">
         <span style="flex:1;font-size:.78rem;font-weight:700;color:var(--text)">Włącz codzienne przypomnienie</span>
       </label>
@@ -25150,7 +25154,10 @@ function buildAlphaKeys(inputId, answer) {
           <option value="20">20:00 — przed snem</option>
           <option value="21">21:00</option>
         </select>
-        <div id="reminderHint" style="font-size:.66rem;color:var(--muted);font-weight:600;line-height:1.4">💡 Powiadomienia działają w Chrome / Edge / Firefox. Na iPhone wymaga PWA „Dodaj do ekranu początkowego".</div>
+        <div id="reminderHint" style="font-size:.66rem;color:var(--muted);font-weight:600;line-height:1.4">💡 Powiadomienie pojawi się, gdy Sowie Fiszki są otwarte (o tej godzinie lub później).</div>
+        <div id="reminderPushRow" style="display:none;margin-top:8px;text-align:right">
+          <button class="btn-sm" id="reminderTestBtn" onclick="sendTestPush()" style="padding:5px 11px;font-size:.72rem">📨 Wyślij próbne powiadomienie</button>
+        </div>
       </div>
     </div>
 
@@ -26511,19 +26518,21 @@ function buildAlphaKeys(inputId, answer) {
   };
 
   // ═══════════════════════════════════════════════
-  //  CODZIENNE PRZYPOMNIENIA (PWA Notification API)
+  //  CODZIENNE PRZYPOMNIENIA (Web Push #91 + lokalne Notification API)
   // ═══════════════════════════════════════════════
-  // Lokalne przypomnienia oparte o Notification API + Service Worker.
-  // Ograniczenia:
-  // - Dziala gdy aplikacja jest otwarta w karcie LUB gdy uzytkownik
-  //   wraca po zaplanowanej godzinie (dogonimy go „on next visit").
-  // - Pelny push notification (gdy karta zamknieta) wymaga VAPID +
-  //   serwerowej Edge Function — w roadmapie, na razie local-first.
+  // Dwie drogi:
+  // 1) Web Push (migracja #91 + Edge Function „push-reminders”, cron co godzinę):
+  //    serwer wysyła przypomnienie o wybranej godzinie także wtedy, gdy aplikacja
+  //    jest zamknięta (iPhone/iPad: tylko aplikacja z ekranu początkowego, iOS 16.4+).
+  // 2) Lokalnie (zapas): timer w otwartej karcie / „on next visit” po godzinie.
+  //    Milknie, gdy push „przejął” przypomnienia (_pushActive) — bez duplikatów.
   //
   // Klucze localStorage (per uzytkownik):
   //   fiszki_reminder_enabled_<user> — '1' / '0'
   //   fiszki_reminder_hour_<user>    — '7' .. '21'
   //   fiszki_reminder_lastFired_<user> — '2026-05-09' (data ostatniego strzału)
+  //   fiszki_reminder_push_<user>    — {ep, server, at, sig, snapAt} (subskrypcja push zapisana w bazie)
+  //   fiszki_push_missing            — ms (brak migracji #91 → ponowna próba po 12 h)
 
   function _reminderKey(field) {
     const u = currentUser || 'guest';
@@ -26547,34 +26556,272 @@ function buildAlphaKeys(inputId, answer) {
     return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
   }
 
+  // ── 🔔 Web Push (migracja #91 + Edge Function „push-reminders”) ──
+  // Subskrypcja przeglądarki → DB.pushSubscribe. Prognoza (ile słówek będzie do powtórki
+  // o godzinie przypomnienia dziś i w 7 kolejnych dniach + stan pupila) → DB.pushUpdate:
+  // najwyżej co 30 min i tylko po zmianie (limit operacji dysku w Supabase Free), raz dziennie
+  // zawsze (serwer wie, że aplikacja jest używana). Lokalne przypomnienie milknie dopiero,
+  // gdy subskrypcja jest zapisana i funkcja na serwerze działa (server: true).
+  // Klucz publiczny VAPID — para do sekretu VAPID_PRIVATE_KEY funkcji (push-keys.local.txt, poza repo).
+  const PUSH_VAPID_PUBLIC = 'BH8sWXKcLad_g3verG7SvrmzFS3FEXPb1fgT51VxlYwV-sO_H4G_OthfIYJWGPVbUsubNg_MNXyCS-CiBB8yVwg';
+  const PUSH_SNAP_MS = 30 * 60 * 1000;
+  function _b64uBytes(s) {
+    const b = atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4));
+    const out = new Uint8Array(b.length);
+    for (let i = 0; i < b.length; i++) out[i] = b.charCodeAt(i);
+    return out;
+  }
+  function _pushState() { try { return JSON.parse(localStorage.getItem(_reminderKey('push')) || 'null'); } catch(e) { return null; } }
+  function _setPushState(s) { try { if (s) localStorage.setItem(_reminderKey('push'), JSON.stringify(s)); else localStorage.removeItem(_reminderKey('push')); } catch(e) {} }
+  function _pushMissingRecently() { try { return Date.now() - (+localStorage.getItem('fiszki_push_missing') || 0) < 12 * 3600e3; } catch(e) { return false; } }
+  function _pushSupported() {
+    return !isGuest && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window
+      && !!(window.DB && DB.pushSubscribe && DB.pushUpdate);
+  }
+  // Push „przejął” przypomnienia: subskrypcja zapisana, funkcja działa (sprawdzone < 3 dni temu).
+  function _pushActive() {
+    const st = _pushState();
+    return !!(st && st.ep && st.server && Date.now() - (st.at || 0) < 3 * 864e5
+      && 'Notification' in window && Notification.permission === 'granted' && _getReminderPref().enabled);
+  }
+  function _pushTz() { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Warsaw'; } catch(e) { return 'Europe/Warsaw'; } }
+  // iPhone / iPad (także iPad z UA komputera Mac): wersja iOS i czy aplikacja działa z ekranu początkowego.
+  function _iosInfo() {
+    const ua = navigator.userAgent || '';
+    const ipadDesk = /Macintosh/.test(ua) && (navigator.maxTouchPoints || 0) > 1;
+    if (!/iPad|iPhone|iPod/.test(ua) && !ipadDesk) return null;
+    const m = ua.match(/OS (\d+)[_.](\d+)/) || ua.match(/Version\/(\d+)\.(\d+)/);
+    const ver = m ? (+m[1]) + (+m[2]) / 100 : null;
+    let standalone = navigator.standalone === true;
+    try { standalone = standalone || matchMedia('(display-mode: standalone)').matches; } catch(e) {}
+    return { ver, standalone, old: ver !== null && ver < 16.04 };
+  }
+  // Najbliższe przypomnienie (dziś o tej godzinie, jeśli jeszcze nie minęła; inaczej jutro) + 7 kolejnych dni.
+  function _reminderTimes(hour) {
+    const t0 = new Date(); t0.setHours(hour, 0, 0, 0);
+    if (t0.getTime() <= Date.now()) t0.setDate(t0.getDate() + 1);
+    const out = [];
+    for (let i = 0; i < 8; i++) { const t = new Date(t0); t.setDate(t0.getDate() + i); out.push(t.getTime()); }
+    return out;
+  }
+  function _ymd(ms) { const d = new Date(ms); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
+  // Czego pupil będzie potrzebował w chwili „at” (spadek potrzeb jak w petTick) — tylko do wykrycia zmiany;
+  // właściwy tekst liczy funkcja na serwerze w chwili wysyłki.
+  function _petNeedAt(p, at) {
+    if (!p) return '-';
+    if (p.egg) return 'egg';
+    let h = p.h, m = p.m, e = p.en, t = p.t || Date.now(), i = 0;
+    while (at - t >= 3600e3 && i < 168) {
+      const hr = new Date(t).getHours();
+      if (!(hr >= 22 || hr < 7)) { h = Math.max(5, h - 4); m = Math.max(5, m - 3); e = Math.max(5, e - 3); }
+      t += 3600e3; i++;
+    }
+    const lo = Math.min(h, m, e);
+    return lo >= 60 ? 'ok' : (lo === h ? 'h' : (lo === m ? 'm' : 'e'));
+  }
+  function _pushSnapshotData(hour) {
+    const times = _reminderTimes(hour);
+    let f = null;
+    try { if (DB.getDueForecast) f = DB.getDueForecast(times); } catch(e) {}
+    if (!f) { let n = 0; try { const q = DB.getReviewQueue(); n = (q && q.totalDue) || 0; } catch(e) {} f = [n]; }
+    let pet = null;
+    try { if (typeof window.sfPetPushSnapshot === 'function') pet = window.sfPetPushSnapshot(); } catch(e) {}
+    return { due: f[0] || 0, ahead: f.length > 1 ? f.slice(1, 8) : null, on: _ymd(times[0]), pet,
+             needs: pet ? times.map(t => _petNeedAt(pet, t)).join(',') : '-' };
+  }
+  // Czy aktywny Service Worker ma obsługę „push” (sw.js z #91)? Starszy nie odpowie na PUSH_CAPS —
+  // wtedy nie zapisujemy subskrypcji (iOS cofa zgodę za push bez powiadomienia); po aktualizacji SW
+  // _pushBoot zapisze ją sam.
+  function _swHandlesPush(reg) {
+    const w = reg && reg.active;
+    if (!w) return Promise.resolve(false);
+    return new Promise(res => {
+      const ch = new MessageChannel();
+      const t = setTimeout(() => res(false), 2000);
+      ch.port1.onmessage = e => { clearTimeout(t); res(!!(e.data && e.data.push)); };
+      try { w.postMessage({ type: 'PUSH_CAPS' }, [ch.port2]); } catch(e) { clearTimeout(t); res(false); }
+    });
+  }
+  function _pushKeyOk(sub) {
+    try {
+      const k = sub.options && sub.options.applicationServerKey;
+      if (!k) return true;
+      const a = new Uint8Array(k), b = _b64uBytes(PUSH_VAPID_PUBLIC);
+      return a.length === b.length && a.every((v, i) => v === b[i]);
+    } catch(e) { return true; }
+  }
+  // Zapis prognozy. mode: 'force' (zawsze), 'hidden' (karta schowana — po zmianie, max co 2 min),
+  // brak (po zmianie, max co 30 min; pierwszy raz danego dnia — zawsze).
+  let _pushBusy = false, _pushResyncing = false;
+  async function _pushSnapshot(mode) {
+    if (_pushBusy || !_pushSupported()) return;
+    if (!(DB.isProfileLoaded && DB.isProfileLoaded())) return;
+    const st = _pushState(), pref = _getReminderPref();
+    if (!st || !st.ep || !pref.enabled) return;
+    const d = _pushSnapshotData(pref.hour), tz = _pushTz(), now = Date.now();
+    const sig = JSON.stringify([pref.hour, tz, d.due, d.ahead, d.on, d.pet && d.pet.n, d.pet && d.pet.e, d.needs]);
+    const sameDay = !!st.snapAt && _ymd(st.snapAt) === _ymd(now);
+    if (mode !== 'force' && sameDay && (sig === st.sig || now - st.snapAt < (mode === 'hidden' ? 120000 : PUSH_SNAP_MS))) return;
+    _pushBusy = true;
+    let resync = false;
+    try {
+      const r = await DB.pushUpdate({ endpoint: st.ep, hour: pref.hour, due: d.due, ahead: d.ahead, on: d.on, pet: d.pet, tz });
+      // null / false = brak migracji albo sieć — spróbujemy później
+      if (r && typeof r === 'object') {
+        if (r.found) _setPushState(Object.assign({}, st, { server: !!r.server, at: now, sig, snapAt: now }));
+        else { _setPushState(null); resync = true; }    // wiersz zniknął (wylogowanie, inne konto, wygasł)
+      }
+    } finally {
+      _pushBusy = false;
+      refreshReminderUI();
+    }
+    if (resync && !_pushResyncing) {
+      _pushResyncing = true;
+      try { await _pushSync(false); } finally { _pushResyncing = false; }
+    }
+  }
+  // Subskrypcja tej przeglądarki → baza (fromToggle = kliknięcie przełącznika). true = zapisana.
+  async function _pushSync(fromToggle) {
+    if (!_pushSupported() || Notification.permission !== 'granted') return false;
+    if (!fromToggle && _pushMissingRecently()) return false;
+    const pref = _getReminderPref();
+    if (!pref.enabled) return false;
+    try {
+      if (!(await navigator.serviceWorker.getRegistration())) return false;   // brak Service Workera — tylko lokalnie
+      const reg = await Promise.race([navigator.serviceWorker.ready,
+        new Promise((_, rej) => setTimeout(() => rej(new Error('SW_TIMEOUT')), 8000))]);
+      if (!(await _swHandlesPush(reg))) return false;     // stary SW — najpierw aktualizacja („Nowa wersja”)
+      let sub = await reg.pushManager.getSubscription();
+      if (sub && !_pushKeyOk(sub)) { try { await sub.unsubscribe(); } catch(e) {} sub = null; }   // nowe klucze VAPID
+      if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: _b64uBytes(PUSH_VAPID_PUBLIC) });
+      const j = sub.toJSON(), k = j.keys || {};
+      const st = _pushState();
+      if (!fromToggle && st && st.ep === j.endpoint && st.at && Date.now() - st.at < 7 * 864e5) {
+        await _pushSnapshot();                             // już zapisana — tylko prognoza (gdy się zmieniła)
+        return true;
+      }
+      const r = await DB.pushSubscribe({ endpoint: j.endpoint, p256dh: k.p256dh, auth: k.auth, hour: pref.hour, tz: _pushTz(), ua: navigator.userAgent });
+      if (r === false) {                                   // brak migracji #91 — zostają lokalne przypomnienia
+        try { localStorage.setItem('fiszki_push_missing', String(Date.now())); } catch(e) {}
+        _setPushState(null);
+        return false;
+      }
+      if (!r || !r.ok) return false;
+      try { localStorage.removeItem('fiszki_push_missing'); } catch(e) {}
+      _setPushState({ ep: j.endpoint, server: !!r.server, at: Date.now(), sig: '', snapAt: 0 });
+      await _pushSnapshot('force');
+      return true;
+    } catch(e) {
+      console.warn('[push] subskrypcja:', (e && e.message) || e);
+      return false;
+    } finally {
+      refreshReminderUI();
+    }
+  }
+  // Wyłączenie: usuń wiersz w bazie i subskrypcję przeglądarki.
+  async function _pushDisable() {
+    const st = _pushState();
+    _setPushState(null);
+    if (!('serviceWorker' in navigator)) return;
+    try {
+      const reg = await navigator.serviceWorker.getRegistration();
+      const sub = reg && reg.pushManager ? await reg.pushManager.getSubscription() : null;
+      const ep = (sub && sub.endpoint) || (st && st.ep);
+      if (ep && window.DB && DB.pushUnsubscribe) await DB.pushUnsubscribe(ep);
+      if (sub) await sub.unsubscribe();
+    } catch(e) { console.warn('[push] wyłączanie:', (e && e.message) || e); }
+  }
+  // Wylogowanie: to urządzenie przestaje dostawać przypomnienia tego konta (np. wspólny tablet).
+  // Subskrypcja przeglądarki i ustawienie zostają — po ponownym zalogowaniu _pushBoot zapisze ją znowu.
+  window._pushOnLogout = async function() {
+    const st = _pushState();
+    if (!st || !st.ep || !window.DB || !DB.pushUnsubscribe) return;
+    try { await Promise.race([DB.pushUnsubscribe(st.ep), new Promise(r => setTimeout(r, 2500))]); } catch(e) {}
+    _setPushState(null);
+  };
+  // Start aplikacji: kliknięte powiadomienie (?push=review) + odnowienie subskrypcji i prognozy.
+  async function _pushBoot() {
+    let openReview = false;
+    try {
+      const u = new URL(location.href);
+      if (u.searchParams.has('push')) {
+        openReview = u.searchParams.get('push') === 'review';
+        u.searchParams.delete('push');
+        history.replaceState(history.state, document.title, u.pathname + u.search + u.hash);
+      }
+    } catch(e) {}
+    if (isGuest || !window.DB) return;
+    for (let i = 0; i < 30 && !(DB.isProfileLoaded && DB.isProfileLoaded()); i++) await new Promise(r => setTimeout(r, 1000));
+    if (!(DB.isProfileLoaded && DB.isProfileLoaded())) return;
+    if (openReview && typeof openReviewQueue === 'function') { try { openReviewQueue(); } catch(e) {} }
+    if (_getReminderPref().enabled) await _pushSync(false);
+  }
+  // Próbne powiadomienie z serwera (przycisk w „Moje konto”).
+  window.sendTestPush = async function() {
+    const btn = document.getElementById('reminderTestBtn');
+    if (btn) btn.disabled = true;
+    try {
+      if (!_pushState()) { const ok = await _pushSync(true); if (!ok) throw new Error('Nie udało się zapisać tego urządzenia — spróbuj wyłączyć i włączyć przypomnienia.'); }
+      await _pushSnapshot('force');
+      const r = await DB.pushTest();
+      if (typeof toast === 'function') toast(r && r.sent ? '📨 Wysłano! Powiadomienie powinno pojawić się za chwilę.' : '⚠️ Nie udało się dostarczyć powiadomienia — spróbuj wyłączyć i włączyć przypomnienia.', 3600);
+    } catch(e) {
+      if (typeof toast === 'function') toast('⚠️ ' + ((e && e.message) || 'Błąd wysyłki.'), 4200);
+    } finally {
+      if (btn) setTimeout(() => { btn.disabled = false; }, 30000);
+    }
+  };
+
   // Aktualizuje stan UI w modalu „Moje konto"
   window.refreshReminderUI = function() {
     const cb = document.getElementById('reminderEnabled');
     const wrap = document.getElementById('reminderHourWrap');
     const hourSel = document.getElementById('reminderHour');
     const badge = document.getElementById('reminderStatusBadge');
+    const card = document.getElementById('reminderIosCard');
+    const row = document.getElementById('reminderToggleRow');
+    const hint = document.getElementById('reminderHint');
+    const pushRow = document.getElementById('reminderPushRow');
     if (!cb) return;
     const pref = _getReminderPref();
-    cb.checked = pref.enabled;
+    const hasNotif = 'Notification' in window;
+    // iPhone / iPad bez powiadomień w tej przeglądarce → karta z instrukcją zamiast „Niewspierane”
+    const ios = _iosInfo();
+    const iosMode = (ios && !hasNotif) ? ((ios.old || ios.standalone) ? 'old' : 'install') : '';
+    if (card) {
+      card.style.display = iosMode ? '' : 'none';
+      if (iosMode === 'install') {
+        card.innerHTML = '📱 <b>Na iPhonie i iPadzie</b> powiadomienia działają po dodaniu Sowich Fiszek do ekranu początkowego:'
+          + '<br>1. W Safari stuknij <b>⎙ Udostępnij</b> (w nowszym Safari: <b>•••</b> → Udostępnij).'
+          + '<br>2. Wybierz <b>„Do ekranu początkowego”</b>.'
+          + '<br>3. Otwórz Sowie Fiszki <b>z nowej ikonki</b> i zaloguj się.'
+          + '<br>4. Wejdź w „Moje konto” i włącz przypomnienia.';
+      } else if (iosMode === 'old') {
+        card.innerHTML = '📱 Powiadomienia na iPhonie i iPadzie działają od <b>iOS 16.4</b>. Zaktualizuj system'
+          + ' (Ustawienia → Ogólne → Uaktualnienia), a potem dodaj Sowie Fiszki do ekranu początkowego'
+          + ' (Safari → <b>⎙ Udostępnij</b> → <b>„Do ekranu początkowego”</b>) i otwórz je z ikonki.';
+      }
+    }
+    if (row) row.style.display = iosMode ? 'none' : '';
+    cb.checked = pref.enabled && !iosMode;
     if (hourSel) hourSel.value = String(pref.hour);
-    if (wrap) wrap.style.display = pref.enabled ? '' : 'none';
+    if (wrap) wrap.style.display = (pref.enabled && !iosMode) ? '' : 'none';
+    const granted = hasNotif && Notification.permission === 'granted';
+    const push = granted && _pushActive();
+    if (hint) hint.textContent = push
+      ? '💡 Powiadomienie przyjdzie także wtedy, gdy aplikacja jest zamknięta. Gdy tego dnia już się uczysz — nie przeszkadzamy.'
+      : '💡 Na tym urządzeniu powiadomienie pojawi się, gdy Sowie Fiszki są otwarte (o tej godzinie lub później).';
+    const st = _pushState();
+    if (pushRow) pushRow.style.display = (granted && pref.enabled && st && st.ep) ? '' : 'none';
     // Badge stanu
     if (badge) {
-      if (!('Notification' in window)) {
-        badge.textContent = '⚠️ Niewspierane';
-        badge.style.color = 'var(--danger)';
-      } else if (Notification.permission === 'granted' && pref.enabled) {
-        badge.textContent = '✅ Aktywne';
-        badge.style.color = 'var(--accent2)';
-        badge.style.background = 'rgba(6,214,160,.1)';
-        badge.style.borderColor = 'rgba(6,214,160,.35)';
-      } else if (Notification.permission === 'denied') {
-        badge.textContent = '🚫 Zablokowane';
-        badge.style.color = 'var(--danger)';
-      } else {
-        badge.textContent = '⏸ Wyłączone';
-        badge.style.color = 'var(--muted)';
-      }
+      const set = (txt, col, bg, bd) => { badge.textContent = txt; badge.style.color = col; badge.style.background = bg || 'var(--surface)'; badge.style.borderColor = bd || 'var(--border)'; };
+      if (iosMode === 'install') set('📲 Dodaj do ekranu początkowego', 'var(--blue)', 'rgba(116,185,255,.1)', 'rgba(116,185,255,.4)');
+      else if (iosMode === 'old') set('⚠️ Zaktualizuj iOS', 'var(--danger)');
+      else if (!hasNotif) set('⚠️ Niewspierane', 'var(--danger)');
+      else if (Notification.permission === 'denied') set('🚫 Zablokowane', 'var(--danger)');
+      else if (granted && pref.enabled) set(push ? '✅ Aktywne (push)' : '✅ Aktywne (tylko gdy aplikacja jest otwarta)', 'var(--accent2)', 'rgba(6,214,160,.1)', 'rgba(6,214,160,.35)');
+      else set('⏸ Wyłączone', 'var(--muted)');
     }
   };
 
@@ -26612,13 +26859,22 @@ function buildAlphaKeys(inputId, answer) {
       }
       _setReminderPref(true, parseInt(document.getElementById('reminderHour').value || '17', 10));
       if (wrap) wrap.style.display = '';
-      if (typeof toast === 'function') toast('🔔 Przypomnienia włączone! Otrzymasz powiadomienie codziennie o wybranej godzinie.', 3200);
-      // Pokaz testowe powiadomienie zaraz
-      _showTestNotification();
+      refreshReminderUI();
+      _scheduleReminderCheck();
+      // Web Push (#91): subskrypcja tej przeglądarki + zapis w bazie (bez migracji — tylko lokalnie)
+      const saved = await _pushSync(true);
+      if (typeof toast === 'function') toast(_pushActive()
+        ? '🔔 Przypomnienia włączone! Przyjdą codziennie o wybranej godzinie — także gdy aplikacja jest zamknięta.'
+        : '🔔 Przypomnienia włączone! Powiadomienie pojawi się o wybranej godzinie, gdy Sowie Fiszki są otwarte.', 3600);
+      // Próbne powiadomienie: z serwera (sprawdza całą drogę), a gdy funkcji jeszcze nie ma — lokalne
+      let tested = false;
+      if (saved && DB.pushTest) { try { const r = await DB.pushTest(); tested = !!(r && r.sent); } catch(e) {} }
+      if (!tested) _showTestNotification();
     } else {
       _setReminderPref(false);
       if (wrap) wrap.style.display = 'none';
       if (typeof toast === 'function') toast('🔕 Przypomnienia wyłączone.', 2200);
+      await _pushDisable();
     }
     refreshReminderUI();
     _scheduleReminderCheck();
@@ -26633,6 +26889,7 @@ function buildAlphaKeys(inputId, answer) {
     _setReminderPref(true, parseInt(sel.value || '17', 10));
     if (typeof toast === 'function') toast('💾 Zapisano godzinę przypomnienia.', 1800);
     _scheduleReminderCheck();
+    _pushSnapshot('force').catch(() => {});   // nowa godzina → serwer (push #91)
   };
 
   function _showTestNotification() {
@@ -26643,7 +26900,8 @@ function buildAlphaKeys(inputId, answer) {
         navigator.serviceWorker.ready.then(reg => {
           reg.showNotification('🦉 Sowie Fiszki', {
             body: 'Przypomnienia działają! Codzienne powiadomienie pojawi się o wybranej godzinie.',
-            icon: '/manifest.json',
+            icon: '/icon-192.png',
+            badge: '/badge-96.png',
             tag: 'sowie-test',
             silent: false
           });
@@ -26662,6 +26920,7 @@ function buildAlphaKeys(inputId, answer) {
   window.checkAndFireReminder = function() {
     if (isGuest) return;
     if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    if (_pushActive()) return;   // przypomnienie wyśle serwer (Web Push #91) — bez duplikatu
     const pref = _getReminderPref();
     if (!pref.enabled) return;
     const now = new Date();
@@ -26686,8 +26945,8 @@ function buildAlphaKeys(inputId, answer) {
         navigator.serviceWorker.ready.then(reg => {
           reg.showNotification(title, {
             body,
-            icon: '/manifest.json',
-            badge: '/manifest.json',
+            icon: '/icon-192.png',
+            badge: '/badge-96.png',
             tag: 'sowie-daily-' + today,
             requireInteraction: false,
             data: { url: '/app.html', action: 'review' }
@@ -26708,18 +26967,25 @@ function buildAlphaKeys(inputId, answer) {
     if (!pref.enabled) return;
     // Pierwsze sprawdzenie po 30s (po pelnym zaladowaniu profilu)
     setTimeout(() => { try { checkAndFireReminder(); } catch(e) {} }, 30 * 1000);
-    // Pozniej co 5 min
+    // Pozniej co 5 min (+ prognoza dla push — sama pilnuje „max co 30 min i tylko po zmianie”)
     _reminderTimer = setInterval(() => {
       try { checkAndFireReminder(); } catch(e) {}
+      _pushSnapshot().catch(() => {});
     }, 5 * 60 * 1000);
   }
   // Uruchom planowanie po zaladowaniu profilu (currentUser jest ustawiony)
   window.addEventListener('load', () => {
     setTimeout(() => _scheduleReminderCheck(), 2000);
+    setTimeout(() => { _pushBoot().catch(() => {}); }, 2500);
+  });
+  // Karta schowana (koniec nauki, przejście do innej aplikacji) → aktualna prognoza na serwer
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') _pushSnapshot('hidden').catch(() => {});
   });
 
   // Listener wiadomosci od Service Workera (notification click w SW
-  // postuje OPEN_REVIEW_QUEUE — przekierowujemy do ekranu powtorek).
+  // postuje OPEN_REVIEW_QUEUE — przekierowujemy do ekranu powtorek;
+  // PUSH_SUBSCRIPTION_CHANGED — przeglądarka wymieniła subskrypcję push).
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.addEventListener('message', e => {
       if (e.data && e.data.type === 'OPEN_REVIEW_QUEUE') {
@@ -26727,6 +26993,7 @@ function buildAlphaKeys(inputId, answer) {
           setTimeout(() => openReviewQueue(), 300);
         }
       }
+      if (e.data && e.data.type === 'PUSH_SUBSCRIPTION_CHANGED') _pushSync(false).catch(() => {});
     });
   }
 
@@ -34839,6 +35106,15 @@ ${bodyHtml}
       if(lo===h) return em+' '+nm+' prosi o jedzenie – 5 minut nauki?';
       if(lo===m) return em+' '+nm+' chce się pobawić – zagrasz w grę?';
       return em+' '+nm+' potrzebuje energii – szybka powtórka?';
+    }catch(e){ return null; }
+  };
+  // Stan pupila dla przypomnień push (#91): potrzeby z chwili t — spadek do godziny wysyłki
+  // (jak petTick) i tekst (jak wyżej) liczy Edge Function „push-reminders”. null = brak pupila.
+  window.sfPetPushSnapshot = function(){
+    try{
+      if(!petAllowed()) return null;
+      const s=petMigrate(petLoad()); if(!s || !s.type || !PETS[s.type]) return null;
+      return { e: petEmoji(s), n: String(petName(s)).slice(0,30), egg: isEgg(s), h: nv(s.hunger), m: nv(s.happy), en: nv(s.energy), t: s.t || Date.now() };
     }catch(e){ return null; }
   };
 
