@@ -2777,8 +2777,11 @@ const DB = (() => {
       const ids = (members || []).map(m => m.user_id);
       if (!ids.length) return [];
 
-      // Profile + statystyki (longest_streak, best_correct_streak gdy istnieje)
+      // Profile + statystyki (longest_streak, best_correct_streak gdy istnieje;
+      // ksywka, poziom, XP i przyswojone słówka — dla rankingu klas nauczyciela bez #92)
       let pRes = await supabase.from('profiles')
+        .select('id, username, nickname, is_admin, is_teacher, longest_streak, best_correct_streak, level, xp, well_learned_words').in('id', ids);
+      if (pRes.error) pRes = await supabase.from('profiles')
         .select('id, username, is_admin, is_teacher, longest_streak, best_correct_streak').in('id', ids);
       if (pRes.error) {
         pRes = await supabase.from('profiles')
@@ -2792,12 +2795,16 @@ const DB = (() => {
           user_id: p.id, username: p.username,
           xpToday: 0, xpWeek: 0, xpMonth: 0,
           longestStreak: p.longest_streak || 0,
-          bestCombo: p.best_correct_streak || 0
+          bestCombo: p.best_correct_streak || 0,
+          nickname: p.nickname || null,
+          level: p.level == null ? null : p.level,
+          xpTotal: p.xp == null ? null : p.xp,
+          wellLearned: p.well_learned_words || 0
         };
       });
 
-      // daily_xp_log z ostatnich 31 dni
-      const from = new Date(); from.setDate(from.getDate() - 31);
+      // daily_xp_log z ostatnich 31 dni (dziś i 30 wcześniejszych — jak my_class_rankings)
+      const from = new Date(); from.setDate(from.getDate() - 30);
       const fromStr = from.toISOString().slice(0, 10);
       const todayStr = new Date().toISOString().slice(0, 10);
       const week = new Date(); week.setDate(week.getDate() - 6);
@@ -2831,6 +2838,29 @@ const DB = (() => {
     if (cls.error) console.warn('[loadMyClassRankings]', cls.error.message); else rows = cls.data || [];
     if (!fr.error && fr.data && fr.data.length) rows = rows.concat(fr.data.map(r => Object.assign({ _friends: true }, r)));
     return rows;
+  }
+
+  // Ranking klas dla NAUCZYCIELA / ADMINA (migracja #92 staff-class-rankings.sql).
+  // Nauczyciel — tylko własne klasy, admin — wszystkie. null = brak migracji
+  // (app.html bierze wtedy loadClasses + loadClassRankings, bez „Wszystkich klas”).
+  const _staffRankMissing = e => !!e && /PGRST202|42883|Could not find the function|function .* does not exist/i.test(((e.code) || '') + ' ' + ((e.message) || ''));
+  const _staffRankErr = e => /NOT_ALLOWED/.test((e && e.message) || '') ? 'Ranking klas jest dostępny tylko dla nauczyciela (jego klasy) i administratora.' : ((e && e.message) || 'Błąd');
+  // [{ class_id, class_name, owner_name, is_mine, students }]
+  async function loadStaffRankClasses() {
+    if (!_userId || (!_profile?.isAdmin && !_profile?.isTeacher)) return [];
+    const { data, error } = await supabase.rpc('staff_rank_classes');
+    if (_staffRankMissing(error)) return null;
+    if (error) throw new Error(_staffRankErr(error));
+    return data || [];
+  }
+  // classId = jedna klasa (wszyscy uczniowie); null = „🌐 Wszystkie klasy” (top 20
+  // w każdej kategorii). Wiersze jak w my_class_rankings + avatar_url, class_names.
+  async function loadStaffClassRankings(classId) {
+    if (!_userId || (!_profile?.isAdmin && !_profile?.isTeacher)) return [];
+    const { data, error } = await supabase.rpc('staff_class_rankings', { p_class: classId || null, p_top: 20 });
+    if (_staffRankMissing(error)) return null;
+    if (error) throw new Error(_staffRankErr(error));
+    return data || [];
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -5903,6 +5933,8 @@ const DB = (() => {
     loadClassLeaderboard,
     loadClassRankings,
     loadMyClassRankings,
+    loadStaffRankClasses,
+    loadStaffClassRankings,
     friendCodeGet, friendCodeNew, friendInvite, friendInviteByCode, friendRespond,
     friendRemove, loadMyFriends, friendSearch, friendPendingCount,
     loadClassRankingLinks,

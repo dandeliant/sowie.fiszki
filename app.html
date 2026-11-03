@@ -2011,6 +2011,14 @@ html[data-theme="paper"] .hw-inv-box{background-image:radial-gradient(ellipse 80
           <div style="font-size:.66rem;color:var(--muted);font-weight:600;margin-top:3px">Klasy · Dostęp · Zestawy · Raporty · Premium</div>
         </div>
       </a>
+      <!-- 🏆 Ranking klas (jak u ucznia, migracja #92) — dane dopiero po kliknięciu (window.sfOpenStaffRank) -->
+      <a id="staffRankTile" href="app.html?go=rankings" onclick="if(window.sfOpenStaffRank){event.preventDefault();window.sfOpenStaffRank();}" style="text-decoration:none;color:inherit;display:block">
+        <div style="background:linear-gradient(135deg,rgba(255,209,102,.16),rgba(124,77,255,.12));border:2px solid rgba(255,209,102,.4);border-radius:16px;padding:18px 14px;text-align:center;cursor:pointer;transition:all .2s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='rgba(255,209,102,.4)'">
+          <div style="font-size:2rem;margin-bottom:6px">🏆</div>
+          <div style="font-size:.95rem;font-weight:800;color:var(--text)">Ranking klas</div>
+          <div style="font-size:.66rem;color:var(--muted);font-weight:600;margin-top:3px">📚 Słówka · ⚡ XP · 🔥 Streak · 🎯 Seria</div>
+        </div>
+      </a>
       <a id="wordsTile" href="words.html" style="display:none;text-decoration:none;color:inherit">
         <div style="background:linear-gradient(135deg,rgba(255,209,102,.18),rgba(6,214,160,.12));border:2px solid rgba(255,209,102,.45);border-radius:16px;padding:18px 14px;text-align:center;cursor:pointer;transition:all .2s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='rgba(255,209,102,.45)'">
           <div style="font-size:2rem;margin-bottom:6px">🔤</div>
@@ -4304,7 +4312,7 @@ szkoła	school"></textarea>
         <button class="btn-sm accent" onclick="openBulkForCurrentClass()" title="Wygeneruj wielu uczniów masowo">👥 Generuj wielu</button>
         <button class="btn-sm" onclick="openAddStudentModal()" title="Dołącz istniejącego ucznia po loginie">🔗 Dołącz istniejącego</button>
         <button class="btn-sm" id="btnPrintClassPasswords" onclick="printClassPasswords()" title="Drukuj wszystkie znane hasła klasy" style="display:none">🖨️ Drukuj hasła</button>
-        <button class="btn-sm accent" onclick="openClassLeaderboard()" title="Rankingi: XP dziś/tydzień/miesiąc, streak, seria">🏆 Rankingi</button>
+        <button class="btn-sm accent" onclick="openClassLeaderboard()" title="Ranking: przyswojone słówka, XP dziś/tydzień/miesiąc, streak, seria">🏆 Rankingi</button>
         <button class="btn-sm accent" onclick="openClassChallenges()" title="Wspólne wyzwania klasy">🎯 Wyzwania</button>
         <button class="btn-sm accent" onclick="openQuizCreate(_curClassId)" title="Kartkówka online z automatycznym sprawdzaniem">📝 Kartkówka</button>
         <button class="btn-sm accent" id="btnClassStartMode" onclick="openStartModeModal()" title="Zaznaczeni uczniowie raz dziennie, przy pierwszym wejściu, trafią od razu do wybranego trybu nauki" style="display:none">🚀 Tryb na start</button>
@@ -9023,6 +9031,9 @@ window.copyAdminStatsAsText = function() {
 // ══════════════════════════════════════════════
 window.openClassLeaderboard = async function(){
   if (!_curClassId) { toast('⚠️ Wybierz najpierw klasę.', 2400); return; }
+  // Ranking klas jak u ucznia (📚 Słówka + XP + Streak + Seria, wybór klas) — moduł pupila, migracja #92.
+  // Poniższy modal zostaje jako zapas, gdyby moduł się nie wczytał.
+  if (typeof window.sfOpenStaffRank === 'function') { window.sfOpenStaffRank(_curClassId); return; }
   openGenericModal('🏆 Rankingi klasy', '<div style="text-align:center;padding:20px;color:var(--muted)">⏳ Ładuję rankingi…</div>');
   let list = [];
   try { list = await DB.loadClassRankings(_curClassId); }
@@ -24480,6 +24491,7 @@ function buildAlphaKeys(inputId, answer) {
         aicost:           () => (typeof openAiCostPanel==='function')      && openAiCostPanel(),
         aichats:          () => (typeof openAiChatLogs==='function')       && openAiChatLogs(),
         petphrases:       () => window.sfOpenPetPhrases && window.sfOpenPetPhrases(),
+        rankings:         () => window.sfOpenStaffRank && window.sfOpenStaffRank(),
         newBook:          () => (typeof openAdminBookModal==='function')   && openAdminBookModal(),
         premium:          () => (typeof openPremiumPricingModal==='function') && openPremiumPricingModal(),
       };
@@ -36295,6 +36307,171 @@ ${bodyHtml}
     const f=(window.__srPets||{})[userId];
     if(f && f.pet && PETS[f.pet.type]) items.push({ label:'🐾 Odwiedź pupila', run:()=>window.sfVisitPet(userId) });
     if(typeof window.openPersonMenu==='function') window.openPersonMenu(ev, name, items);
+  };
+
+  /* ---- RANKING KLAS DLA NAUCZYCIELA I ADMINA (migracja #92 staff-class-rankings.sql) ----
+     Wygląd i zakładki jak w rankingu ucznia (SR_CATS, kamienie za miejsca 1–5). Widoki:
+     „🌐 Wszystkie klasy” (top 20 w każdej kategorii — uczniowie wszystkich klas nauczyciela;
+     admin — wszystkich klas platformy) + każda klasa osobno (pełna lista). Dane pobierane
+     dopiero po otwarciu okna i trzymane 5 min (sfCached) — start aplikacji bez zmian.
+     Bez migracji: klasy z DB.loadClasses, ranking klasy z DB.loadClassRankings, bez
+     „Wszystkich klas”. Wejścia: kafelek „🏆 Ranking klas” (sBooks), „🏆 Rankingi” w klasie
+     (openClassLeaderboard), teacher.html → app.html?go=rankings. */
+  const ST_VIEW_KEY='fiszki_staff_rank_view', ST_TOP=20, ST_CHIPS_MAX=9;
+  const _st={ classes:[], view:null, cat:0, rows:[], fallback:false, seq:0, q:'' };
+  const ST_BD='var(--border,rgba(255,255,255,.15))';
+  function isStaffUser(){ try{ return uid()!=='guest' && !!((DB.isAdmin&&DB.isAdmin()) || (DB.isTeacher&&DB.isTeacher())); }catch(e){ return false; } }
+  function isAdminNow(){ try{ return !!(DB.isAdmin&&DB.isAdmin()); }catch(e){ return false; } }
+  const stPl=n=>n===1?'uczeń':'uczniów';
+  const stPlK=n=>{ const d=n%10, h=n%100; return n===1?'klasa':(d>=2&&d<=4&&!(h>=12&&h<=14))?'klasy':'klas'; };
+  const stName=u=>String(u.nickname||u.username||'');
+  // Wynik z poprawną odmianą: 1 słowo / 2 słowa / 5 słów, 1 dzień / 2 dni.
+  const stVal=(v,c)=>{ if(c.k==='well_learned'){ const d=v%10, h=v%100; return v+(v===1?' słowo':(d>=2&&d<=4&&!(h>=12&&h<=14))?' słowa':' słów'); }
+    if(c.k==='longest_streak') return v+(v===1?' dzień':' dni'); return v+c.unit; };
+  async function stLoadClasses(){
+    let list=await sfCached('stcls', ()=>DB.loadStaffRankClasses ? DB.loadStaffRankClasses() : null);
+    _st.fallback = list===null;
+    if(list===null){
+      const own=await sfCached('stcls0', ()=>DB.loadClasses());
+      list=(own||[]).map(c=>({ class_id:c.id, class_name:c.name, owner_name:null, is_mine:true, students:(c.class_members||[]).length }));
+    }
+    return (list||[]).slice().sort((a,b)=>((b.is_mine?1:0)-(a.is_mine?1:0))
+      || String(a.class_name||'').localeCompare(String(b.class_name||''),'pl',{numeric:true})
+      || String(a.owner_name||'').localeCompare(String(b.owner_name||''),'pl'));
+  }
+  // Wiersze widoku: 'all' albo id klasy. null = brak RPC dla „Wszystkich klas”.
+  async function stLoadRows(view){
+    if(view==='all') return await sfCached('strank:all', ()=>DB.loadStaffClassRankings(null));
+    if(!_st.fallback){
+      const r=await sfCached('strank:'+view, ()=>DB.loadStaffClassRankings(view));
+      if(r!==null) return r||[];
+    }
+    const r=await sfCached('strank0:'+view, ()=>DB.loadClassRankings(view));
+    return (r||[]).map(u=>({ user_id:u.user_id, username:u.username, nickname:u.nickname||null, avatar_url:null,
+      xp_today:u.xpToday||0, xp_week:u.xpWeek||0, xp_month:u.xpMonth||0, longest_streak:u.longestStreak||0,
+      best_combo:u.bestCombo||0, level:u.level, xp_total:u.xpTotal, well_learned:u.wellLearned||0 }));
+  }
+  function stViews(){
+    const adm=isAdminNow(), v=[];
+    if(!_st.fallback && _st.classes.length>1) v.push({ key:'all', label:'🌐 Wszystkie klasy', mine:true });
+    _st.classes.forEach(c=>v.push({ key:c.class_id, label:'🏫 '+(c.class_name||'?')+(adm && !c.is_mine && c.owner_name ? ' · '+c.owner_name : ''), n:c.students, mine:!!c.is_mine }));
+    return v;
+  }
+  function stOptions(views){
+    const q=(_st.q||'').trim().toLowerCase(), ws=q.split(/\s+/).filter(Boolean);   // każde słowo: nazwa klasy albo login nauczyciela
+    const vs=views.filter(v=>v.key==='all' || v.key===_st.view || ws.every(w=>v.label.toLowerCase().indexOf(w)>=0));
+    const opt=v=>'<option value="'+escTxt(v.key)+'"'+(v.key===_st.view?' selected':'')+'>'+escTxt((v.key==='all'?v.label:v.label.replace(/^🏫 /,''))+(v.n!=null?' ('+v.n+')':''))+'</option>';
+    const mine=vs.filter(v=>v.key!=='all'&&v.mine), other=vs.filter(v=>v.key!=='all'&&!v.mine);
+    let h=vs.filter(v=>v.key==='all').map(opt).join('');
+    if(mine.length) h+='<optgroup label="Moje klasy">'+mine.map(opt).join('')+'</optgroup>';
+    if(other.length) h+='<optgroup label="Klasy innych nauczycieli">'+other.map(opt).join('')+'</optgroup>';
+    if(q && !vs.some(v=>v.key!=='all' && v.key!==_st.view)) h+='<option disabled>Brak klas pasujących do „'+escTxt(_st.q.trim())+'”</option>';
+    return h;
+  }
+  function stPicker(views){
+    if(views.length<2) return '';
+    if(views.length<=ST_CHIPS_MAX){
+      return '<div role="group" aria-label="Wybierz klasę" style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin:0 0 10px">'
+        + views.map(v=>{ const on=v.key===_st.view;
+          return '<button type="button" class="sf-btn '+(on?'':'sf-btn-ghost')+'" aria-pressed="'+on+'"'+(v.n!=null?' title="'+escTxt(v.n+' '+stPl(v.n))+'"':'')+' style="font-size:.74rem;padding:7px 12px;border:1.5px solid '+(on?'var(--accent,#7c4dff)':ST_BD)+';'+(on?'background:var(--accent,#7c4dff);color:var(--bg,#1a1733)':'')+'" data-stview="'+escTxt(v.key)+'">'+escTxt(v.label)+'</button>'; }).join('')
+        + '</div>';
+    }
+    // Dużo klas (zwykle admin): wyszukiwarka + lista rozwijana.
+    return '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:0 0 10px">'
+      + '<input id="stSearch" class="sf-inp" type="search" autocomplete="off" placeholder="🔎 Szukaj klasy lub nauczyciela…" aria-label="Szukaj klasy lub nauczyciela" style="flex:1 1 170px;min-width:0;margin:0;font-size:.84rem;padding:8px 10px" value="'+escTxt(_st.q)+'">'
+      + '<select id="stSelect" class="sf-inp" aria-label="Wybierz klasę" style="flex:1 1 200px;min-width:0;margin:0;font-size:.84rem;padding:8px 10px">'+stOptions(views)+'</select></div>';
+  }
+  function stShell(inner){ return '<button class="sf-x" data-close aria-label="Zamknij">✕</button>'+inner; }
+  function stSetView(key){ _st.view=key; try{ localStorage.setItem(ST_VIEW_KEY, key); }catch(e){} stRender(); }
+  async function stRender(){
+    const box=$('sfStaffRankModal_box'); if(!box) return;
+    const seq=++_st.seq, adm=isAdminNow(), views=stViews(), n=_st.classes.length;
+    const cls=_st.view==='all' ? null : _st.classes.find(c=>c.class_id===_st.view);
+    const title=cls ? 'Ranking klasy '+(cls.class_name||'') : 'Ranking klas: wszystkie';
+    const sub=cls
+      ? (adm && !cls.is_mine && cls.owner_name ? 'Nauczyciel: '+escTxt(cls.owner_name)+' · ' : '')+(cls.students||0)+' '+stPl(cls.students||0)+' · pełna lista klasy'
+      : 'Top '+ST_TOP+' w każdej kategorii · uczniowie '+(adm ? 'wszystkich klas platformy' : 'wszystkich Twoich klas')+' ('+n+' '+stPlK(n)+')';
+    let tabs='<div role="tablist" aria-label="Kategoria rankingu" style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-bottom:12px">';
+    SR_CATS.forEach((c,i)=>{ tabs+='<button type="button" role="tab" id="stTab'+i+'" class="sf-btn sf-btn-ghost" style="font-size:.72rem;padding:7px 10px;border:1.5px solid '+ST_BD+'" data-stcat="'+i+'">'+c.ic+' '+c.t+'</button>'; });
+    tabs+='</div>';
+    const note=_st.fallback ? (adm ? 'ℹ️ „🌐 Wszystkie klasy” i klasy innych nauczycieli — po migracji #92' : '') : 'Wyniki odświeżają się co 5 minut';
+    box.innerHTML=stShell('<h2 class="sf-h">🏆 '+escTxt(title)+'</h2>'
+      +'<p class="sf-sub" style="margin-bottom:10px">'+sub+'<br><span style="font-size:.74rem">Miejsca 1–5: 💎 Diament · Szafir · Rubin · Szmaragd · Ametyst · 1. miejsce — złota korona 👑</span></p>'
+      +stPicker(views)+tabs+'<div id="stList"><p class="sf-sub" style="text-align:center">Ładowanie…</p></div>'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;font-size:.68rem;color:var(--muted);font-weight:700"><span>'+note+'</span>'
+      +'<button type="button" id="stRefresh" class="sf-btn sf-btn-ghost" style="font-size:.7rem;padding:5px 10px;border:1.5px solid '+ST_BD+'">🔄 Odśwież</button></div>');
+    bindClose(box);
+    box.querySelectorAll('[data-stview]').forEach(b=>b.onclick=()=>stSetView(b.dataset.stview));
+    box.querySelectorAll('[data-stcat]').forEach(b=>b.onclick=()=>stCat(+b.dataset.stcat));
+    const se=$('stSelect'); if(se) se.onchange=()=>{ if(se.value) stSetView(se.value); };
+    const si=$('stSearch'); if(si) si.oninput=()=>{ _st.q=si.value; const s2=$('stSelect'); if(s2) s2.innerHTML=stOptions(views); };
+    const rf=$('stRefresh'); if(rf) rf.onclick=()=>{ ['strank:'+_st.view,'strank0:'+_st.view,'stcls','stcls0'].forEach(sfUncache); window.sfOpenStaffRank(_st.view, true); };
+    SR_CATS.forEach((_,i)=>{ const t=$('stTab'+i); if(t) t.setAttribute('aria-selected', i===_st.cat?'true':'false'); });
+    let rows;
+    try{ rows=await stLoadRows(_st.view); }
+    catch(e){ if(seq!==_st.seq) return; const el=$('stList'); if(el) el.innerHTML='<p class="sf-sub" style="text-align:center">'+escTxt(e.message||'Błąd')+'</p>'; return; }
+    if(seq!==_st.seq) return;
+    if(rows===null){ const el=$('stList'); if(el) el.innerHTML='<p class="sf-sub" style="text-align:center">Ten widok nie jest jeszcze dostępny — wybierz klasę.</p>'; return; }
+    _st.rows=rows||[];
+    stCat(_st.cat);
+  }
+  function stCat(idx){
+    const c=SR_CATS[idx]; if(!c) return; _st.cat=idx;
+    SR_CATS.forEach((_,i)=>{ const t=$('stTab'+i); if(!t) return; const on=i===idx;
+      t.style.background=on?'var(--accent,#7c4dff)':''; t.style.color=on?'var(--bg,#1a1733)':''; t.style.borderColor=on?'var(--accent,#7c4dff)':ST_BD; t.setAttribute('aria-selected', on?'true':'false'); });
+    const el=$('stList'); if(!el) return;
+    const all=_st.view==='all', k=c.k;
+    const sorted=_st.rows.slice().sort((a,b)=>((b[k]||0)-(a[k]||0)) || stName(a).localeCompare(stName(b),'pl'));
+    const withVal=sorted.filter(u=>(u[k]||0)>0);
+    const list=all ? withVal.slice(0,ST_TOP) : withVal;
+    const zero=all ? 0 : sorted.length-withVal.length;
+    let h='<div role="tabpanel" aria-labelledby="stTab'+idx+'" style="background:var(--surface2,rgba(255,255,255,.04));border-radius:14px;padding:8px;max-height:50vh;overflow-y:auto">';
+    list.forEach((u,i)=>{
+      const place=i+1, val=u[k]||0;
+      const md=place<=5 ? srPlaceBadge(place) : '#'+place;
+      const gem=place<=3 ? SR_GEMS[place-1] : null;
+      const nameGem=gem ? '<span style="display:inline-block;vertical-align:-3px;margin-left:5px">'+srGem(place,15)+'</span>' : '';
+      // Podlinijka: [klasy ucznia w widoku „Wszystkie klasy”] · [login, gdy jest ksywka] · poziom · XP · przyswojone słówka
+      const sub=[];
+      if(all && u.class_names) sub.push('🏫 '+escTxt(u.class_names));
+      if(u.nickname && u.username && u.nickname!==u.username) sub.push('👤 '+escTxt(u.username));
+      if(u.level!=null) sub.push('⭐ '+u.level);
+      if(u.xp_total!=null) sub.push(u.xp_total+' XP');
+      sub.push('📚 '+(u.well_learned||0));
+      const rowBg=gem ? 'background:'+gem.bg+';border:1.5px solid '+gem.bd+';border-radius:10px;margin:3px 0' : '';
+      const av=(typeof _avatarImgHtml==='function') ? _avatarImgHtml(u.avatar_url, 30, '<div aria-hidden="true" style="width:30px;height:30px;border-radius:50%;background:var(--surface,rgba(255,255,255,.08));display:flex;align-items:center;justify-content:center;font-size:.95rem;flex-shrink:0">👤</div>') : '';
+      h+='<div style="display:flex;align-items:center;gap:10px;padding:8px 6px;border-bottom:1px dashed '+ST_BD+';'+rowBg+'">'
+        +'<div style="width:32px;display:flex;justify-content:center;font-weight:700;flex-shrink:0">'+md+'</div>'+av
+        +'<div style="flex:1;min-width:0">'
+          +'<div style="font-weight:'+(gem?800:700)+';font-size:.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escTxt(stName(u)||'?')+nameGem+'</div>'
+          +'<div style="font-size:.62rem;color:var(--muted);font-weight:700;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+sub.join(' · ')+'</div>'
+        +'</div>'
+        +'<div style="font-weight:800;color:var(--accent,#ffd166);white-space:nowrap">'+stVal(val,c)+'</div></div>';
+    });
+    if(!list.length) h+='<div style="text-align:center;padding:18px;color:var(--muted);font-weight:600">'+(sorted.length||all ? 'Brak wyników w tej kategorii.' : 'W tej klasie nie ma jeszcze uczniów.')+'</div>';
+    if(zero>0 && list.length) h+='<div style="text-align:center;padding:8px 4px 2px;font-size:.7rem;color:var(--muted);font-weight:700">+ '+zero+' '+stPl(zero)+' bez wyniku w tej kategorii</div>';
+    h+='</div>';
+    el.innerHTML=h;
+  }
+  // classId — klasa do pokazania (np. z ekranu klasy); keep — odświeżenie z okna (ta sama kategoria i wyszukiwanie).
+  window.sfOpenStaffRank=async function(classId, keep){
+    const o=modal('sfStaffRankModal'), box=$('sfStaffRankModal_box');
+    const show=h=>{ box.innerHTML=stShell('<h2 class="sf-h">🏆 Ranking klas</h2>'+h); bindClose(box); o.classList.add('show'); };
+    if(!isStaffUser()){ show('<p class="sf-sub">Ranking klas jest dostępny dla nauczyciela i administratora.</p>'); return; }
+    if(!keep){ _st.cat=0; _st.q=''; }
+    show('<p class="sf-sub">Ładowanie…</p>');
+    const seq=++_st.seq;
+    try{
+      _st.classes=await stLoadClasses();
+      // Nowa klasa (sprzed < 5 min) nie jest jeszcze na liście z pamięci — pobierz listę od nowa.
+      if(classId && classId!=='all' && !_st.classes.some(c=>c.class_id===classId)){ sfUncache('stcls'); sfUncache('stcls0'); _st.classes=await stLoadClasses(); }
+    }catch(e){ if(seq===_st.seq) show('<p class="sf-sub">'+escTxt(e.message||'Błąd')+'</p>'); return; }
+    if(seq!==_st.seq) return;
+    if(!_st.classes.length){ show('<p class="sf-sub">Nie masz jeszcze żadnej klasy. Utwórz klasę w „👩‍🏫 Panel nauczyciela → 👥 Klasy” i dodaj do niej uczniów — wtedy zobaczysz tu ich ranking.</p>'); return; }
+    const has=k=>k==='all' ? (!_st.fallback && _st.classes.length>1) : _st.classes.some(c=>c.class_id===k);
+    let saved=null; try{ saved=localStorage.getItem(ST_VIEW_KEY); }catch(e){}
+    _st.view=(classId && has(classId)) ? classId : (saved && has(saved)) ? saved : has('all') ? 'all' : _st.classes[0].class_id;
+    stRender();
   };
 
   /* ---- ZNAJOMI (migracja #85) — tylko konta uczniów, bez wiadomości ----
