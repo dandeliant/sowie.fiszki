@@ -648,18 +648,44 @@ const DB = (() => {
     } catch(e) { return false; /* brak migracji / offline */ }
   }
 
+  // ✅ Zaliczenie dnia „Wpisz” (#94): baza sama sprawdza dzisiejsze odpowiedzi (typed_answers).
+  //  → { status: 'credited' | 'already' | 'rejected' | 'legacy' | 'offline', reason?, hits?, words? }
+  //  'legacy' — brak migracji #94: zapis jak dotąd (log_typed_day bez sprawdzania);
+  //  'offline' — brak sieci / błąd serwera (aplikacja ponowi zapis później).
+  async function claimTypedDay() {
+    if (!_userId) return { status: 'offline' };
+    try {
+      const { data, error } = await supabase.rpc('claim_typed_day');
+      if (error) {
+        if (_missing93(error)) return (await logTypedDay()) ? { status: 'legacy' } : { status: 'offline' };
+        console.warn('[claimTypedDay]', error.message);
+        return { status: 'offline' };
+      }
+      const st = data && data.status;
+      return (st === 'credited' || st === 'already' || st === 'rejected') ? data : { status: 'offline' };
+    } catch(e) { return { status: 'offline' }; }
+  }
+
   // ── Szczegóły „Wpisz" (typed_answers, migracja #51) ──
-  // Zapisuje pojedynczą odpowiedź ucznia w trybie Wpisz. Fire-and-forget.
+  // Zapisuje pojedynczą odpowiedź ucznia w trybie Wpisz. Fire-and-forget (zwraca Promise —
+  // app.html czeka na ostatni zapis przed claimTypedDay). p.firstTry → kolumna first_try (#94).
+  let _typedFirstTryCol = true;   // false = brak kolumny first_try (bez migracji #94)
   async function logTypedAnswer(p) {
     if (!_userId || !p) return;
     try {
-      await supabase.from('typed_answers').insert({
+      const row = {
         user_id: _userId,
         book_id: p.bookId || null, unit_key: p.unitKey || null,
         word_pl: (p.wordPl || '').slice(0, 300), word_en: (p.wordEn || '').slice(0, 300),
         prompt: (p.prompt || '').slice(0, 500), expected: (p.expected || '').slice(0, 500),
         answer: (p.answer || '').slice(0, 500), correct: !!p.correct
-      });
+      };
+      if (_typedFirstTryCol && typeof p.firstTry === 'boolean') row.first_try = p.firstTry;
+      let { error } = await supabase.from('typed_answers').insert(row);
+      if (error && 'first_try' in row && /first_try|PGRST204/i.test((error.code || '') + ' ' + (error.message || ''))) {
+        _typedFirstTryCol = false; delete row.first_try;   // bez migracji #94 — zapis jak dawniej
+        ({ error } = await supabase.from('typed_answers').insert(row));
+      }
     } catch(e) { /* brak migracji / offline */ }
     // Retencja: raz dziennie posprzątaj własne stare rekordy (>60 dni).
     try {
@@ -2464,6 +2490,35 @@ const DB = (() => {
   }
   async function xpAdjustHistory(userId) {
     const { data, error } = await supabase.rpc('xp_adjust_history', { p_user: userId });
+    if (error) { if (_missing93(error)) return null; throw new Error(error.message); }
+    return data || [];
+  }
+  // ── 🛡️ Uczciwa nauka (migracja #94) ──
+  // Zgłoszenie z aplikacji: 'junk' (próby „na chybił-trafił”) / 'paste' (próby wklejenia).
+  function reportLearningFlags(kind, count, info) {
+    if (!_userId) return;
+    try {
+      supabase.rpc('report_learning_flags', { p_kind: String(kind || ''), p_count: Math.max(0, count | 0), p_info: info || null })
+        .then(() => {}, () => {});
+    } catch(e) {}
+  }
+  // Liczba nowych alertów (nauczyciel — swoi uczniowie, admin — wszyscy). null = brak migracji #94.
+  async function learningFlagsNewCount() {
+    const { data, error } = await supabase.rpc('xp_flags_new_count');
+    if (error) { if (_missing93(error)) return null; throw new Error(error.message); }
+    return Number(data) || 0;
+  }
+  // „Przeczytane teraz” → poprzedni znacznik (ISO) albo null (pierwszy raz / brak migracji).
+  async function markLearningFlagsSeen() {
+    try {
+      const { data, error } = await supabase.rpc('mark_xp_flags_seen');
+      if (error) return null;
+      return data || null;
+    } catch(e) { return null; }
+  }
+  // Podsumowanie klasy (uczniowie z alertami w ostatnich `days` dniach). null = brak migracji #94.
+  async function classLearningFlags(classId, days) {
+    const { data, error } = await supabase.rpc('class_learning_flags', { p_class: classId, p_days: days || 7 });
     if (error) { if (_missing93(error)) return null; throw new Error(error.message); }
     return data || [];
   }
@@ -5946,6 +6001,7 @@ const DB = (() => {
     getDailyXpHistory,
     logStudyMinutes,
     logTypedDay,
+    claimTypedDay,       // ✅ dzień „Wpisz” sprawdzany w bazie (#94)
     logTypedAnswer,
     loadTypedAnswers,
     loadDisabledWeeks,
@@ -6015,6 +6071,10 @@ const DB = (() => {
     xpGuardList,
     xpAdjustHistory,
     adminAdjustXp,
+    reportLearningFlags,     // 🛡️ uczciwa nauka (#94)
+    learningFlagsNewCount,
+    markLearningFlagsSeen,
+    classLearningFlags,
     updateWellLearned,
     logDailyWords,
     listClassChallenges,

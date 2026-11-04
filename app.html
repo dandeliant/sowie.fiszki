@@ -4316,6 +4316,7 @@ szkoła	school"></textarea>
         <button class="btn-sm accent" onclick="openClassChallenges()" title="Wspólne wyzwania klasy">🎯 Wyzwania</button>
         <button class="btn-sm accent" onclick="openQuizCreate(_curClassId)" title="Kartkówka online z automatycznym sprawdzaniem">📝 Kartkówka</button>
         <button class="btn-sm accent" id="btnClassStartMode" onclick="openStartModeModal()" title="Zaznaczeni uczniowie raz dziennie, przy pierwszym wejściu, trafią od razu do wybranego trybu nauki" style="display:none">🚀 Tryb na start</button>
+        <button class="btn-sm" id="btnClassFlags" onclick="sfOpenClassFlagsWeek()" title="Ostatnie 7 dni: za szybkie odpowiedzi, zgadywanie, wklejanie, limit XP, niezaliczone dni Wpisz" style="display:none">🛡️ Uczciwa nauka</button>
         <button class="btn-sm" onclick="showScreen('sAdminClasses')">← Klasy</button>
       </div>
     </div>
@@ -5292,14 +5293,15 @@ async function logout() {
 const XP_PER = 60;
 // ── Punkty XP za odpowiedzi (od SW v1.219 — zasady właściciela) ──
 //  • samoocena „Jak było?” (Trudne / Średnie / Łatwe — Fiszki, Znajdź parę) — 0,
-//  • Wpisz — +10 za poprawną odpowiedź (także po poprawce w 2. próbie), 0 za błędną,
+//  • Wpisz — +10 za poprawną odpowiedź za 1. razem, +5 po poprawce z podpowiedzią liter
+//    w 2. próbie (#94 — wcześniej też 10: 1 litera + Enter pokazywała całe słowo), 0 za błędną,
 //  • Znajdź parę, Prawda/Fałsz, Litery — +5 za każde 5 poprawnych z rzędu bez pomyłki,
 //  • Quiz, Speed Quiz, Luka, Rozsypanka, Zdanie, Napisz zdanie, Dyktando (+ zdania),
 //    Wpisz zdania, Mów (+ zdania) — +3 tylko za poprawną odpowiedź za pierwszym razem,
 //  • gry z osobnych plików (Skoczek, Most, Motyle, Słówkoło, Przejście, Inwazja, Głodomorek)
 //    — +5 za poprawną odpowiedź (game-stats.js).
 //  W sobotę i niedzielę ×2 (weekendXP).
-const XP_TYPE = 10, XP_FIRST = 3, XP_RUN = 5, XP_RUN_N = 5;
+const XP_TYPE = 10, XP_TYPE_RETRY = 5, XP_FIRST = 3, XP_RUN = 5, XP_RUN_N = 5;
 const XP_RUN_MODES = new Set(['match', 'tf', 'missing']);
 let _xpRunCount = 0;   // poprawne z rzędu w trybach XP_RUN_MODES (pomyłka zeruje)
 function _xpRunStep(ok) {
@@ -5310,7 +5312,7 @@ function _xpRunStep(ok) {
 function _xpFor(r, selfRated) {
   if (selfRated || mode === 'card') return 0;
   const first = (r === 'easy' || r === 'good');
-  if (mode === 'type') return (first || r === 'hard') ? XP_TYPE : 0;
+  if (mode === 'type') return first ? XP_TYPE : (r === 'hard' ? XP_TYPE_RETRY : 0);
   if (XP_RUN_MODES.has(mode)) return _xpRunStep(first);
   return first ? XP_FIRST : 0;
 }
@@ -5377,6 +5379,7 @@ const ACHIEVES = [
 // typeAttempts   – liczba blednych prob w trybach z wpisywaniem (Type/Missing/Dyktando)
 let answerMistake = false;
 let typeAttempts = 0;
+let junkTries = 0;           // próby „na chybił-trafił” przy bieżącym słówku (#94, _isJunkAttempt)
 let speedRunMistake = false; // Speed Run (gra na czas): czy w aktualnym pytaniu byl blad
 let dqMistake = false;       // Codzienny quiz: czy w aktualnym pytaniu byl blad
 let currentBookId = null;
@@ -9547,7 +9550,7 @@ function generate() {
 function renderCard() {
   if (curIdx === null) return;
   // Nowa karta — wyzeruj liczniki "drugiej szansy"
-  answerMistake = false; typeAttempts = 0;
+  answerMistake = false; typeAttempts = 0; junkTries = 0;
   _cardShownAt = Date.now(); // do oceny FSRS: szybka trafna odpowiedz = Latwe
   const q = getQ(curIdx), a = getA(curIdx);
   hideAreas();
@@ -10865,15 +10868,53 @@ function _localDay() {
   const d = new Date();
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
-let _typedDayMark = '';
-async function _markTypedDay() {
-  const today = _localDay();
-  if (_typedDayMark === today) return;
-  _typedDayMark = today;
-  let ok = false;
-  try { if (DB.logTypedDay) ok = await DB.logTypedDay(); } catch(e) {}
-  if (!ok) { _typedDayMark = ''; return; }   // nie zapisało się (offline) — ponowimy przy kolejnym wpisie
-  const o = _typedDayStore(); o.synced = true; _typedDaySave(o);
+// Zapis zaliczenia w bazie. Od #94 baza sama sprawdza dzisiejsze odpowiedzi (typed_answers:
+// ≥ 5 trafień za 1. razem z ≥ 2 słówek, w tempie możliwym w aplikacji) — modal „Dzienna nauka
+// zaliczona” pokazujemy dopiero po potwierdzeniu. Brak sieci / błąd → zaliczamy lokalnie jak dawniej
+// (modal) i ponawiamy zapis przy kolejnych wpisach. Odmowa bazy → bez modalu, łagodna zachęta,
+// ponowienie najwcześniej po TYPED_CLAIM_GAP_MS i po nowym trafieniu (po TYPED_CLAIM_MAX odmowach
+// tego dnia — koniec prób). Bez migracji #94 db.js woła starą log_typed_day (bez sprawdzania).
+const TYPED_CLAIM_GAP_MS = 45000, TYPED_CLAIM_MAX = 8;
+let _typedClaimBusy = false;
+let _typedLogP = null;   // ostatni zapis odpowiedzi (typed_answers) — czekamy na niego przed zgłoszeniem
+async function _typedDayClaim() {
+  if (_typedClaimBusy || isGuest || typeof DB === 'undefined') return;
+  let o = _typedDayStore();
+  if (o.synced) return;
+  if (o.rejectedAt && (Date.now() - o.rejectedAt < TYPED_CLAIM_GAP_MS || _typedHits(o) <= (o.rejectedHits || 0)
+      || (o.rejects || 0) >= TYPED_CLAIM_MAX)) return;
+  _typedClaimBusy = true;
+  let res = null;
+  try {
+    if (_typedLogP) await Promise.race([_typedLogP, new Promise(r => setTimeout(r, 3000))]);   // ostatni zapis odpowiedzi już w bazie
+    res = DB.claimTypedDay ? await DB.claimTypedDay() : ((DB.logTypedDay && await DB.logTypedDay()) ? { status: 'legacy' } : { status: 'offline' });
+  } catch(e) { res = { status: 'offline' }; }
+  _typedClaimBusy = false;
+  o = _typedDayStore();
+  o.claims = (o.claims || 0) + 1;
+  const st = (res && res.status) || 'offline';
+  if (st === 'credited' || st === 'already' || st === 'legacy') {
+    const first = !o.credited;
+    o.credited = true; o.synced = true; delete o.rejectedAt;
+    _typedDaySave(o);
+    if (first) _typedDayCelebrate(o);
+  } else if (st === 'rejected') {
+    o.rejectedAt = Date.now(); o.rejectedHits = _typedHits(o); o.rejects = (o.rejects || 0) + 1;
+    const tell = !o.credited && Date.now() - (o.rejectToastAt || 0) > 120000;
+    if (tell) o.rejectToastAt = Date.now();
+    _typedDaySave(o);
+    // po komunikatach z rate() (+XP 1,5 s) i blokady gier (~2,4 s), żeby ich nie zasłonić
+    if (tell) setTimeout(() => toast('📝 Prawie! Ucz się jeszcze chwilę — po kolejnych poprawnych wpisach dzienna nauka się zaliczy. 💪', 4200), 3100);
+  } else {   // brak sieci / błąd serwera — zaliczamy lokalnie, zapis ponowimy
+    const first = !o.credited;
+    o.credited = true; o.synced = false;
+    _typedDaySave(o);
+    if (first) _typedDayCelebrate(o);
+  }
+}
+function _typedDayCelebrate(o) {
+  _gateMarkTyped();                      // zaliczony dzień Wpisz odblokowuje też gry
+  _showDailyDoneMsg(_typedDistinct(o));
 }
 
 // ══════════════════════════════════════════════
@@ -10896,8 +10937,10 @@ const TYPED_DAY_MIN_WORDS   = 2;  // B) min. różnych słów przy ≥20 wpisach
 function _typedDayStore() {
   const today = _localDay();
   let o = {};
-  try { o = JSON.parse(localStorage.getItem('fiszki_typed_day') || '{}'); } catch(e) {}
-  if (o.day !== today) o = { day: today, words: {}, entries: 0, credited: false };
+  try { o = JSON.parse(localStorage.getItem('fiszki_typed_day') || '{}') || {}; } catch(e) {}
+  // jeden licznik na urządzenie — inny login (wspólny komputer) zaczyna od zera
+  if (o.day !== today || (o.user && o.user !== (currentUser || ''))) o = { day: today, words: {}, entries: 0, credited: false };
+  o.user = currentUser || '';
   if (!o.words) o.words = {};
   if (typeof o.entries !== 'number') o.entries = 0;
   return o;
@@ -10905,27 +10948,29 @@ function _typedDayStore() {
 function _typedDaySave(o) { try { localStorage.setItem('fiszki_typed_day', JSON.stringify(o)); } catch(e) {} }
 function _typedDistinct(o) { return Object.keys(o.words).length; }
 function _typedHits(o) { return Object.values(o.words).reduce((s, n) => s + (n || 0), 0); }
-// Sprawdza warunki zaliczenia; jeśli spełnione — zalicza dzień i pokazuje komunikat.
+// Sprawdza warunki zaliczenia; jeśli spełnione — zgłasza dzień do bazy (_typedDayClaim), która
+// sprawdza odpowiedzi; modal po potwierdzeniu. true = warunki spełnione (także gdy czeka na bazę).
 function _typedDayCheckCredit(o) {
   if (o.credited) {
-    if (!o.synced) _markTypedDay();      // zaliczony lokalnie, ale zapis na serwerze się nie udał — ponów
+    if (!o.synced) _typedDayClaim();     // zaliczony lokalnie (offline), ale zapis w bazie się nie udał — ponów
     return true;
   }
   const hits = _typedHits(o), distinct = _typedDistinct(o), entries = o.entries || 0;
   const met = (hits >= TYPED_DAY_HITS_GOAL && distinct >= TYPED_DAY_WORDS_GOAL)
            || (entries >= TYPED_DAY_MIN_ENTRIES && hits >= TYPED_DAY_MIN_HITS && distinct >= TYPED_DAY_MIN_WORDS);
-  if (met) {
-    o.credited = true; _typedDaySave(o);
-    _markTypedDay();                     // ZALICZ dzień do oceny tygodniowej
-    _gateMarkTyped();                    // zaliczony dzień Wpisz odblokowuje też gry
-    _showDailyDoneMsg(distinct);
+  if (!met) return false;
+  if (isGuest) {                         // gość: nic się nie zapisuje — tylko komunikat jak dotąd
+    o.credited = true; o.synced = true; _typedDaySave(o);
+    _typedDayCelebrate(o);
     return true;
   }
-  return false;
+  _typedDayClaim();                      // ZALICZ dzień do oceny tygodniowej (po sprawdzeniu w bazie)
+  return true;
 }
 // Wywoływane przy KAŻDEJ próbie sprawdzenia (wpisie) — liczy warunek B (≥20 wpisów).
+// Próby „na chybił-trafił” (_isJunkAttempt) się nie liczą — wywołujący pomija je wcześniej.
 function _typedDayEntry() {
-  if (curIdx === null) return;
+  if (curIdx === null || _bookIgnored()) return;
   const o = _typedDayStore();
   if (o.credited) { _typedDayCheckCredit(o); return; }
   o.entries = (o.entries || 0) + 1;
@@ -10934,7 +10979,7 @@ function _typedDayEntry() {
 }
 // Wywoływane przy PEWNYM trafieniu (za 1. razem, bez pokazania odpowiedzi).
 function _typedDayProgress(firstTryCorrect) {
-  if (!firstTryCorrect || curIdx === null || !activeWords[curIdx]) return;
+  if (!firstTryCorrect || curIdx === null || !activeWords[curIdx] || _bookIgnored()) return;
   const o = _typedDayStore();
   if (o.credited) return;                // dzień już zaliczony
   const key = currentBookId + '|' + currentUnitKey + '|' + activeWords[curIdx][0];
@@ -10971,25 +11016,47 @@ function _showDailyDoneMsg(learned) {
     if (btn) btn.addEventListener('click', close);
   }, 700);
 }
-// Zapis pojedynczej odpowiedzi z trybu „Wpisz" (do raportu „Szczegóły Wpisz").
-function _logTypedAns(u, correct) {
+// Zapis pojedynczej odpowiedzi z trybu „Wpisz” / „Wpisz zdania” (raport „Szczegóły Wpisz”;
+// od #94 baza sprawdza na nich zaliczenie dnia). firstTry: poprawnie za 1. razem (bez podpowiedzi);
+// prompt / expected — inne niż słówko (np. zdanie w „Wpisz zdania”).
+function _logTypedAns(u, correct, firstTry, prompt, expected) {
   try {
     if (curIdx === null || !DB.logTypedAnswer || !activeWords[curIdx] || _bookIgnored()) return;
-    DB.logTypedAnswer({
+    _typedLogP = DB.logTypedAnswer({
       bookId: currentBookId, unitKey: currentUnitKey,
       wordPl: activeWords[curIdx][0], wordEn: activeWords[curIdx][1],
-      prompt: getQ(curIdx), expected: getA(curIdx), answer: u, correct: !!correct
+      prompt: prompt || getQ(curIdx), expected: expected || getA(curIdx), answer: u, correct: !!correct,
+      firstTry: correct ? !!firstTry : undefined
     });
   } catch(e) {}
+}
+// Próba „na chybił-trafił” w trybie z wpisywaniem (#94): bez podpowiedzi liter, nie liczy się jako
+// wpis do zaliczenia dnia; licznik dla nauczyciela. Zwraca true, gdy to już 2. taka próba przy
+// tym słówku — wywołujący kończy wtedy kartę jak „Nie wiem” (bez XP).
+function _junkAttempt(resEl, inp, areaId, label, msgHtml) {
+  junkTries++;
+  _guardNote('junk', label);
+  if (junkTries >= 2) return true;
+  inp.classList.add('wrong-inp'); playBad(); shake(areaId);
+  try { owlR('hard'); } catch(e) {}
+  resEl.className = 'type-result err';
+  resEl.innerHTML = msgHtml;
+  setTimeout(() => { inp.focus(); inp.select(); }, 60);
+  return false;
 }
 
 function checkType() {
   if (revealed) return;
   const inp = document.getElementById('tInp'), u = inp.value.trim();
   if (!u) return;
-  _typedDayEntry(); // każda próba sprawdzenia liczy się do warunku ≥20 wpisów
   const cor = ctxAnswer(), ok = wordMatchStrict(u, cor);
   const r = document.getElementById('tRes');
+  // 🧹 1 litera, klawisze z rzędu, byle co → bez podpowiedzi liter; 2. raz = „Nie wiem” (bez XP)
+  if (!ok && _isJunkAttempt(u, cor)) {
+    if (_junkAttempt(r, inp, 'typeArea', 'type', _junkMsgHtml('słowo', false, true))) typeRevealAnswer();
+    return;
+  }
+  _typedDayEntry(); // każda próba sprawdzenia liczy się do warunku ≥20 wpisów
   if (ok) {
     revealed = true; inp.disabled = true; document.getElementById('btnChk').disabled = true;
     document.getElementById('btnTypeReveal').style.display = 'none';
@@ -10999,7 +11066,7 @@ function checkType() {
     r.innerHTML = '✓ Poprawnie! <span class="ar">' + esc(cor) + '</span>';
     playOk(); bounce('typeArea'); particles(true); owlR(good ? 'easy' : 'hard');
     _recordAnswerLogged(good);
-    _logTypedAns(u, true);
+    _logTypedAns(u, true, good);
     _typedDayProgress(good); // liczy do zaliczenia dnia (tylko pewne trafienia)
     document.getElementById('tSpeak').style.display = 'block';
     spkForeign(cor);
@@ -11306,6 +11373,12 @@ function checkMissing() {
   if (!u) return;
   const cor = getA(curIdx), ok = fuzzy(u, cor);
   const r = document.getElementById('missingRes');
+  // 🧹 próba „na chybił-trafił” — bez podpowiedzi liter (#94); 2. raz kończy kartę jak błąd
+  let junkEnd = false;
+  if (!ok && _isJunkAttempt(u, cor)) {
+    if (!_junkAttempt(r, inp, 'missingArea', 'missing', _junkMsgHtml('słowo', false, false))) return;
+    junkEnd = true;
+  }
   if (ok) {
     revealed = true; inp.disabled = true; document.getElementById('btnMissChk').disabled = true;
     const good = (typeAttempts === 0);
@@ -11320,11 +11393,11 @@ function checkMissing() {
   }
   typeAttempts++;
   inp.classList.add('wrong-inp'); playBad(); shake('missingArea');
-  if (typeAttempts >= 2) {
+  if (typeAttempts >= 2 || junkEnd) {
     revealed = true; inp.disabled = true; document.getElementById('btnMissChk').disabled = true;
     owlR('hard'); _recordAnswerLogged(false); trackMissed(); sessErrorCount++;
     r.className = 'type-result err';
-    r.innerHTML = '✗ Poprawna odpowiedź: <span class="ar">' + esc(cor) + '</span><br>Twoja: ' + letterDiffHtml(u, cor);
+    r.innerHTML = '✗ Poprawna odpowiedź: <span class="ar">' + esc(cor) + '</span>' + (junkEnd ? '' : '<br>Twoja: ' + letterDiffHtml(u, cor));
     spkForeign(cor);
     setTimeout(() => rate('again'), 1600);
   } else {
@@ -11352,6 +11425,12 @@ function checkDictation() {
   const cor = activeWords[curIdx][1]; // dyktando zawsze EN
   const ok = fuzzy(u, cor);
   const r = document.getElementById('dictRes');
+  // 🧹 próba „na chybił-trafił” — bez podpowiedzi liter (#94); 2. raz kończy kartę jak błąd
+  let junkEnd = false;
+  if (!ok && _isJunkAttempt(u, cor)) {
+    if (!_junkAttempt(r, inp, 'dictateArea', 'dictate', _junkMsgHtml('słowo', true, false))) return;
+    junkEnd = true;
+  }
   if (ok) {
     revealed = true; inp.disabled = true; document.getElementById('btnDictChk').disabled = true;
     const good = (typeAttempts === 0);
@@ -11366,11 +11445,11 @@ function checkDictation() {
   }
   typeAttempts++;
   inp.classList.add('wrong-inp'); playBad(); shake('dictateArea');
-  if (typeAttempts >= 2) {
+  if (typeAttempts >= 2 || junkEnd) {
     revealed = true; inp.disabled = true; document.getElementById('btnDictChk').disabled = true;
     owlR('hard'); _recordAnswerLogged(false); trackMissed(); sessErrorCount++;
     r.className = 'type-result err';
-    r.innerHTML = '✗ Poprawna odpowiedź: <span class="ar">' + esc(cor) + '</span><br>Twoja: ' + letterDiffHtml(u, cor);
+    r.innerHTML = '✗ Poprawna odpowiedź: <span class="ar">' + esc(cor) + '</span>' + (junkEnd ? '' : '<br>Twoja: ' + letterDiffHtml(u, cor));
     document.getElementById('dictSpeak').style.display = 'block';
     setTimeout(() => rate('again'), 1600);
   } else {
@@ -11507,6 +11586,66 @@ function _rateNeutral(noAdvance) {
   if (!pool.length) { setTimeout(showDone, 800); return; }
   setTimeout(generate, 50);
 }
+
+// ══════════════════════════════════════════════
+//  🛡️ ZGADYWANIE I WKLEJANIE (#94) — liczniki dla nauczyciela
+//  'junk' — próby „na chybił-trafił” (_isJunkAttempt), 'paste' — próby wklejenia odpowiedzi.
+//  localStorage['fiszki_guard_<login>'] (dzień); do bazy (report_learning_flags) najwyżej raz
+//  na 10 min na rodzaj (Disk IO), zgadywanie od 3 prób. Gość — nic nie wysyłamy.
+// ══════════════════════════════════════════════
+const GUARD_KINDS = { junk: 3, paste: 1 };   // rodzaj → od ilu prób zgłaszać
+function _guardKey() { return 'fiszki_guard_' + (currentUser || 'guest'); }
+function _guardStore() {
+  let o = {};
+  try { o = JSON.parse(localStorage.getItem(_guardKey()) || '{}') || {}; } catch(e) {}
+  if (o.day !== _localDay()) o = { day: _localDay(), n: {}, sent: {}, modes: {}, at: o.at || {} };
+  ['n', 'sent', 'modes', 'at'].forEach(k => { if (!o[k] || typeof o[k] !== 'object') o[k] = {}; });
+  return o;
+}
+function _guardSave(o) { try { localStorage.setItem(_guardKey(), JSON.stringify(o)); } catch(e) {} }
+function _guardNote(kind, label) {
+  if (!(kind in GUARD_KINDS)) return;
+  const o = _guardStore();
+  o.n[kind] = (o.n[kind] || 0) + 1;
+  const m = o.modes[kind] || (o.modes[kind] = []);
+  if (label && !m.includes(label)) m.push(label);
+  _guardSave(o);
+  _guardFlush(o, kind);
+}
+function _guardFlush(o, only) {
+  if (isGuest || typeof DB === 'undefined' || !DB.reportLearningFlags) return;
+  o = o || _guardStore();
+  let changed = false;
+  Object.keys(GUARD_KINDS).forEach(kind => {
+    if (only && kind !== only) return;
+    const pend = (o.n[kind] || 0) - (o.sent[kind] || 0);
+    if (pend < GUARD_KINDS[kind] || Date.now() - (o.at[kind] || 0) < PACE_REPORT_MS) return;
+    o.sent[kind] = o.n[kind]; o.at[kind] = Date.now(); changed = true;
+    DB.reportLearningFlags(kind, pend, (o.modes[kind] || []).join(','));
+  });
+  if (changed) _guardSave(o);
+}
+// ✋ Wklejanie / upuszczanie tekstu w polach odpowiedzi — zablokowane (pisanie z klawiatury,
+// IME / autokorekta telefonu i literki pod polem działają jak dotąd).
+(function _initNoPaste() {
+  const MODE = { tInp: 'type', tsInp: 'typeSent', dsInp: 'dictSent', gapInp: 'gap', missingInp: 'missing',
+    scrambleInp: 'scramble', dictInp: 'dictate', wrInp: 'write', gpInp: 'grammar' };
+  let toastAt = 0, noteAt = 0;
+  function block(e) {
+    const t = e.target;
+    if (!t || !t.id || !MODE[t.id]) return;
+    e.preventDefault();
+    const now = Date.now();
+    if (now - toastAt > 2500) { toastAt = now; toast('✋ Wklejanie tu nie działa — wpisz odpowiedź sam(a)', 2600); }
+    if (now - noteAt > 1500) { noteAt = now; _guardNote('paste', MODE[t.id]); }
+  }
+  document.addEventListener('paste', block, true);
+  document.addEventListener('drop', block, true);
+  document.addEventListener('beforeinput', e => {
+    if (/^insertFrom(Paste|Drop|PasteAsQuotation|YankRing)$/.test(e.inputType || '')) block(e);
+  }, true);
+  window.addEventListener('pagehide', () => { try { _guardFlush(); } catch(e) {} });
+})();
 
 // ══════════════════════════════════════════════
 //  RATE DIFFICULTY
@@ -13387,6 +13526,79 @@ function letterDiffHtml(userStr, correctStr) {
 }
 
 // ══════════════════════════════════════════════
+//  🧹 PRÓBA „NA CHYBIŁ-TRAFIŁ” (#94) — tryby z wpisywaniem
+//  Zgłoszenie właściciela: w „Wpisz” wystarczyło wpisać 1 literę i Enter — podpowiedź
+//  pokazywała brakujące litery całego słowa, a przepisane słowo dawało pełne XP i liczyło
+//  się jako wpis do dziennego zaliczenia. Teraz próba „na chybił-trafił” nie dostaje
+//  podpowiedzi liter i nie liczy się jako wpis; druga taka próba przy tym samym słówku
+//  działa jak „🙈 Nie wiem”. Literówki dzieci (aple, becaus, zolty, dont, ice cream) to
+//  uczciwe próby — dostają podpowiedź jak dotąd. Nikogo nie zawstydzamy: uczeń widzi
+//  tylko łagodną prośbę, liczniki (_guardNote) widzi nauczyciel.
+//  _isJunkAttempt(wpis, odpowiedź) → '' (uczciwa próba) albo powód:
+//   short — dużo za krótko (< 40% liter odpowiedzi, gdy odpowiedź ma ≥ 3 litery),
+//   same  — ta sama litera / ten sam kawałek w kółko (aaaa, jkjk),
+//   keys  — klawisze z rzędu (asdf, qwer, jkl, abc…) albo tylko jeden rząd klawiatury,
+//   far   — zupełnie inne litery niż w odpowiedzi (odpowiedź ≥ 5 liter),
+//   empty — same znaki bez liter i cyfr.
+//  Porównanie bez wielkości liter, polskich znaków / akcentów, spacji i interpunkcji;
+//  wystarczy, że wpis pasuje do jednego z wariantów odpowiedzi („a, b / c”, nawiasy).
+// ══════════════════════════════════════════════
+const _JUNK_ROWS = ['qwertyuiop', 'asdfghjkl', 'zxcvbnm', 'abcdefghijklmnopqrstuvwxyz'];
+function _junkPrep(s) {
+  return String(s || '').toLowerCase().replace(/ł/g, 'l').normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^\p{L}\p{N}]+/gu, '');
+}
+function _junkAlts(cor) {
+  const raw = String(cor || '').trim();
+  const isPhrase = /[.!?…]\s*$/.test(raw);   // zdania: bez dzielenia po przecinku (jak wordMatchStrict)
+  const out = [];
+  [raw, raw.replace(/\([^)]*\)/g, ' ')].forEach(b => {
+    (isPhrase ? [b] : [b].concat(b.split(/[,;/]|\blub\b|\balbo\b/i))).forEach(x => {
+      const n = _junkPrep(x); if (n && !out.includes(n)) out.push(n);
+    });
+  });
+  return out;
+}
+function _letterDice(a, b) {
+  const m = {}; let common = 0;
+  for (const ch of a) m[ch] = (m[ch] || 0) + 1;
+  for (const ch of b) if (m[ch] > 0) { m[ch]--; common++; }
+  return (a.length + b.length) ? 2 * common / (a.length + b.length) : 0;
+}
+function _junkVs(u, c) {
+  const n = u.length, L = c.length;
+  if (L >= 3 && n < Math.ceil(L * 0.4)) return 'short';
+  if (n >= 3 && /^(.)\1+$/.test(u) && !/^(.)\1+$/.test(c)) return 'same';
+  const ratio = 1 - lev(u, c) / Math.max(n, L);
+  if (ratio >= 0.5) return '';                                  // literówka — uczciwa próba
+  if (n >= 4 && /^(.{1,2})\1+$/.test(u)) return 'same';
+  const run = n >= 3 && _JUNK_ROWS.some(r => r.includes(u) || r.split('').reverse().join('').includes(u));
+  const oneRow = n >= 4 && _JUNK_ROWS.slice(0, 3).some(r => [...u].every(ch => r.includes(ch)));
+  if ((run || oneRow) && !c.includes(u)) return 'keys';
+  if (L >= 5 && ratio < 0.25 && _letterDice(u, c) < 0.34) return 'far';
+  return '';
+}
+function _isJunkAttempt(userStr, correctStr) {
+  const alts = _junkAlts(correctStr);
+  if (!alts.length) return '';
+  const u = _junkPrep(userStr);
+  if (!u) return 'empty';
+  let why = '';
+  for (const c of alts) {
+    const r = _junkVs(u, c);
+    if (!r) return '';
+    why = why || r;
+  }
+  return why;
+}
+// Komunikat dla ucznia (bez podpowiedzi liter). what: 'słowo' | 'zdanie'; hear: dyktando.
+function _junkMsgHtml(what, hear, reveal) {
+  return '🤔 To nie wygląda na to ' + what + ' — wpisz ' + (what === 'zdanie' ? 'całe zdanie' : 'całe słowo')
+    + ' tak, jak je ' + (hear ? 'słyszysz' : 'pamiętasz')
+    + (reveal ? ', albo kliknij <b>🙈 Nie wiem — pokaż odpowiedź</b>.' : '.');
+}
+
+// ══════════════════════════════════════════════
 //  KEYBOARD
 // ══════════════════════════════════════════════
 document.addEventListener('keydown', e => {
@@ -15206,21 +15418,28 @@ function checkTypeSent() {
   const inp = document.getElementById('tsInp');
   const u = inp.value.trim();
   if (!u) return;
-  _typedDayEntry(); // każda próba sprawdzenia liczy się do warunku ≥20 wpisów
-  revealed = true; inp.disabled = true; document.getElementById('btnTsChk').disabled = true;
   const ok = fuzzy(u, tsSentAnswer) || levenshteinSimilar(u, tsSentAnswer);
   const r = document.getElementById('tsRes');
+  // 🧹 próba „na chybił-trafił” nie liczy się jako wpis do zaliczenia dnia (#94); 1. raz — prośba
+  // o całe zdanie (karta zostaje), 2. raz — poprawne zdanie jak przy błędzie
+  const junk = !ok && !!_isJunkAttempt(u, tsSentAnswer);
+  if (junk && !_junkAttempt(r, inp, 'typeSentArea', 'typeSent', _junkMsgHtml('zdanie', false, false))) return;
+  if (!junk) _typedDayEntry(); // każda próba sprawdzenia liczy się do warunku ≥20 wpisów
+  revealed = true; inp.disabled = true; document.getElementById('btnTsChk').disabled = true;
+  const sentPl = (document.getElementById('tsSentPl').textContent || '').replace(/^🇵🇱\s*/, '');
   if (ok) {
-    inp.classList.add('correct-inp'); r.className = 'type-result ok';
+    inp.classList.remove('wrong-inp'); inp.classList.add('correct-inp'); r.className = 'type-result ok';
     r.innerHTML = '✓ Poprawnie! <span class="ar">' + esc(tsSentAnswer) + '</span>';
     playOk(); bounce('typeSentArea'); particles(true); owlR('easy');
     _recordAnswerLogged(true);
+    _logTypedAns(u, true, true, sentPl, tsSentAnswer);   // od #94 baza sprawdza na tym zaliczenie dnia
     _typedDayProgress(true); // zdanie wpisane poprawnie liczy do zaliczenia dnia
   } else {
     inp.classList.add('wrong-inp'); r.className = 'type-result err';
     r.innerHTML = '✗ Poprawne zdanie: <span class="ar">' + esc(tsSentAnswer) + '</span>';
     playBad(); shake('typeSentArea'); owlR('hard');
     _recordAnswerLogged(false);
+    _logTypedAns(u, false, false, sentPl, tsSentAnswer);
     trackMissed(); sessErrorCount++;
   }
   spkForeign(tsSentAnswer);
@@ -22996,6 +23215,7 @@ function renderClassStudents(memberIds, allProfiles) {
   const _smBadge = m => (typeof window.startModeBadgeHtml === 'function') ? window.startModeBadgeHtml(m) : '';
 
   if (!members.length) {
+    const fb = document.getElementById('btnClassFlags'); if (fb) fb.style.display = 'none';
     el.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:.82rem;padding:32px;font-weight:600">Klasa jest pusta.<br>Użyj 🆕 Nowy uczeń, 👥 Generuj wielu lub 🔗 Dołącz istniejącego, aby dodać uczniów.</div>';
     return;
   }
@@ -23042,6 +23262,7 @@ function renderClassStudents(memberIds, allProfiles) {
       : 0;
     const card = document.createElement('div');
     card.className = 'student-card';
+    card.dataset.uid = profile.id;   // znaczek 🛡️ (sfDecorateClassFlags, #94)
     const isSelected = _bulkSelected.has(profile.id);
     card.innerHTML = `
       <label style="display:flex;align-items:center;padding:0 4px;cursor:pointer" onclick="event.stopPropagation()">
@@ -23078,6 +23299,8 @@ function renderClassStudents(memberIds, allProfiles) {
   // Po renderze: zsynchronizuj master checkbox z aktualnym stanem zaznaczeń
   bulkSyncMasterCheckbox();
   bulkRefreshToolbar();
+  // 🛡️ alerty uczciwej nauki z ostatnich 7 dni (#94) — jedno zapytanie na klasę, w pamięci 5 min
+  try { if (window.sfDecorateClassFlags) window.sfDecorateClassFlags(_curClassId); } catch(e) {}
 }
 
 // Zaznacz w klasie uczniów nigdy niezalogowanych / nieaktywnych 5+ mies.
@@ -23189,9 +23412,20 @@ function renderStudentSearchList(query) {
 //  🗓️ miesiąc) — i obniżenie rekordu serii 🎯; każda korekta zapisana w historii.
 //  sfOpenXpGuard(id, login) — jeden uczeń; sfOpenXpGuard() — wszyscy z alertami (30 dni).
 //  Bez migracji #93 — komunikat zamiast danych.
+//  #94 (uczciwa nauka): także 🧹 próby „na chybił-trafił”, ✋ próby wklejenia, ❌ dni „Wpisz”
+//  niezaliczone w bazie; chip „🛡️ N nowych alertów” w „Wymagają Twojej uwagi”
+//  (sfLearningFlagsCount, 3 min w pamięci), znaczki 🛡️ na kartach uczniów w klasie
+//  (sfDecorateClassFlags, jedno zapytanie na klasę, 5 min), „tydzień w klasie”
+//  (sfOpenClassFlagsWeek). Otwarcie listy wszystkich = alerty przejrzane (🆕 = nowe od ostatniego razu).
 // ══════════════════════════════════════════════
 (function () {
-  const MODE_PL = { card: '🃏 Fiszki', quiz: '🎯 Quiz', speed: '⚡ Speed Quiz', tf: '✅ Prawda/Fałsz', grammar: '🧠 Gramatyka' };
+  const MODE_PL = { card: '🃏 Fiszki', quiz: '🎯 Quiz', speed: '⚡ Speed Quiz', tf: '✅ Prawda/Fałsz', grammar: '🧠 Gramatyka',
+    type: '✏️ Wpisz', typeSent: '✏️ Wpisz zdania', missing: '🔡 Litery', dictate: '🎧 Dyktando', dictSent: '🎧 Dyktando zdań',
+    gap: '🕳️ Luka', scramble: '🔀 Rozsypanka', write: '✍️ Napisz zdanie' };
+  // #94: od ilu prób dziennie zgadywanie / wklejanie jest „alertem” (jak xp_flags_new_count w bazie)
+  const JUNK_ALERT = 5, PASTE_ALERT = 2;
+  const kv = s => { const o = {}; String(s || '').split(';').forEach(p => { const i = p.indexOf('='); if (i > 0) o[p.slice(0, i)] = p.slice(i + 1); }); return o; };
+  const REJ_PL = { hits: 'za mało poprawnych odpowiedzi za 1. razem', words: 'za mało różnych słówek', pace: 'odpowiedzi szybsze, niż da się w aplikacji', wait: 'za częste próby' };
   const plN = (n, a, b, c) => n === 1 ? a : (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) ? b : c;
   const iso = d => String(d || '').slice(0, 10);
   const fmtDay = d => { const p = iso(d).split('-'); return p.length === 3 ? p[2] + '.' + p[1] + '.' + p[0] : escHtml(String(d || '')); };
@@ -23208,39 +23442,164 @@ function renderStudentSearchList(query) {
     }
     if (f.kind === 'limit') return d + '⛔ limit tempa XP: odrzucono ' + f.dropped_xp + ' XP (' + f.events + '×)' + (f.day_xp != null ? ' · XP tego dnia: ' + f.day_xp : '');
     if (f.kind === 'day_high') return d + '📈 bardzo dużo XP jednego dnia: ' + (f.day_xp || 0) + ' XP';
+    const modes = () => { const m = String(f.info || '').split(',').filter(Boolean).map(x => MODE_PL[x] || x).join(', '); return m ? ' · ' + escHtml(m) : ''; };
+    if (f.kind === 'junk') return d + '🧹 próby „na chybił-trafił” (1 litera, ta sama litera, klawisze z rzędu…): ' + f.events
+      + (f.events < JUNK_ALERT ? ' <span style="color:var(--muted)">(mało — pewnie zwykłe pomyłki)</span>' : '') + modes();
+    if (f.kind === 'paste') return d + '✋ próby wklejenia odpowiedzi: ' + f.events + modes();
+    if (f.kind === 'typed_reject') {
+      const i = kv(f.info);
+      return d + '❌ dzień „Wpisz” nie zaliczył się w bazie' + (f.events > 1 ? ' (' + f.events + ' próby)' : '') + ': '
+        + escHtml(REJ_PL[i.r] || i.r || '?') + ' — ' + (i.n || 0) + ' ' + plN(+i.n || 0, 'trafienie', 'trafienia', 'trafień') + ' za 1. razem, '
+        + (i.w || 0) + ' ' + plN(+i.w || 0, 'słówko', 'słówka', 'słówek') + ', ' + (i.a || 0) + ' ' + plN(+i.a || 0, 'odpowiedź', 'odpowiedzi', 'odpowiedzi') + ' zapisanych'
+        + (i.ok ? ' · <b style="color:var(--accent2)">później zaliczony ✅</b>' : '');
+    }
     return d + escHtml(f.kind);
   }
+  // Czy wiersz xp_flags to „prawdziwy” alert (jak w xp_flags_new_count)
+  function notable(f) {
+    if (f.kind === 'junk') return f.events >= JUNK_ALERT;
+    if (f.kind === 'paste') return f.events >= PASTE_ALERT;
+    if (f.kind === 'typed_reject') return !kv(f.info).ok;
+    return true;
+  }
+
+  // ── Licznik nowych alertów (chip w „Wymagają Twojej uwagi”) — w pamięci 3 min (Disk IO) ──
+  let _cnt = { at: 0, n: 0, p: null };
+  window.sfLearningFlagsCount = function (force) {
+    if (isGuest || !(isCurrentUserAdmin() || isCurrentUserTeacher()) || !DB.learningFlagsNewCount) return Promise.resolve(0);
+    if (!force && _cnt.p) return _cnt.p;
+    if (!force && Date.now() - _cnt.at < 180000) return Promise.resolve(_cnt.n);
+    _cnt.p = DB.learningFlagsNewCount().then(n => { _cnt = { at: Date.now(), n: n || 0, p: null }; return _cnt.n; },
+      () => { _cnt = { at: Date.now(), n: 0, p: null }; return 0; });
+    return _cnt.p;
+  };
+
+  // ── Klasa: alerty z ostatnich 7 dni (znaczki 🛡️ na kartach + „tydzień w klasie”) — 5 min ──
+  const _cls = {};
+  function classFlags(classId, force) {
+    const c = _cls[classId];
+    if (!force && c && (c.p || Date.now() - c.at < 300000)) return c.p || Promise.resolve(c.rows);
+    const e = _cls[classId] = { at: 0, rows: null, p: null };
+    e.p = DB.classLearningFlags(classId, 7).then(rows => { Object.assign(e, { at: Date.now(), rows, p: null }); return rows; },
+      err => { Object.assign(e, { at: Date.now(), rows: null, p: null }); throw err; });
+    return e.p;
+  }
+  const rowNotable = r => r.fast_bursts > 0 || r.limit_events > 0 || r.day_high > 0 || r.typed_days > 0 || r.junk >= JUNK_ALERT || r.paste >= PASTE_ALERT;
+  const rowParts = r => [
+    r.fast_bursts ? '🐢 ' + r.fast_bursts + ' ' + plN(r.fast_bursts, 'seria', 'serie', 'serii') + ' za szybkich odpowiedzi' : '',
+    r.junk ? '🧹 ' + r.junk + ' ' + plN(r.junk, 'próba', 'próby', 'prób') + ' na chybił-trafił' : '',
+    r.paste ? '✋ ' + r.paste + ' ' + plN(r.paste, 'próba', 'próby', 'prób') + ' wklejenia' : '',
+    r.limit_events ? '⛔ limit XP: ' + r.limit_xp + ' XP odrzucone' : '',
+    r.day_high ? '📈 ' + r.day_high + '× bardzo dużo XP' : '',
+    r.typed_days ? '❌ ' + r.typed_days + ' ' + plN(r.typed_days, 'dzień', 'dni', 'dni') + ' Wpisz ' + (r.typed_days === 1 ? 'niezaliczony' : 'niezaliczone') + ' w bazie' : ''
+  ].filter(Boolean);
+  // Po renderClassStudents: 🛡️ przy uczniach z alertami (jedno zapytanie na klasę) + przycisk w nagłówku
+  window.sfDecorateClassFlags = async function (classId) {
+    const btn = document.getElementById('btnClassFlags');
+    if (isGuest || !classId || !(isCurrentUserAdmin() || isCurrentUserTeacher()) || !DB.classLearningFlags) { if (btn) btn.style.display = 'none'; return; }
+    let rows;
+    try { rows = await classFlags(classId); } catch(e) { rows = null; }
+    if (classId !== _curClassId) return;
+    if (btn) {
+      const n = (rows || []).filter(rowNotable).length;
+      btn.style.display = rows === null ? 'none' : '';
+      btn.textContent = '🛡️ Uczciwa nauka' + (n ? ' (' + n + ')' : '');
+    }
+    (rows || []).filter(rowNotable).forEach(r => {
+      const card = document.querySelector('#classStudentsList .student-card[data-uid="' + r.user_id + '"]');
+      const name = card && card.querySelector('.student-card-name');
+      if (!name || name.querySelector('.sf-flag-badge')) return;
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'sf-flag-badge';
+      b.title = 'Ostatnie 7 dni: ' + rowParts(r).join(' · ') + '. Kliknij, żeby zobaczyć szczegóły.';
+      b.setAttribute('aria-label', '🛡️ Alerty nauki — ' + b.title);
+      b.style.cssText = 'margin-left:6px;background:rgba(255,209,102,.16);border:1.5px solid rgba(255,209,102,.5);border-radius:100px;padding:0 7px;font-size:.72rem;cursor:pointer;line-height:1.5;font-family:inherit;color:var(--text)';
+      b.textContent = '🛡️';
+      b.onclick = e => { e.stopPropagation(); window.sfOpenXpGuard(r.user_id, r.username || ''); };
+      name.appendChild(b);
+    });
+  };
+  // 📊 Tydzień w klasie — każdy uczeń: 🐢 / 🧹 / ✋ / ⛔ / ❌
+  window.sfOpenClassFlagsWeek = async function (classId, className) {
+    classId = classId || _curClassId; className = className || _curClassName || '';
+    if (!classId) return;
+    const title = '🛡️ Uczciwa nauka — ' + escHtml(className) + ' (7 dni)';
+    openGenericModal(title, '<div style="color:var(--muted);font-size:.8rem;padding:10px">⏳ Ładowanie…</div>');
+    let rows;
+    try { rows = await classFlags(classId, true); } catch(e) { openGenericModal(title, '<div style="color:var(--accent);font-size:.82rem">❌ ' + escHtml(e.message || String(e)) + '</div>'); return; }
+    let html;
+    if (rows === null) html = '<div style="font-size:.82rem;color:var(--muted);font-weight:600;line-height:1.5">Ta funkcja wymaga migracji <b>#94</b> (<code>learning-integrity.sql</code>) w Supabase.</div>';
+    else {
+      const by = {}; rows.forEach(r => { by[r.user_id] = r; });
+      const members = (classId === _curClassId && Array.isArray(_allProfiles)) ? _allProfiles.filter(p => _curClassMembers.includes(p.id)) : [];
+      const quiet = members.filter(p => !by[p.id]);
+      const th = 'padding:4px 5px;text-align:center';
+      const cell = (v, warn) => '<td style="' + th + (warn ? ';color:var(--accent);font-weight:800' : '') + '">' + (v ? v : '<span style="color:var(--muted)">·</span>') + '</td>';
+      html = '<div style="font-size:.74rem;color:var(--muted);font-weight:600;line-height:1.5;margin-bottom:8px">Ostatnie 7 dni. 🐢 serie za szybkich odpowiedzi (nie liczyły się) · 🧹 próby „na chybił-trafił” (np. 1 litera i Enter) · ✋ próby wklejenia · ⛔ XP odrzucone przez limit · ❌ dni „Wpisz” niezaliczone w bazie. Kliknij ucznia, żeby zobaczyć szczegóły.</div>';
+      html += rows.length ? '<div style="overflow:auto"><table style="width:100%;font-size:.76rem;border-collapse:collapse">'
+        + '<tr style="color:var(--muted)"><th style="padding:4px 5px;text-align:left">Uczeń</th><th style="' + th + '" title="Serie za szybkich odpowiedzi">🐢</th><th style="' + th + '" title="Próby na chybił-trafił">🧹</th><th style="' + th + '" title="Próby wklejenia">✋</th><th style="' + th + '" title="XP odrzucone przez limit">⛔</th><th style="' + th + '" title="Dni Wpisz niezaliczone w bazie">❌</th><th style="' + th + '">Ostatnio</th></tr>'
+        + rows.map(r => '<tr role="button" tabindex="0" style="cursor:pointer;border-top:1px solid var(--border)" onclick="sfOpenXpGuard(\'' + r.user_id + '\',\'' + escHtml(r.username || '').replace(/'/g, '') + '\')">'
+          + '<td style="padding:5px;font-weight:700">' + (rowNotable(r) ? '🛡️ ' : '') + who(r) + '</td>'
+          + cell(r.fast_bursts, r.fast_bursts > 0) + cell(r.junk, r.junk >= JUNK_ALERT) + cell(r.paste, r.paste >= PASTE_ALERT)
+          + cell(r.limit_xp, r.limit_events > 0) + cell(r.typed_days, r.typed_days > 0)
+          + '<td style="' + th + ';color:var(--muted)">' + fmtDay(iso(r.last_at)) + '</td></tr>').join('') + '</table></div>'
+        : '<div style="font-size:.82rem;color:var(--muted);font-weight:600;padding:8px 0">W tym tygodniu bez alertów — wszyscy uczą się spokojnie. ✅</div>';
+      if (rows.length && quiet.length) html += '<div style="font-size:.74rem;color:var(--muted);font-weight:600;margin-top:8px">✅ Bez alertów: ' + quiet.length + ' ' + plN(quiet.length, 'uczeń', 'uczniów', 'uczniów') + '.</div>';
+      html += '<div style="font-size:.68rem;color:var(--muted);line-height:1.45;margin-top:8px">Pojedyncze 🧹 to zwykle zwykłe pomyłki — liczą się dopiero powtarzające się. To nie są kary, tylko podpowiedź, z kim porozmawiać o uczciwej nauce. 🦉</div>';
+    }
+    html += '<div style="display:flex;justify-content:center;gap:8px;margin-top:12px;flex-wrap:wrap"><button class="btn-sm" onclick="sfOpenXpGuard()">👥 Wszyscy z alertami</button><button class="btn-modal-cancel" onclick="closeGenericModal()">Zamknij</button></div>';
+    openGenericModal(title, html);
+  };
 
   // ── wszyscy uczniowie z alertami ──
   async function openAll() {
-    openGenericModal('🛡️ Podejrzane tempo nauki', '<div style="color:var(--muted);font-size:.8rem;padding:10px">⏳ Ładowanie…</div>');
+    openGenericModal('🛡️ Uczciwa nauka — alerty', '<div style="color:var(--muted);font-size:.8rem;padding:10px">⏳ Ładowanie…</div>');
     let rows;
     try { rows = await DB.xpGuardList(null, 30); } catch(e) { rows = e; }
+    // #94: otwarcie listy = alerty przejrzane (osobno dla każdego nauczyciela); poprzedni znacznik → 🆕
+    let prevSeen = null;
+    if (Array.isArray(rows) && DB.markLearningFlagsSeen) {
+      prevSeen = await DB.markLearningFlagsSeen();
+      _cnt = { at: Date.now(), n: 0, p: null };
+      try { if (window.refreshAdminAttentionBanner) window.refreshAdminAttentionBanner(); } catch(e) {}
+    }
+    const isNew = f => notable(f) && (!prevSeen || new Date(f.last_at) > new Date(prevSeen)) && (Date.now() - new Date(f.last_at) < 7 * 864e5);
     let html;
     if (rows === null) html = NO93;
     else if (rows instanceof Error) html = '<div style="color:var(--accent);font-size:.82rem">❌ ' + escHtml(rows.message) + '</div>';
     else {
       const by = {};
       rows.forEach(f => {
-        const u = by[f.user_id] || (by[f.user_id] = { f, days: new Set(), bursts: 0, blocked: 0, dropped: 0, high: 0, last: f.last_at });
-        u.days.add(iso(f.day));
+        const u = by[f.user_id] || (by[f.user_id] = { f, days: new Set(), bursts: 0, blocked: 0, dropped: 0, high: 0, junk: 0, paste: 0, rej: 0, fresh: false, any: false, last: f.last_at });
+        if (notable(f)) { u.days.add(iso(f.day)); u.any = true; }
+        if (isNew(f)) u.fresh = true;
         if (f.kind === 'fast') { u.bursts += f.events; u.blocked += f.blocked; }
         if (f.kind === 'limit') u.dropped += f.dropped_xp;
         if (f.kind === 'day_high') u.high++;
+        if (f.kind === 'junk') u.junk += f.events;
+        if (f.kind === 'paste') u.paste += f.events;
+        if (f.kind === 'typed_reject' && !kv(f.info).ok) u.rej++;
       });
-      const list = Object.values(by);
+      // najpierw nowe, potem z prawdziwym alertem; same pojedyncze pomyłki 🧹 na końcu
+      const list = Object.values(by).sort((a, b) => (b.fresh - a.fresh) || (b.any - a.any) || (new Date(b.last) - new Date(a.last)));
+      const nNew = list.filter(u => u.fresh).length;
       html = '<div style="font-size:.74rem;color:var(--muted);font-weight:600;line-height:1.5;margin-bottom:8px">Ostatnie 30 dni. Kliknij ucznia, żeby zobaczyć szczegóły i ewentualnie poprawić punkty.'
-        + ' 🐢 = serie za szybkich odpowiedzi (nie liczyły się), ⛔ = XP odrzucone przez limit, 📈 = bardzo dużo XP jednego dnia.</div>';
-      html += list.length ? list.map(u => '<div role="button" tabindex="0" style="cursor:pointer" onclick="sfOpenXpGuard(\'' + u.f.user_id + '\',\'' + escHtml(u.f.username || '').replace(/'/g, '') + '\')">'
-          + row('<b>' + who(u.f) + '</b> · poz. ' + u.f.level + ' · ' + u.f.xp + ' XP · 🎯 ' + u.f.best_combo
-            + '<br><span style="color:var(--muted)">' + u.days.size + ' ' + plN(u.days.size, 'dzień', 'dni', 'dni') + ' z alertem'
+        + ' 🐢 = serie za szybkich odpowiedzi (nie liczyły się), 🧹 = próby „na chybił-trafił” (np. 1 litera i Enter), ✋ = próby wklejenia,'
+        + ' ⛔ = XP odrzucone przez limit, 📈 = bardzo dużo XP jednego dnia, ❌ = dzień „Wpisz” niezaliczony w bazie.'
+        + (nNew ? ' <b style="color:var(--accent)">🆕 = nowe od Twojego ostatniego przeglądu.</b>' : '') + '</div>';
+      if (_curClassId && document.getElementById('sClassDetail') && document.getElementById('sClassDetail').classList.contains('active'))
+        html += '<div style="margin-bottom:8px"><button class="btn-sm accent" onclick="sfOpenClassFlagsWeek()">📊 Tydzień w klasie „' + escHtml(_curClassName || '') + '”</button></div>';
+      html += list.length ? list.map(u => '<div role="button" tabindex="0" style="cursor:pointer' + (u.any ? '' : ';opacity:.7') + '" onclick="sfOpenXpGuard(\'' + u.f.user_id + '\',\'' + escHtml(u.f.username || '').replace(/'/g, '') + '\')">'
+          + row((u.fresh ? '<b style="color:var(--accent)">🆕</b> ' : '') + '<b>' + who(u.f) + '</b> · poz. ' + u.f.level + ' · ' + u.f.xp + ' XP · 🎯 ' + u.f.best_combo
+            + '<br><span style="color:var(--muted)">' + (u.any ? u.days.size + ' ' + plN(u.days.size, 'dzień', 'dni', 'dni') + ' z alertem' : 'pojedyncze pomyłki')
             + (u.bursts ? ' · 🐢 ' + u.bursts + ' ' + plN(u.bursts, 'seria', 'serie', 'serii') : '')
-            + (u.dropped ? ' · ⛔ ' + u.dropped + ' XP' : '') + (u.high ? ' · 📈 ' + u.high + '×' : '')
+            + (u.junk ? ' · 🧹 ' + u.junk : '') + (u.paste ? ' · ✋ ' + u.paste : '')
+            + (u.dropped ? ' · ⛔ ' + u.dropped + ' XP' : '') + (u.high ? ' · 📈 ' + u.high + '×' : '') + (u.rej ? ' · ❌ ' + u.rej + ' ' + plN(u.rej, 'dzień', 'dni', 'dni') : '')
             + ' · ostatnio ' + fmtDay(iso(u.last)) + '</span>') + '</div>').join('')
-        : '<div style="font-size:.82rem;color:var(--muted);font-weight:600;padding:8px 0">Brak alertów — nikt nie klikał podejrzanie szybko. ✅</div>';
+        : '<div style="font-size:.82rem;color:var(--muted);font-weight:600;padding:8px 0">Brak alertów — nikt nie klikał podejrzanie szybko ani nie zgadywał. ✅</div>';
     }
     html += '<div style="display:flex;justify-content:center;margin-top:12px"><button class="btn-modal-cancel" onclick="closeGenericModal()">Zamknij</button></div>';
-    openGenericModal('🛡️ Podejrzane tempo nauki', html);
+    openGenericModal('🛡️ Uczciwa nauka — alerty', html);
   }
 
   // ── jeden uczeń: alerty, XP z ostatnich dni, korekta, historia ──
@@ -23266,9 +23625,9 @@ function renderStudentSearchList(query) {
       + '<span>⭐ Poziom ' + (p.level || 1) + '</span><span>· ' + (p.xp || 0) + ' XP</span>'
       + (combo != null ? '<span>· 🎯 rekord serii ' + combo + '</span>' : '') + '</div>';
     if (flags === null) {
-      html += box('🐢 Alerty', NO93);
+      html += box('🛡️ Alerty', NO93);
     } else {
-      html += box('🐢 Alerty (90 dni)', flags.length ? flags.map(f => row(flagHtml(f))).join('')
+      html += box('🛡️ Alerty (90 dni)', flags.length ? flags.map(f => row(flagHtml(f))).join('')
         : '<div style="font-size:.8rem;color:var(--muted);font-weight:600">Brak alertów — tempo nauki wygląda normalnie. ✅</div>');
     }
     const act = (days || []).filter(d => (d.xp || 0) > 0).slice(-21).reverse();
@@ -30547,6 +30906,7 @@ function buildAlphaKeys(inputId, answer) {
   //   - 📩 prośby o dostęp do podręczników (admin only)
   //   - 🐛 zgłoszone błędy słówek (admin only)
   //   - 💬 wiadomości od użytkowników (admin only)
+  //   - 🛡️ nowe alerty uczciwej nauki (#94) — także nauczyciel (swoi uczniowie)
   //  Każdy chip jest klikalny — prowadzi bezpośrednio do odpowiedniego ekranu.
   //  Banner można schować przyciskiem „✕ Schowaj" na 4 godziny (localStorage).
   // ═══════════════════════════════════════════════
@@ -30587,15 +30947,17 @@ function buildAlphaKeys(inputId, answer) {
     // Pobierz liczniki równolegle (każdy z fallback do 0 przy błędzie / braku uprawnień)
     const safe = (p) => p.then(n => Number(n) || 0).catch(() => 0);
     const isAdmin = isCurrentUserAdmin();
-    const [contactN, accessN, errorN, msgN, reviewN, chatFlagN] = await Promise.all([
+    const [contactN, accessN, errorN, msgN, reviewN, chatFlagN, learnFlagN] = await Promise.all([
       isAdmin && typeof DB.countUnreadContactMessages    === 'function' ? safe(DB.countUnreadContactMessages())    : Promise.resolve(0),
       isAdmin && typeof DB.countPendingBookAccessRequests === 'function' ? safe(DB.countPendingBookAccessRequests()) : Promise.resolve(0),
       isAdmin && typeof DB.countPendingWordErrorReports  === 'function' ? safe(DB.countPendingWordErrorReports())  : Promise.resolve(0),
       isAdmin && typeof DB.countOpenConversations        === 'function' ? safe(DB.countOpenConversations())        : Promise.resolve(0),
       isAdmin && typeof DB.contentReviewCounts           === 'function' ? safe(DB.contentReviewCounts().then(c => c ? c.grammar + c.reading + c.bank : 0)) : Promise.resolve(0),
-      isAdmin && typeof DB.aiChatFlaggedCount            === 'function' ? safe(DB.aiChatFlaggedCount()) : Promise.resolve(0)
+      isAdmin && typeof DB.aiChatFlaggedCount            === 'function' ? safe(DB.aiChatFlaggedCount()) : Promise.resolve(0),
+      // 🛡️ nowe alerty uczciwej nauki (#94) — nauczyciel: swoi uczniowie, admin: wszyscy
+      typeof window.sfLearningFlagsCount === 'function' ? safe(window.sfLearningFlagsCount()) : Promise.resolve(0)
     ]);
-    const total = contactN + accessN + errorN + msgN + reviewN + chatFlagN;
+    const total = contactN + accessN + errorN + msgN + reviewN + chatFlagN + learnFlagN;
     if (total === 0) {
       banner.style.display = 'none';
       return;
@@ -30614,6 +30976,10 @@ function buildAlphaKeys(inputId, answer) {
     if (errorN > 0)   parts.push(chip('🐛', errorN,   errorN === 1   ? 'zgłoszenie błędu' : 'zgłoszenia błędów',             "openWordErrors()"));
     if (reviewN > 0)  parts.push(chip('🛡️', reviewN,  'do zatwierdzenia (treści nauczycieli)', "openContentReview()"));
     if (chatFlagN > 0) parts.push(chip('🚩', chatFlagN, 'rozmowy z AI do przejrzenia (niestosowne / poza tematem / po polsku)', "openAiChatLogs('attention')"));
+    if (learnFlagN > 0) {
+      const one = learnFlagN === 1, few = learnFlagN % 10 >= 2 && learnFlagN % 10 <= 4 && (learnFlagN % 100 < 10 || learnFlagN % 100 >= 20);
+      parts.push(chip('🛡️', learnFlagN, (one ? 'nowy alert' : few ? 'nowe alerty' : 'nowych alertów') + ' nauki (za szybko, zgadywanie, wklejanie)', "sfOpenXpGuard()"));
+    }
     items.innerHTML = parts.join('');
     banner.style.display = '';
   }
