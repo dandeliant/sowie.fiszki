@@ -50,7 +50,7 @@ end $$;
 -- ── 1) Tabele i kolumny ─────────────────────────────────────────────
 alter table public.xp_flags drop constraint if exists xp_flags_kind_check;
 alter table public.xp_flags add constraint xp_flags_kind_check
-  check (kind in ('limit', 'day_high', 'fast', 'junk', 'paste', 'typed_reject'));
+  check (kind in ('limit', 'day_high', 'fast', 'junk', 'paste', 'typed_reject', 'self_easy'));   -- 'self_easy' — #95 (ponowne #94 nie psuje jego wierszy)
 create index if not exists xp_flags_last on public.xp_flags (last_at desc);
 
 -- kiedy nauczyciel / admin ostatnio przejrzał alerty („nowe” = zmienione później)
@@ -290,6 +290,7 @@ $$;
 
 -- ── 6) Podsumowanie klasy (znaczki 🛡️ przy uczniach, „tydzień w klasie”) ──
 --  Tylko uczniowie z jakimkolwiek alertem w ostatnich p_days dniach (1–60, domyślnie 7).
+drop function if exists public.class_learning_flags(uuid, int);   -- #95 dodaje kolumnę — ponowne #94 musi móc ją usunąć
 create or replace function public.class_learning_flags(p_class uuid, p_days int default 7)
 returns table (user_id uuid, username text, nickname text,
                fast_bursts int, fast_blocked int, junk int, paste int,

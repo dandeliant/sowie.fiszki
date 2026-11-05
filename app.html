@@ -428,6 +428,9 @@ body.sf-focus-on{overflow:hidden;}
 /* Blokada gier do czasu nauczenia się 5 słówek dziennie */
 #gamesModeRow.games-locked .mode-btn{opacity:.42;position:relative;filter:grayscale(.6);}
 #gamesModeRow.games-locked .mode-btn::after{content:'🔒';position:absolute;right:2px;top:1px;font-size:.55rem;}
+.mode-btn.gate-locked{opacity:.42;position:relative;filter:grayscale(.6);}
+.mode-btn.gate-locked::after{content:'🔒';position:absolute;right:2px;top:1px;font-size:.55rem;}
+.gate-locked-area .btn-sm,.gate-locked-area button,#sApps.gate-locked-area a.book-card:not([href^="app.html"]){opacity:.5;filter:grayscale(.5);}
 /* Speak mode */
 #speakMicBtn.listening{border-color:var(--danger);background:rgba(255,118,117,.12);animation:speakPulse 1s ease-in-out infinite;}
 @keyframes speakPulse{0%,100%{box-shadow:0 0 0 0 rgba(255,118,117,.3)}50%{box-shadow:0 0 0 14px rgba(255,118,117,0)}}
@@ -6352,9 +6355,10 @@ function showScreen(id) {
   }
   if (id === 'sBooks') { refreshBooks(); if (isGuest) document.getElementById('guestBanner').style.display = 'flex'; if (isCurrentUserAdmin() || isCurrentUserTeacher()) renderAdminPanel(); }
   if (id === 'sLang') { renderAssignedBooksOnLang(); if (typeof window.renderStudentNotesBanner === 'function') window.renderStudentNotesBanner(); }
-  if (id === 'sApps') applyAppsLock();
+  if (id === 'sApps') { applyAppsLock(); updateGamesGate(); }
   if (id === 'sUnits') refreshGrid();
   if (id === 'sStudy') updateModeLocks();
+  if (id === 'sWordList') setTimeout(updateGamesGate, 0);   // 🔒 gry z listy unitów (po zbudowaniu przycisków)
   if (id === 'sStats') { if (isGuest) { toast('📊 Statystyki dostępne po zalogowaniu! 🦉'); return; } renderStats(); }
 
   // Wystartuj nową sesję jeśli ekran ma rozpoznany typ aktywności.
@@ -10913,7 +10917,7 @@ async function _typedDayClaim() {
   }
 }
 function _typedDayCelebrate(o) {
-  _gateMarkTyped();                      // zaliczony dzień Wpisz odblokowuje też gry
+  // gry i tryby odblokowuje osobny licznik (10 słówek za 1. razem — _gateTrack), nie samo zaliczenie dnia
   _showDailyDoneMsg(_typedDistinct(o));
 }
 
@@ -11006,7 +11010,9 @@ function _showDailyDoneMsg(learned) {
         '<div style="font-size:3.2rem;line-height:1;margin-bottom:6px">🎉</div>' +
         '<div style="font-family:\'Playfair Display\',serif;font-size:1.45rem;color:var(--accent);margin-bottom:10px">Dzienna nauka zaliczona!</div>' +
         '<div style="font-size:.92rem;color:var(--text);line-height:1.55;margin-bottom:6px">Nauczyłeś się dziś dobrze <strong>' + n + '</strong> ' + (n === 1 ? 'słówka' : 'słówek') + '. 👏</div>' +
-        '<div style="font-size:.82rem;color:var(--muted);line-height:1.55;margin-bottom:20px">Możesz spokojnie skończyć na dziś, uczyć się dalej albo przejść do gier i innych trybów.</div>' +
+        '<div style="font-size:.82rem;color:var(--muted);line-height:1.55;margin-bottom:20px">' + (gamesUnlocked()
+          ? 'Możesz spokojnie skończyć na dziś, uczyć się dalej albo przejść do gier i innych trybów.'
+          : 'Możesz spokojnie skończyć na dziś albo uczyć się dalej. 🔓 Gry i pozostałe tryby: ' + _gateCount() + '/' + GAME_GATE_WORDS + ' słówek wpisanych za 1. razem.') + '</div>' +
         '<button id="dailyDoneClose" style="background:var(--accent2,#06d6a0);color:#fff;border:none;padding:12px 28px;border-radius:11px;font-size:.98rem;font-weight:800;cursor:pointer;font-family:inherit">✅ Super, rozumiem</button>' +
       '</div>';
     const close = () => { const m = document.getElementById('dailyDoneModal'); if (m) m.remove(); };
@@ -11597,7 +11603,7 @@ function _rateNeutral(noAdvance) {
 //  localStorage['fiszki_guard_<login>'] (dzień); do bazy (report_learning_flags) najwyżej raz
 //  na 10 min na rodzaj (Disk IO), zgadywanie od 3 prób. Gość — nic nie wysyłamy.
 // ══════════════════════════════════════════════
-const GUARD_KINDS = { junk: 3, paste: 1 };   // rodzaj → od ilu prób zgłaszać
+const GUARD_KINDS = { junk: 3, paste: 1, self_easy: 2 };   // rodzaj → od ilu prób zgłaszać (self_easy — #95)
 function _guardKey() { return 'fiszki_guard_' + (currentUser || 'guest'); }
 function _guardStore() {
   let o = {};
@@ -11628,6 +11634,33 @@ function _guardFlush(o, only) {
     DB.reportLearningFlags(kind, pend, (o.modes[kind] || []).join(','));
   });
   if (changed) _guardSave(o);
+}
+// 🃏 Samoocena (#95): „😎 Łatwe” w Fiszkach, a potem przy tym słówku w Wpisz „nie wiem” (2 błędy /
+// pokazana odpowiedź) w tym samym kierunku i w ciągu 36 h → zgłoszenie 'self_easy' dla nauczyciela.
+// Jedno sprawdzenie na „Łatwe”; poprawka literówki (trafienie za 2. razem) to nie „nie wiem”.
+const SELF_EASY_MS = 36 * 3600e3;
+function _selfEasyKey() { return 'fiszki_selfeasy_' + (currentUser || 'guest'); }
+function _selfEasyLoad() {
+  try { const o = JSON.parse(localStorage.getItem(_selfEasyKey()) || '{}'); return (o && typeof o === 'object') ? o : {}; } catch(e) { return {}; }
+}
+function _selfEasySave(o) {
+  const now = Date.now(), keep = {};
+  Object.keys(o).filter(k => o[k] && now - o[k].t < SELF_EASY_MS).sort((a, b) => o[b].t - o[a].t).slice(0, 300).forEach(k => { keep[k] = o[k]; });
+  try { localStorage.setItem(_selfEasyKey(), JSON.stringify(keep)); } catch(e) {}
+}
+function _selfEasyWord() { return (curIdx !== null && activeWords[curIdx]) ? currentBookId + '|' + activeWords[curIdx][0] : null; }
+function _selfEasyMark() {
+  const k = _selfEasyWord();
+  if (!k || isGuest || _bookIgnored()) return;
+  const o = _selfEasyLoad(); o[k] = { t: Date.now(), d: studyDir }; _selfEasySave(o);
+}
+function _selfEasyCheck(r) {
+  const k = _selfEasyWord();
+  if (!k || isGuest) return;
+  const o = _selfEasyLoad(), m = o[k];
+  if (!m) return;
+  delete o[k]; _selfEasySave(o);
+  if (r === 'again' && m.d === studyDir && Date.now() - m.t < SELF_EASY_MS) _guardNote('self_easy', 'card');
 }
 // ✋ Wklejanie / upuszczanie tekstu w polach odpowiedzi — zablokowane (pisanie z klawiatury,
 // IME / autokorekta telefonu i literki pod polem działają jak dotąd).
@@ -11661,7 +11694,9 @@ function rate(r, noAdvance, selfRated) {
   if (mode === 'card' && selfRated && Date.now() - _pace.flippedAt < PACE_MIN_LOOK) return;
   clearInterval(studySpeedTimer); // zatrzymaj timer speed jeśli aktywny
   if (!_paceAnswer()) { _rateNeutral(noAdvance); return; }   // 🐢 za szybko — nie liczy się
-  _gateTrack(r);                  // blokada gier: licznik słówek dnia (Wpisz / Fiszki / Quiz)
+  _gateTrack(r);                  // blokada gier i trybów: licznik słówek dnia (Wpisz / Wpisz zd., za 1. razem)
+  if (mode === 'card' && selfRated && r === 'easy') _selfEasyMark();   // 🃏 #95: „Łatwe” — sprawdzi je Wpisz
+  else if (mode === 'type' && !selfRated) _selfEasyCheck(r);
 
   // Samoocena: 😰 Trudne = nie umiem (jak „Again” w Anki), 🤔 Średnie = prawie (Hard),
   // 😎 Łatwe = umiem (Good). Pozostałe tryby oceniają same (again / hard / good / easy).
@@ -11752,6 +11787,8 @@ function resetLives() { lives = 3; document.getElementById('gameoverBar').style.
 
 function setMode(m) {
   if (isPremiumMode(m)) { showPremiumModal(); return; }
+  // 🔒 Najpierw nauka: poza Fiszki / Wpisz / Wpisz zd. — dopiero po 10 słówkach w Wpisz (blokada dzienna)
+  if (!_gateBypassOnce && !modeGateOk(m)) { showGamesGateMsg(); return; }
   // Skoczek (jump) ma wlasny, zaktualizowany plik skoczek.html (tryby Trudny/Latwy,
   // skacze tylko postac). Kafelek przekierowuje tam — jedna wersja gry zamiast
   // duplikatu wbudowanego w app.html. Tak samo dziala juz deep-link (?game=jump).
@@ -13705,14 +13742,21 @@ function closePremiumModal() {
 }
 
 // ══════════════════════════════════════════════
-//  BLOKADA GIER — najpierw nauka. Gry (rząd „🎮 Gry" w trybach) odblokowują się
-//  na dany dzień, gdy uczeń poprawnie przerobi 5 różnych słówek w trybie
-//  Wpisz / Wpisz zd. / Fiszki / Quiz (albo zaliczy dzień w trybie Wpisz).
-//  Nie dotyczy nauczyciela, admina i opiekuna. Licznik per użytkownik i dzień.
+//  BLOKADA — najpierw nauka (SW v1.251). Gry i pozostałe tryby odblokowują się
+//  na dany dzień, gdy uczeń wpisze poprawnie ZA 1. RAZEM 10 różnych słówek
+//  w trybie Wpisz / Wpisz zd. (samoocena w Fiszkach i Quiz się nie liczą).
+//  Zawsze otwarte: Fiszki, Wpisz, Wpisz zd. Zablokowane: pozostałe tryby nauki,
+//  rząd „🎮 Gry”, gry z listy unitów, kafelki INNE (i gry z game-stats.js
+//  otwarte z adresu). Nie dotyczy nauczyciela, admina i opiekuna.
 // ══════════════════════════════════════════════
-const GAME_GATE_WORDS = 5;
-const GAME_GATE_MODES = ['card', 'quiz', 'type', 'typeSent'];
-const GAME_GATE_MSG = 'Wszystkie gry są dostępne tylko po nauczeniu się 5 słówek przez Wpisz, Fiszki, Quiz. Miłej nauki!';
+const GAME_GATE_WORDS = 10;
+const GAME_GATE_MODES = ['type', 'typeSent'];                // co liczy się do odblokowania
+const GAME_GATE_OPEN_MODES = ['card', 'type', 'typeSent'];   // tryby zawsze otwarte
+// gry z listy unitów (sWordList) — kontenery przycisków
+const GAME_GATE_ROWS = ['spellCardRowBtns', 'sentBuildRowBtns', 'cubesRowBtns', 'duelRowBtns', 'cwRowBtns', 'wsRowBtns',
+  'memRowBtns', 'snakeRowBtns', 'imgCardRowBtns', 'boardRowBtns', 'dobbleRowBtns', 'scrGameRowBtns', 'sentScrGameRowBtns'];
+const GAME_GATE_MSG = 'Gry i pozostałe tryby odblokują się, gdy dziś wpiszesz poprawnie ' + GAME_GATE_WORDS
+  + ' różnych słówek w trybie ✏️ Wpisz albo ✏️ Wpisz zd. — za pierwszym razem. 🃏 Fiszki są zawsze otwarte. Miłej nauki!';
 function _gateKey() { return 'fiszki_games_gate_' + (currentUser || 'guest'); }
 function _gateStore() {
   const d = _localDay();
@@ -13730,52 +13774,76 @@ function gamesGateExempt() {
 function _gateCount(o) { return Object.keys((o || _gateStore()).words).length; }
 function gamesUnlocked() {
   if (gamesGateExempt()) return true;
-  const o = _gateStore();
-  return !!o.typed || _gateCount(o) >= GAME_GATE_WORDS;
+  return _gateCount(_gateStore()) >= GAME_GATE_WORDS;
 }
-// Wołane w rate(): poprawna odpowiedź (łatwe / dobrze / średnie) w trybach Wpisz, Fiszki, Quiz.
+// Czy tryb nauki jest dostępny (Fiszki / Wpisz / Wpisz zd. — zawsze; reszta po odblokowaniu).
+let _gateBypassOnce = false;   // 🚀 tryb na start od nauczyciela (#89)
+function modeGateOk(m) { return GAME_GATE_OPEN_MODES.includes(m) || gamesUnlocked(); }
+// Wołane w rate(): w Wpisz / Wpisz zd. ocena 'easy' / 'good' = poprawnie za 1. razem
+// (po błędzie — 'hard', po pokazaniu odpowiedzi — 'again').
 function _gateTrack(r) {
-  if (!GAME_GATE_MODES.includes(mode) || !(r === 'easy' || r === 'good' || r === 'medium')) return;
+  if (!GAME_GATE_MODES.includes(mode) || !(r === 'easy' || r === 'good')) return;
   if (curIdx === null || !activeWords[curIdx] || gamesGateExempt()) return;
   const o = _gateStore();
-  if (o.typed || _gateCount(o) >= GAME_GATE_WORDS) return;
+  if (_gateCount(o) >= GAME_GATE_WORDS) return;
   const key = currentBookId + '|' + currentUnitKey + '|' + activeWords[curIdx][0];
   if (o.words[key]) return;
   o.words[key] = 1; _gateSave(o);
   const n = _gateCount(o);
-  if (n >= GAME_GATE_WORDS) setTimeout(() => toast('🎮 Gry odblokowane na dziś! Brawo, ' + GAME_GATE_WORDS + ' słówek zaliczonych!', 3800), 900);
-  else setTimeout(() => toast('🎮 Do odblokowania gier: ' + n + '/' + GAME_GATE_WORDS + ' słówek', 2200), 900);
-  updateGamesGate();
-}
-function _gateMarkTyped() {
-  const o = _gateStore();
-  if (o.typed) return;
-  o.typed = true; _gateSave(o);
+  if (n >= GAME_GATE_WORDS) setTimeout(() => toast('🎮 Gry i wszystkie tryby odblokowane na dziś! Brawo, ' + GAME_GATE_WORDS + ' słówek wpisanych!', 3800), 900);
+  else setTimeout(() => toast('🔓 Do odblokowania gier i trybów: ' + n + '/' + GAME_GATE_WORDS + ' słówek', 2200), 900);
   updateGamesGate();
 }
 function updateGamesGate() {
+  const open = gamesUnlocked();
+  // dla gier w osobnych plikach (game-stats.js): kto jest uczniem objętym blokadą i ile słówek trzeba
+  try {
+    if (currentUser || isGuest) localStorage.setItem('fiszki_games_gate_role_' + (currentUser || 'guest'),
+      JSON.stringify({ s: gamesGateExempt() ? 0 : 1, need: GAME_GATE_WORDS }));
+  } catch(e) {}
+  document.querySelectorAll('.mode-btn').forEach(btn => {
+    if (btn.closest('#gamesModeRow')) return;
+    const mm = (btn.getAttribute('onclick') || '').match(/setMode\('([^']+)'\)/);
+    if (mm) btn.classList.toggle('gate-locked', !modeGateOk(mm[1]));
+  });
+  GAME_GATE_ROWS.forEach(id => { const el = document.getElementById(id); if (el) el.classList.toggle('gate-locked-area', !open); });
+  const apps = document.getElementById('sApps');
+  if (apps) apps.classList.toggle('gate-locked-area', !open && hasPremiumAccess());
   const row = document.getElementById('gamesModeRow'), hdr = document.getElementById('gamesModeHdr');
   if (!row || !hdr) return;
-  const open = gamesUnlocked();
   row.classList.toggle('games-locked', !open);
   hdr.innerHTML = open ? '🎮 Gry'
-    : '🎮 Gry <span style="color:var(--accent);text-transform:none;letter-spacing:0">🔒 najpierw 5 słówek (Wpisz / Fiszki / Quiz): ' + _gateCount() + '/' + GAME_GATE_WORDS + '</span>';
+    : '🎮 Gry <span style="color:var(--accent);text-transform:none;letter-spacing:0">🔒 gry i tryby po ' + GAME_GATE_WORDS + ' słówkach w Wpisz: ' + _gateCount() + '/' + GAME_GATE_WORDS + '</span>';
 }
 function showGamesGateMsg() {
   const n = _gateCount();
-  const go = (m, label) => '<button class="btn-sm accent" style="font-size:.8rem;padding:8px 14px" onclick="closeGenericModal&&closeGenericModal();setMode(\'' + m + '\')">' + label + '</button>';
+  const go = (m, label) => '<button class="btn-sm accent" style="font-size:.8rem;padding:8px 14px" onclick="closeGenericModal&&closeGenericModal();_gateGoMode(\'' + m + '\')">' + label + '</button>';
   openGenericModal('🔒 Najpierw nauka, potem gry',
     '<div style="text-align:center;line-height:1.6">'
     + '<div style="font-size:2.4rem">🦉</div>'
     + '<div style="font-size:1rem;font-weight:800;color:var(--text);margin:6px 0 10px">' + GAME_GATE_MSG + '</div>'
     + '<div style="height:10px;background:var(--surface2);border-radius:100px;overflow:hidden;margin:6px auto 4px;max-width:280px"><div style="height:100%;width:' + Math.round(n / GAME_GATE_WORDS * 100) + '%;background:linear-gradient(90deg,var(--accent2),var(--accent))"></div></div>'
     + '<div style="font-size:.8rem;color:var(--muted);font-weight:700;margin-bottom:14px">Dziś: ' + n + ' / ' + GAME_GATE_WORDS + ' słówek</div>'
-    + '<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">' + go('type', '✏️ Wpisz') + go('card', '🃏 Fiszki') + go('quiz', '🎯 Quiz') + '</div></div>');
+    + '<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">' + go('type', '✏️ Wpisz') + go('typeSent', '✏️ Wpisz zd.') + '</div></div>');
 }
-// Klik w zablokowaną grę — przechwytywany zanim zadziała onclick przycisku.
+// Przycisk w oknie blokady: na ekranie nauki — od razu tryb; gdzie indziej — podpowiedź.
+function _gateGoMode(m) {
+  const st = document.getElementById('sStudy');
+  if (st && st.classList.contains('active')) { setMode(m); return; }
+  toast('📚 Wybierz podręcznik i rozdział, a potem tryb ✏️ Wpisz', 3200);
+}
+// Klik w zablokowaną grę (rząd „🎮 Gry”, gry z listy unitów, kafelki INNE) — przechwytywany,
+// zanim zadziała onclick przycisku. Tryby nauki pilnuje setMode (modeGateOk).
 document.addEventListener('click', e => {
-  const row = e.target && e.target.closest && e.target.closest('#gamesModeRow');
-  if (!row || gamesUnlocked()) return;
+  const t = e.target;
+  if (!t || !t.closest || gamesUnlocked()) return;
+  let hit = !!t.closest('#gamesModeRow') || GAME_GATE_ROWS.some(id => t.closest('#' + id));
+  if (!hit) {
+    const a = t.closest('#sApps a.book-card');
+    // INNE: gość / bez Premium ma tam własną kłódkę; linki do podręczników (app.html#…) zostają
+    hit = !!a && !/^app\.html/.test(a.getAttribute('href') || '') && hasPremiumAccess();
+  }
+  if (!hit) return;
   e.preventDefault(); e.stopPropagation();
   showGamesGateMsg();
 }, true);
@@ -23427,7 +23495,7 @@ function renderStudentSearchList(query) {
     type: '✏️ Wpisz', typeSent: '✏️ Wpisz zdania', missing: '🔡 Litery', dictate: '🎧 Dyktando', dictSent: '🎧 Dyktando zdań',
     gap: '🕳️ Luka', scramble: '🔀 Rozsypanka', write: '✍️ Napisz zdanie' };
   // #94: od ilu prób dziennie zgadywanie / wklejanie jest „alertem” (jak xp_flags_new_count w bazie)
-  const JUNK_ALERT = 5, PASTE_ALERT = 2;
+  const JUNK_ALERT = 5, PASTE_ALERT = 2, SELF_EASY_ALERT = 3;   // #95: „Łatwe” w Fiszkach, a w Wpisz nie wie — od 3 dziennie
   const kv = s => { const o = {}; String(s || '').split(';').forEach(p => { const i = p.indexOf('='); if (i > 0) o[p.slice(0, i)] = p.slice(i + 1); }); return o; };
   const REJ_PL = { hits: 'za mało poprawnych odpowiedzi za 1. razem', words: 'za mało różnych słówek', pace: 'odpowiedzi szybsze, niż da się w aplikacji', wait: 'za częste próby' };
   const plN = (n, a, b, c) => n === 1 ? a : (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) ? b : c;
@@ -23450,6 +23518,8 @@ function renderStudentSearchList(query) {
     if (f.kind === 'junk') return d + '🧹 próby „na chybił-trafił” (1 litera, ta sama litera, klawisze z rzędu…): ' + f.events
       + (f.events < JUNK_ALERT ? ' <span style="color:var(--muted)">(mało — pewnie zwykłe pomyłki)</span>' : '') + modes();
     if (f.kind === 'paste') return d + '✋ próby wklejenia odpowiedzi: ' + f.events + modes();
+    if (f.kind === 'self_easy') return d + '🃏 „😎 Łatwe” w Fiszkach, a potem w Wpisz nie wiedział(a): ' + f.events + ' '
+      + plN(f.events, 'słówko', 'słówka', 'słówek') + (f.events < SELF_EASY_ALERT ? ' <span style="color:var(--muted)">(mało — mogło się zdarzyć)</span>' : '');
     if (f.kind === 'typed_reject') {
       const i = kv(f.info);
       return d + '❌ dzień „Wpisz” nie zaliczył się w bazie' + (f.events > 1 ? ' (' + f.events + ' próby)' : '') + ': '
@@ -23463,6 +23533,7 @@ function renderStudentSearchList(query) {
   function notable(f) {
     if (f.kind === 'junk') return f.events >= JUNK_ALERT;
     if (f.kind === 'paste') return f.events >= PASTE_ALERT;
+    if (f.kind === 'self_easy') return f.events >= SELF_EASY_ALERT;
     if (f.kind === 'typed_reject') return !kv(f.info).ok;
     return true;
   }
@@ -23488,11 +23559,12 @@ function renderStudentSearchList(query) {
       err => { Object.assign(e, { at: Date.now(), rows: null, p: null }); throw err; });
     return e.p;
   }
-  const rowNotable = r => r.fast_bursts > 0 || r.limit_events > 0 || r.day_high > 0 || r.typed_days > 0 || r.junk >= JUNK_ALERT || r.paste >= PASTE_ALERT;
+  const rowNotable = r => r.fast_bursts > 0 || r.limit_events > 0 || r.day_high > 0 || r.typed_days > 0 || r.junk >= JUNK_ALERT || r.paste >= PASTE_ALERT || (r.self_easy || 0) >= SELF_EASY_ALERT;
   const rowParts = r => [
     r.fast_bursts ? '🐢 ' + r.fast_bursts + ' ' + plN(r.fast_bursts, 'seria', 'serie', 'serii') + ' za szybkich odpowiedzi' : '',
     r.junk ? '🧹 ' + r.junk + ' ' + plN(r.junk, 'próba', 'próby', 'prób') + ' na chybił-trafił' : '',
     r.paste ? '✋ ' + r.paste + ' ' + plN(r.paste, 'próba', 'próby', 'prób') + ' wklejenia' : '',
+    r.self_easy ? '🃏 ' + r.self_easy + '× „Łatwe” w Fiszkach, a potem błąd w Wpisz' : '',
     r.limit_events ? '⛔ limit XP: ' + r.limit_xp + ' XP odrzucone' : '',
     r.day_high ? '📈 ' + r.day_high + '× bardzo dużo XP' : '',
     r.typed_days ? '❌ ' + r.typed_days + ' ' + plN(r.typed_days, 'dzień', 'dni', 'dni') + ' Wpisz ' + (r.typed_days === 1 ? 'niezaliczony' : 'niezaliczone') + ' w bazie' : ''
@@ -23539,12 +23611,12 @@ function renderStudentSearchList(query) {
       const quiet = members.filter(p => !by[p.id]);
       const th = 'padding:4px 5px;text-align:center';
       const cell = (v, warn) => '<td style="' + th + (warn ? ';color:var(--accent);font-weight:800' : '') + '">' + (v ? v : '<span style="color:var(--muted)">·</span>') + '</td>';
-      html = '<div style="font-size:.74rem;color:var(--muted);font-weight:600;line-height:1.5;margin-bottom:8px">Ostatnie 7 dni. 🐢 serie za szybkich odpowiedzi (nie liczyły się) · 🧹 próby „na chybił-trafił” (np. 1 litera i Enter) · ✋ próby wklejenia · ⛔ XP odrzucone przez limit · ❌ dni „Wpisz” niezaliczone w bazie. Kliknij ucznia, żeby zobaczyć szczegóły.</div>';
+      html = '<div style="font-size:.74rem;color:var(--muted);font-weight:600;line-height:1.5;margin-bottom:8px">Ostatnie 7 dni. 🐢 serie za szybkich odpowiedzi (nie liczyły się) · 🧹 próby „na chybił-trafił” (np. 1 litera i Enter) · ✋ próby wklejenia · 🃏 „Łatwe” w Fiszkach, a potem błąd w Wpisz · ⛔ XP odrzucone przez limit · ❌ dni „Wpisz” niezaliczone w bazie. Kliknij ucznia, żeby zobaczyć szczegóły.</div>';
       html += rows.length ? '<div style="overflow:auto"><table style="width:100%;font-size:.76rem;border-collapse:collapse">'
-        + '<tr style="color:var(--muted)"><th style="padding:4px 5px;text-align:left">Uczeń</th><th style="' + th + '" title="Serie za szybkich odpowiedzi">🐢</th><th style="' + th + '" title="Próby na chybił-trafił">🧹</th><th style="' + th + '" title="Próby wklejenia">✋</th><th style="' + th + '" title="XP odrzucone przez limit">⛔</th><th style="' + th + '" title="Dni Wpisz niezaliczone w bazie">❌</th><th style="' + th + '">Ostatnio</th></tr>'
+        + '<tr style="color:var(--muted)"><th style="padding:4px 5px;text-align:left">Uczeń</th><th style="' + th + '" title="Serie za szybkich odpowiedzi">🐢</th><th style="' + th + '" title="Próby na chybił-trafił">🧹</th><th style="' + th + '" title="Próby wklejenia">✋</th><th style="' + th + '" title="„Łatwe” w Fiszkach, a potem błąd w Wpisz">🃏</th><th style="' + th + '" title="XP odrzucone przez limit">⛔</th><th style="' + th + '" title="Dni Wpisz niezaliczone w bazie">❌</th><th style="' + th + '">Ostatnio</th></tr>'
         + rows.map(r => '<tr role="button" tabindex="0" style="cursor:pointer;border-top:1px solid var(--border)" onclick="sfOpenXpGuard(\'' + r.user_id + '\',\'' + escHtml(r.username || '').replace(/'/g, '') + '\')">'
           + '<td style="padding:5px;font-weight:700">' + (rowNotable(r) ? '🛡️ ' : '') + who(r) + '</td>'
-          + cell(r.fast_bursts, r.fast_bursts > 0) + cell(r.junk, r.junk >= JUNK_ALERT) + cell(r.paste, r.paste >= PASTE_ALERT)
+          + cell(r.fast_bursts, r.fast_bursts > 0) + cell(r.junk, r.junk >= JUNK_ALERT) + cell(r.paste, r.paste >= PASTE_ALERT) + cell(r.self_easy || 0, (r.self_easy || 0) >= SELF_EASY_ALERT)
           + cell(r.limit_xp, r.limit_events > 0) + cell(r.typed_days, r.typed_days > 0)
           + '<td style="' + th + ';color:var(--muted)">' + fmtDay(iso(r.last_at)) + '</td></tr>').join('') + '</table></div>'
         : '<div style="font-size:.82rem;color:var(--muted);font-weight:600;padding:8px 0">W tym tygodniu bez alertów — wszyscy uczą się spokojnie. ✅</div>';
@@ -23574,7 +23646,7 @@ function renderStudentSearchList(query) {
     else {
       const by = {};
       rows.forEach(f => {
-        const u = by[f.user_id] || (by[f.user_id] = { f, days: new Set(), bursts: 0, blocked: 0, dropped: 0, high: 0, junk: 0, paste: 0, rej: 0, fresh: false, any: false, last: f.last_at });
+        const u = by[f.user_id] || (by[f.user_id] = { f, days: new Set(), bursts: 0, blocked: 0, dropped: 0, high: 0, junk: 0, paste: 0, selfEasy: 0, rej: 0, fresh: false, any: false, last: f.last_at });
         if (notable(f)) { u.days.add(iso(f.day)); u.any = true; }
         if (isNew(f)) u.fresh = true;
         if (f.kind === 'fast') { u.bursts += f.events; u.blocked += f.blocked; }
@@ -23582,13 +23654,14 @@ function renderStudentSearchList(query) {
         if (f.kind === 'day_high') u.high++;
         if (f.kind === 'junk') u.junk += f.events;
         if (f.kind === 'paste') u.paste += f.events;
+        if (f.kind === 'self_easy') u.selfEasy += f.events;
         if (f.kind === 'typed_reject' && !kv(f.info).ok) u.rej++;
       });
       // najpierw nowe, potem z prawdziwym alertem; same pojedyncze pomyłki 🧹 na końcu
       const list = Object.values(by).sort((a, b) => (b.fresh - a.fresh) || (b.any - a.any) || (new Date(b.last) - new Date(a.last)));
       const nNew = list.filter(u => u.fresh).length;
       html = '<div style="font-size:.74rem;color:var(--muted);font-weight:600;line-height:1.5;margin-bottom:8px">Ostatnie 30 dni. Kliknij ucznia, żeby zobaczyć szczegóły i ewentualnie poprawić punkty.'
-        + ' 🐢 = serie za szybkich odpowiedzi (nie liczyły się), 🧹 = próby „na chybił-trafił” (np. 1 litera i Enter), ✋ = próby wklejenia,'
+        + ' 🐢 = serie za szybkich odpowiedzi (nie liczyły się), 🧹 = próby „na chybił-trafił” (np. 1 litera i Enter), ✋ = próby wklejenia, 🃏 = „Łatwe” w Fiszkach, a potem błąd w Wpisz,'
         + ' ⛔ = XP odrzucone przez limit, 📈 = bardzo dużo XP jednego dnia, ❌ = dzień „Wpisz” niezaliczony w bazie.'
         + (nNew ? ' <b style="color:var(--accent)">🆕 = nowe od Twojego ostatniego przeglądu.</b>' : '') + '</div>';
       if (_curClassId && document.getElementById('sClassDetail') && document.getElementById('sClassDetail').classList.contains('active'))
@@ -23597,7 +23670,7 @@ function renderStudentSearchList(query) {
           + row((u.fresh ? '<b style="color:var(--accent)">🆕</b> ' : '') + '<b>' + who(u.f) + '</b> · poz. ' + u.f.level + ' · ' + u.f.xp + ' XP · 🎯 ' + u.f.best_combo
             + '<br><span style="color:var(--muted)">' + (u.any ? u.days.size + ' ' + plN(u.days.size, 'dzień', 'dni', 'dni') + ' z alertem' : 'pojedyncze pomyłki')
             + (u.bursts ? ' · 🐢 ' + u.bursts + ' ' + plN(u.bursts, 'seria', 'serie', 'serii') : '')
-            + (u.junk ? ' · 🧹 ' + u.junk : '') + (u.paste ? ' · ✋ ' + u.paste : '')
+            + (u.junk ? ' · 🧹 ' + u.junk : '') + (u.paste ? ' · ✋ ' + u.paste : '') + (u.selfEasy ? ' · 🃏 ' + u.selfEasy : '')
             + (u.dropped ? ' · ⛔ ' + u.dropped + ' XP' : '') + (u.high ? ' · 📈 ' + u.high + '×' : '') + (u.rej ? ' · ❌ ' + u.rej + ' ' + plN(u.rej, 'dzień', 'dni', 'dni') : '')
             + ' · ostatnio ' + fmtDay(iso(u.last)) + '</span>') + '</div>').join('')
         : '<div style="font-size:.82rem;color:var(--muted);font-weight:600;padding:8px 0">Brak alertów — nikt nie klikał podejrzanie szybko ani nie zgadywał. ✅</div>';
@@ -24955,7 +25028,9 @@ function buildAlphaKeys(inputId, answer) {
       const s = document.getElementById('sStudy');
       if (!s || !s.classList.contains('active') || document.body.classList.contains('sf-focus-on')) return;   // uczeń wybrał sam
       if (currentBookId !== a.bookId || currentUnitKey !== a.unitKey) return;
-      try { setMode(a.mode); } catch(e) { console.warn('[start mode setMode]', e && e.message || e); }
+      // tryb wybrany przez nauczyciela otwiera się także przed odblokowaniem (blokada „najpierw nauka”)
+      try { _gateBypassOnce = true; setMode(a.mode); } catch(e) { console.warn('[start mode setMode]', e && e.message || e); }
+      finally { _gateBypassOnce = false; }
     }, 600);
   }
 })();
@@ -25193,6 +25268,7 @@ function buildAlphaKeys(inputId, answer) {
                         if (typeof setMode === 'function') setMode(game);
                         setTimeout(() => {
                           try {
+                            if (mode !== game) return;   // tryb zablokowany (najpierw nauka) — bez startu gry
                             if (game === 'jump' && typeof jumpStart === 'function') jumpStart();
                             else if (game === 'bridge' && typeof brStart === 'function') brStart();
                             else if (game === 'butterfly' && typeof bfStartGame === 'function') bfStartGame();

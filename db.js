@@ -2494,7 +2494,8 @@ const DB = (() => {
     return data || [];
   }
   // ── 🛡️ Uczciwa nauka (migracja #94) ──
-  // Zgłoszenie z aplikacji: 'junk' (próby „na chybił-trafił”) / 'paste' (próby wklejenia).
+  // Zgłoszenie z aplikacji: 'junk' (próby „na chybił-trafił”) / 'paste' (próby wklejenia) /
+  // 'self_easy' (#95: „Łatwe” w Fiszkach, a potem w Wpisz nie wie; bez #95 — odrzucone po cichu).
   function reportLearningFlags(kind, count, info) {
     if (!_userId) return;
     try {
