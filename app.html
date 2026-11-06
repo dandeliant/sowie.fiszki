@@ -6330,6 +6330,7 @@ async function renderGameHistoryBox(days) {
 
 function showScreen(id) {
   try { if (id !== _actLastScreen) { _actLastScreen = id; _act('screen', { v: id }); } } catch(e) {}   // 📜 przebieg nauki
+  try { if (id !== 'sStudy' && id !== 'sDone' && typeof mode !== 'undefined' && mode === 'type') _easyQuizMaybe(); } catch(e) {}   // 🔎 wyjście z nauki po Wpisz
   // Zakończ poprzednią aktywność (przez DB.endActivity — best-effort).
   try { if (typeof DB !== 'undefined' && DB.endActivity) DB.endActivity(); } catch(e) {}
 
@@ -11046,13 +11047,33 @@ function _logTypedAns(u, correct, firstTry, prompt, expected) {
 function _junkAttempt(resEl, inp, areaId, label, msgHtml) {
   junkTries++;
   _guardNote('junk', label);
+  const nth = _junkPenalty();   // 🧹 #97: 1. raz dziś — ostrzeżenie, kolejne — −5 XP
   if (junkTries >= 2) return true;
   inp.classList.add('wrong-inp'); playBad(); shake(areaId);
   try { owlR('hard'); } catch(e) {}
   resEl.className = 'type-result err';
-  resEl.innerHTML = msgHtml;
+  resEl.innerHTML = msgHtml + '<br><span style="font-size:.86em;opacity:.9">👀 Takie wpisy widzi nauczyciel'
+    + (nth === 1 ? ' — każdy kolejny dziś to <b>−5 XP</b>.' : nth > 1 ? ' · <b>−5 XP</b>' : '.') + '</span>';
   setTimeout(() => { inp.focus(); inp.select(); }, 60);
   return false;
+}
+// 🧹 Kara za wpisywanie byle czego (#97): licznik dnia w przeglądarce; pierwszy raz — tylko ostrzeżenie,
+// każdy kolejny — −5 XP w bazie (penalize_junk_xp, najwyżej 50 XP dziennie). Zwraca, który to raz dziś
+// (0 = kara nie dotyczy: gość, konto nauczyciela / admina / opiekuna, „Nie zapisuj mojej nauki”).
+function _junkPenalty() {
+  try {
+    if (isGuest || !currentUser || _bookIgnored() || gamesGateExempt() || typeof DB === 'undefined' || !DB.penalizeJunkXp) return 0;
+    const k = 'fiszki_junkday_' + currentUser;
+    let o = {};
+    try { o = JSON.parse(localStorage.getItem(k) || '{}') || {}; } catch(e) {}
+    if (o.day !== _localDay()) o = { day: _localDay(), n: 0 };
+    o.n = (o.n || 0) + 1;
+    try { localStorage.setItem(k, JSON.stringify(o)); } catch(e) {}
+    if (o.n >= 2) DB.penalizeJunkXp().then(r => {
+      if (r && r.applied > 0) toast('🧹 −' + r.applied + ' XP za wpisywanie byle czego. Wpisuj prawdziwe odpowiedzi — nauczyciel widzi takie wpisy.', 3800);
+    });
+    return o.n;
+  } catch(e) { return 0; }
 }
 
 function checkType() {
@@ -11670,6 +11691,128 @@ function _selfEasyCheck(r) {
   if (r === 'again' && m.d === studyDir && Date.now() - m.t < SELF_EASY_MS) _guardNote('self_easy', 'card');
 }
 // ══════════════════════════════════════════════
+//  🔎 SPRAWDZIAN „ŁATWYCH” (SW v1.254) — na końcu sesji Wpisz (koniec rozdziału, wyjście z trybu
+//  albo z ekranu nauki) krótki quiz A/B/C/D ze słówek oznaczonych w Fiszkach „😎 Łatwe” (znaczniki
+//  _selfEasy*, 36 h; najwyżej 5, najnowsze), w kierunku z Fiszek. Błąd: słówko wraca do nauki
+//  (FSRS 'again' — traci „Opanowane”), zgłoszenie 'self_easy' dla nauczyciela (#95), zdarzenie 'easyq'
+//  w 📜 przebiegu nauki. Każdy znacznik sprawdzany raz. Tylko konto ucznia; okna nie da się pominąć.
+// ══════════════════════════════════════════════
+const EASYQ_MAX = 5;
+var _easyQTyped = 0, _easyQOpen = false;   // var — showScreen woła _easyQuizMaybe wcześnie
+function _easyQWord(b, pl) {
+  let units = (BOOKS[b] && BOOKS[b].units) || {};
+  try { if (typeof getUnitsWithCustom === 'function') units = getUnitsWithCustom(b) || units; } catch(e) {}
+  for (const uk of Object.keys(units)) {
+    if (uk === 'all') continue;
+    const words = (units[uk] && units[uk].words) || [];
+    const idx = words.findIndex(w => w && w[0] === pl);
+    if (idx >= 0) return { uk, idx, w: words[idx], words };
+  }
+  return null;
+}
+function _easyQuizMaybe() {
+  try {
+    if (_easyQOpen || !_easyQTyped || isGuest || !currentUser || gamesGateExempt()) return;
+    const o = _selfEasyLoad(), now = Date.now();
+    const qs = Object.keys(o).filter(k => o[k] && now - o[k].t < SELF_EASY_MS)
+      .sort((a, b) => o[b].t - o[a].t)
+      .map(k => { const i = k.indexOf('|'); const b = k.slice(0, i), pl = k.slice(i + 1); const f = _easyQWord(b, pl); return f ? { key: k, b, pl, d: o[k].d, f } : null; })
+      .filter(Boolean).slice(0, EASYQ_MAX);
+    _easyQTyped = 0;
+    if (!qs.length) return;
+    setTimeout(() => _easyQuizOpen(qs), 350);
+  } catch(e) {}
+}
+// słówko z błędem wraca do nauki (jak „Trudne” w Fiszkach) — także poza bieżącym rozdziałem
+function _easyQuizDemote(q) {
+  try {
+    if (_bookIgnored && _bookIgnored()) return;
+    const inSession = (q.b === currentBookId && q.f.uk === currentUnitKey && activeWords[q.f.idx] && activeWords[q.f.idx][0] === q.pl);
+    let states;
+    if (inSession) states = ws;
+    else { const pr = DB.getUnitProgress(currentUser, q.b, q.f.uk); states = Object.assign({}, (pr && pr.wordStates) || {}); }
+    if (!states[q.f.idx]) return;
+    states[q.f.idx] = sm2Update(states[q.f.idx], 'again');
+    if (inSession) { states[q.f.idx].dueIn = 4; if (!pool.includes(q.f.idx)) pool.push(q.f.idx); }
+    const kn = Object.values(states).filter(x => x && x.known).length;
+    DB.saveUnitProgress(currentUser, q.b, q.f.uk, states, kn, q.f.words.length);
+  } catch(e) {}
+}
+function _easyQuizOpen(qs) {
+  if (_easyQOpen || document.getElementById('easyQuiz')) return;
+  _easyQOpen = true;
+  const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  const qz = qs.map(q => {
+    const enpl = q.d === 'en_pl';
+    const ans = enpl ? q.f.w[0] : q.f.w[1];
+    const pool2 = q.f.words.map(w => enpl ? w[0] : w[1]).filter(x => x && x !== ans);
+    if (pool2.length < 3) {   // mały rozdział — dobierz z całego podręcznika
+      Object.values((BOOKS[q.b] && BOOKS[q.b].units) || {}).forEach(u => (u.words || []).forEach(w => { const x = enpl ? w[0] : w[1]; if (x && x !== ans && !pool2.includes(x)) pool2.push(x); }));
+    }
+    const opts = shuffle([ans].concat(shuffle(Array.from(new Set(pool2))).slice(0, 3)));
+    return { q, prompt: enpl ? q.f.w[1] : q.f.w[0], ans, opts, dir: enpl ? 'EN → PL' : 'PL → EN' };
+  });
+  let i = 0, good = 0;
+  const wrong = [];
+  const ov = document.createElement('div');
+  ov.id = 'easyQuiz';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:10050;background:rgba(10,12,28,.82);display:flex;align-items:center;justify-content:center;padding:16px';
+  document.body.appendChild(ov);
+  const finish = () => {
+    ov.innerHTML = '<div class="modal-box" style="max-width:440px;width:100%;text-align:center">'
+      + '<div style="font-size:2.4rem">' + (wrong.length ? '🔁' : '🎉') + '</div>'
+      + '<div class="modal-title" style="margin:6px 0">Wynik: ' + good + '/' + qz.length + '</div>'
+      + '<div style="font-size:.86rem;line-height:1.55;color:var(--text);margin-bottom:12px">' + (wrong.length
+        ? 'Te słówka wracają do nauki: ' + wrong.map(w => '<b>' + escHtml(w) + '</b>').join(', ') + '.<br><span style="color:var(--muted)">„😎 Łatwe” klikaj tylko wtedy, gdy naprawdę znasz słówko — nauczyciel widzi wynik sprawdzianu.</span>'
+        : 'Brawo — „Łatwe” było uczciwe! 🦉') + '</div>'
+      + '<button class="btn-modal-save" id="easyQOk">OK</button></div>';
+    const close = () => { ov.remove(); _easyQOpen = false; document.removeEventListener('keydown', key, true); };
+    document.getElementById('easyQOk').onclick = close;
+    setTimeout(() => { try { document.getElementById('easyQOk').focus(); } catch(e) {} }, 50);
+  };
+  let locked = false;
+  const answer = (k) => {
+    if (locked) return;
+    const z = qz[i], pick = z.opts[k];
+    if (pick === undefined) return;
+    locked = true;
+    const ok = pick === z.ans;
+    // znacznik sprawdzony (także przy złej odpowiedzi)
+    try { const o = _selfEasyLoad(); delete o[z.q.key]; _selfEasySave(o); } catch(e) {}
+    _act('easyq', { b: z.q.b, w: z.q.pl, v: pick, ok: ok ? 1 : 0, d: z.q.d === 'en_pl' ? 'en' : undefined });
+    if (ok) { good++; try { playOk(); } catch(e) {} }
+    else { wrong.push(z.q.pl); _easyQuizDemote(z.q); _guardNote('self_easy', 'quiz'); try { playBad(); } catch(e) {} }
+    ov.querySelectorAll('[data-eq]').forEach(b => {
+      const t = z.opts[+b.dataset.eq];
+      b.disabled = true;
+      if (t === z.ans) { b.style.background = 'rgba(6,214,160,.25)'; b.style.borderColor = 'var(--accent2)'; }
+      else if (+b.dataset.eq === k) { b.style.background = 'rgba(255,118,117,.22)'; b.style.borderColor = 'var(--danger,#ff7675)'; }
+    });
+    setTimeout(() => { i++; locked = false; if (i < qz.length) render(); else finish(); }, ok ? 900 : 1900);
+  };
+  const render = () => {
+    const z = qz[i];
+    ov.innerHTML = '<div class="modal-box" style="max-width:460px;width:100%">'
+      + '<div class="modal-title" style="margin-bottom:4px">🔎 Szybki sprawdzian</div>'
+      + '<div style="font-size:.78rem;color:var(--muted);font-weight:600;line-height:1.45;margin-bottom:10px">W Fiszkach te słówka były „😎 Łatwe” — sprawdźmy! ' + (i + 1) + '/' + qz.length + ' · ' + z.dir + '</div>'
+      + '<div style="text-align:center;font-family:\'Playfair Display\',serif;font-size:1.5rem;font-weight:700;color:var(--text);margin:8px 0 14px;overflow-wrap:anywhere">' + escHtml(z.prompt) + '</div>'
+      + '<div style="display:grid;grid-template-columns:1fr;gap:8px">'
+      + z.opts.map((o, k) => '<button data-eq="' + k + '" class="quiz-option" style="text-align:left;padding:11px 14px;border-radius:12px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font:inherit;font-weight:700;cursor:pointer">'
+        + '<span style="opacity:.6;margin-right:8px">' + 'ABCD'[k] + '</span>' + escHtml(o) + '</button>').join('')
+      + '</div></div>';
+    ov.querySelectorAll('[data-eq]').forEach(b => { b.onclick = () => answer(+b.dataset.eq); });
+  };
+  const key = (e) => {
+    if (!document.getElementById('easyQuiz')) return;
+    const m = { '1': 0, '2': 1, '3': 2, '4': 3, a: 0, b: 1, c: 2, d: 3 }[String(e.key || '').toLowerCase()];
+    if (m !== undefined && ov.querySelector('[data-eq]')) { e.preventDefault(); e.stopPropagation(); answer(m); }
+    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); }   // nie da się pominąć
+  };
+  document.addEventListener('keydown', key, true);
+  render();
+}
+
+// ══════════════════════════════════════════════
 //  📜 PRZEBIEG NAUKI (#96) — dziennik poczynań ucznia dla nauczyciela / opiekuna.
 //  Zdarzenia trafiają do kolejki localStorage['fiszki_actlog_<login>'] i są wysyłane
 //  paczkami (DB.logStudyActions → log_study_actions) co ~45 s, przy ukryciu karty i przy starcie.
@@ -11776,7 +11919,7 @@ function rate(r, noAdvance, selfRated) {
   _actRate(r, selfRated);         // 📜 przebieg nauki (#96)
   _gateTrack(r);                  // blokada gier i trybów: licznik słówek dnia (Wpisz / Wpisz zd., za 1. razem)
   if (mode === 'card' && selfRated && r === 'easy') _selfEasyMark();   // 🃏 #95: „Łatwe” — sprawdzi je Wpisz
-  else if (mode === 'type' && !selfRated) _selfEasyCheck(r);
+  else if (mode === 'type' && !selfRated) { _selfEasyCheck(r); _easyQTyped++; }   // 🔎 sprawdzian „Łatwych” na końcu sesji Wpisz
 
   // Samoocena: 😰 Trudne = nie umiem (jak „Again” w Anki), 🤔 Średnie = prawie (Hard),
   // 😎 Łatwe = umiem (Good). Pozostałe tryby oceniają same (again / hard / good / easy).
@@ -11885,6 +12028,7 @@ function setMode(m) {
     return;
   }
   clearInterval(studySpeedTimer);
+  if (mode === 'type' && m !== 'type') _easyQuizMaybe();   // 🔎 przejście z Wpisz do innego trybu
   mode = m;
   _act('mode', { m, b: currentBookId, u: currentUnitKey });   // 📜 przebieg nauki
   document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
@@ -11972,6 +12116,7 @@ function _leaveBrowserFullscreen() {
 }
 // „← Wróć": koniec trybu, powrót do wyboru trybu w tym samym unicie (postęp sesji zostaje).
 function exitStudyFocus() {
+  if (mode === 'type') _easyQuizMaybe();   // 🔎 wyjście z Wpisz
   clearInterval(studySpeedTimer); studySpeedTimer = null;
   try { if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel(); } catch(e) {}
   hideAreas(); hideDiff();
@@ -12306,6 +12451,7 @@ function updateStats() {
 // ══════════════════════════════════════════════
 function showDone() {
   active = false; hideAreas(); hideDiff(); document.getElementById('btnGen').disabled = true;
+  if (mode === 'type') _easyQuizMaybe();   // 🔎 koniec sesji Wpisz
   _syncIgnoreBtn();
   document.getElementById('dXP').textContent = 'Zdobyto: ' + sessXP + ' XP';
   document.getElementById('dBadges').innerHTML = LVLS.filter(b=>curLvl>=b.l).map(b=>'<div class="done-badge">'+b.i+' '+b.n+'</div>').join('');
@@ -23613,7 +23759,8 @@ function renderStudentSearchList(query) {
     if (f.kind === 'day_high') return d + '📈 bardzo dużo XP jednego dnia: ' + (f.day_xp || 0) + ' XP';
     const modes = () => { const m = String(f.info || '').split(',').filter(Boolean).map(x => MODE_PL[x] || x).join(', '); return m ? ' · ' + escHtml(m) : ''; };
     if (f.kind === 'junk') return d + '🧹 próby „na chybił-trafił” (1 litera, ta sama litera, klawisze z rzędu…): ' + f.events
-      + (f.events < JUNK_ALERT ? ' <span style="color:var(--muted)">(mało — pewnie zwykłe pomyłki)</span>' : '') + modes();
+      + (f.events < JUNK_ALERT ? ' <span style="color:var(--muted)">(mało — pewnie zwykłe pomyłki)</span>' : '') + modes()
+      + (f.dropped_xp > 0 ? ' · <b>−' + f.dropped_xp + ' XP kary</b>' : '');   // #97: −5 XP po ostrzeżeniu
     if (f.kind === 'paste') return d + '✋ próby wklejenia odpowiedzi: ' + f.events + modes();
     if (f.kind === 'self_easy') return d + '🃏 „😎 Łatwe” w Fiszkach, a potem w Wpisz nie wiedział(a): ' + f.events + ' '
       + plN(f.events, 'słówko', 'słówka', 'słówek') + (f.events < SELF_EASY_ALERT ? ' <span style="color:var(--muted)">(mało — mogło się zdarzyć)</span>' : '');
@@ -23829,6 +23976,23 @@ function renderStudentSearchList(query) {
         + '</div>'
         + '<div style="font-size:.68rem;color:var(--muted);line-height:1.45;margin-top:6px">XP znika najpierw z wybranego dnia, potem z najnowszych dni (poprawią się też rankingi 📅 tydzień i 🗓️ miesiąc); poziom przeliczy się sam. Rekord serii można tylko obniżyć. Najpierw porozmawiaj z uczniem — chodzi o naukę, nie o karę. 🦉</div>'
         + '<div style="display:flex;justify-content:flex-end;margin-top:8px"><button class="btn-sm accent" id="xgSave">💾 Zapisz korektę</button></div>');
+      // ✏️ #97: ustaw dokładnie XP / poziom, rekord serii (w obie strony), celność
+      const curT = +p.total_answers || 0, curC = +p.correct_answers || 0, curPct = curT ? Math.round(curC * 100 / curT) : 0;
+      const inp = (id, ph, extra) => '<input id="' + id + '" class="ai-inp" type="number" min="0" step="1" placeholder="' + ph + '" style="width:100%;margin-top:3px"' + (extra || '') + '>';
+      html += box('✏️ Ustaw dokładnie',
+        '<div style="font-size:.74rem;color:var(--text);font-weight:700;margin-bottom:6px">Teraz: ' + (p.xp || 0) + ' XP · poziom ' + (p.level || 1)
+          + ' · 🎯 rekord serii ' + (combo != null ? combo : 0) + ' · celność ' + curC + '/' + curT + (curT ? ' (' + curPct + '%)' : '') + '</div>'
+        + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:.74rem;font-weight:700;color:var(--muted)">'
+        + '<label>XP (dokładnie)' + inp('xsXp', String(p.xp || 0)) + '</label>'
+        + '<label>…albo poziom' + inp('xsLvl', String(p.level || 1), ' min="1"') + '</label>'
+        + '<label>🎯 Rekord serii poprawnych' + inp('xsCombo', String(combo != null ? combo : 0)) + '</label>'
+        + '<label>Celność %' + inp('xsPct', String(curPct), ' max="100"') + '</label>'
+        + '<label>Wszystkie odpowiedzi' + inp('xsTotal', String(curT)) + '</label>'
+        + '<label>Poprawne odpowiedzi' + inp('xsCorrect', String(curC)) + '</label>'
+        + '<label style="grid-column:1/-1">Powód (zapisze się w historii)<input id="xsWhy" class="ai-inp" maxlength="300" placeholder="np. wpisywanie byle czego w Wpisz, 3.11" style="width:100%;margin-top:3px"></label>'
+        + '</div>'
+        + '<div style="font-size:.68rem;color:var(--muted);line-height:1.45;margin-top:6px">Puste pole = bez zmian. Poziom wynika z XP (60 XP na poziom) — wpisany poziom ustawi XP na jego początek. Celność % liczy poprawne odpowiedzi z liczby wszystkich. Zmiana XP poprawia też rankingi (od dnia z pola wyżej). Działa po migracji <b>#97</b>; uczeń z nieodświeżoną kartą (starsza wersja aplikacji) mógłby raz przywrócić stare liczby odpowiedzi — wtedy powtórz.</div>'
+        + '<div style="display:flex;justify-content:flex-end;margin-top:8px"><button class="btn-sm accent" id="xsSave">✏️ Ustaw</button></div>');
       if (hist && hist.length) {
         html += box('📜 Historia korekt', hist.map(h => row('<b>' + fmtDay(iso(h.at)) + '</b> · ' + (h.delta > 0 ? '+' : '') + h.delta + ' XP'
           + (h.combo_to != null ? ' · 🎯 ' + h.combo_from + ' → ' + h.combo_to : '') + ' · ' + escHtml(h.by_name || '?')
@@ -23840,6 +24004,39 @@ function renderStudentSearchList(query) {
       + '<button class="btn-sm" onclick="sfOpenXpGuard()">👥 Wszyscy z alertami</button>'
       + '<button class="btn-modal-cancel" onclick="closeGenericModal()">Zamknij</button></div>';
     openGenericModal(title, html);
+    // ✏️ Ustaw dokładnie (#97)
+    const $x = id => document.getElementById(id);
+    if ($x('xsLvl')) $x('xsLvl').oninput = () => { const L = Math.round(+$x('xsLvl').value || 0); if (L >= 1) $x('xsXp').value = (L - 1) * 60; };
+    if ($x('xsSave')) $x('xsSave').onclick = async () => {
+      const val = id => { const v = String($x(id).value || '').trim(); return v === '' ? null : Math.max(0, Math.round(+v || 0)); };
+      const o = { xp: val('xsXp'), combo: val('xsCombo'), total: val('xsTotal'), correct: val('xsCorrect'), day: ($x('xgDay') && $x('xgDay').value) || null };
+      const pct = val('xsPct');
+      if (pct !== null && o.correct === null) {
+        const t = o.total !== null ? o.total : (+p.total_answers || 0);
+        if (!t) { toast('Najpierw wpisz liczbę wszystkich odpowiedzi — celność liczy się od niej.', 3400); return; }
+        o.correct = Math.round(t * Math.min(100, pct) / 100);
+      }
+      const why = String($x('xsWhy').value || '').trim();
+      if (o.xp === null && o.combo === null && o.total === null && o.correct === null) { toast('Wpisz, co ustawić (XP / poziom, rekord serii, celność).', 3000); return; }
+      if (why.length < 3) { toast('Wpisz powód — zapisze się w historii.', 3000); $x('xsWhy').focus(); return; }
+      const t2 = o.total !== null ? o.total : (+p.total_answers || 0), c2 = o.correct !== null ? o.correct : (+p.correct_answers || 0);
+      if (c2 > t2) { toast('Poprawnych odpowiedzi nie może być więcej niż wszystkich.', 3200); return; }
+      const parts = [];
+      if (o.xp !== null) parts.push('XP: ' + (p.xp || 0) + ' → ' + o.xp + ' (poziom ' + (Math.floor(o.xp / 60) + 1) + ')');
+      if (o.combo !== null) parts.push('🎯 rekord serii: ' + (combo != null ? combo : 0) + ' → ' + o.combo);
+      if (o.total !== null || o.correct !== null) parts.push('celność: ' + c2 + '/' + t2 + (t2 ? ' (' + Math.round(c2 * 100 / t2) + '%)' : ''));
+      if (!confirm('Ustawić — konto „' + (login || '') + '”?\n' + parts.join('\n') + '\nPowód: ' + why)) return;
+      $x('xsSave').disabled = true;
+      try {
+        const res = await DB.adminSetStats(userId, why, o);
+        try { if (cached && cached.id && res) { cached.xp = res.new_xp; cached.level = res.new_level; cached.best_correct_streak = res.new_combo; cached.total_answers = res.new_total; cached.correct_answers = res.new_correct; } } catch(e) {}
+        toast('✅ Ustawiono: ' + res.new_xp + ' XP · poziom ' + res.new_level + ' · 🎯 ' + res.new_combo + ' · celność ' + res.new_correct + '/' + res.new_total, 4200);
+        openOne(userId, login);
+      } catch(e) {
+        $x('xsSave').disabled = false;
+        toast('❌ ' + (e.message || e), 4200);
+      }
+    };
     const btn = document.getElementById('xgSave');
     if (btn) btn.onclick = async () => {
       const dir = +document.getElementById('xgDir').value || -1;
@@ -23924,6 +24121,7 @@ function _actLine(e) {
     case 'reveal': return mut(escHtml(md)) + word + ' → ' + warn('🙈 „Nie wiem — pokaż odpowiedź”') + (e.v ? mut(' (wpisane: „' + escHtml(e.v) + '”)') : '');
     case 'try': return mut(escHtml(md)) + word + ' → wpisane „' + escHtml(e.v || '') + '” ' + (e.ok ? good('✓') : warn('✗')) + (e.j ? ' ' + warn('🧹 na chybił-trafił') : '');
     case 'pick': return mut(escHtml(md)) + word + ' → wybrane „' + escHtml(e.v || '') + '” ' + (e.ok ? good('✓') : warn('✗'));
+    case 'easyq': return '🔎 Sprawdzian „Łatwych”' + word + ' → wybrane „' + escHtml(e.v || '') + '” ' + (e.ok ? good('✓') : warn('✗ — „Łatwe” w Fiszkach, a nie wie; słówko wróciło do nauki'));
     case 'rate': {
       if (e.s) {
         const lab = { easy: '😎 Łatwe', medium: '🤔 Średnie', hard: '😰 Trudne' }[e.r] || escHtml(e.r || '');
@@ -23957,6 +24155,7 @@ function _actSummary(ev) {
       if (e.m === 'type' || e.m === 'typeSent') { S.typeW.add(e.w); if (e.r === 'easy' || e.r === 'good') S.typeFirst.add(e.w); }
     } else if (e.k === 'try') { S.tries++; if (!e.ok) S.wrong++; if (e.j) S.junk++; }
     else if (e.k === 'reveal') S.reveal++;
+    else if (e.k === 'easyq') { S.eq = (S.eq || 0) + 1; if (!e.ok) S.eqBad = (S.eqBad || 0) + 1; }
     else if (e.k === 'game') S.games++;
     else if (e.k === 'gs') { S.gs = (S.gs || 0) + 1; S.gameSec += e.sec || 0; }
     else if (e.k === 'locked') S.locked++;
@@ -23975,6 +24174,7 @@ function _actSummary(ev) {
   if (other.length) lines.push('📚 Inne tryby: ' + other.map(m => escHtml((typeof FOCUS_MODE_LABELS !== 'undefined' && FOCUS_MODE_LABELS[m]) || m) + ' ' + S.modes[m].ok + '/' + S.modes[m].n).join(' · '));
   if (S.games || S.gs) lines.push('🎮 Gry: ' + S.games + ' ' + plural(S.games, 'wejście', 'wejścia', 'wejść')
     + (S.gs ? ' · ' + S.gs + ' ' + plural(S.gs, 'sesja', 'sesje', 'sesji') + ' w osobnym oknie, ' + Math.round(S.gameSec / 60) + ' min aktywnej gry' : ''));
+  if (S.eq) lines.push('🔎 Sprawdzian „Łatwych”: ' + (S.eq - (S.eqBad || 0)) + '/' + S.eq + (S.eqBad ? ' · <b style="color:var(--accent)">✗ ' + S.eqBad + ' — „Łatwe” bez znajomości słówka</b>' : ''));
   if (S.locked) lines.push('<b style="color:var(--accent)">🔒 ' + S.locked + ' ' + plural(S.locked, 'próba', 'próby', 'prób') + ' wejścia do zablokowanych gier / trybów</b>');
   if (S.ign.length) lines.push('🙈 Ignoruj: ' + S.ign.map(w => '„' + escHtml(w) + '”').join(', '));
   return lines;
@@ -37290,7 +37490,7 @@ ${bodyHtml}
         +'<div style="width:32px;display:flex;justify-content:center;font-weight:700">'+md+'</div>'
         +((typeof _avatarImgHtml==='function') ? _avatarImgHtml((window.__srAvatars||{})[u.user_id], 30, '<div style="width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;font-size:.95rem;flex-shrink:0">👤</div>') : '')
         +'<div style="flex:1;min-width:0">'
-          +'<div style="font-weight:'+(gem?800:700)+';font-size:.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escTxt(u.nickname||u.username)+nameGem+(isMe?' (Ty)':'')+'</div>'
+          +'<div style="font-weight:'+(gem?800:700)+';font-size:.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escTxt(u.nickname||u.username)+(function(){ try{ const n=(DB.getUserPrivateNote&&DB.getUserPrivateNote(u.user_id))||(DB.getUserLabel&&DB.getUserLabel(u.user_id)); return n ? ' <span style="font-size:.7rem;color:var(--accent2);font-weight:700;padding:1px 6px;border-radius:6px;background:rgba(6,214,160,.12);margin-left:4px" title="Twoja nazwa ucznia">✏️ '+escTxt(n)+'</span>' : ''; }catch(e){ return ''; } })()+nameGem+(isMe?' (Ty)':'')+'</div>'
           +'<div style="font-size:.62rem;color:var(--muted);font-weight:700;margin-top:1px">'+sub+'</div>'
         +'</div>'
         +'<div style="font-weight:800;color:var(--accent,#ffd166);white-space:nowrap">'+val+c.unit+'</div></div>';
@@ -37325,6 +37525,8 @@ ${bodyHtml}
   const stPl=n=>n===1?'uczeń':'uczniów';
   const stPlK=n=>{ const d=n%10, h=n%100; return n===1?'klasa':(d>=2&&d<=4&&!(h>=12&&h<=14))?'klasy':'klas'; };
   const stName=u=>String(u.nickname||u.username||'');
+  // ✏️ Twoja prywatna etykieta / grupa ucznia (user_labels) — przy ksywce, bo ksywka nie zawsze coś mówi
+  const stLabel=u=>{ try{ const n=(DB.getUserPrivateNote&&DB.getUserPrivateNote(u.user_id))||(DB.getUserLabel&&DB.getUserLabel(u.user_id)); return n ? ' <span style="font-size:.7rem;color:var(--accent2);font-weight:700;padding:1px 6px;border-radius:6px;background:rgba(6,214,160,.12);margin-left:4px" title="Twoja nazwa ucznia">✏️ '+escTxt(n)+'</span>' : ''; }catch(e){ return ''; } };
   // Wynik z poprawną odmianą: 1 słowo / 2 słowa / 5 słów, 1 dzień / 2 dni.
   const stVal=(v,c)=>{ if(c.k==='well_learned'){ const d=v%10, h=v%100; return v+(v===1?' słowo':(d>=2&&d<=4&&!(h>=12&&h<=14))?' słowa':' słów'); }
     if(c.k==='longest_streak') return v+(v===1?' dzień':' dni'); return v+c.unit; };
@@ -37443,7 +37645,7 @@ ${bodyHtml}
       h+='<div style="display:flex;align-items:center;gap:10px;padding:8px 6px;border-bottom:1px dashed '+ST_BD+';'+rowBg+'">'
         +'<div style="width:32px;display:flex;justify-content:center;font-weight:700;flex-shrink:0">'+md+'</div>'+av
         +'<div style="flex:1;min-width:0">'
-          +'<div style="font-weight:'+(gem?800:700)+';font-size:.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escTxt(stName(u)||'?')+nameGem+'</div>'
+          +'<div style="font-weight:'+(gem?800:700)+';font-size:.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escTxt(stName(u)||'?')+stLabel(u)+nameGem+'</div>'
           +'<div style="font-size:.62rem;color:var(--muted);font-weight:700;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+sub.join(' · ')+'</div>'
         +'</div>'
         +'<div style="font-weight:800;color:var(--accent,#ffd166);white-space:nowrap">'+stVal(val,c)+'</div></div>';
@@ -38984,10 +39186,17 @@ ${bodyHtml}
     if (r.reviewed && (r.flagged || t.length)) t.push('<span style="color:var(--accent2)">✓ przejrzane</span>');
     return t.length ? ' · ' + t.join(' · ') : '';
   }
+  // Login + ksywka + Twoja prywatna etykieta / grupa (user_labels) — sam login nie zawsze coś mówi
+  function aiLogWho(g){
+    const prof = (Array.isArray(_allProfiles) ? _allProfiles : []).find(x => x.id === g.id) || {};
+    const nick = g.nick || prof.nickname || '';
+    const base = (typeof fmtNameWithLabel === 'function' && g.id !== '—') ? fmtNameWithLabel(g.id, g.name, { inline: true }) : E(g.name);
+    return base + (nick && nick !== g.name ? ' <span style="font-weight:700;color:var(--muted);font-size:.74rem" title="Ksywka">„' + E(nick) + '”</span>' : '');
+  }
   function aiLogRender(){
     const c = _cl, fmt = d => new Date(d).toLocaleString('pl-PL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
     const byUser = new Map();
-    c.rows.forEach(r => { const k = r.user_id || '—'; if (!byUser.has(k)) byUser.set(k, { name: r.username || '(usunięte konto)', role: r.role, rows: [] }); byUser.get(k).rows.push(r); });
+    c.rows.forEach(r => { const k = r.user_id || '—'; if (!byUser.has(k)) byUser.set(k, { name: r.username || '(usunięte konto)', nick: r.nickname || '', role: r.role, rows: [] }); byUser.get(k).rows.push(r); });
     const groups = [...byUser.entries()].map(([id, g]) => Object.assign(g, { id, att: g.rows.filter(clAttention).length, flags: g.rows.filter(r => r.flagged).length }))
       .sort((a, b) => b.flags - a.flags || b.att - a.att || b.rows.length - a.rows.length);
     const old = c.rows.length && c.rows[0]._old;
@@ -38999,7 +39208,7 @@ ${bodyHtml}
       + `<input class="ai-inp" id="clSearch" style="flex:1;min-width:160px;width:auto" placeholder="🔎 Szukaj (słowo, login)… Enter" value="${E(c.q)}" onkeydown="if(event.key==='Enter')aiLogSearch(this.value)"></div>`;
     if (!groups.length) h += '<div class="gram-empty">' + (c.filter === 'all' ? 'Brak zapisanych rozmów w tym okresie.' : '✅ Nic do pokazania w tym filtrze.') + '</div>';
     h += groups.map(g => `<div class="bk-row" style="flex-direction:column;align-items:stretch">
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div class="bk-info"><b>${g.flags ? '🚩 ' : g.att ? '⏳ ' : ''}${E(g.name)} <span style="font-weight:600;color:var(--muted);font-size:.72rem">(${E(g.role || '')})</span></b>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div class="bk-info"><b>${g.flags ? '🚩 ' : g.att ? '⏳ ' : ''}${aiLogWho(g)} <span style="font-weight:600;color:var(--muted);font-size:.72rem">(${E(g.role || '')})</span></b>
         <small>${plN(g.rows.length, 'wpis', 'wpisy', 'wpisów')}${g.att ? ' · <span style="color:var(--danger)">' + g.att + ' do przejrzenia</span>' : ''} · ostatni ${fmt(g.rows[0].created_at)}</small></div>
         <div class="gram-set-act"><button class="btn-sm" onclick="aiLogToggle('${g.id}')">${c.open[g.id] ? '🔼 Zwiń' : '👀 Pokaż'}</button>
         ${g.att ? `<button class="btn-sm" onclick="aiLogReviewUser('${g.id}')" title="Oznacz wpisy tego konta jako przejrzane">✓ Przejrzane</button>` : ''}

@@ -35,6 +35,7 @@ const DB = (() => {
   let _bookPrefs      = { ignored: [], learning: [] };
   let _hasStartMode   = null;   // migracja #89: profiles.start_mode („🚀 Tryb na start” od nauczyciela); null = profil niewczytany
   let _hasComboEpoch  = false;  // migracja #93: profiles.combo_epoch — po korekcie serii stara karta nie przywróci rekordu
+  let _hasStatsEpoch  = false;  // migracja #97: profiles.stats_epoch — po korekcie celności stara karta nie przywróci liczników
   let _xpChain        = Promise.resolve();
   let _xpInflight     = 0;
   let _xpSyncFn       = null;   // app.html: aktualizacja paska XP wartością z bazy
@@ -79,6 +80,7 @@ const DB = (() => {
       correctAnswers:row.correct_answers || 0,
       bestCorrectStreak: row.best_correct_streak || 0,
       comboEpoch:    row.combo_epoch     || 0,      // migracja #93 — odsyłana w zapisie profilu
+      statsEpoch:    row.stats_epoch     || 0,      // migracja #97 — odsyłana w zapisie profilu
       wellLearnedWords: row.well_learned_words || 0,
       achievements:  row.achievements    || [],
       dailyXP:       row.daily_xp        || 0,
@@ -123,6 +125,8 @@ const DB = (() => {
     if (_hasBestCombo) payload.best_correct_streak = _profile.bestCorrectStreak || 0;
     // #93: „epoka” rekordu serii — po korekcie nauczyciela baza odrzuci rekord z tej (starej) karty
     if (_hasComboEpoch) payload.combo_epoch = _profile.comboEpoch || 0;
+    // #97: „epoka” licznika odpowiedzi — po korekcie celności baza odrzuci liczniki z tej (starej) karty
+    if (_hasStatsEpoch) payload.stats_epoch = _profile.statsEpoch || 0;
     if (_hasWellLearned) payload.well_learned_words = _profile.wellLearnedWords || 0;
     return payload;
   }
@@ -166,6 +170,7 @@ const DB = (() => {
     _hasBookPrefs = !!(profRes.data && Object.prototype.hasOwnProperty.call(profRes.data, 'book_prefs'));
     _hasStartMode = !!(profRes.data && Object.prototype.hasOwnProperty.call(profRes.data, 'start_mode'));
     _hasComboEpoch = !!(profRes.data && Object.prototype.hasOwnProperty.call(profRes.data, 'combo_epoch'));
+    _hasStatsEpoch = !!(profRes.data && Object.prototype.hasOwnProperty.call(profRes.data, 'stats_epoch'));
     _bookPrefs = _bpNorm(_hasBookPrefs ? profRes.data.book_prefs : _bpLocal());
     if (_hasBookPrefs && !_bookPrefs.ignored.length && !_bookPrefs.learning.length) {
       const loc = _bpNorm(_bpLocal());   // ustawione przed migracją #86 — przenieś na serwer
@@ -2544,6 +2549,35 @@ const DB = (() => {
     const { data, error } = await supabase.rpc('class_learning_flags', { p_class: classId, p_days: days || 7 });
     if (error) { if (_missing93(error)) return null; throw new Error(error.message); }
     return data || [];
+  }
+  // ✏️ Ustaw statystyki ucznia (#97): o = { xp, combo, total, correct, day } — null / brak = bez zmian.
+  async function adminSetStats(userId, reason, o) {
+    o = o || {};
+    const n = v => (v === null || v === undefined || v === '') ? null : Math.max(0, Math.round(+v || 0));
+    const { data, error } = await supabase.rpc('admin_set_stats', {
+      p_user: userId, p_reason: String(reason || ''), p_xp: n(o.xp), p_combo: n(o.combo),
+      p_total: n(o.total), p_correct: n(o.correct), p_day: o.day || null
+    });
+    if (error) {
+      if (_missing93(error)) throw new Error('Brak migracji #97 (stats-correction-and-junk.sql) w Supabase.');
+      throw new Error(error.message);
+    }
+    return Array.isArray(data) ? data[0] : data;
+  }
+  // 🧹 −5 XP za wpisywanie byle czego (#97, po ostrzeżeniu): {applied, today, new_xp}; null = brak migracji.
+  async function penalizeJunkXp() {
+    if (!_userId) return null;
+    try {
+      const { data, error } = await supabase.rpc('penalize_junk_xp');
+      if (error) { if (_missing93(error)) return null; console.warn('[penalizeJunkXp]', error.message); return null; }
+      const r = Array.isArray(data) ? data[0] : data;
+      if (r && r.applied > 0 && _profile) {
+        _profile.xp = Math.max(0, r.new_xp | 0);
+        _profile.level = Math.floor(_profile.xp / 60) + 1;
+        if (_xpSyncFn) { try { _xpSyncFn(_profile.xp, _profile.level); } catch(e) {} }
+      }
+      return r || null;
+    } catch(e) { return null; }
   }
   async function adminAdjustXp(userId, delta, reason, day, setCombo) {
     const { data, error } = await supabase.rpc('admin_adjust_xp', {
@@ -6099,6 +6133,8 @@ const DB = (() => {
     markLearningFlagsSeen,
     classLearningFlags,
     logStudyActions,         // 📜 przebieg nauki ucznia (#96)
+    adminSetStats,           // ✏️ ustaw statystyki ucznia (#97)
+    penalizeJunkXp,          // 🧹 −5 XP za byle co (#97)
     studentActionDays,
     studentActionLog,
     updateWellLearned,

@@ -154,6 +154,7 @@ with c(nr, plik, ok) as (values
   ('94', 'learning-integrity.sql',                pg_temp.fn('claim_typed_day') and pg_temp.tab('public.xp_flag_seen') and pg_temp.col('typed_answers', 'first_try') and pg_temp.trg('typed_answers_guard')),
   ('95', 'self-rating-flags.sql',                 pg_temp.body('report_learning_flags', 'self_easy') and pg_temp.body('class_learning_flags', 'self_easy')),
   ('96', 'study-action-log.sql',                  pg_temp.tab('public.study_actions') and pg_temp.fn('log_study_actions') and pg_temp.fn('student_action_log')),
+  ('97', 'stats-correction-and-junk.sql',         pg_temp.col('profiles', 'stats_epoch') and pg_temp.fn('admin_set_stats') and pg_temp.fn('penalize_junk_xp') and pg_temp.body('_profiles_xp_guard', 'stats_epoch')),
   ('x2', 'add-live-games.sql',                    pg_temp.fn('create_live_game')),
   ('x3', 'add-live-time-limit-and-score-rpc.sql', pg_temp.fn('update_live_player_score')),
   ('x4', 'fix-live-join-token.sql + fix-live-join-ambiguous.sql', pg_temp.fn('join_live_game')),
