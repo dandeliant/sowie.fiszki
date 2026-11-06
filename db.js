@@ -2518,6 +2518,28 @@ const DB = (() => {
     } catch(e) { return null; }
   }
   // Podsumowanie klasy (uczniowie z alertami w ostatnich `days` dniach). null = brak migracji #94.
+  // ── 📜 Przebieg nauki ucznia (migracja #96) ──
+  // Paczka zdarzeń (tablica, ≤ 300) → liczba zapisanych; null = brak migracji #96; false = błąd (ponów później).
+  async function logStudyActions(events) {
+    if (!_userId || !Array.isArray(events) || !events.length) return 0;
+    try {
+      const { data, error } = await supabase.rpc('log_study_actions', { p_events: events });
+      if (error) { if (_missing93(error)) return null; console.warn('[logStudyActions]', error.message); return false; }
+      return Number(data) || 0;
+    } catch(e) { return false; }
+  }
+  // Dni z zapisami [{day, events, batches}] (nauczyciel ucznia / opiekun / admin / sam uczeń); null = brak #96.
+  async function studentActionDays(userId, days) {
+    const { data, error } = await supabase.rpc('student_action_days', { p_user: userId, p_days: days || 30 });
+    if (error) { if (_missing93(error)) return null; throw new Error(error.message); }
+    return data || [];
+  }
+  // Paczki zdarzeń z jednego dnia [{created_at, events}] po kolei; null = brak #96.
+  async function studentActionLog(userId, day) {
+    const { data, error } = await supabase.rpc('student_action_log', { p_user: userId, p_day: day });
+    if (error) { if (_missing93(error)) return null; throw new Error(error.message); }
+    return data || [];
+  }
   async function classLearningFlags(classId, days) {
     const { data, error } = await supabase.rpc('class_learning_flags', { p_class: classId, p_days: days || 7 });
     if (error) { if (_missing93(error)) return null; throw new Error(error.message); }
@@ -6076,6 +6098,9 @@ const DB = (() => {
     learningFlagsNewCount,
     markLearningFlagsSeen,
     classLearningFlags,
+    logStudyActions,         // 📜 przebieg nauki ucznia (#96)
+    studentActionDays,
+    studentActionLog,
     updateWellLearned,
     logDailyWords,
     listClassChallenges,

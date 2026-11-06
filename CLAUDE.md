@@ -12,13 +12,13 @@
 - **Hosting:** Vercel → **https://sowiefiszki.com** (custom domain, od 29.04.2026; wcześniej GitHub Pages)
 - **Backend:** Supabase (auth + Postgres + RLS), projekt `kofenaaeleyhwhbkytcz`
 - **Charakter:** osoba fizyczna prowadząca Platformę; **model freemium** (30-dniowy trial Premium → Free / Premium po opłacie). Wcześniej projekt był non-commercial — od ~2026-04-29 przygotowywany do monetyzacji.
-- **Service Worker:** aktualnie `v1.252` (`CACHE_NAME` w `sw.js`). Format `vMAJOR.NNN` (3-cyfrowy minor z zerami wiodącymi): `v1.252` → `v1.253` … `v1.999` → `v2.000`.
+- **Service Worker:** aktualnie `v1.253` (`CACHE_NAME` w `sw.js`). Format `vMAJOR.NNN` (3-cyfrowy minor z zerami wiodącymi): `v1.253` → `v1.254` … `v1.999` → `v2.000`.
 - **Promocja Premium:** **wszyscy zalogowani użytkownicy mają Premium za darmo do 30.11.2026** (override po stronie kodu w `db.js isPremium()` — `isPromoActive()` zwraca `true` gdy `Date.now() < 2026-12-01 00:00`). Po 30.11.2026 promocja (przedłużona 25.10.2026 z 31.10) samoczynnie wygasa — wraca normalna logika: nowi użytkownicy mają 30-dniowy trial gratis, reszta przechodzi na Free.
 
 ## 📚 Dokumentacja szczegółowa (`docs/`)
 
 Ten plik to skrót. Szczegóły funkcji są w `docs/` — **przed zmianą danej funkcji znajdź jej opis Grepem** (np. nazwę funkcji JS, tabeli lub pliku) i przeczytaj tylko ten fragment:
-- `docs/MIGRACJE.md` — migracje #1–#95: tabele, RPC, RLS, API db.js, UI.
+- `docs/MIGRACJE.md` — migracje #1–#96: tabele, RPC, RLS, API db.js, UI.
 - `docs/FUNKCJE.md` — Fiszki/FSRS i „Opanowane”, XP, Ignoruj, oceny, tryb skupienia, AI (OpenAI, rozmowy, głos), pupil, rankingi, statystyki, SEO, koszty i terminy, status funkcji, skrypty (sync, kopia zapasowa).
 - `docs/GRAMMAR-CITY.md` — Grammar City 3D (silnik, auta, mapy, sklep, policja, pory roku…).
 - `docs/GRY-INNE.md` — gry i losowanki z INNE, Wyścig słówek 3D, blokada gier, gry z listy unitów, nazwa „Karty do gry”.
@@ -45,7 +45,7 @@ Po dodaniu funkcji dopisz jej opis do właściwego pliku w `docs/` (nie do CLAUD
 
 ## 🗄️ Migracje SQL do Supabase
 
-- Ostatnia: **#95** (`self-rating-flags.sql`). Pełna lista z opisami: `docs/MIGRACJE.md`.
+- Ostatnia: **#96** (`study-action-log.sql`). Pełna lista z opisami: `docs/MIGRACJE.md`.
 - Nowa migracja: sprawdź wolny numer na świeżym `origin/main`, plik idempotentny (`if not exists`, `create or replace`, `drop … if exists`), dopisz wiersz w `sprawdz-migracje.sql` i opis w `docs/MIGRACJE.md`, testuj na PGlite.
 - Kod klienta działa bez nowej migracji (fail-soft: `null` = brak migracji → UI chowa funkcję).
 - **Zawsze przypominaj użytkownikowi** o uruchomieniu nowej migracji w Supabase, kiedy tworzysz nową.
@@ -113,6 +113,7 @@ Po dodaniu funkcji dopisz jej opis do właściwego pliku w `docs/` (nie do CLAUD
 - **XP zapisuje baza, nie zapis profilu (#85)** — nowe źródło XP: `addXP(x)` (albo `addBonusXP(n)` poza fiszkami) → `DB.gainXP` → RPC `add_my_xp`. Nie dopisuj `xp`/`level` do `_profilePayload` i nie zmieniaj XP przez `setXP` — stara karta albo drugie urządzenie cofały w ten sposób poziom uczniów. Od #93 `add_my_xp` ma limit tempa (400 XP/min, 15 000/dzień, weekend ×2 — nadwyżka do `xp_flags`), a zapis profilu z aplikacji w ogóle nie zmienia XP; nowe źródło XP musi zmieścić się w limicie. Ponowne uruchomienie #85 kasuje limity — po nim uruchom #93. Nowy tryb z wyborem odpowiedzi: dopisz go do `PACE_KIND` (🐢 strażnik tempa w `rate()`).
 - **Dzień „Wpisz” zalicza baza (#94)** — `claim_typed_day()` liczy dzisiejsze `typed_answers` (≥ 5 trafień za 1. razem z ≥ 2 słówek). Nowy tryb, który ma liczyć się do zaliczenia dnia, musi zapisywać odpowiedzi przez `_logTypedAns(…, firstTry)`; nowe pole wpisywania odpowiedzi dopisz do `MODE` w `_initNoPaste` (blokada wklejania) i — jeśli pokazuje podpowiedź liter — sprawdzaj `_isJunkAttempt` przed `letterDiffHtml`. Ponowne uruchomienie #50/#85 przywraca `log_typed_day` bez sprawdzania — potem uruchom #94; ponowne #94 cofa alert 🃏 `self_easy` — potem uruchom #95.
 - **Blokada „najpierw nauka” (SW v1.251)** — poza 🃏 Fiszki / ✏️ Wpisz / ✏️ Wpisz zd. wszystkie tryby i gry odblokowuje dopiero 10 różnych słówek wpisanych za 1. razem w Wpisz / Wpisz zd. (`GAME_GATE_*`, `modeGateOk` w `setMode`, `_gateTrack` w `rate()`; gry w osobnych plikach — `game-stats.js`). Nowy tryb nauki poza tymi trzema jest blokowany automatycznie; nowa gra z listy unitów → dopisz kontener do `GAME_GATE_ROWS`; nowa gra w osobnym pliku → `game-stats.js` (`PAGES`).
+- **📜 Przebieg nauki (#96, SW v1.253)** — każde kliknięcie ucznia w nauce trafia do dziennika dla nauczyciela (`_act` / `_actCard` / `_actRate` → kolejka `fiszki_actlog_<login>` → `log_study_actions` co ~45 s). Nowy tryb z wyborem odpowiedzi → `_actCard('pick', {v, ok})` w funkcji odpowiedzi; nowe pole wpisywania → dopisz je do `ACT_INPUT` (wpis widać przy ocenie). Opis zdarzenia w podglądzie: `_actLine`. Zbiera tylko konto ucznia (bez gościa i kont staff).
 - **Edycja słówka nie może gubić elementów 2+** (emoji, zdania inline z data.js) — zawsze `[newPl, newTarget, ...stare.slice(2)]` (`adminEditWord`, `_applyAdminData`, `saveWordEdit`; SW v1.217). Dane zapisane pod polskim słowem (word_sentences, word_hints, word_contexts, word_audio, dictionary_words) przy zmianie polskiego słowa przenosi `moveWordData` (zdanie i wskazówka — kopia, reszta — UPDATE word_pl). Zdania do wyświetlania czytaj przez `wordSentences(w, bookId)` (najpierw poprawione w bazie, także spod `DB.getOriginalPl`, potem inline) — nie przez samo `getInlineSentences`, bo wtedy edycja z ✏️ się nie pokaże; edytor zdań wypełnia pola przez `wordSentences`.
 - **CRLF/LF warnings przy commicie na Windows** — normalne, ignoruj.
 - **RLS zwraca pustą listę** — brak polityki. Zawsze dodawaj `.select()` po UPDATE żeby wykryć ciche blokady.

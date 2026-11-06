@@ -5455,8 +5455,8 @@ function _setWordIgnored(bId, pl, on) {
   if (inSession) states = ws;
   else { const pr = DB.getUnitProgress(currentUser, bId, uk); states = Object.assign({}, (pr && pr.wordStates) || {}); }
   const st = states[idx] || { ef: 2.5, reps: 0, interval: 1, nextReview: 0, known: false, errCount: 0, lastError: false, dueIn: 0 };
-  if (on) { if (!st.ignored) st.knownBefore = !!st.known; st.ignored = true; st.known = true; }
-  else { st.ignored = false; st.known = !!st.knownBefore; delete st.knownBefore; }
+  if (on) { if (!st.ignored) { st.knownBefore = !!st.known; st.ignAt = Date.now(); } st.ignored = true; st.known = true; }
+  else { st.ignored = false; st.known = !!st.knownBefore; delete st.knownBefore; delete st.ignAt; }
   states[idx] = st;
   const total = ((getUnitsWithCustom(bId)[uk] || {}).words || []).length;
   const kn = Object.values(states).filter(s => s && s.known).length;
@@ -5470,6 +5470,7 @@ function ignoreCurrentWord() {
   if (curIdx === null || !active || isGuest || !activeWords[curIdx]) return;
   const pl = activeWords[curIdx][0];
   if (!_setWordIgnored(currentBookId, pl, true)) { toast('Tego słówka nie da się ukryć (nie ma go w podręczniku).', 2600); return; }
+  _actCard('ignore');   // 📜
   if (ws[curIdx]) { ws[curIdx].ignored = true; ws[curIdx].known = true; }
   pool = pool.filter(i => i !== curIdx);
   clearTimeout(_typeHoldTimer);
@@ -5485,6 +5486,7 @@ function _syncIgnoreBtn() {
 window.unignoreWord = function(pl) {
   if (!confirm('Przywrócić „' + pl + '” do nauki?\n\nZnowu będzie się pojawiać w trybach nauki i grach.')) return;
   if (_setWordIgnored(currentBookId, pl, false)) {
+    _act('unignore', { w: pl, b: currentBookId });   // 📜
     toast('↩️ „' + pl + '” wraca do nauki.', 2400);
     openWordList(currentUnitKey);
   }
@@ -6327,6 +6329,7 @@ async function renderGameHistoryBox(days) {
 }
 
 function showScreen(id) {
+  try { if (id !== _actLastScreen) { _actLastScreen = id; _act('screen', { v: id }); } } catch(e) {}   // 📜 przebieg nauki
   // Zakończ poprzednią aktywność (przez DB.endActivity — best-effort).
   try { if (typeof DB !== 'undefined' && DB.endActivity) DB.endActivity(); } catch(e) {}
 
@@ -10837,6 +10840,7 @@ function buildQuiz(ci) {
 
 function onQuiz(btn, ok, correct) {
   if (revealed) return;
+  if (!btn.classList.contains('wrong')) _actCard('pick', { v: (btn.textContent || '').trim(), ok: ok ? 1 : 0 });   // 📜
   if (!ok) {
     // Zla odpowiedz: podkresl na czerwono, zablokuj TYLKO ten przycisk,
     // pozwol klikac dalej. Liczymy blad tylko raz na karte (mniej punktow pozniej).
@@ -11056,6 +11060,7 @@ function checkType() {
   const inp = document.getElementById('tInp'), u = inp.value.trim();
   if (!u) return;
   const cor = ctxAnswer(), ok = wordMatchStrict(u, cor);
+  _actCard('try', { v: u, ok: ok ? 1 : 0, j: (!ok && _isJunkAttempt(u, cor)) ? 1 : undefined });   // 📜
   const r = document.getElementById('tRes');
   // 🧹 1 litera, klawisze z rzędu, byle co → bez podpowiedzi liter; 2. raz = „Nie wiem” (bez XP)
   if (!ok && _isJunkAttempt(u, cor)) {
@@ -11123,6 +11128,7 @@ function typeRevealAnswer() {
   document.getElementById('btnChk').disabled = true;
   document.getElementById('btnTypeReveal').style.display = 'none';
   owlR('hard'); _recordAnswerLogged(false); trackMissed(); sessErrorCount++;
+  _actCard('reveal', { v: u });   // 📜 „Nie wiem — pokaż odpowiedź”
   _logTypedAns(u || '(pokazano odpowiedź)', false);
   const r = document.getElementById('tRes');
   r.className = 'type-result err';
@@ -11474,6 +11480,7 @@ function checkDictation() {
 // ══════════════════════════════════════════════
 function checkTF(userSaysTrue) {
   if (revealed) return; revealed = true;
+  _actCard('pick', { v: userSaysTrue ? 'prawda' : 'fałsz', ok: (userSaysTrue === tfIsCorrectPair) ? 1 : 0 });   // 📜
   document.querySelectorAll('.btn-tf').forEach(b => b.disabled = true);
   const ok = (userSaysTrue === tfIsCorrectPair);
   const r = document.getElementById('tfRes');
@@ -11662,6 +11669,78 @@ function _selfEasyCheck(r) {
   delete o[k]; _selfEasySave(o);
   if (r === 'again' && m.d === studyDir && Date.now() - m.t < SELF_EASY_MS) _guardNote('self_easy', 'card');
 }
+// ══════════════════════════════════════════════
+//  📜 PRZEBIEG NAUKI (#96) — dziennik poczynań ucznia dla nauczyciela / opiekuna.
+//  Zdarzenia trafiają do kolejki localStorage['fiszki_actlog_<login>'] i są wysyłane
+//  paczkami (DB.logStudyActions → log_study_actions) co ~45 s, przy ukryciu karty i przy starcie.
+//  Pola: t (ms), k (rodzaj: rate / try / reveal / pick / mode / game / locked / ignore /
+//  unignore / screen), m (tryb), b / u (podręcznik / rozdział), w (słówko PL), d ('en' = EN→PL),
+//  r (ocena), s (1 = samoocena), ms (czas odpowiedzi; Fiszki — od odwrócenia karty),
+//  v (wpis / wybór / nazwa), ok (1 / 0), j (1 = na chybił-trafił), x (nie liczyło się: early / fast).
+//  Tylko uczeń — nie gość, nie nauczyciel / admin / opiekun. Bez #96 zbieranie się wyłącza.
+// ══════════════════════════════════════════════
+var ACT_MAX = 800, ACT_BATCH = 250, ACT_EVERY = 45000;   // var — showScreen może zawołać _act() wcześniej niż ta linia
+var ACT_INPUT = { missing: 'missingInp', gap: 'gapInp', scramble: 'scrambleInp', dictate: 'dictInp', dictSent: 'dsInp', write: 'wrInp' };
+var _actTimer = null, _actBusy = false, _actOff = false, _actLastScreen = null;
+function _actKey() { return 'fiszki_actlog_' + (currentUser || ''); }
+function _actOn() {
+  if (_actOff || isGuest || !currentUser || typeof DB === 'undefined' || !DB.logStudyActions) return false;
+  if (DB.isProfileLoaded && !DB.isProfileLoaded()) return false;
+  return !gamesGateExempt();
+}
+function _actLoad() { try { const q = JSON.parse(localStorage.getItem(_actKey()) || '[]'); return Array.isArray(q) ? q : []; } catch(e) { return []; } }
+function _actSave(q) { try { localStorage.setItem(_actKey(), JSON.stringify(q.slice(-ACT_MAX))); } catch(e) {} }
+function _act(k, x) {
+  try {
+    if (!_actOn()) return;
+    const e = { t: Date.now(), k };
+    if (x) Object.keys(x).forEach(key => {
+      const v = x[key];
+      if (v !== undefined && v !== null && v !== '') e[key] = (typeof v === 'string') ? v.slice(0, 80) : v;
+    });
+    const q = _actLoad(); q.push(e); _actSave(q);
+    if (!_actTimer) _actTimer = setTimeout(_actFlush, ACT_EVERY);
+  } catch(err) {}
+}
+// zdarzenie przy bieżącej karcie: tryb, podręcznik, rozdział, słówko, kierunek
+function _actCard(k, x) {
+  const w = (curIdx !== null && activeWords[curIdx]) ? activeWords[curIdx][0] : undefined;
+  _act(k, Object.assign({ m: mode, b: currentBookId, u: currentUnitKey, w, d: studyDir === 'en_pl' ? 'en' : undefined }, x || {}));
+}
+// ocena karty w rate(): czas odpowiedzi + ostatni wpis w trybach z polem (Wpisz / Wpisz zd. — osobno, 'try')
+function _actRate(r, selfRated, x) {
+  try {
+    const now = Date.now(), e = { r, s: selfRated ? 1 : undefined, x };
+    if (mode === 'card' && selfRated && _pace.flippedAt) e.ms = now - _pace.flippedAt;
+    else if (_cardShownAt) e.ms = ((_pace.answerIdx === curIdx && _pace.answerAt >= _cardShownAt) ? _pace.answerAt : now) - _cardShownAt;
+    const inp = ACT_INPUT[mode] && document.getElementById(ACT_INPUT[mode]);
+    if (inp && inp.value) e.v = inp.value.trim();
+    _actCard('rate', e);
+  } catch(err) {}
+}
+async function _actFlush() {
+  _actTimer = null;
+  if (_actBusy || _actOff || isGuest || !currentUser || typeof DB === 'undefined' || !DB.logStudyActions) return;
+  const q = _actLoad();
+  if (!q.length) return;
+  const batch = q.slice(0, ACT_BATCH);
+  _actBusy = true;
+  let res = false;
+  try { res = await DB.logStudyActions(batch); } catch(e) { res = false; }
+  _actBusy = false;
+  if (res === null) { _actOff = true; _actSave([]); return; }                // brak migracji #96 — nie zbieramy
+  if (res === false) { _actTimer = setTimeout(_actFlush, 120000); return; }  // sieć / serwer — ponów za 2 min
+  const id = e => e.t + '|' + e.k + '|' + (e.w || '') + '|' + (e.v || '');
+  const sent = new Set(batch.map(id));
+  const rest = _actLoad().filter(e => !sent.has(id(e)));
+  _actSave(rest);
+  if (rest.length && !_actTimer) _actTimer = setTimeout(_actFlush, rest.length >= ACT_BATCH ? 3000 : ACT_EVERY);
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') { clearTimeout(_actTimer); _actTimer = null; _actFlush(); }
+});
+setTimeout(() => { try { if (currentUser && _actLoad().length) _actFlush(); } catch(e) {} }, 15000);   // zaległe z poprzedniej wizyty
+
 // ✋ Wklejanie / upuszczanie tekstu w polach odpowiedzi — zablokowane (pisanie z klawiatury,
 // IME / autokorekta telefonu i literki pod polem działają jak dotąd).
 (function _initNoPaste() {
@@ -11691,9 +11770,10 @@ function _selfEasyCheck(r) {
 function rate(r, noAdvance, selfRated) {
   if (curIdx === null) return;
   // 🐢 Fiszki: ocena, zanim odpowiedź się odsłoniła (< 0,45 s po odwróceniu) — ignorujemy
-  if (mode === 'card' && selfRated && Date.now() - _pace.flippedAt < PACE_MIN_LOOK) return;
+  if (mode === 'card' && selfRated && Date.now() - _pace.flippedAt < PACE_MIN_LOOK) { _actRate(r, selfRated, 'early'); return; }
   clearInterval(studySpeedTimer); // zatrzymaj timer speed jeśli aktywny
-  if (!_paceAnswer()) { _rateNeutral(noAdvance); return; }   // 🐢 za szybko — nie liczy się
+  if (!_paceAnswer()) { _actRate(r, selfRated, 'fast'); _rateNeutral(noAdvance); return; }   // 🐢 za szybko — nie liczy się
+  _actRate(r, selfRated);         // 📜 przebieg nauki (#96)
   _gateTrack(r);                  // blokada gier i trybów: licznik słówek dnia (Wpisz / Wpisz zd., za 1. razem)
   if (mode === 'card' && selfRated && r === 'easy') _selfEasyMark();   // 🃏 #95: „Łatwe” — sprawdzi je Wpisz
   else if (mode === 'type' && !selfRated) _selfEasyCheck(r);
@@ -11788,7 +11868,7 @@ function resetLives() { lives = 3; document.getElementById('gameoverBar').style.
 function setMode(m) {
   if (isPremiumMode(m)) { showPremiumModal(); return; }
   // 🔒 Najpierw nauka: poza Fiszki / Wpisz / Wpisz zd. — dopiero po 10 słówkach w Wpisz (blokada dzienna)
-  if (!_gateBypassOnce && !modeGateOk(m)) { showGamesGateMsg(); return; }
+  if (!_gateBypassOnce && !modeGateOk(m)) { _act('locked', { v: m }); showGamesGateMsg(); return; }
   // Skoczek (jump) ma wlasny, zaktualizowany plik skoczek.html (tryby Trudny/Latwy,
   // skacze tylko postac). Kafelek przekierowuje tam — jedna wersja gry zamiast
   // duplikatu wbudowanego w app.html. Tak samo dziala juz deep-link (?game=jump).
@@ -11797,6 +11877,7 @@ function setMode(m) {
   // Tak samo dziala juz deep-link (?game=jump|bridge|butterfly).
   const STANDALONE_GAME_FILE = { jump: 'skoczek.html', bridge: 'most.html', butterfly: 'motyle.html' };
   if (STANDALONE_GAME_FILE[m]) {
+    _act('game', { v: m, b: currentBookId, u: currentUnitKey });   // 📜
     const bId = (typeof currentBookId !== 'undefined') ? currentBookId : '';
     const uKey = (typeof currentUnitKey !== 'undefined' && currentUnitKey) ? currentUnitKey : 'all';
     if (!bId) { if (typeof toast === 'function') toast('Najpierw wybierz podręcznik i unit.', 2000); return; }
@@ -11805,6 +11886,7 @@ function setMode(m) {
   }
   clearInterval(studySpeedTimer);
   mode = m;
+  _act('mode', { m, b: currentBookId, u: currentUnitKey });   // 📜 przebieg nauki
   document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
   const modeMap = {write:'mWrite',card:'mCard',quiz:'mQuiz',type:'mType',missing:'mMissing',dictate:'mDictate',tf:'mTF',gap:'mGap',scramble:'mScramble',sentscr:'mSentScr',match:'mMatch',speed:'mSpeed',butterfly:'mButterfly',jump:'mJump',bridge:'mBridge',speak:'mSpeak',speakSent:'mSpeakSent',typeSent:'mTypeSent',dictSent:'mDictSent'};
   document.getElementById(modeMap[m]).classList.add('active');
@@ -13409,6 +13491,7 @@ function renderSpeedCard() {
 
 function onSpeedStudyAnswer(btn, ok, correct) {
   if (revealed) return;
+  if (!btn.classList.contains('wrong')) _actCard('pick', { v: (btn.textContent || '').trim(), ok: ok ? 1 : 0 });   // 📜
   if (!ok) {
     // Zla odpowiedz: czerwone, zablokuj tylko ten przycisk. Timer wciaz tyka —
     // jak gracz nie zdazy wybrac poprawnej, runda i tak skonczy sie jako Trudne.
@@ -13834,16 +13917,29 @@ function _gateGoMode(m) {
 }
 // Klik w zablokowaną grę (rząd „🎮 Gry”, gry z listy unitów, kafelki INNE) — przechwytywany,
 // zanim zadziała onclick przycisku. Tryby nauki pilnuje setMode (modeGateOk).
+const GAME_ROW_PL = { spellCardRowBtns: 'Spell Card', sentBuildRowBtns: 'Sentence Builder', cubesRowBtns: 'Kostki', duelRowBtns: 'Rywalizacja',
+  cwRowBtns: 'Krzyżówka', wsRowBtns: 'Wykreślanka', memRowBtns: 'Memory', snakeRowBtns: 'Wąż', imgCardRowBtns: 'Image Card',
+  boardRowBtns: 'Gra planszowa', dobbleRowBtns: 'Karty do gry', scrGameRowBtns: 'Rozsypanka literowa', sentScrGameRowBtns: 'Rozsypanka zdaniowa' };
 document.addEventListener('click', e => {
   const t = e.target;
-  if (!t || !t.closest || gamesUnlocked()) return;
-  let hit = !!t.closest('#gamesModeRow') || GAME_GATE_ROWS.some(id => t.closest('#' + id));
+  if (!t || !t.closest) return;
+  const txt = el => ((el && el.textContent) || '').replace(/\s+/g, ' ').trim().slice(0, 50);
+  let hit = false, label = '';
+  const gb = t.closest('#gamesModeRow .mode-btn');
+  if (gb) { hit = true; label = txt(gb); }
+  else {
+    const rowId = GAME_GATE_ROWS.find(id => t.closest('#' + id));
+    if (rowId) { const b = t.closest('button'); if (b) { hit = true; label = (GAME_ROW_PL[rowId] || rowId) + ' · ' + txt(b); } }
+  }
+  let apps = false;
   if (!hit) {
     const a = t.closest('#sApps a.book-card');
     // INNE: gość / bez Premium ma tam własną kłódkę; linki do podręczników (app.html#…) zostają
-    hit = !!a && !/^app\.html/.test(a.getAttribute('href') || '') && hasPremiumAccess();
+    if (a && !/^app\.html/.test(a.getAttribute('href') || '') && hasPremiumAccess()) { hit = true; apps = true; label = 'INNE · ' + txt(a.querySelector('.book-name, .book-title, h3, strong') || a); }
   }
   if (!hit) return;
+  if (gamesUnlocked()) { _act('game', { v: label, b: apps ? undefined : currentBookId }); return; }   // 📜
+  _act('locked', { v: label });
   e.preventDefault(); e.stopPropagation();
   showGamesGateMsg();
 }, true);
@@ -15491,6 +15587,7 @@ function checkTypeSent() {
   const u = inp.value.trim();
   if (!u) return;
   const ok = fuzzy(u, tsSentAnswer) || levenshteinSimilar(u, tsSentAnswer);
+  _actCard('try', { v: u, ok: ok ? 1 : 0 });   // 📜
   const r = document.getElementById('tsRes');
   // 🧹 próba „na chybił-trafił” nie liczy się jako wpis do zaliczenia dnia (#94); 1. raz — prośba
   // o całe zdanie (karta zostaje), 2. raz — poprawne zdanie jak przy błędzie
@@ -23739,6 +23836,7 @@ function renderStudentSearchList(query) {
       }
     }
     html += '<div style="display:flex;justify-content:center;gap:8px;margin-top:12px;flex-wrap:wrap">'
+      + '<button class="btn-sm" onclick="sfOpenActionLog(\'' + userId + '\',\'' + escHtml(login || '').replace(/'/g, '') + '\')">📜 Przebieg nauki</button>'
       + '<button class="btn-sm" onclick="sfOpenXpGuard()">👥 Wszyscy z alertami</button>'
       + '<button class="btn-modal-cancel" onclick="closeGenericModal()">Zamknij</button></div>';
     openGenericModal(title, html);
@@ -23782,6 +23880,196 @@ function renderStudentSearchList(query) {
 // 'parent' = sParentPanel (dla opiekuna).
 let _studProgReturnTo = 'class';
 
+// ══════════════════════════════════════════════
+//  📜 PRZEBIEG NAUKI — podgląd dla nauczyciela / opiekuna / admina (#96)
+//  Dzień po dniu każde kliknięcie ucznia w nauce (zapis: _act / _actCard / _actRate):
+//  oceny w Fiszkach z czasem od odwrócenia karty, wpisy, wybory, „Nie wiem”, tryby, gry,
+//  próby wejścia do zablokowanych, 🙈 Ignoruj + sesje gier z osobnych plików (game_sessions, #66).
+//  🙈 Lista słówek w „Ignoruj” — z unit_progress (word_states.ignored, data: ignAt od v1.253).
+// ══════════════════════════════════════════════
+const ACT_SCREEN_PL = { sLang: 'start', sSchool: 'wybór szkoły', sClass: 'wybór klasy', sBooks: 'podręczniki', sUnits: 'rozdziały',
+  sWordList: 'lista słówek', sStudy: 'nauka', sDone: 'koniec rozdziału', sStats: 'statystyki', sApps: 'INNE', sDuel: 'Rywalizacja',
+  sMessages: 'wiadomości', sCrossword: 'krzyżówka', sWordsearch: 'wykreślanka', sSnake: 'wąż', sMemory: 'memory', sHangman: 'wisielec',
+  sScrGame: 'rozsypanka', sSentScrGame: 'rozsypanka zdaniowa', sBoardGame: 'gra planszowa', sDobble: 'karty do gry', sImageCard: 'image card',
+  sCubes: 'kostki', sSpeed: 'speed quiz' };
+const ACT_GAME_PL = { jump: '🏝️ Skoczek', bridge: '🌉 Most', butterfly: '🦋 Motyle' };
+const ACT_FAST_EASY = 1500;   // „Łatwe” szybciej niż 1,5 s po odwróceniu karty — pewnie bez czytania
+let _studIgnored = [], _studIgnoredWho = '';
+function _actTime(t) { const d = new Date(t); return [d.getHours(), d.getMinutes(), d.getSeconds()].map(x => String(x).padStart(2, '0')).join(':'); }
+function _actSec(ms) { return ms == null ? '' : (ms < 10000 ? String(Math.round(ms / 100) / 10).replace('.', ',') : String(Math.round(ms / 1000))) + ' s'; }
+function _actDayPl(d) { const p = String(d || '').slice(0, 10).split('-'); return p.length === 3 ? p[2] + '.' + p[1] : String(d || ''); }
+function _actBookUnit(b, u) {
+  const book = BOOKS[b];
+  if (!book) return b || '';
+  let units = book.units || {};
+  try { if (typeof getUnitsWithCustom === 'function') units = getUnitsWithCustom(b) || units; } catch(e) {}
+  const un = u === 'all' ? '🌍 cały podręcznik' : ((units[u] && units[u].name) || u || '');
+  return (book.shortName || book.name || b) + (un ? ' · ' + un : '');
+}
+function _actLine(e) {
+  const md = e.m ? ((typeof FOCUS_MODE_LABELS !== 'undefined' && FOCUS_MODE_LABELS[e.m]) || e.m) : '';
+  const warn = x => '<span style="color:var(--accent);font-weight:800">' + x + '</span>';
+  const good = x => '<span style="color:var(--accent2);font-weight:800">' + x + '</span>';
+  const mut = x => '<span style="color:var(--muted)">' + x + '</span>';
+  const word = e.w ? ' „<b>' + escHtml(e.w) + '</b>”' + (e.d === 'en' ? mut(' (EN→PL)') : '') : '';
+  const nc = e.x === 'early' ? ' ' + warn('🐢 kliknięte, zanim odpowiedź się pokazała — nie liczyło się')
+    : e.x === 'fast' ? ' ' + warn('🐢 za szybko — nie liczyło się') : '';
+  switch (e.k) {
+    case 'screen': return mut('📍 ekran: ' + escHtml(ACT_SCREEN_PL[e.v] || e.v || '?'));
+    case 'mode': return '▶️ tryb <b>' + escHtml(md) + '</b>' + (e.b ? mut(' · ' + escHtml(_actBookUnit(e.b, e.u))) : '');
+    case 'game': return '🎮 gra: <b>' + escHtml(ACT_GAME_PL[e.v] || e.v || '?') + '</b>' + (e.b && BOOKS[e.b] ? mut(' · ' + escHtml(_actBookUnit(e.b, e.u))) : '');
+    case 'locked': return warn('🔒 próba wejścia (jeszcze zablokowane): ' + escHtml((typeof FOCUS_MODE_LABELS !== 'undefined' && FOCUS_MODE_LABELS[e.v]) || ACT_GAME_PL[e.v] || e.v || '?'));
+    case 'ignore': return '🙈 <b>Ignoruj</b>' + word + ' ' + mut('(„znałem to słowo wcześniej” — znika z nauki)');
+    case 'unignore': return '↩️ przywrócone do nauki' + word;
+    case 'reveal': return mut(escHtml(md)) + word + ' → ' + warn('🙈 „Nie wiem — pokaż odpowiedź”') + (e.v ? mut(' (wpisane: „' + escHtml(e.v) + '”)') : '');
+    case 'try': return mut(escHtml(md)) + word + ' → wpisane „' + escHtml(e.v || '') + '” ' + (e.ok ? good('✓') : warn('✗')) + (e.j ? ' ' + warn('🧹 na chybił-trafił') : '');
+    case 'pick': return mut(escHtml(md)) + word + ' → wybrane „' + escHtml(e.v || '') + '” ' + (e.ok ? good('✓') : warn('✗'));
+    case 'rate': {
+      if (e.s) {
+        const lab = { easy: '😎 Łatwe', medium: '🤔 Średnie', hard: '😰 Trudne' }[e.r] || escHtml(e.r || '');
+        const fast = e.r === 'easy' && e.ms != null && e.ms < ACT_FAST_EASY && !e.x;
+        return mut(escHtml(md)) + word + ' → <b>' + lab + '</b>' + (e.ms != null ? mut(' · ' + _actSec(e.ms) + ' po odwróceniu') : '')
+          + (fast ? ' ' + warn('⚡ bardzo szybko — czy przeczytał(a)?') : '') + nc;
+      }
+      const res = (e.r === 'easy' || e.r === 'good') ? good('✓ dobrze') : e.r === 'again' ? warn('✗ nie wiedział(a)') : '✓ za 2. razem';
+      return mut(escHtml(md)) + word + ' → ' + res + (e.v ? mut(' · „' + escHtml(e.v) + '”') : '') + (e.ms != null ? mut(' · ' + _actSec(e.ms)) : '') + nc;
+    }
+    case 'gs': {
+      const g = (window.SF_STATS && SF_STATS.GAMES && SF_STATS.GAMES[e.v]) || { n: e.v, i: '🎮' };
+      const min = Math.floor((e.sec || 0) / 60), sec = (e.sec || 0) % 60;
+      return '🎮 <b>' + escHtml(g.i + ' ' + g.n) + '</b> ' + mut('(gra w osobnym oknie)') + ' · ' + (min ? min + ' min ' : '') + sec + ' s aktywnej gry · '
+        + (e.sc || 0) + ' pkt' + (e.c != null ? ' · ' + e.c + ' poprawnych' : '') + (e.b && BOOKS[e.b] ? mut(' · ' + escHtml(_actBookUnit(e.b, e.u))) : '');
+    }
+  }
+  return escHtml(String(e.k || '?'));
+}
+function _actSummary(ev) {
+  const S = { card: { easy: 0, medium: 0, hard: 0, fast: 0, nc: 0 }, typeW: new Set(), typeFirst: new Set(), tries: 0, wrong: 0, junk: 0, reveal: 0,
+    modes: {}, games: 0, gameSec: 0, locked: 0, ign: [], first: null, last: null };
+  ev.forEach(e => {
+    if (e.k !== 'gs') { if (S.first === null) S.first = e.t; S.last = e.t; }
+    if (e.k === 'rate' && e.s && e.m === 'card') {
+      if (e.x) S.card.nc++; else if (S.card[e.r] != null) S.card[e.r]++;
+      if (e.r === 'easy' && !e.x && e.ms != null && e.ms < ACT_FAST_EASY) S.card.fast++;
+    } else if (e.k === 'rate' && !e.s) {
+      const m = S.modes[e.m] || (S.modes[e.m] = { n: 0, ok: 0 });
+      m.n++; if (e.r === 'easy' || e.r === 'good') m.ok++;
+      if (e.m === 'type' || e.m === 'typeSent') { S.typeW.add(e.w); if (e.r === 'easy' || e.r === 'good') S.typeFirst.add(e.w); }
+    } else if (e.k === 'try') { S.tries++; if (!e.ok) S.wrong++; if (e.j) S.junk++; }
+    else if (e.k === 'reveal') S.reveal++;
+    else if (e.k === 'game') S.games++;
+    else if (e.k === 'gs') { S.gs = (S.gs || 0) + 1; S.gameSec += e.sec || 0; }
+    else if (e.k === 'locked') S.locked++;
+    else if (e.k === 'ignore' && e.w) S.ign.push(e.w);
+  });
+  const lines = [];
+  if (S.first !== null) lines.push('⏱️ ' + _actTime(S.first).slice(0, 5) + '–' + _actTime(S.last).slice(0, 5));
+  const c = S.card, cn = c.easy + c.medium + c.hard;
+  if (cn || c.nc) lines.push('🃏 Fiszki: ' + cn + ' ' + plural(cn, 'ocena', 'oceny', 'ocen') + ' (😎 ' + c.easy + ' · 🤔 ' + c.medium + ' · 😰 ' + c.hard + ')'
+    + (c.fast ? ' · <b style="color:var(--accent)">⚡ ' + c.fast + '× „Łatwe” szybciej niż 1,5 s</b>' : '')
+    + (c.nc ? ' · <b style="color:var(--accent)">🐢 ' + c.nc + ' nie liczyło się</b>' : ''));
+  if (S.typeW.size || S.tries) lines.push('✏️ Wpisz: ' + S.typeW.size + ' ' + plural(S.typeW.size, 'słówko', 'słówka', 'słówek') + ', za 1. razem ' + S.typeFirst.size
+    + ' · ' + S.tries + ' ' + plural(S.tries, 'wpis', 'wpisy', 'wpisów') + ' (✗ ' + S.wrong + ')'
+    + (S.reveal ? ' · 🙈 „Nie wiem” ' + S.reveal + '×' : '') + (S.junk ? ' · <b style="color:var(--accent)">🧹 ' + S.junk + '× na chybił-trafił</b>' : ''));
+  const other = Object.keys(S.modes).filter(m => m !== 'type' && m !== 'typeSent' && m !== 'card');
+  if (other.length) lines.push('📚 Inne tryby: ' + other.map(m => escHtml((typeof FOCUS_MODE_LABELS !== 'undefined' && FOCUS_MODE_LABELS[m]) || m) + ' ' + S.modes[m].ok + '/' + S.modes[m].n).join(' · '));
+  if (S.games || S.gs) lines.push('🎮 Gry: ' + S.games + ' ' + plural(S.games, 'wejście', 'wejścia', 'wejść')
+    + (S.gs ? ' · ' + S.gs + ' ' + plural(S.gs, 'sesja', 'sesje', 'sesji') + ' w osobnym oknie, ' + Math.round(S.gameSec / 60) + ' min aktywnej gry' : ''));
+  if (S.locked) lines.push('<b style="color:var(--accent)">🔒 ' + S.locked + ' ' + plural(S.locked, 'próba', 'próby', 'prób') + ' wejścia do zablokowanych gier / trybów</b>');
+  if (S.ign.length) lines.push('🙈 Ignoruj: ' + S.ign.map(w => '„' + escHtml(w) + '”').join(', '));
+  return lines;
+}
+async function sfOpenActionLog(userId, username, day) {
+  const title = '📜 Przebieg nauki — ' + escHtml(username || '');
+  const close = '<div style="display:flex;justify-content:center;gap:8px;margin-top:12px;flex-wrap:wrap">'
+    + '<button class="btn-sm" onclick="_showStudentIgnored()">🙈 Słówka w „Ignoruj”</button>'
+    + '<button class="btn-modal-cancel" onclick="closeGenericModal()">Zamknij</button></div>';
+  if (!DB.studentActionDays) { toast('Odśwież stronę (Ctrl+Shift+R), żeby włączyć tę funkcję.', 3000); return; }
+  openGenericModal(title, '<div style="color:var(--muted);font-size:.8rem;padding:10px">⏳ Ładowanie…</div>');
+  let days;
+  try { days = await DB.studentActionDays(userId, 30); } catch(e) { openGenericModal(title, '<div style="color:var(--accent);font-size:.82rem">❌ ' + escHtml(e.message || String(e)) + '</div>' + close); return; }
+  if (days === null) {
+    openGenericModal(title, '<div style="font-size:.82rem;color:var(--muted);font-weight:600;line-height:1.5">Ta funkcja wymaga migracji <b>#96</b> (<code>study-action-log.sql</code>) w Supabase.</div>' + close);
+    return;
+  }
+  if (!days.length) {
+    openGenericModal(title, '<div style="font-size:.82rem;color:var(--muted);font-weight:600;line-height:1.55">Brak zapisów z ostatnich 30 dni.<br>Przebieg nauki zapisuje się od wersji <b>v1.253</b> — gdy uczeń odświeży aplikację i zacznie się uczyć, tu pojawi się każde jego kliknięcie.</div>' + close);
+    return;
+  }
+  const d = day || String(days[0].day).slice(0, 10);
+  let batches, games;
+  try {
+    [batches, games] = await Promise.all([
+      DB.studentActionLog(userId, d),
+      DB.loadGameSessions ? DB.loadGameSessions(userId, 31).catch(() => []) : Promise.resolve([])
+    ]);
+  } catch(e) { openGenericModal(title, '<div style="color:var(--accent);font-size:.82rem">❌ ' + escHtml(e.message || String(e)) + '</div>' + close); return; }
+  const ev = [];
+  (batches || []).forEach(b => (Array.isArray(b.events) ? b.events : []).forEach(e => { if (e && typeof e === 'object' && +e.t) ev.push(e); }));
+  (games || []).filter(g => String(g.day || '').slice(0, 10) === d).forEach(g => ev.push({ t: Date.parse(g.started_at), k: 'gs', v: g.game, sec: g.duration_sec, sc: g.score, c: g.correct, b: g.book_id, u: g.unit_key }));
+  ev.sort((a, b) => a.t - b.t);
+  const chips = days.map(x => {
+    const dd = String(x.day).slice(0, 10), on = dd === d;
+    return '<button class="btn-sm' + (on ? ' accent' : '') + '" style="font-size:.7rem;padding:4px 9px" onclick="sfOpenActionLog(\'' + userId + '\',\'' + escHtml(username || '').replace(/'/g, '') + '\',\'' + dd + '\')">'
+      + _actDayPl(dd) + ' <span style="opacity:.75">· ' + x.events + '</span></button>';
+  }).join('');
+  const sum = _actSummary(ev);
+  let list = '', prev = null;
+  const shown = ev.slice(0, 2500);
+  shown.forEach(e => {
+    if (prev !== null && e.t - prev > 10 * 60000) list += '<div style="text-align:center;font-size:.68rem;color:var(--muted);font-weight:700;padding:4px 0">⏸ przerwa ' + Math.round((e.t - prev) / 60000) + ' min</div>';
+    prev = e.t;
+    list += '<div style="display:flex;gap:8px;font-size:.76rem;line-height:1.45;padding:3px 6px;border-bottom:1px solid var(--border)">'
+      + '<span style="color:var(--muted);font-variant-numeric:tabular-nums;flex:0 0 auto">' + _actTime(e.t) + '</span><span>' + _actLine(e) + '</span></div>';
+  });
+  if (ev.length > shown.length) list += '<div style="font-size:.7rem;color:var(--muted);padding:6px">… i jeszcze ' + (ev.length - shown.length) + ' zdarzeń tego dnia.</div>';
+  const html = '<div style="font-size:.72rem;color:var(--muted);font-weight:600;line-height:1.5;margin-bottom:8px">Każde kliknięcie ucznia w nauce danego dnia (zapisy z 30 dni). '
+      + '⚡ = „Łatwe” w Fiszkach szybciej niż 1,5 s po odwróceniu karty — warto zapytać, czy uczeń przeczytał słówko. 🐢 = odpowiedź nie liczyła się.</div>'
+    + '<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px">' + chips + '</div>'
+    + (sum.length ? '<div style="background:var(--surface2);border-radius:10px;padding:8px 10px;margin-bottom:10px;font-size:.78rem;line-height:1.6">' + sum.join('<br>') + '</div>' : '')
+    + '<div style="max-height:52vh;overflow:auto;border:1px solid var(--border);border-radius:10px">' + (list || '<div style="padding:10px;font-size:.8rem;color:var(--muted)">Brak zdarzeń.</div>') + '</div>'
+    + close;
+  openGenericModal(title, html);
+}
+window.sfOpenActionLog = sfOpenActionLog;
+// 🙈 Słówka w „Ignoruj” — z unit_progress ucznia (openStudentProgress zbiera listę)
+function _studIgnoredFrom(unitRows) {
+  const out = [];
+  (unitRows || []).forEach(r => {
+    const book = BOOKS[r.book_key];
+    let units = (book && book.units) || {};
+    try { if (book && typeof getUnitsWithCustom === 'function') units = getUnitsWithCustom(r.book_key) || units; } catch(e) {}
+    const words = (units[r.unit_key] && units[r.unit_key].words) || [];
+    const st = r.word_states || {};
+    Object.keys(st).forEach(i => {
+      const x = st[i];
+      if (!x || !x.ignored) return;
+      const w = words[+i];
+      out.push({ b: r.book_key, u: r.unit_key, pl: w ? w[0] : '#' + i, en: w ? w[1] : '', at: x.ignAt || null });
+    });
+  });
+  return out.sort((a, b) => (b.at || 0) - (a.at || 0));
+}
+function _showStudentIgnored() {
+  const list = _studIgnored || [];
+  const title = '🙈 Słówka w „Ignoruj” — ' + escHtml(_studIgnoredWho || '');
+  let html = '<div style="font-size:.74rem;color:var(--muted);font-weight:600;line-height:1.5;margin-bottom:8px">Uczeń oznaczył je jako „znałem to słowo wcześniej”: nie pojawiają się w nauce ani w grach i liczą się jako opanowane. Data ukrycia zapisuje się od wersji v1.253.</div>';
+  if (!list.length) html += '<div style="font-size:.82rem;color:var(--muted);font-weight:600;padding:6px 0">Brak — uczeń nie ukrył żadnego słówka. ✅</div>';
+  else {
+    const by = {};
+    list.forEach(x => { const k = x.b + '|' + x.u; (by[k] || (by[k] = [])).push(x); });
+    html += '<div style="max-height:55vh;overflow:auto">' + Object.keys(by).map(k => {
+      const [b, u] = k.split('|');
+      return '<div style="font-size:.74rem;font-weight:800;color:var(--accent);margin:10px 0 4px">' + escHtml(_actBookUnit(b, u)) + ' · ' + by[k].length + '</div>'
+        + by[k].map(x => '<div style="font-size:.78rem;padding:4px 8px;background:var(--surface2);border-radius:8px;margin-bottom:3px">'
+          + '<b>' + escHtml(x.pl) + '</b>' + (x.en ? ' — ' + escHtml(x.en) : '')
+          + (x.at ? ' <span style="color:var(--muted)">· ukryte ' + new Date(x.at).toLocaleString('pl-PL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) + '</span>' : '') + '</div>').join('');
+    }).join('') + '</div>';
+  }
+  html += '<div style="display:flex;justify-content:center;margin-top:12px"><button class="btn-modal-cancel" onclick="closeGenericModal()">Zamknij</button></div>';
+  openGenericModal(title, html);
+}
+
 async function openStudentProgress(userId, username, returnTo) {
   if (returnTo) _studProgReturnTo = returnTo;
   showScreen('sStudentProgress');
@@ -23822,6 +24110,7 @@ async function openStudentProgress(userId, username, returnTo) {
       DB.loadUserProgress(userId),
       DB.getDailyXpHistory ? DB.getDailyXpHistory(userId, 90).catch(() => []) : Promise.resolve([])
     ]);
+    try { _studIgnored = _studIgnoredFrom(unitRows); _studIgnoredWho = username || ''; } catch(e) { _studIgnored = []; }
 
     // Stats summary
     const accuracy = profile.total_answers > 0
@@ -23870,7 +24159,9 @@ async function openStudentProgress(userId, username, returnTo) {
       unitsEl.appendChild(systBox);
       const trBox = document.createElement('div');
       trBox.style.cssText = 'margin:0 0 14px';
-      trBox.innerHTML = '<button class="btn-sm" onclick="_showTypedReport(\'' + userId + '\',\'' + esc(username) + '\')">🔎 Szczegóły „Wpisz"</button>';
+      trBox.innerHTML = '<button class="btn-sm" onclick="_showTypedReport(\'' + userId + '\',\'' + esc(username) + '\')">🔎 Szczegóły „Wpisz"</button>'
+        + ' <button class="btn-sm" title="Każde kliknięcie ucznia w nauce, dzień po dniu" onclick="sfOpenActionLog(\'' + userId + '\',\'' + esc(username) + '\')">📜 Przebieg nauki</button>'
+        + ' <button class="btn-sm" title="Słówka oznaczone przez ucznia jako „znałem to słowo wcześniej”" onclick="_showStudentIgnored()">🙈 Ignoruj (' + (_studIgnored || []).length + ')</button>';
       // 🛡️ Tempo i korekta XP (#93) — tylko nauczyciel / admin (nie opiekun)
       if (_studProgReturnTo !== 'parent' && (isCurrentUserAdmin() || isCurrentUserTeacher()))
         trBox.innerHTML += ' <button class="btn-sm" title="Za szybkie odpowiedzi, limit XP i korekta punktów" onclick="sfOpenXpGuard(\'' + userId + '\',\'' + esc(username) + '\')">🛡️ Tempo i korekta XP</button>';
@@ -26109,7 +26400,7 @@ function buildAlphaKeys(inputId, answer) {
       <button class="btn-modal-cancel" onclick="closePrivacyModal()" style="padding:5px 11px;font-size:.72rem">✕</button>
     </div>
     <div style="font-size:.78rem;line-height:1.55;color:var(--text);font-weight:500">
-      <p style="font-size:.68rem;color:var(--muted);margin-bottom:10px;font-style:italic">Obowiązuje od: 17 kwietnia 2026 r. · ostatnia aktualizacja: 31 października 2026 r.</p>
+      <p style="font-size:.68rem;color:var(--muted);margin-bottom:10px;font-style:italic">Obowiązuje od: 17 kwietnia 2026 r. · ostatnia aktualizacja: 6 listopada 2026 r.</p>
 
       <h3 style="font-family:'Playfair Display',serif;font-size:.92rem;color:var(--accent);margin-top:6px">1. Administrator danych</h3>
       <p style="margin:4px 0 10px">Administratorem danych osobowych Użytkowników Platformy „Sowie Fiszki" jest <strong>Daniel Ostrowski</strong> (osoba fizyczna prowadząca Platformę). Kontakt w sprawach danych osobowych: <a href="mailto:sowie.fiszki@gmail.com" style="color:var(--accent)">sowie.fiszki@gmail.com</a>.</p>
@@ -26119,6 +26410,7 @@ function buildAlphaKeys(inputId, answer) {
         <li><strong>Dane Konta:</strong> login (nazwa użytkownika), hasło (przechowywane w postaci zaszyfrowanej przez Supabase).</li>
         <li><strong>Dane postępów nauki:</strong> punkty XP, poziom, odblokowane odznaki, czas ostatniej nauki, statystyki odpowiedzi, liczba sesji.</li>
         <li><strong>Bieżąca aktywność:</strong> otwarty w danej chwili ekran, tryb nauki lub gra (z podręcznikiem i rozdziałem) oraz czas ostatniego sygnału z aplikacji — widzi je Administrator, a w przypadku ucznia także jego Nauczyciel i Opiekun; zapisujemy tylko ostatni stan i usuwamy go po około 24 godzinach bez aktywności.</li>
+        <li><strong>Przebieg nauki (konta uczniów):</strong> zapis czynności w trybach nauki — oceny w Fiszkach (z czasem od odwrócenia karty), wpisane i wybrane odpowiedzi, użycie „Nie wiem”, zmiany trybów, wejścia do gier oraz słówka oznaczone „Ignoruj” — z datą i godziną. Widzi go Administrator, Nauczyciel ucznia i jego Opiekun. Dane usuwamy po 30 dniach, a także po usunięciu Konta.</li>
         <li><strong>Dane roli:</strong> przynależność do klasy (uczeń ↔ nauczyciel), plan konta (Free/Premium/Teacher).</li>
         <li><strong>Preferencje:</strong> wybrany motyw interfejsu (przechowywany w localStorage przeglądarki).</li>
         <li><strong>Grafika profilowa (dobrowolna):</strong> obrazek dodany w „Moje konto", zmniejszany do 256×256 px, widoczny dla uczniów z tej samej klasy i klas połączonych w rankingu, znajomych, Nauczyciela i Administratora. Nie musi przedstawiać Użytkownika — zalecamy dowolny obrazek zamiast zdjęcia twarzy. Do jej automatycznego usuwania zapisujemy datę ostatniego wejścia na Platformę.</li>
