@@ -2643,6 +2643,24 @@ const DB = (() => {
 
   // ── AI (Supabase Edge Function „ai”, migracja #73) ──
   // Klucz OpenAI jest wyłącznie w sekretach funkcji. Rzuca Error z polskim komunikatem.
+  // 🔑 Odzyskiwanie hasła e-mailem (#98) — Edge Function „account”.
+  // Akcje: get / set {email} / resend / remove (zalogowany), verify {token} / forgot {login|email} /
+  // reset {token, password} (bez logowania — index.html). Błąd: Error z polem code (np. 'rate', 'token').
+  async function accountCall(action, payload) {
+    const { data, error } = await supabase.functions.invoke('account', { body: Object.assign({ action }, payload || {}) });
+    if (error) {
+      let msg = error.message || 'Błąd serwera.', code = '';
+      try {
+        const body = error.context && typeof error.context.json === 'function' ? await error.context.json() : null;
+        if (body && body.message) msg = body.message;
+        if (body && body.error) code = body.error;
+      } catch (e) { /* zostaje ogólny komunikat */ }
+      if (/Failed to send|FunctionsFetchError|not found|404/i.test(msg)) { msg = 'Odzyskiwanie hasła e-mailem nie jest jeszcze włączone (Edge Function „account”). Napisz do administratora.'; code = code || 'missing'; }
+      throw Object.assign(new Error(msg), { code });
+    }
+    if (data && data.error) throw Object.assign(new Error(data.message || data.error), { code: data.error });
+    return data || {};
+  }
   async function aiCall(action, payload) {
     if (!_userId) throw new Error('Zaloguj się, żeby korzystać z AI.');
     const { data, error } = await supabase.functions.invoke('ai', { body: Object.assign({ action }, payload || {}) });
@@ -6134,6 +6152,7 @@ const DB = (() => {
     classLearningFlags,
     logStudyActions,         // 📜 przebieg nauki ucznia (#96)
     adminSetStats,           // ✏️ ustaw statystyki ucznia (#97)
+    accountCall,             // 🔑 odzyskiwanie hasła e-mailem (#98, Edge Function „account”)
     penalizeJunkXp,          // 🧹 −5 XP za byle co (#97)
     studentActionDays,
     studentActionLog,

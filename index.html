@@ -216,6 +216,21 @@ input.err{border-color:rgba(255,118,117,.6);}
   <div class="error-msg" id="errMsg"></div>
   <div class="success-msg" id="sucMsg"></div>
 
+  <!-- 🔑 NOWE HASŁO Z LINKU (#reset=…, #98) -->
+  <div id="formReset" style="display:none">
+    <div style="font-size:1rem;font-weight:800;margin-bottom:6px">🔑 Ustaw nowe hasło</div>
+    <div style="font-size:.78rem;color:var(--muted,#9b8ec4);font-weight:600;line-height:1.5;margin-bottom:10px">Link z e-maila jest jednorazowy i ważny 60 minut.</div>
+    <div class="form-group">
+      <label for="resetPass">Nowe hasło</label>
+      <input type="password" id="resetPass" placeholder="Min. 6 znaków…" autocomplete="new-password">
+    </div>
+    <div class="form-group">
+      <label for="resetPass2">Powtórz nowe hasło</label>
+      <input type="password" id="resetPass2" placeholder="Powtórz hasło…" autocomplete="new-password">
+    </div>
+    <button class="btn-login" id="resetBtn" onclick="doResetPassword()">💾 Zapisz nowe hasło</button>
+  </div>
+
   <!-- LOGIN FORM -->
   <div id="formLogin">
     <div class="form-group">
@@ -227,6 +242,21 @@ input.err{border-color:rgba(255,118,117,.6);}
       <input type="password" id="loginPass" placeholder="Wpisz hasło…" autocomplete="current-password">
     </div>
     <button class="btn-login" onclick="doLogin()">Zaloguj się 🦉</button>
+    <div style="text-align:center;margin:8px 0 2px">
+      <button type="button" onclick="toggleForgot()" style="background:none;border:none;color:var(--accent,#ffd166);font-weight:800;font-size:.8rem;cursor:pointer;text-decoration:underline;font-family:inherit">🔑 Nie pamiętam hasła</button>
+    </div>
+    <!-- 🔑 Odzyskiwanie hasła (#98) -->
+    <div id="forgotWrap" style="display:none;margin:8px 0 4px;padding:14px;background:rgba(255,209,102,.07);border:1.5px solid rgba(255,209,102,.25);border-radius:12px">
+      <div style="font-size:.82rem;font-weight:800;margin-bottom:8px">🔑 Nie pamiętasz hasła?</div>
+      <div style="font-size:.76rem;line-height:1.5;color:var(--muted,#9b8ec4);font-weight:600;margin-bottom:8px"><b style="color:var(--text,#fff)">🎓 Uczeń:</b> poproś nauczyciela — nada Ci nowe hasło w panelu klasy. <b style="color:var(--text,#fff)">Nie zakładaj nowego konta</b> — stracisz swoje postępy.</div>
+      <div style="font-size:.76rem;line-height:1.5;color:var(--muted,#9b8ec4);font-weight:600;margin-bottom:8px"><b style="color:var(--text,#fff)">👩‍🏫 Nauczyciel · 👨‍👩‍👧 Opiekun:</b> wpisz login albo e-mail potwierdzony w „👤 Moje konto” — wyślemy link do ustawienia nowego hasła.</div>
+      <div class="form-group" style="margin-bottom:8px">
+        <input type="text" id="forgotId" placeholder="Login albo e-mail…" autocomplete="username" autocorrect="off" autocapitalize="off" spellcheck="false">
+      </div>
+      <button class="btn-login" id="forgotBtn" onclick="sendForgot()">📧 Wyślij link</button>
+      <div id="forgotMsg" style="display:none;font-size:.78rem;font-weight:700;line-height:1.5;margin-top:8px"></div>
+      <div style="font-size:.68rem;color:var(--muted,#9b8ec4);font-weight:600;line-height:1.45;margin-top:8px">Nie podano e-maila? Napisz do nas: <a href="mailto:sowie.fiszki@gmail.com" style="color:inherit">sowie.fiszki@gmail.com</a> (podaj login) — pomożemy.</div>
+    </div>
     <div class="or-divider">lub</div>
     <button class="btn-guest" onclick="enterGuest()">
       <span style="font-size:1.3rem">🚶</span>
@@ -267,6 +297,11 @@ input.err{border-color:rgba(255,118,117,.6);}
     <div class="form-group">
       <label for="regPass2">Powtórz hasło</label>
       <input type="password" id="regPass2" placeholder="Powtórz hasło…" autocomplete="new-password">
+    </div>
+    <div class="form-group" id="regEmailGroup" style="display:none">
+      <label for="regEmail">E-mail do odzyskania hasła <span style="font-weight:600;opacity:.75">(dobrowolny)</span></label>
+      <input type="email" id="regEmail" placeholder="np. jan.kowalski@gmail.com" autocomplete="email" autocapitalize="off" spellcheck="false">
+      <div style="font-size:.7rem;color:var(--muted,#9b8ec4);font-weight:600;line-height:1.45;margin-top:4px">Tylko po to, żeby przypomnieć hasło — wyślemy link potwierdzający. Bez reklam. Możesz go dodać lub usunąć później w „👤 Moje konto”.</div>
     </div>
     <label style="display:flex;align-items:flex-start;gap:8px;font-size:.76rem;color:var(--muted,#9b8ec4);font-weight:600;line-height:1.4;margin:4px 0 6px;cursor:pointer">
       <input type="checkbox" id="regAcceptTerms" style="margin-top:2px;flex-shrink:0;width:16px;height:16px;cursor:pointer">
@@ -390,6 +425,8 @@ function selectRole(role) {
   const guardianLbl = document.getElementById('regAcceptGuardianLabel');
   const guardianCb  = document.getElementById('regAcceptGuardian');
   if (guardianLbl) guardianLbl.style.display = (role === 'student') ? '' : 'none';
+  const emailGrp = document.getElementById('regEmailGroup');   // 🔑 #98: e-mail tylko dla nauczyciela / opiekuna
+  if (emailGrp) emailGrp.style.display = (role === 'teacher' || role === 'parent') ? '' : 'none';
   if (guardianCb && role !== 'student') guardianCb.checked = false;
 }
 
@@ -411,31 +448,125 @@ async function doRegister() {
   const roleNow = document.getElementById('regRole').value;
   const acceptGuardian = document.getElementById('regAcceptGuardian');
   if (roleNow === 'student' && acceptGuardian && !acceptGuardian.checked) { showErr('Potwierdź, że masz ukończone 16 lat lub zgodę opiekuna.'); return; }
+  const regEmailEl = document.getElementById('regEmail');
+  const regEmail = (roleNow === 'teacher' || roleNow === 'parent') && regEmailEl ? regEmailEl.value.trim().toLowerCase() : '';
+  if (regEmail && !/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(regEmail)) { showErr('To nie wygląda na poprawny adres e-mail (możesz zostawić pole puste).'); return; }
 
   setLoading(btn, true);
   try {
     const role = document.getElementById('regRole').value;
     await DB.register(user, pass);
     // Ustaw rolę nauczyciela/opiekuna jeśli wybrana
+    let emailNote = '';
     if (role === 'teacher' || role === 'parent') {
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
         const patch = role === 'teacher' ? { is_teacher: true } : { is_parent: true };
         await supabase.from('profiles').update(patch).eq('id', session.user.id);
+        // 🔑 #98: e-mail do odzyskania hasła (dobrowolny) — link potwierdzający
+        if (regEmail && DB.accountCall) {
+          try { const r = await DB.accountCall('set', { email: regEmail }); emailNote = r && r.sent ? ' 📧 Sprawdź skrzynkę i potwierdź e-mail (link ważny 48 h).' : ''; }
+          catch (e) { emailNote = ' (E-maila nie udało się zapisać — dodasz go w „👤 Moje konto”.)'; }
+        }
         await supabase.auth.signOut(); // wyloguj po rejestracji
       }
     }
-    showSuc('Konto utworzone! Możesz się teraz zalogować. 🌱');
+    showSuc('Konto utworzone! Możesz się teraz zalogować. 🌱' + emailNote);
     setTimeout(() => switchTab('login'), 1600);
     document.getElementById('regUser').value  = '';
     document.getElementById('regPass').value  = '';
     document.getElementById('regPass2').value = '';
+    if (regEmailEl) regEmailEl.value = '';
   } catch (e) {
     showErr(e.message || 'Błąd rejestracji.');
   } finally {
     setLoading(btn, false);
   }
 }
+
+// ─── 🔑 ODZYSKIWANIE HASŁA (#98, Edge Function „account”) ─────
+function toggleForgot() {
+  const w = document.getElementById('forgotWrap');
+  const show = w.style.display === 'none';
+  w.style.display = show ? 'block' : 'none';
+  if (show) {
+    const lu = document.getElementById('loginUser').value.trim();
+    if (lu) document.getElementById('forgotId').value = lu;
+    document.getElementById('forgotMsg').style.display = 'none';
+    setTimeout(() => document.getElementById('forgotId').focus(), 30);
+  }
+}
+function _forgotMsg(text, ok) {
+  const m = document.getElementById('forgotMsg');
+  m.textContent = text; m.style.display = 'block';
+  m.style.color = ok ? 'var(--accent2,#06d6a0)' : 'var(--danger,#ff7675)';
+}
+async function sendForgot() {
+  const v = document.getElementById('forgotId').value.trim();
+  const btn = document.getElementById('forgotBtn');
+  if (!v) { _forgotMsg('Wpisz login albo e-mail.', false); return; }
+  setLoading(btn, true);
+  try {
+    await DB.accountCall('forgot', v.includes('@') ? { email: v.toLowerCase() } : { login: v.toLowerCase() });
+    _forgotMsg('📧 Jeśli to konto nauczyciela lub opiekuna ma potwierdzony e-mail, za chwilę przyjdzie link do ustawienia nowego hasła (ważny 60 minut). Sprawdź też folder „Spam”.', true);
+  } catch (e) {
+    _forgotMsg(e.message || 'Nie udało się wysłać — spróbuj za chwilę.', false);
+  } finally {
+    setLoading(btn, false);
+  }
+}
+const _hashToken = key => { const m = (location.hash || '').match(new RegExp('[#&]' + key + '=([A-Za-z0-9_-]{20,100})')); return m ? m[1] : null; };
+const _clearHash = () => { try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {} };
+function _showAuth() {
+  const h = document.getElementById('heroScreen'), a = document.getElementById('authScreen');
+  if (h) h.style.display = 'none';
+  if (a) a.style.display = 'block';
+}
+async function doResetPassword() {
+  clearMsgs();
+  const token = window._resetToken;
+  const p1 = document.getElementById('resetPass').value, p2 = document.getElementById('resetPass2').value;
+  const btn = document.getElementById('resetBtn');
+  if (!token) { showErr('Link jest nieprawidłowy — poproś o nowy („Nie pamiętam hasła”).'); return; }
+  if (!p1 || p1.length < 6) { showErr('Hasło musi mieć co najmniej 6 znaków.'); return; }
+  if (p1 !== p2) { showErr('Hasła nie są identyczne.'); return; }
+  setLoading(btn, true);
+  try {
+    const r = await DB.accountCall('reset', { token, password: p1 });
+    window._resetToken = null;
+    document.getElementById('formReset').style.display = 'none';
+    switchTab('login');
+    if (r && r.login) document.getElementById('loginUser').value = r.login;
+    document.getElementById('loginPass').value = '';
+    showSuc('✅ Hasło zmienione! Zaloguj się nowym hasłem' + (r && r.login ? ' (login: ' + r.login + ')' : '') + '. 🦉');
+    setTimeout(() => document.getElementById('loginPass').focus(), 50);
+  } catch (e) {
+    showErr(e.message || 'Nie udało się zmienić hasła.');
+    setLoading(btn, false);
+  }
+}
+// Linki z e-maila: #reset=… (nowe hasło) i #verify-email=… (potwierdzenie adresu).
+// Zwraca true, gdy strona obsługuje link — wtedy bez automatycznego przejścia do aplikacji.
+function _handleMailLinks() {
+  const reset = _hashToken('reset'), verify = _hashToken('verify-email');
+  if (!reset && !verify) return false;
+  _clearHash();
+  _showAuth();
+  if (reset) {
+    window._resetToken = reset;
+    document.getElementById('formLogin').style.display = 'none';
+    document.getElementById('formRegister').style.display = 'none';
+    document.getElementById('formReset').style.display = '';
+    setTimeout(() => document.getElementById('resetPass').focus(), 50);
+    return true;
+  }
+  showSuc('⏳ Potwierdzam adres e-mail…');
+  DB.accountCall('verify', { token: verify })
+    .then(r => showSuc('✅ E-mail ' + (r && r.email ? r.email + ' ' : '') + 'potwierdzony! Jeśli zapomnisz hasła, kliknij „🔑 Nie pamiętam hasła”. 🦉'))
+    .catch(e => showErr(e.message || 'Nie udało się potwierdzić adresu.'));
+  return true;
+}
+const _mailLinkOpen = _handleMailLinks();
 
 // ─── DOCELOWE PRZEKIEROWANIE PO LOGOWANIU ────────────────────
 // Honoruje ?redirect=xxx.html (np. wejście z /sklep.html → powrót do sklepu).
@@ -508,12 +639,15 @@ async function sendAdminRequest() {
 // ─── ENTER KEY ───────────────────────────────────────────────
 document.addEventListener('keydown', e => {
   if (e.key !== 'Enter') return;
+  if (document.getElementById('formReset').style.display !== 'none') { doResetPassword(); return; }
+  if (e.target && e.target.id === 'forgotId') { sendForgot(); return; }
   if (document.getElementById('formLogin').style.display !== 'none') doLogin();
   else doRegister();
 });
 
 // ─── SPRAWDŹ AKTYWNĄ SESJĘ (auto-redirect) ───────────────────
 (async function checkSession() {
+  if (_mailLinkOpen) return;   // 🔑 link z e-maila (nowe hasło / potwierdzenie) — zostajemy na tej stronie
   const { data: { session } } = await supabase.auth.getSession();
   if (session) {
     // Pobierz username z profiles
@@ -703,6 +837,7 @@ document.addEventListener('keydown', e => {
         <li><strong>Dane postępów nauki:</strong> XP, poziom, odznaki, czas ostatniej nauki, statystyki odpowiedzi.</li>
         <li><strong>Bieżąca aktywność:</strong> otwarty w danej chwili ekran, tryb nauki lub gra (z podręcznikiem i rozdziałem) oraz czas ostatniego sygnału z aplikacji — widzi je Administrator, a w przypadku ucznia także jego Nauczyciel i Opiekun; zapisujemy tylko ostatni stan i usuwamy go po około 24 godzinach bez aktywności.</li>
         <li><strong>Przebieg nauki (konta uczniów):</strong> zapis czynności w trybach nauki — oceny w Fiszkach (z czasem od odwrócenia karty), wpisane i wybrane odpowiedzi, użycie „Nie wiem”, zmiany trybów, wejścia do gier oraz słówka oznaczone „Ignoruj” — z datą i godziną. Widzi go Administrator, Nauczyciel ucznia i jego Opiekun. Dane usuwamy po 30 dniach, a także po usunięciu Konta.</li>
+        <li><strong>E-mail do odzyskania hasła (dobrowolny, tylko konta nauczyciela i opiekuna):</strong> adres podany przy rejestracji lub w „Moje konto” i data jego potwierdzenia. Służy <strong>wyłącznie</strong> do wysłania linku potwierdzającego adres i — na prośbę („Nie pamiętam hasła”) — jednorazowego linku do ustawienia nowego hasła; nie wysyłamy na niego reklam ani newslettera. Adres widzi tylko właściciel konta (nie Nauczyciel ani inni Użytkownicy). Przy prośbach o nowe hasło zapisujemy skróty (SHA-256) adresu IP i e-maila, żeby ograniczać nadużycia — przez 7 dni. E-mail usuwamy po jego usunięciu w „Moje konto” lub po usunięciu Konta.</li>
         <li><strong>Dane roli:</strong> przynależność do klasy, plan konta (Free/Premium/Teacher).</li>
         <li><strong>Preferencje:</strong> motyw interfejsu (localStorage).</li>
         <li><strong>Grafika profilowa (dobrowolna):</strong> obrazek dodany w „Moje konto", zmniejszany do 256×256 px, widoczny dla uczniów z tej samej klasy i klas połączonych w rankingu, znajomych, Nauczyciela i Administratora. Nie musi przedstawiać Użytkownika — zalecamy dowolny obrazek zamiast zdjęcia twarzy. Do jej automatycznego usuwania zapisujemy datę ostatniego wejścia na Platformę.</li>
@@ -714,7 +849,7 @@ document.addEventListener('keydown', e => {
         <li><strong>Dane w formularzu prośby o dostęp do podręcznika</strong> (dobrowolne, tylko gdy Użytkownik wysyła prośbę): imię i nazwisko, szkoła i klasa, wybrany podręcznik, opcjonalna wiadomość. Dane widzi <strong>wyłącznie Administrator</strong> — Nauczyciele nie mają do nich dostępu.</li>
         <li><strong>Dane techniczne:</strong> identyfikatory sesji, Service Worker (PWA).</li>
       </ul>
-      <p style="margin:4px 0 10px">Platforma <strong>nie prosi o e-mail, adres ani numer telefonu</strong>. Login może być dowolny i nie musi identyfikować osoby. Imię i nazwisko są zbierane <strong>tylko</strong> przy wysłaniu prośby o dostęp do podręcznika.</p>
+      <p style="margin:4px 0 10px">Platforma <strong>nie wymaga e-maila, adresu ani numeru telefonu</strong> — konta nauczyciela i opiekuna mogą dobrowolnie podać e-mail wyłącznie do odzyskania hasła. Login może być dowolny i nie musi identyfikować osoby. Imię i nazwisko są zbierane <strong>tylko</strong> przy wysłaniu prośby o dostęp do podręcznika.</p>
 
       <h3 style="font-family:'Playfair Display',serif;font-size:.92rem;color:#ffd166">3. Cele i podstawy prawne</h3>
       <ul style="margin:4px 0 10px 20px;padding:0">
@@ -731,6 +866,7 @@ document.addEventListener('keydown', e => {
       <ul style="margin:4px 0 10px 20px;padding:0">
         <li><strong>Vercel Inc.</strong> — hosting aplikacji + CDN dla domeny <code>sowiefiszki.com</code>. Vercel przetwarza logi serwera (IP, user-agent, ścieżka żądania) na podstawie prawnie uzasadnionego interesu (RODO art. 6.1.f). Polityka: <a href="https://vercel.com/legal/privacy-policy" style="color:#ffd166" target="_blank" rel="noopener">vercel.com/legal/privacy-policy</a>.</li>
         <li><strong>Supabase Inc.</strong> — hosting bazy i uwierzytelniania, infrastruktura AWS. Polityka: <a href="https://supabase.com/privacy" style="color:#ffd166" target="_blank" rel="noopener">supabase.com/privacy</a>.</li>
+        <li><strong>Sendinblue SAS (Brevo, Francja)</strong> — wysyłka e-maili z linkiem potwierdzającym adres i linkiem do zmiany hasła (przekazujemy tylko adres e-mail, login i treść wiadomości); serwery w UE. Polityka: <a href="https://www.brevo.com/legal/privacypolicy/" style="color:var(--accent)" target="_blank" rel="noopener">brevo.com/legal/privacypolicy</a>.</li>
         <li><strong>OpenAI, L.L.C.</strong> — funkcje oznaczone 🤖 (AI): sprawdzanie zdań napisanych przez ucznia w trybie „Napisz zdanie” oraz narzędzia nauczyciela (zdania przykładowe, listy słówek, zadania gramatyczne). Do OpenAI trafia <strong>wyłącznie treść potrzebna do zadania</strong> (słówko, temat, zdanie ucznia) — bez loginu, imienia ani innych danych konta; zapytania przechodzą przez serwer Platformy. Treści pisane przez uczniów są dodatkowo sprawdzane filtrem bezpieczeństwa. <strong>Rozmowy z AI i zdania z trybu „Napisz zdanie” (wraz z odpowiedzią AI) zapisują się w Pamiętniku użytkownika</strong>, do którego można wracać, i są przechowywane do czasu usunięcia konta. W celu ochrony dzieci przed niestosownymi treściami Administrator może je przeglądać i usuwać wpisy niezwiązane z nauką. Polityka: <a href="https://openai.com/policies/privacy-policy" style="color:#ffd166" target="_blank" rel="noopener">openai.com/policies/privacy-policy</a>.</li>
       </ul>
       <p style="margin:4px 0 10px">Administrator nie sprzedaje danych osobom trzecim.</p>
