@@ -415,6 +415,7 @@ body{
 }
 .footer-links a{color:var(--text);text-decoration:none;font-weight:700;}
 .footer-links a:hover{color:var(--accent);}
+.staff-only[hidden]{display:none!important;}   /* 🛒 Sklep — tylko dla zalogowanych kont staff */
 .footer .copy{font-weight:600;}
 </style>
 </head>
@@ -434,7 +435,7 @@ body{
       <a href="faq.html" class="nav-link">FAQ</a>
       <a href="/egzaminy" class="nav-link">🎓 Egzaminy</a>
       <a href="/slownik-obrazkowy" class="nav-link">📖 Słowniczek</a>
-      <a href="sklep.html" class="nav-link">🛒 Sklep</a>
+      <a href="sklep.html" class="nav-link staff-only" hidden>🛒 Sklep</a>
       <a href="aktualnosci.html" class="nav-link">📢 Aktualności</a>
       <a href="#kontakt" class="nav-link">📨 Kontakt</a>
       <a href="index.html" class="nav-link">Logowanie / Rejestracja</a>
@@ -852,7 +853,7 @@ body{
   <div class="footer-links">
     <a href="home.html">Strona główna</a>
     <a href="faq.html">FAQ</a>
-    <a href="sklep.html">Sklep</a>
+    <a href="sklep.html" class="staff-only" hidden>Sklep</a>
     <a href="aktualnosci.html">Aktualności</a>
     <a href="index.html">Logowanie / Rejestracja</a>
     <a href="regulamin.html">Regulamin</a>
@@ -973,6 +974,20 @@ async function submitContactFormHandler(event){
   }
   return false;
 }
+</script>
+<script>
+// 🛒 Sklep — tylko dla zalogowanego admina, nauczyciela i opiekuna (uczeń i gość go nie widzą).
+// Jedno małe zapytanie o rolę tylko wtedy, gdy w przeglądarce jest sesja.
+(async function () {
+  try {
+    if (!window.supabase || !window.supabase.auth) return;
+    const { data } = await window.supabase.auth.getSession();
+    const uid = data && data.session && data.session.user && data.session.user.id;
+    if (!uid) return;
+    const { data: p } = await window.supabase.from('profiles').select('is_admin, is_teacher, is_parent').eq('id', uid).maybeSingle();
+    if (p && (p.is_admin || p.is_teacher || p.is_parent)) document.querySelectorAll('.staff-only').forEach(el => { el.hidden = false; });
+  } catch (e) {}
+})();
 </script>
 <script src="consent.js"></script>
 </body>
