@@ -156,6 +156,7 @@ with c(nr, plik, ok) as (values
   ('96', 'study-action-log.sql',                  pg_temp.tab('public.study_actions') and pg_temp.fn('log_study_actions') and pg_temp.fn('student_action_log')),
   ('97', 'stats-correction-and-junk.sql',         pg_temp.col('profiles', 'stats_epoch') and pg_temp.fn('admin_set_stats') and pg_temp.fn('penalize_junk_xp') and pg_temp.body('_profiles_xp_guard', 'stats_epoch')),
   ('98', 'account-recovery.sql',                  pg_temp.tab('public.account_emails') and pg_temp.tab('public.password_resets') and pg_temp.tab('public.recovery_log')),
+  ('99', 'teacher-complete-units.sql',            pg_temp.tab('public.unit_completions') and pg_temp.fn('teacher_complete_units')),
   ('x2', 'add-live-games.sql',                    pg_temp.fn('create_live_game')),
   ('x3', 'add-live-time-limit-and-score-rpc.sql', pg_temp.fn('update_live_player_score')),
   ('x4', 'fix-live-join-token.sql + fix-live-join-ambiguous.sql', pg_temp.fn('join_live_game')),

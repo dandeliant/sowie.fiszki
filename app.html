@@ -24269,6 +24269,116 @@ function _showStudentIgnored() {
   openGenericModal(title, html);
 }
 
+// ══════════════════════════════════════════════
+//  ✅ ZALICZ ROZDZIAŁY NA 100% (#99) — nauczyciel ucznia / admin. Uczniowie zgłaszali, że po
+//  zmianach (nowe słówka, korekty, sprawdzian „Łatwych”) ukończone rozdziały spadły poniżej 100%.
+//  Wybrane rozdziały wybranym uczniom: każde słówko „opanowane” (ok ≥ MASTER_OK, okSpan, powtórka
+//  za ≥ 14 dni), słówka z „Ignoruj” bez zmian; zapis przez RPC teacher_complete_units (historia
+//  w unit_completions). Wejścia: postępy ucznia (sStudentProgress) i pasek zaznaczonych w klasie.
+// ══════════════════════════════════════════════
+let _cu = null;
+function _cuMastered(prev, now, today) {
+  const st = Object.assign({ ef: 2.5, reps: 0, interval: 1, nextReview: 0, known: false, errCount: 0, lastError: false, dueIn: 0 },
+    (prev && typeof prev === 'object') ? prev : {});
+  if (st.ignored) { st.known = true; return st; }   // 🙈 „Ignoruj” — zostaje jak było (i tak opanowane)
+  const iv = Math.max(+st.interval || 1, 14);
+  st.known = true; st.ok = Math.max(+st.ok || 0, MASTER_OK); st.okSpan = true; st.okDay = st.okDay || today;
+  st.reps = Math.max(+st.reps || 0, MASTER_OK); st.interval = iv;
+  st.nextReview = Math.max(+st.nextReview || 0, now + iv * 864e5);
+  st.lastError = false; st.dueIn = 0; st.lastReview = st.lastReview || now;
+  if (st.s != null) st.s = Math.max(+st.s || 0, iv);
+  if (iv >= 30) st.mastered = true;
+  st.teacherDone = now;
+  return st;
+}
+function _cuBooks() {
+  return Object.keys(BOOKS).filter(id => BOOKS[id] && BOOKS[id].units && (!BOOKS[id].adminOnly || isCurrentUserAdmin()))
+    .sort((a, b) => String(BOOKS[a].shortName || BOOKS[a].name || a).localeCompare(String(BOOKS[b].shortName || BOOKS[b].name || b), 'pl', { numeric: true }));
+}
+function _cuUnits(bookId) {
+  let units = (BOOKS[bookId] && BOOKS[bookId].units) || {};
+  try { units = getUnitsWithCustom(bookId) || units; } catch(e) {}
+  return Object.keys(units).filter(k => k !== 'all' && units[k] && Array.isArray(units[k].words) && units[k].words.length).map(k => ({ k, u: units[k] }));
+}
+window.openCompleteUnitsModal = async function(userIds, label) {
+  if (isGuest || !(isCurrentUserAdmin() || isCurrentUserTeacher())) { toast('Zaliczać rozdziały może nauczyciel ucznia albo admin.', 3000); return; }
+  userIds = (userIds || []).filter(Boolean);
+  if (!userIds.length) { toast('Zaznacz uczniów.', 2400); return; }
+  const prof = id => (Array.isArray(_allProfiles) ? _allProfiles : []).find(p => p.id === id) || {};
+  const names = userIds.map(id => label && userIds.length === 1 ? label : (prof(id).username || '?'));
+  _cu = { ids: userIds, names, prog: {}, book: null };
+  const one = userIds.length === 1;
+  if (one) { try { _cu.prog[userIds[0]] = await DB.loadUserProgress(userIds[0]); } catch(e) { _cu.prog[userIds[0]] = []; } }
+  // podręcznik na start: bieżący, a dla jednego ucznia — ostatnio uczony
+  const books = _cuBooks();
+  let start = (typeof currentBookId !== 'undefined' && currentBookId && books.includes(currentBookId)) ? currentBookId : books[0];
+  if (one) {
+    const rows = (_cu.prog[userIds[0]] || []).filter(r => books.includes(r.book_key)).sort((a, b) => (+b.last_studied || 0) - (+a.last_studied || 0));
+    if (rows.length) start = rows[0].book_key;
+  }
+  const opts = books.map(id => '<option value="' + escHtml(id) + '"' + (id === start ? ' selected' : '') + '>' + escHtml(BOOKS[id].shortName || BOOKS[id].name || id) + '</option>').join('');
+  openGenericModal('✅ Zalicz rozdziały na 100%',
+    '<div style="font-size:.78rem;font-weight:700;color:var(--text);margin-bottom:8px;overflow-wrap:anywhere">' + (one ? '👤 ' : '👥 ' + userIds.length + ': ') + escHtml(names.slice(0, 12).join(', ')) + (names.length > 12 ? ' …' : '') + '</div>'
+    + '<label style="display:block;font-size:.74rem;font-weight:700;color:var(--muted);margin-bottom:8px">Podręcznik<select id="cuBook" class="ai-inp" style="width:100%;margin-top:3px">' + opts + '</select></label>'
+    + '<label style="display:flex;gap:8px;align-items:center;font-size:.76rem;font-weight:700;margin:4px 0 6px;cursor:pointer"><input type="checkbox" id="cuAll"> Zaznacz wszystkie rozdziały</label>'
+    + '<div id="cuUnits" style="max-height:42vh;overflow:auto;border:1px solid var(--border);border-radius:10px;padding:6px 8px"></div>'
+    + '<div style="font-size:.68rem;color:var(--muted);font-weight:600;line-height:1.45;margin-top:8px">Wszystkie słówka zaznaczonych rozdziałów zostaną oznaczone jako opanowane (powtórka za 14 dni) — rozdział pokaże 100%. Słówka z „🙈 Ignoruj” zostają bez zmian. XP się nie zmienia. Uczeń zobaczy zmianę po odświeżeniu aplikacji; jeśli akurat uczy się tego rozdziału, zapis z jego otwartej karty może ją nadpisać — wtedy powtórz. Wymaga migracji <b>#99</b>.</div>'
+    + '<div id="cuMsg" style="font-size:.76rem;font-weight:700;margin-top:8px;min-height:16px;line-height:1.45"></div>'
+    + '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="btn-modal-cancel" onclick="closeGenericModal()">Zamknij</button><button class="btn-sm accent" id="cuApply" onclick="applyCompleteUnits()">✅ Zalicz na 100%</button></div>');
+  const render = () => {
+    const b = document.getElementById('cuBook').value;
+    _cu.book = b;
+    const pr = one ? (_cu.prog[userIds[0]] || []) : [];
+    document.getElementById('cuUnits').innerHTML = _cuUnits(b).map(({ k, u }) => {
+      let pct = '';
+      if (one) {
+        const r = pr.find(x => x.book_key === b && x.unit_key === k);
+        const p = r ? Math.round(Math.min(1, (r.known_count || 0) / u.words.length) * 100) : 0;
+        pct = ' <span style="color:' + (p >= 100 ? 'var(--accent2)' : 'var(--muted)') + ';font-weight:800">' + p + '%</span>';
+      }
+      return '<label style="display:flex;gap:8px;align-items:center;font-size:.8rem;padding:4px 2px;cursor:pointer"><input type="checkbox" class="cu-unit" value="' + escHtml(k) + '">'
+        + '<span>' + escHtml((u.icon ? u.icon + ' ' : '') + (u.name || k)) + ' <span style="color:var(--muted)">· ' + u.words.length + ' słówek</span>' + pct + '</span></label>';
+    }).join('') || '<div style="font-size:.8rem;color:var(--muted);padding:6px">Brak rozdziałów.</div>';
+    document.getElementById('cuAll').checked = false;
+  };
+  document.getElementById('cuBook').onchange = render;
+  document.getElementById('cuAll').onchange = e => document.querySelectorAll('#cuUnits .cu-unit').forEach(c => { c.checked = e.target.checked; });
+  render();
+};
+window.applyCompleteUnits = async function() {
+  if (!_cu) return;
+  const units = Array.from(document.querySelectorAll('#cuUnits .cu-unit:checked')).map(c => c.value);
+  const msg = document.getElementById('cuMsg'), btn = document.getElementById('cuApply');
+  const say = (t, ok) => { msg.textContent = t; msg.style.color = ok ? 'var(--accent2)' : 'var(--danger)'; };
+  if (!units.length) { say('Zaznacz co najmniej jeden rozdział.'); return; }
+  const book = _cu.book, all = _cuUnits(book).filter(x => units.includes(x.k));
+  const bName = BOOKS[book] ? (BOOKS[book].shortName || BOOKS[book].name || book) : book;
+  if (!confirm('Zaliczyć na 100% — ' + bName + ': ' + all.map(x => x.u.name || x.k).join(', ') + '\nUczniowie: ' + _cu.names.length + '?')) return;
+  btn.disabled = true;
+  const now = Date.now(), today = _localDay();
+  let done = 0, failed = [];
+  for (let i = 0; i < _cu.ids.length; i++) {
+    const uid = _cu.ids[i];
+    say('⏳ ' + (i + 1) + ' / ' + _cu.ids.length + '…', true);
+    try {
+      const prog = _cu.prog[uid] || await DB.loadUserProgress(uid) || [];
+      const rows = all.map(({ k, u }) => {
+        const r = prog.find(x => x.book_key === book && x.unit_key === k);
+        const prev = (r && r.word_states) || {};
+        const states = {};
+        u.words.forEach((_, idx) => { states[idx] = _cuMastered(prev[idx], now, today); });
+        return { book, unit: k, states, known: u.words.length, total: u.words.length };
+      });
+      await DB.teacherCompleteUnits(uid, rows);
+      done++;
+      _cu.prog[uid] = null;
+    } catch(e) { failed.push((_cu.names[i] || '?') + ': ' + (e.message || e)); }
+  }
+  btn.disabled = false;
+  if (!failed.length) say('✅ Zaliczono ' + all.length + ' ' + plural(all.length, 'rozdział', 'rozdziały', 'rozdziałów') + ' na 100% — ' + done + ' ' + plural(done, 'uczeń', 'uczniów', 'uczniów') + '.', true);
+  else say((done ? '✅ ' + done + ' OK. ' : '') + '❌ ' + failed.slice(0, 3).join(' · ') + (failed.length > 3 ? ' …' : ''));
+};
+
 async function openStudentProgress(userId, username, returnTo) {
   if (returnTo) _studProgReturnTo = returnTo;
   showScreen('sStudentProgress');
@@ -24363,7 +24473,8 @@ async function openStudentProgress(userId, username, returnTo) {
         + ' <button class="btn-sm" title="Słówka oznaczone przez ucznia jako „znałem to słowo wcześniej”" onclick="_showStudentIgnored()">🙈 Ignoruj (' + (_studIgnored || []).length + ')</button>';
       // 🛡️ Tempo i korekta XP (#93) — tylko nauczyciel / admin (nie opiekun)
       if (_studProgReturnTo !== 'parent' && (isCurrentUserAdmin() || isCurrentUserTeacher()))
-        trBox.innerHTML += ' <button class="btn-sm" title="Za szybkie odpowiedzi, limit XP i korekta punktów" onclick="sfOpenXpGuard(\'' + userId + '\',\'' + esc(username) + '\')">🛡️ Tempo i korekta XP</button>';
+        trBox.innerHTML += ' <button class="btn-sm" title="Za szybkie odpowiedzi, limit XP i korekta punktów" onclick="sfOpenXpGuard(\'' + userId + '\',\'' + esc(username) + '\')">🛡️ Tempo i korekta XP</button>'
+          + ' <button class="btn-sm" title="Zalicz wybrane rozdziały na 100% (np. po zmianach w słówkach)" onclick="openCompleteUnitsModal([\'' + userId + '\'],\'' + esc(username) + '\')">✅ Zalicz rozdziały</button>';
       unitsEl.appendChild(trBox);
     } catch(e) { console.warn('[acq stud]', e); }
 
@@ -26745,6 +26856,7 @@ function buildAlphaKeys(inputId, answer) {
   <button class="btn-sm" id="bulkBtnPlan" onclick="openBulkPlanModal()" title="Zmień typ konta zaznaczonym" style="font-size:.74rem">🎫 Typ konta</button>
   <button class="btn-sm" id="bulkBtnBanners" onclick="openBulkBannersModal()" title="Włącz/wyłącz bannery Premium" style="font-size:.74rem">🔕 Bannery</button>
   <button class="btn-sm" onclick="openBulkBooksModal()" title="Przydziel podręczniki" style="font-size:.74rem">📚 Podręczniki</button>
+  <button class="btn-sm" onclick="openCompleteUnitsModal(Array.from(_bulkSelected))" title="Zalicz zaznaczonym uczniom wybrane rozdziały na 100%" style="font-size:.74rem">✅ Zalicz rozdziały</button>
   <button class="btn-sm" id="bulkBtnStartMode" onclick="openStartModeModal()" title="Tryb nauki, do którego zaznaczeni uczniowie trafią raz dziennie przy pierwszym wejściu" style="font-size:.74rem;display:none">🚀 Tryb na start</button>
   <button class="btn-sm" id="bulkBtnRemoveClass" onclick="bulkRemoveFromClass()" title="Usuń zaznaczone osoby z tej klasy (konta zostają)" style="font-size:.74rem;display:none">🚪 Usuń z klasy</button>
   <button class="btn-sm" id="bulkBtnDelete" onclick="bulkDeleteUsers()" title="Usuń zaznaczone konta z bazy danych na stałe" style="font-size:.74rem;color:var(--danger);border-color:rgba(255,118,117,.45)">🗑️ Usuń z bazy</button>

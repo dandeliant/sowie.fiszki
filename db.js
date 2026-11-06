@@ -2643,6 +2643,16 @@ const DB = (() => {
 
   // ── AI (Supabase Edge Function „ai”, migracja #73) ──
   // Klucz OpenAI jest wyłącznie w sekretach funkcji. Rzuca Error z polskim komunikatem.
+  // ✅ Zaliczenie rozdziałów na 100% (#99, nauczyciel ucznia / admin):
+  // rows = [{ book, unit, states, known, total }] → liczba zapisanych rozdziałów.
+  async function teacherCompleteUnits(userId, rows) {
+    const { data, error } = await supabase.rpc('teacher_complete_units', { p_user: userId, p_rows: rows });
+    if (error) {
+      if (/PGRST202|Could not find the function/i.test(((error.code) || '') + ' ' + (error.message || ''))) throw new Error('Brak migracji #99 (teacher-complete-units.sql) w Supabase.');
+      throw new Error(error.message);
+    }
+    return Number(data) || 0;
+  }
   // 🔑 Odzyskiwanie hasła e-mailem (#98) — Edge Function „account”.
   // Akcje: get / set {email} / resend / remove (zalogowany), verify {token} / forgot {login|email} /
   // reset {token, password} (bez logowania — index.html). Błąd: Error z polem code (np. 'rate', 'token').
@@ -6153,6 +6163,7 @@ const DB = (() => {
     logStudyActions,         // 📜 przebieg nauki ucznia (#96)
     adminSetStats,           // ✏️ ustaw statystyki ucznia (#97)
     accountCall,             // 🔑 odzyskiwanie hasła e-mailem (#98, Edge Function „account”)
+    teacherCompleteUnits,    // ✅ zaliczenie rozdziałów na 100% (#99)
     penalizeJunkXp,          // 🧹 −5 XP za byle co (#97)
     studentActionDays,
     studentActionLog,
