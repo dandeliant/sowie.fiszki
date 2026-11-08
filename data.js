@@ -21215,6 +21215,12 @@ const BOOKS = {
           ['Zacznij od zbierania…', 'Start by collecting…'],
           ['wkładać coś do czegoś', 'put something into something'],
           ['wkładać jedzenie do karmnika dla ptaków', 'put food into the bird feeder'],
+          ['wiosna', 'spring'],
+          ['lato', 'summer'],
+          ['jesień', 'autumn'],
+          ['zima', 'winter'],
+          ['dobry w (czymś)', 'good at (something)'],
+          ['Zgadnij, co się stało. / Wiesz co?', 'Guess what!'],
         ]
       },
     },
