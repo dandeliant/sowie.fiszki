@@ -174,6 +174,7 @@ body.racing #aval{display:block}
 #toast{position:absolute;z-index:45;left:50%;top:calc(var(--hudB,130px) + 10px);transform:translate(-50%,-12px);opacity:0;pointer-events:none;
   background:linear-gradient(135deg,#5b3cff,#8a6bff);border:1px solid #e3d8ff;border-radius:16px;padding:11px 18px;font-weight:900;font-size:16px;
   box-shadow:0 14px 34px #0008,0 0 30px rgba(138,107,255,.5);transition:opacity .3s,transform .3s;text-align:center;max-width:92vw}
+#toast.round{top:auto;bottom:34%}                                   /* 🏁 runda — nad pojazdem, nie na tablicy odpowiedzi */
 #toast.show{opacity:1;transform:translate(-50%,0)}
 
 /* Prędkościomierz (prawy dolny róg) */
@@ -495,6 +496,7 @@ body.retyping #nitroBtn,body.retyping #lookChip,body.retyping #touch{visibility:
       </div>
     </div>
     <p id="srcInfo" style="margin:8px 0 0;font-size:14px;font-weight:800;opacity:.8"></p>
+    <p>🏁 Co <b>100 pkt</b> — nowa runda: nowy wygląd i <b>+10 km/h</b>.</p>
     <div class="ovLook"></div>
     <button class="btn" id="start" disabled>⏳ Ładowanie 3D…</button>
     <div class="backrow"><a href="app.html" data-back="book" hidden>📖 Powrót do podręcznika</a><a href="app.html">🏠 Strona główna</a></div>
@@ -609,7 +611,7 @@ function shuffle(a){return [...a].sort(()=>Math.random()-.5)}
 const pick=a=>a[Math.floor(Math.random()*a.length)];
 function show(t,cls){msg.textContent=t;msg.className='';void msg.offsetWidth;msg.classList.add(cls===true?'ok':cls===false?'bad':cls);msg.classList.add("flash")}
 let toastT=0;
-function toast(t,ms=3800){toastEl.textContent=t;toastEl.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>toastEl.classList.remove('show'),ms)}
+function toast(t,ms=3800,round=false){toastEl.textContent=t;toastEl.classList.toggle('round',!!round);toastEl.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>toastEl.classList.remove('show'),ms)}
 // Powtarzalny generator losowy (tekstury i rozmieszczenie wyglądają tak samo przy każdym wejściu)
 function mulberry(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
 
@@ -757,8 +759,11 @@ function addTotal(n){
   const was=prog.unlocked;
   prog.total=Math.min(1e7,prog.total+n);
   if(prog.total>=UNLOCK_PTS)prog.unlocked=true;
-  saveProg();refreshLookUi();
-  if(!was&&prog.unlocked)toast('🔓 Odblokowano zmianę wyglądu! '+(COARSE?'Dotknij':'Kliknij')+' „🏂 Zmień wygląd”.',5200);
+  saveProg();
+  const up=levelCheck();                                                     // 🏁 co 100 pkt: następny pojazd i +10 km/h
+  refreshLookUi();
+  const um=!was&&prog.unlocked?'🔓 Odblokowano zmianę wyglądu! '+(COARSE?'Dotknij':'Kliknij')+' „🏂 Zmień wygląd”.':'';
+  if(up&&um){toast(up,3600,true);setTimeout(()=>toast(um,5200),3700)}else if(um)toast(um,5200);else if(up)toast(up,4200,true);
 }
 function lookProgHtml(){
   if(prog.unlocked)return `<button class="btn alt sm" type="button" data-pick style="margin-top:14px">🏂 Zmień wygląd</button>`;
@@ -766,9 +771,9 @@ function lookProgHtml(){
   return `<div class="lookprog"><div class="cpbar"><i style="width:${(n/UNLOCK_PTS*100).toFixed(1)}%"></i></div>🏂 Zmiana wyglądu: ${n}/${UNLOCK_PTS} pkt</div>`;
 }
 function refreshLookUi(){
-  const n=Math.min(prog.total,UNLOCK_PTS);
-  if(prog.unlocked){lookChip.disabled=false;lookChip.classList.add('unlocked');lookChip.textContent='🏂 Zmień wygląd';lookChip.style.removeProperty('--p')}
-  else{lookChip.disabled=true;lookChip.classList.remove('unlocked');lookChip.textContent=`🏂 Zmiana wyglądu: ${n}/${UNLOCK_PTS} pkt`;lookChip.style.setProperty('--p',(n/UNLOCK_PTS*100).toFixed(1)+'%')}
+  const r=score%LEVEL_PTS;                                                  // 🏁 punkty do następnej rundy
+  if(prog.unlocked){lookChip.disabled=false;lookChip.classList.add('unlocked');lookChip.textContent='🏂 Zmień wygląd · 🏁 '+r+'/'+LEVEL_PTS;lookChip.style.removeProperty('--p')}
+  else{lookChip.disabled=true;lookChip.classList.remove('unlocked');lookChip.textContent=`🏁 Nowy wygląd: ${r}/${LEVEL_PTS} pkt`;lookChip.style.setProperty('--p',(r/LEVEL_PTS*100).toFixed(1)+'%')}
   document.querySelectorAll('.ovLook').forEach(el=>el.innerHTML=lookProgHtml());
 }
 
@@ -776,8 +781,23 @@ function refreshLookUi(){
 const LANES=5, LANE_W=3.6, ROAD_HALF=LANES*LANE_W/2;                   // 5 pasów po 3,6 m (jak w innych wyścigach)
 const laneX=i=>(i-(LANES-1)/2)*LANE_W;
 const X_LIM=ROAD_HALF+.9;                                                 // dalej w bok zawodnik nie zjedzie (siatki)
-const V_CRUISE=28, V_MAX=42, V_MIN=14;                                    // m/s (101 / 151 / 50 km/h)
+const V0_CRUISE=28, V0_MAX=42, V0_MIN=14;                                    // m/s (101 / 151 / 50 km/h)
+let V_CRUISE=V0_CRUISE, V_MAX=V0_MAX, V_MIN=V0_MIN;                     // 🏁 rosną o 10 km/h co rundę (setLevel)
 const NITRO_V=360/3.6, NITRO_ACC=90, NITRO_EASE=2.2;                     // wiatr w plecy: 360 km/h; ~0,8 s rozpędzania; powrót ~2 s
+/* 🏁 Rundy: co LEVEL_PTS pkt w jednej grze następny pojazd (kolejny z listy, po ostatnim — pierwszy) i +10 km/h:
+   V_CRUISE / V_MAX / V_MIN rosną razem, najwyżej LEVEL_CAP razy (V_MAX zostaje ≤ 80% Nitro). Nowa gra — runda 1:
+   prędkość bazowa i pojazd wybrany ręcznie (albo domyślny). addTotal woła levelCheck() przy każdym zdobyciu punktów. */
+const LEVEL_PTS=100, LEVEL_DV=10/3.6, LEVEL_CAP=Math.max(0,Math.floor((NITRO_V*.8-V0_MAX)/LEVEL_DV));
+let level=0;
+function setLevel(n){level=n;const dv=Math.min(n,LEVEL_CAP)*LEVEL_DV;V_CRUISE=V0_CRUISE+dv;V_MAX=V0_MAX+dv;V_MIN=V0_MIN+dv}
+function levelCheck(){
+  const n=Math.floor(score/LEVEL_PTS);if(n<=level)return '';
+  setLevel(n);
+  if(R3.ready){const ids=Object.keys(LOOK_DEF),i=ids.indexOf(playerType);setPlayerLook(ids[(i+1)%ids.length]);markPicked()}
+  tone(660,.12,'triangle',.05);setTimeout(()=>tone(990,.2,'triangle',.05),130);
+  const d=LOOK_DEF[playerType];
+  return `🏁 Runda ${n+1}! Nowy wygląd: ${d?d.icon+' '+d.name:''} · ${Math.round(V_CRUISE*3.6)} km/h${n>LEVEL_CAP?' (maks.)':''}`;
+}
 const SLOPE_A=.16;                                                        // nachylenie stoku (ok. 9°) — o tyle obrócone są niebo i góry
 const SPAN=560;                                                           // świerki i skały zawijane w pasie 560 m
 const GATE_DIST=230, POOL=9;                                              // odległość pojawienia się fali, pula bramek / ramp
@@ -1538,7 +1558,7 @@ function setPlayerLook(type){
   player=vis;playerType=type;scene.add(vis.root);
   vis.root.position.set(px,riderY,0);
 }
-function applySavedLook(){if(R3.ready){const t=prog.unlocked?prog.look:DEFAULT_LOOK;if(t!==playerType)setPlayerLook(t)}}
+function applySavedLook(){if(R3.ready&&!level){const t=prog.unlocked?prog.look:DEFAULT_LOOK;if(t!==playerType)setPlayerLook(t)}}
 
 // Otoczenie do odbić (gogle, kask): błękitne niebo u góry, jasny śnieg na dole, słońce
 function makeEnv(){
@@ -1937,7 +1957,7 @@ function gameOver(){
   const canQuiz=quizPool().length>=3;
   if(!canQuiz)replayOk=true;
   const why=bury.why==='aval'?'🌨️ Lawina Cię dogoniła.':'🌨️ 3 błędy — lawina Cię zasypała.';
-  ovCard().innerHTML=`<h1 class="end">Niestety nie udało się. Koniec gry.</h1><p class="why">${why}</p><div aria-hidden="true">${heartsHtml(lives)}</div><p>Twój wynik:</p><p class="big">${score}</p>
+  ovCard().innerHTML=`<h1 class="end">Niestety nie udało się. Koniec gry.</h1><p class="why">${why}</p><div aria-hidden="true">${heartsHtml(lives)}</div><p>Twój wynik:</p><p class="big">${score}</p><p>🏁 Runda: <b>${level+1}</b></p>
     <p>⏱️ Czas zjazdu: <b>${fmtTime(raceT)}</b></p>
     ${canQuiz?`<div class="gate">🔒 <b>Zagraj ponownie</b> odblokujesz quizem: ${QZ_N} pytań A/B/C z tej gry. Potrzeba min. ${QZ_PASS} dobrych odpowiedzi.</div>
     <div class="btnrow"><button class="btn" type="button" data-act="quiz">📝 Zacznij quiz</button>${LOCKED_BTN}</div>`
@@ -2444,6 +2464,7 @@ function restart(){
   retypeEl.classList.remove('open');document.body.classList.remove('retyping');rtWord=null;
   held=false;cdT=0;cdN=0;lives=LIVES;errWords=[];renderLives(false);
   score=0;combo=0;keys={};px=laneX(2);vx=0;v=Math.max(v,22);crashing=false;crashT=0;shake=0;nextRoundIn=0;raceT=0;timeLast=-1;
+  setLevel(0);applySavedLook();refreshLookUi();                                    // 🏁 runda 1: prędkość bazowa i wybrany pojazd
   nitro.state='off';fovKick=0;J.on=false;J.phase='';riderY=0;fallTarget=0;fallK=0;fallT=0;landK=0;brakeK=0;
   bury.on=false;bury.t=0;bury.done=false;buryEl.classList.remove('on');boardHome();AV.d=AV_START;AV.p=0;sinceRamp=0;bag=[];lastItem=null;trailPts=[];trailLastS=-1;
   for(const w of waves)w.objs.forEach(freeObj);waves=[];

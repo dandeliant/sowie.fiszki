@@ -131,6 +131,7 @@ body.pausing #nitroBtn,body.pausing #carChip,body.pausing #touch{visibility:hidd
 #toast{position:absolute;z-index:45;left:50%;top:calc(168px + var(--hudX,0px));transform:translate(-50%,-12px);opacity:0;pointer-events:none;
   background:linear-gradient(135deg,#6b3cff,#c66bff);border:1px solid #e3c8ff;border-radius:16px;padding:11px 18px;font-weight:900;font-size:16px;
   box-shadow:0 14px 34px #000a,0 0 30px rgba(198,107,255,.5);transition:opacity .3s,transform .3s;text-align:center;max-width:92vw}
+#toast.round{top:auto;bottom:34%}                                   /* 🏁 runda — nad pojazdem, nie na tablicy odpowiedzi */
 #toast.show{opacity:1;transform:translate(-50%,0)}
 
 /* Nitro + zmiana auta (przyciski na ekranie) */
@@ -364,6 +365,7 @@ body.retyping #nitroBtn,body.retyping #carChip,body.retyping #touch{visibility:h
     <div class="keys">⬅️ ➡️ pas · ⬆️ gaz · ⬇️ hamulec · 🔥 nitro</div>
     <p>🔥 <b>NITRO</b> (spacja albo przycisk): gdy jesteś już na dobrym pasie — auto pędzi 700 km/h prosto do obręczy. Pasa nie wybiera za Ciebie!</p>
     <p>Usłyszysz wymowę słówek (PL + język podręcznika). Lektor możesz wyłączyć przyciskiem <b>🗣️ Lektor</b> u góry.</p>
+    <p>🏁 Co <b>100 pkt</b> — nowa runda: kolejny samochód i <b>+10 km/h</b>.</p>
     <div class="ovCar"></div>
     <button class="btn" id="start" disabled>⏳ Ładowanie 3D…</button>
     <div class="backrow"><a href="app.html" data-back="book" hidden>📖 Powrót do podręcznika</a><a href="app.html">🏠 Strona główna</a></div>
@@ -453,7 +455,7 @@ function shuffle(a){return [...a].sort(()=>Math.random()-.5)}
 const pick=a=>a[Math.floor(Math.random()*a.length)];
 function show(t,ok){msg.textContent=t;msg.className='';void msg.offsetWidth;msg.classList.add(ok?'ok':'bad');msg.classList.add("flash")}
 let toastT=0;
-function toast(t,ms=3800){toastEl.textContent=t;toastEl.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>toastEl.classList.remove('show'),ms)}
+function toast(t,ms=3800,round=false){toastEl.textContent=t;toastEl.classList.toggle('round',!!round);toastEl.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>toastEl.classList.remove('show'),ms)}
 
 /* ══════════════ SAMOCHODY I ZAPIS POSTĘPU ══════════════
    Typy aut jak w Grammar City (GCCars.TYPE_MODEL). Zmiana auta odblokowuje się po 200 pkt
@@ -551,8 +553,11 @@ function addTotal(n){
   const was=prog.unlocked;
   prog.total=Math.min(1e7,prog.total+n);
   if(prog.total>=UNLOCK_PTS)prog.unlocked=true;
-  saveProg();refreshCarUi();
-  if(!was&&prog.unlocked)toast('🔓 Odblokowano zmianę samochodu! '+(COARSE?'Dotknij':'Kliknij')+' „🚗 Zmień samochód”.',5200);
+  saveProg();
+  const up=levelCheck();                                                     // 🏁 co 100 pkt: następny pojazd i +10 km/h
+  refreshCarUi();
+  const um=!was&&prog.unlocked?'🔓 Odblokowano zmianę samochodu! '+(COARSE?'Dotknij':'Kliknij')+' „🚗 Zmień samochód”.':'';
+  if(up&&um){toast(up,3600,true);setTimeout(()=>toast(um,5200),3700)}else if(um)toast(um,5200);else if(up)toast(up,4200,true);
 }
 function carProgHtml(){
   if(prog.unlocked)return `<button class="btn alt sm" type="button" data-pick style="margin-top:14px">🚗 Zmień samochód</button>`;
@@ -560,9 +565,9 @@ function carProgHtml(){
   return `<div class="carprog"><div class="cpbar"><i style="width:${(n/UNLOCK_PTS*100).toFixed(1)}%"></i></div>🚗 Zmiana samochodu: ${n}/${UNLOCK_PTS} pkt</div>`;
 }
 function refreshCarUi(){
-  const n=Math.min(prog.total,UNLOCK_PTS);
-  if(prog.unlocked){carChip.disabled=false;carChip.classList.add('unlocked');carChip.textContent='🚗 Zmień samochód';carChip.style.removeProperty('--p')}
-  else{carChip.disabled=true;carChip.classList.remove('unlocked');carChip.textContent=`🚗 Zmiana samochodu: ${n}/${UNLOCK_PTS} pkt`;carChip.style.setProperty('--p',(n/UNLOCK_PTS*100).toFixed(1)+'%')}
+  const r=score%LEVEL_PTS;                                                  // 🏁 punkty do następnej rundy
+  if(prog.unlocked){carChip.disabled=false;carChip.classList.add('unlocked');carChip.textContent='🚗 Zmień samochód · 🏁 '+r+'/'+LEVEL_PTS;carChip.style.removeProperty('--p')}
+  else{carChip.disabled=true;carChip.classList.remove('unlocked');carChip.textContent=`🏁 Nowy samochód: ${r}/${LEVEL_PTS} pkt`;carChip.style.setProperty('--p',(r/LEVEL_PTS*100).toFixed(1)+'%')}
   document.querySelectorAll('.ovCar').forEach(el=>el.innerHTML=carProgHtml());
 }
 
@@ -570,8 +575,23 @@ function refreshCarUi(){
 const LANES=5, LANE_W=3.6, ROAD_HALF=LANES*LANE_W/2, SHOULDER=2.6;      // 5 pasów po 3,6 m + pobocza
 const laneX=i=>(i-(LANES-1)/2)*LANE_W;
 const ONC_X=[-17.4,-21.0,-24.6];                                         // jezdnia przeciwna (3 pasy, po lewej)
-const V_CRUISE=30, V_MAX=48, V_MIN=12;                                    // m/s (108 / 173 / 43 km/h)
+const V0_CRUISE=30, V0_MAX=48, V0_MIN=12;                                    // m/s (108 / 173 / 43 km/h)
+let V_CRUISE=V0_CRUISE, V_MAX=V0_MAX, V_MIN=V0_MIN;                     // 🏁 rosną o 10 km/h co rundę (setLevel)
 const NITRO_V=700/3.6, NITRO_ACC=165, NITRO_EASE=2.2;                    // 700 km/h; ~1,1 s rozpędzania; powrót ~2 s
+/* 🏁 Rundy: co LEVEL_PTS pkt w jednej grze następny pojazd (kolejny z listy, po ostatnim — pierwszy) i +10 km/h:
+   V_CRUISE / V_MAX / V_MIN rosną razem, najwyżej LEVEL_CAP razy (V_MAX zostaje ≤ 80% Nitro). Nowa gra — runda 1:
+   prędkość bazowa i pojazd wybrany ręcznie (albo domyślny). addTotal woła levelCheck() przy każdym zdobyciu punktów. */
+const LEVEL_PTS=100, LEVEL_DV=10/3.6, LEVEL_CAP=Math.max(0,Math.floor((NITRO_V*.8-V0_MAX)/LEVEL_DV));
+let level=0;
+function setLevel(n){level=n;const dv=Math.min(n,LEVEL_CAP)*LEVEL_DV;V_CRUISE=V0_CRUISE+dv;V_MAX=V0_MAX+dv;V_MIN=V0_MIN+dv}
+function levelCheck(){
+  const n=Math.floor(score/LEVEL_PTS);if(n<=level)return '';
+  setLevel(n);
+  if(R3.ready){const ids=Object.keys(CAR_DEF),i=ids.indexOf(playerType);setPlayerCar(ids[(i+1)%ids.length]);markPicked()}
+  tone(660,.12,'triangle',.05);setTimeout(()=>tone(990,.2,'triangle',.05),130);
+  const d=CAR_DEF[playerType];
+  return `🏁 Runda ${n+1}! Nowy samochód: ${d?d.icon+' '+d.name:''} · ${Math.round(V_CRUISE*3.6)} km/h${n>LEVEL_CAP?' (maks.)':''}`;
+}
 const SPAN=460;                                                           // długość „taśmy” z dekoracjami (m)
 const ROAD_TILE=24;                                                       // 24 m tekstury = 2 kreski 4 m + przerwy 8 m
 const RING_R=1.72, RING_SY=1.25, RING_Y=RING_R*1.25+.12, RING_DIST=255, RING_POOL=9;   // obręcz: promień (szer. = pas), owal w pionie, środek, odległość pojawienia
@@ -879,7 +899,7 @@ function setPlayerCar(type){
   vis.root.position.set(px,0,0);vis.root.rotation.y=Math.PI;
   GCCars.setPlayerLights(vis,.25,false,false);
 }
-function applySavedCar(){if(R3.ready){const t=prog.unlocked?prog.car:DEFAULT_CAR;if(t!==playerType)setPlayerCar(t)}}
+function applySavedCar(){if(R3.ready&&!level){const t=prog.unlocked?prog.car:DEFAULT_CAR;if(t!==playerType)setPlayerCar(t)}}
 
 function init3D(){
   const cv=document.getElementById('cv');
@@ -1169,7 +1189,7 @@ function gameOver(){
   overlay.style.display="grid";document.body.classList.remove("racing");
   const canQuiz=quizPool().length>=3;
   if(!canQuiz)replayOk=true;
-  ovCard().innerHTML=`<h1>💥 GAME OVER</h1><div aria-hidden="true">${heartsHtml(0)}</div><p>Twój wynik:</p><p class="big">${score}</p>
+  ovCard().innerHTML=`<h1>💥 GAME OVER</h1><div aria-hidden="true">${heartsHtml(0)}</div><p>Twój wynik:</p><p class="big">${score}</p><p>🏁 Runda: <b>${level+1}</b></p>
     <p>3 złe obręcze — koniec wyścigu.</p>
     ${canQuiz?`<div class="gate">🔒 <b>Zagraj ponownie</b> odblokujesz quizem: ${QZ_N} pytań A/B/C ze słówek z tej gry. Potrzeba min. ${QZ_PASS} dobrych odpowiedzi.</div>
     <div class="btnrow"><button class="btn" type="button" data-act="quiz">📝 Zacznij quiz</button>${LOCKED_BTN}</div>`
@@ -1579,6 +1599,7 @@ function restart(){
   retypeEl.classList.remove('open');document.body.classList.remove('retyping');rtWord=null;
   held=false;cdT=0;cdN=0;lives=LIVES;errWords=[];renderLives(false);
   score=0;combo=0;last="";keys={};px=laneX(2);vx=0;v=Math.max(v,22);crashing=false;crashT=0;shake=0;nextRoundIn=0;
+  setLevel(0);applySavedCar();refreshCarUi();                                    // 🏁 runda 1: prędkość bazowa i wybrany pojazd
   nitro.state='off';flameK=0;fovKick=0;
   for(const w of waves)w.rings.forEach(freeRing);waves=[];
   player.root.rotation.y=Math.PI;

@@ -190,6 +190,7 @@ body.pausing #nitroBtn,body.pausing #subChip,body.pausing #touch{visibility:hidd
 #toast{position:absolute;z-index:45;left:50%;top:calc(var(--hudB,130px) + 10px);transform:translate(-50%,-12px);opacity:0;pointer-events:none;
   background:linear-gradient(135deg,#ff9a3c,#ffc04e);color:#2a1300;border:1px solid #ffe2b0;border-radius:16px;padding:11px 18px;font-weight:900;font-size:16px;
   box-shadow:0 14px 34px #000a,0 0 30px rgba(255,170,70,.5);transition:opacity .3s,transform .3s;text-align:center;max-width:92vw}
+#toast.round{top:auto;bottom:34%}                                   /* 🏁 runda — nad pojazdem, nie na tablicy odpowiedzi */
 #toast.show{opacity:1;transform:translate(-50%,0)}
 
 /* BOOST / NITRO — okrągły przycisk na desce (pierścień = moc nitro) */
@@ -455,6 +456,7 @@ body.retyping #nitroBtn,body.retyping #subChip,body.retyping #touch{visibility:h
     <div class="keys">⬅️ ➡️ pas · ⬆️ szybciej · ⬇️ wolniej · 🔥 nitro</div>
     <p>🔥 <b>BOOST / NITRO</b> (spacja albo przycisk): gdy jesteś już na dobrym pasie — łódź pędzi ok. 380 węzłów prosto do bańki. Pasa nie wybiera za Ciebie!</p>
     <p>💡 Przerywana linia pokazuje, gdzie przepłyniesz. Usłyszysz wymowę słówek (PL + język podręcznika) — lektor wyłączysz przyciskiem <b>🗣️ Lektor</b> u góry. Po 200 punktach odblokujesz <b>zmianę łodzi</b>.</p>
+    <p>🏁 Co <b>100 pkt</b> — nowa runda: kolejna łódź i <b>+10 km/h</b>.</p>
     <div class="ovSub"></div>
     <button class="btn" id="start" disabled>⏳ Ładowanie 3D…</button>
     <div class="backrow"><a href="app.html" data-back="book" hidden>📖 Powrót do podręcznika</a><a href="app.html">🏠 Strona główna</a></div>
@@ -546,7 +548,7 @@ const pick=a=>a[Math.floor(Math.random()*a.length)];
 function show(t,ok){msg.textContent=t;msg.className='';void msg.offsetWidth;msg.classList.add(ok?'ok':'bad');msg.classList.add("flash")}
 function hitFx(kind){hitEl.className='hitfx';void hitEl.offsetWidth;hitEl.className='hitfx '+kind}
 let toastT=0;
-function toast(t,ms=3800){toastEl.textContent=t;toastEl.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>toastEl.classList.remove('show'),ms)}
+function toast(t,ms=3800,round=false){toastEl.textContent=t;toastEl.classList.toggle('round',!!round);toastEl.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>toastEl.classList.remove('show'),ms)}
 // Powtarzalny generator losowy (tekstury i rozmieszczenie wyglądają tak samo przy każdym wejściu)
 function mulberry(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
 const hex6=n=>'#'+n.toString(16).padStart(6,'0');
@@ -649,8 +651,11 @@ function addTotal(n){
   const was=prog.unlocked;
   prog.total=Math.min(1e7,prog.total+n);
   if(prog.total>=UNLOCK_PTS)prog.unlocked=true;
-  saveProg();refreshSubUi();
-  if(!was&&prog.unlocked)toast('🔓 Odblokowano zmianę łodzi! '+(COARSE?'Dotknij':'Kliknij')+' „⚓ Zmień łódź”.',5200);
+  saveProg();
+  const up=levelCheck();                                                     // 🏁 co 100 pkt: następny pojazd i +10 km/h
+  refreshSubUi();
+  const um=!was&&prog.unlocked?'🔓 Odblokowano zmianę łodzi! '+(COARSE?'Dotknij':'Kliknij')+' „⚓ Zmień łódź”.':'';
+  if(up&&um){toast(up,3600,true);setTimeout(()=>toast(um,5200),3700)}else if(um)toast(um,5200);else if(up)toast(up,4200,true);
 }
 function subProgHtml(){
   if(prog.unlocked)return `<button class="btn alt sm" type="button" data-pick style="margin-top:14px">⚓ Zmień łódź</button>`;
@@ -658,9 +663,9 @@ function subProgHtml(){
   return `<div class="subprog"><div class="cpbar"><i style="width:${(n/UNLOCK_PTS*100).toFixed(1)}%"></i></div>⚓ Zmiana łodzi: ${n}/${UNLOCK_PTS} pkt</div>`;
 }
 function refreshSubUi(){
-  const n=Math.min(prog.total,UNLOCK_PTS);
-  if(prog.unlocked){subChip.disabled=false;subChip.classList.add('unlocked');subChip.textContent='⚓ Zmień łódź';subChip.style.removeProperty('--p')}
-  else{subChip.disabled=true;subChip.classList.remove('unlocked');subChip.textContent=`⚓ Zmiana łodzi: ${n}/${UNLOCK_PTS} pkt`;subChip.style.setProperty('--p',(n/UNLOCK_PTS*100).toFixed(1)+'%')}
+  const r=score%LEVEL_PTS;                                                  // 🏁 punkty do następnej rundy
+  if(prog.unlocked){subChip.disabled=false;subChip.classList.add('unlocked');subChip.textContent='⚓ Zmień łódź · 🏁 '+r+'/'+LEVEL_PTS;subChip.style.removeProperty('--p')}
+  else{subChip.disabled=true;subChip.classList.remove('unlocked');subChip.textContent=`🏁 Nowa łódź: ${r}/${LEVEL_PTS} pkt`;subChip.style.setProperty('--p',(r/LEVEL_PTS*100).toFixed(1)+'%')}
   document.querySelectorAll('.ovSub').forEach(el=>el.innerHTML=subProgHtml());
 }
 
@@ -668,8 +673,23 @@ function refreshSubUi(){
 const LANES=5, LANE_W=3.6, ROAD_HALF=LANES*LANE_W/2;                   // 5 pasów po 3,6 m (jak w Wyścigu słówek)
 const laneX=i=>(i-(LANES-1)/2)*LANE_W;
 const X_LIM=ROAD_HALF+.9;                                                 // dalej w bok łódź nie popłynie
-const V_CRUISE=30, V_MAX=48, V_MIN=12;                                    // m/s (58 / 93 / 23 węzły)
+const V0_CRUISE=30, V0_MAX=48, V0_MIN=12;                                    // m/s (58 / 93 / 23 węzły)
+let V_CRUISE=V0_CRUISE, V_MAX=V0_MAX, V_MIN=V0_MIN;                     // 🏁 rosną o 10 km/h co rundę (setLevel)
 const NITRO_V=700/3.6, NITRO_ACC=165, NITRO_EASE=2.2;                    // 700 km/h ≈ 378 węzłów; ~1,1 s rozpędzania; powrót ~2 s
+/* 🏁 Rundy: co LEVEL_PTS pkt w jednej grze następny pojazd (kolejny z listy, po ostatnim — pierwszy) i +10 km/h:
+   V_CRUISE / V_MAX / V_MIN rosną razem, najwyżej LEVEL_CAP razy (V_MAX zostaje ≤ 80% Nitro). Nowa gra — runda 1:
+   prędkość bazowa i pojazd wybrany ręcznie (albo domyślny). addTotal woła levelCheck() przy każdym zdobyciu punktów. */
+const LEVEL_PTS=100, LEVEL_DV=10/3.6, LEVEL_CAP=Math.max(0,Math.floor((NITRO_V*.8-V0_MAX)/LEVEL_DV));
+let level=0;
+function setLevel(n){level=n;const dv=Math.min(n,LEVEL_CAP)*LEVEL_DV;V_CRUISE=V0_CRUISE+dv;V_MAX=V0_MAX+dv;V_MIN=V0_MIN+dv}
+function levelCheck(){
+  const n=Math.floor(score/LEVEL_PTS);if(n<=level)return '';
+  setLevel(n);
+  if(R3.ready){const ids=Object.keys(SUB_DEF),i=ids.indexOf(subType);setPlayerSub(ids[(i+1)%ids.length]);markPicked()}
+  tone(660,.12,'triangle',.05);setTimeout(()=>tone(990,.2,'triangle',.05),130);
+  const d=SUB_DEF[subType];
+  return `🏁 Runda ${n+1}! Nowa łódź: ${d?d.icon+' '+d.name:''} · ${Math.round(V_CRUISE*3.6/KN)} węzłów${n>LEVEL_CAP?' (maks.)':''}`;
+}
 const KN=1.852;                                                           // 1 węzeł = 1,852 km/h
 const SPAN=330;                                                           // długość pasa z rafą (m) — recykling dekoracji
 const SUB_Y=5.2;                                                          // wysokość kabiny nad piaskiem
@@ -1583,7 +1603,7 @@ function setPlayerSub(type){
   subVis=vis;subType=type;noseRoot.add(vis.root);
   applyCockpitColors(vis.def);buildFrame();
 }
-function applySavedSub(){if(R3.ready){const t=prog.unlocked?prog.sub:DEFAULT_SUB;if(t!==subType)setPlayerSub(t)}}
+function applySavedSub(){if(R3.ready&&!level){const t=prog.unlocked?prog.sub:DEFAULT_SUB;if(t!==subType)setPlayerSub(t)}}
 // Nos łodzi ustawiony względem kamery: wystaje nad deskę rozdzielczą na środku dołu ekranu (także w pionie na telefonie)
 function placeNose(){
   if(!noseRoot||!subVis)return;
@@ -1959,7 +1979,7 @@ function gameOver(){
   overlay.style.display="grid";document.body.classList.remove("racing");
   const canQuiz=quizPool().length>=3;
   if(!canQuiz)replayOk=true;
-  ovCard().innerHTML=`<h1>💥 GAME OVER</h1><div aria-hidden="true">${heartsHtml(0)}</div><p>Twój wynik:</p><p class="big">${score}</p>
+  ovCard().innerHTML=`<h1>💥 GAME OVER</h1><div aria-hidden="true">${heartsHtml(0)}</div><p>Twój wynik:</p><p class="big">${score}</p><p>🏁 Runda: <b>${level+1}</b></p>
     <p>3 złe bańki — koniec wyścigu. ⏱️ Czas: <b>${fmtTime(raceT)}</b></p>
     ${canQuiz?`<div class="gate">🔒 <b>Zagraj ponownie</b> odblokujesz quizem: ${QZ_N} pytań A/B/C ze słówek z tej gry. Potrzeba min. ${QZ_PASS} dobrych odpowiedzi.</div>
     <div class="btnrow"><button class="btn" type="button" data-act="quiz">📝 Zacznij quiz</button>${LOCKED_BTN}</div>`
@@ -2331,6 +2351,7 @@ function restart(){
   retypeEl.classList.remove('open');document.body.classList.remove('retyping');rtWord=null;
   held=false;cdT=0;cdN=0;lives=LIVES;errWords=[];renderLives(false);
   score=0;combo=0;last="";keys={};px=laneX(2);vx=0;v=Math.max(v,22);crashing=false;crashT=0;shake=0;nextRoundIn=0;raceT=0;
+  setLevel(0);applySavedSub();refreshSubUi();                                    // 🏁 runda 1: prędkość bazowa i wybrany pojazd
   nitro.state='off';fovKick=0;
   for(const w of waves)w.rings.forEach(freeRing);waves=[];
   scoreEl.textContent=0;comboEl.textContent=0;
