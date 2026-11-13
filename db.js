@@ -33,6 +33,7 @@ const DB = (() => {
   let _hasXpAtomic    = false;  // migracja #85: XP dodawane w bazie (add_my_xp), bez XP w zapisie profilu
   let _hasBookPrefs   = false;  // migracja #86: profiles.book_prefs („Uczę się” / „Nie zapisuj mojej nauki”)
   let _bookPrefs      = { ignored: [], learning: [] };
+  let _hasGamesFree   = null;   // migracja #101: profiles.games_free („🎮 Gry bez blokady” od nauczyciela)
   let _hasStartMode   = null;   // migracja #89: profiles.start_mode („🚀 Tryb na start” od nauczyciela); null = profil niewczytany
   let _hasComboEpoch  = false;  // migracja #93: profiles.combo_epoch — po korekcie serii stara karta nie przywróci rekordu
   let _hasStatsEpoch  = false;  // migracja #97: profiles.stats_epoch — po korekcie celności stara karta nie przywróci liczników
@@ -65,7 +66,8 @@ const DB = (() => {
         wordStates:  r.word_states  || {},
         knownCount:  r.known_count  || 0,
         total:       r.total        || 0,
-        lastStudied: r.last_studied || null
+        lastStudied: r.last_studied || null,
+        completedAt: r.completed_at || null   // #100 — „✅ Zaliczony” (ustawia baza, zostaje po spadku %)
       };
     });
     return {
@@ -97,6 +99,7 @@ const DB = (() => {
       avatarUrl:     row.avatar_url      || null,   // migracja #62
       avatarPath:    row.avatar_path     || null,
       startMode:     row.start_mode      || null,   // migracja #89 — ustawia nauczyciel (RPC), nie wysyłamy w zapisie profilu
+      gamesFree:     row.games_free === true,      // migracja #101 — ustawia nauczyciel (RPC), nie wysyłamy w zapisie profilu
       unitProgress
     };
   }
@@ -169,6 +172,7 @@ const DB = (() => {
     _petServer = (_hasPet && profRes.data.pet && typeof profRes.data.pet === 'object') ? profRes.data.pet : null;
     _hasBookPrefs = !!(profRes.data && Object.prototype.hasOwnProperty.call(profRes.data, 'book_prefs'));
     _hasStartMode = !!(profRes.data && Object.prototype.hasOwnProperty.call(profRes.data, 'start_mode'));
+    _hasGamesFree = !!(profRes.data && Object.prototype.hasOwnProperty.call(profRes.data, 'games_free'));
     _hasComboEpoch = !!(profRes.data && Object.prototype.hasOwnProperty.call(profRes.data, 'combo_epoch'));
     _hasStatsEpoch = !!(profRes.data && Object.prototype.hasOwnProperty.call(profRes.data, 'stats_epoch'));
     _bookPrefs = _bpNorm(_hasBookPrefs ? profRes.data.book_prefs : _bpLocal());
@@ -381,14 +385,16 @@ const DB = (() => {
   // ═══════════════════════════════════════════════════════════════
   //  POSTĘP JEDNOSTKI
   // ═══════════════════════════════════════════════════════════════
-  function saveUnitProgress(username, bookId, unitKey, wordStates, knownCount, total) {
-    if (!_profile || !_userId) return;
-    if (isBookIgnored(bookId)) return;   // „Nie zapisuj mojej nauki” (lekcja) — postęp tylko w tej sesji
-    const key = `${bookId}__${unitKey}`;
-    _profile.unitProgress[key] = {
-      wordStates, knownCount, total, lastStudied: Date.now()
-    };
-    // Zapis w tle — UPSERT
+  // ── 🛟 Postęp bez nadpisywania (#100, SW v1.262) ──
+  // Stan słówka jest zapisany pod jego numerem w rozdziale. Baza (save_unit_progress) scala
+  // stany słówko po słówku — wygrywa nowszy (_wsTs) — więc karta otwarta od kilku dni albo
+  // drugie urządzenie nie nadpiszą postępu zdobytego gdzie indziej. Bez migracji #100 — dawny upsert.
+  let _hasMergeSave = null;   // null = nie wiadomo, false = brak #100, true = jest
+  function _wsTs(s) {
+    if (!s || typeof s !== 'object') return 0;
+    return Math.max(+s.ut || 0, +s.lastReview || 0, +s.ignAt || 0, +s.teacherDone || 0);
+  }
+  function _upsertUnit(bookId, unitKey, wordStates, knownCount, total) {
     supabase.from('unit_progress').upsert({
       user_id:      _userId,
       book_key:     bookId,
@@ -401,10 +407,71 @@ const DB = (() => {
       if (error) console.warn('[DB] Błąd zapisu postępu:', error.message);
     });
   }
+  function saveUnitProgress(username, bookId, unitKey, wordStates, knownCount, total) {
+    if (!_profile || !_userId) return;
+    if (isBookIgnored(bookId)) return;   // „Nie zapisuj mojej nauki” (lekcja) — postęp tylko w tej sesji
+    const key = `${bookId}__${unitKey}`;
+    const prev = _profile.unitProgress[key];
+    _profile.unitProgress[key] = {
+      wordStates, knownCount, total, lastStudied: Date.now(),
+      completedAt: (prev && prev.completedAt) || ((total > 0 && knownCount >= total) ? new Date().toISOString() : null)
+    };
+    _alignMemo.delete(wordStates);   // obiekt sesji zmienia się w miejscu — wyrównanie liczymy od nowa
+    if (_hasMergeSave === false) { _upsertUnit(bookId, unitKey, wordStates, knownCount, total); return; }
+    supabase.rpc('save_unit_progress', { p_book: bookId, p_unit: unitKey, p_states: wordStates, p_total: total })
+      .then(({ data, error }) => {
+        if (error) {
+          const msg = (error.code || '') + ' ' + (error.message || '');
+          if (/save_unit_progress|PGRST202|42883/i.test(msg) && !/BAD_|AUTH/.test(msg)) {
+            _hasMergeSave = false; _upsertUnit(bookId, unitKey, wordStates, knownCount, total); return;
+          }
+          console.warn('[DB] Błąd zapisu postępu:', error.message);
+          return;
+        }
+        _hasMergeSave = true;
+        const cur = _profile && _profile.unitProgress[key];
+        if (!cur || !data || typeof data !== 'object') return;
+        if (typeof data.known === 'number') cur.knownCount = data.known;
+        if (data.completed_at) cur.completedAt = data.completed_at;
+        if (data.states && typeof data.states === 'object') {
+          // baza miała nowszy stan części słówek (inne urządzenie / karta) — do pamięci i bieżącej sesji
+          Object.keys(data.states).forEach(k => {
+            const s = data.states[k];
+            if (s && typeof s === 'object' && _wsTs(s) > _wsTs(wordStates[k])) wordStates[k] = s;
+          });
+          _alignMemo.delete(wordStates);
+        }
+      });
+  }
+
+  // ── Wyrównanie stanów do bieżącej listy słówek (app.html: sfAlignStates — podpisy słówek
+  //    i znane przesunięcia z historii data.js). Bez wyrównywacza — stany jak w bazie. ──
+  let _aligner = null;
+  const _alignMemo = new WeakMap();
+  function setStateAligner(fn) { _aligner = typeof fn === 'function' ? fn : null; }
+  function _alignedProg(key, prog) {
+    if (!prog || !prog.wordStates || !_aligner) return prog;
+    const i = key.indexOf('__');
+    const b = key.slice(0, i), u = key.slice(i + 2);
+    let sig = '';
+    try { sig = _aligner.sig ? _aligner.sig(b, u) : ''; } catch(e) {}
+    let m = _alignMemo.get(prog.wordStates);
+    if (!m || m.sig !== sig) {
+      let r = null;
+      try { r = _aligner(b, u, prog.wordStates); } catch(e) { console.warn('[DB] Wyrównanie postępu:', e.message); }
+      m = { sig, r };
+      _alignMemo.set(prog.wordStates, m);
+    }
+    if (!m.r) return prog;
+    return Object.assign({}, prog, { wordStates: m.r.states, knownCount: m.r.known, moved: m.r.moved || 0 });
+  }
+  // Klucze zapisanych rozdziałów (naprawa po starcie — app.html: _wsRepairAll)
+  function getUnitProgressKeys() { return _profile ? Object.keys(_profile.unitProgress || {}) : []; }
 
   function getUnitProgress(username, bookId, unitKey) {
     if (!_profile) return null;
-    return _profile.unitProgress[`${bookId}__${unitKey}`] || null;
+    const key = `${bookId}__${unitKey}`;
+    return _alignedProg(key, _profile.unitProgress[key] || null);
   }
 
   // ── Podręczniki „📌 Uczę się” / „🙈 Nie zapisuj mojej nauki” (admin / nauczyciel, migracja #86) ──
@@ -455,10 +522,13 @@ const DB = (() => {
     if (!_profile) return {};
     const result = {};
     Object.keys(book.units).forEach(uk => {
-      const saved = _profile.unitProgress[`${book.id}__${uk}`];
+      const key = `${book.id}__${uk}`;
+      const saved = _alignedProg(key, _profile.unitProgress[key]);   // znane słówka liczone po wyrównaniu
       const total = book.units[uk].words.length;
       const known = saved ? (saved.knownCount || 0) : 0;
-      result[uk] = { known, total, pct: total > 0 ? Math.round((known / total) * 100) : 0 };
+      // done — „✅ Zaliczony” (#100): data z bazy albo 100% teraz; zostaje, gdy po powtórkach % spadnie
+      result[uk] = { known, total, pct: total > 0 ? Math.round((known / total) * 100) : 0,
+        done: !!(saved && (saved.completedAt || (total > 0 && known >= total))) };
     });
     return result;
   }
@@ -480,7 +550,7 @@ const DB = (() => {
   function getDueIndicesForUnit(bookId, unitKey) {
     if (!_profile || !_profile.unitProgress) return [];
     const key = bookId + '__' + unitKey;
-    const prog = _profile.unitProgress[key];
+    const prog = _alignedProg(key, _profile.unitProgress[key]);   // numery wg bieżącej listy słówek
     if (!prog || !prog.wordStates) return [];
     const now = Date.now();
     const due = [];
@@ -501,7 +571,8 @@ const DB = (() => {
     let totalDue = 0;
     let nextReviewMin = null;
     const perUnit = [];
-    Object.entries(_profile.unitProgress).forEach(([key, prog]) => {
+    Object.entries(_profile.unitProgress).forEach(([key, raw]) => {
+      const prog = _alignedProg(key, raw);
       const ws = prog && prog.wordStates;
       if (!ws) return;
       const [bookId, unitKey] = key.split('__');
@@ -538,7 +609,8 @@ const DB = (() => {
     const ts = (Array.isArray(times) ? times : []).map(Number);
     const out = ts.map(() => 0);
     if (!_profile || !_profile.unitProgress || !ts.length) return out;
-    Object.entries(_profile.unitProgress).forEach(([key, prog]) => {
+    Object.entries(_profile.unitProgress).forEach(([key, raw]) => {
+      const prog = _alignedProg(key, raw);
       const ws = prog && prog.wordStates;
       if (!ws || isBookIgnored(key.split('__')[0])) return;
       Object.values(ws).forEach(s => {
@@ -4230,6 +4302,7 @@ const DB = (() => {
     // nie ma, więc ponawiamy bez kolumny, której brakuje.
     const extra = ['nickname', 'avatar_url'];
     if (_hasStartMode !== false) extra.push('start_mode');   // własny profil (select *) już powiedział, czy jest #89
+    if (_hasGamesFree !== false) extra.push('games_free');   // #101 — „🎮 Gry bez blokady”
     let { data, error } = await run(COLS + ', ' + extra.join(', '));
     while (error && extra.length) {
       const miss = extra.findIndex(c => new RegExp('\\b' + c + '\\b', 'i').test(error.message || ''));
@@ -4482,6 +4555,30 @@ const DB = (() => {
     }
     return data;
   }
+  // ── 🎮 Gry bez blokady (#101): nauczyciel / admin wyłącza wybranym uczniom blokadę „najpierw nauka” ──
+  // null = profil niewczytany, false = brak migracji #101 (UI chowa funkcję), true = jest.
+  function hasGamesFree() { return _hasGamesFree; }
+  // Czy zalogowany uczeń ma gry bez blokady (z profilu wczytanego w init — bez dodatkowego zapytania)
+  function getMyGamesFree() { return !!(_hasGamesFree && _profile && _profile.gamesFree); }
+  // Nauczyciel / admin: włącz (true) / wyłącz (false) uczniom z listy (max 200) → liczba uczniów
+  // z takim ustawieniem teraz (pominięci: nie moi uczniowie, konta staff); null = brak migracji #101.
+  async function setStudentsGamesFree(studentIds, free) {
+    const ids = [...new Set((studentIds || []).filter(x => typeof x === 'string' && x))];
+    if (!ids.length) return 0;
+    if (ids.length > 200) throw new Error('Za dużo uczniów naraz — zaznacz najwyżej 200.');
+    if (_hasGamesFree === false) return null;
+    const { data, error } = await supabase.rpc('set_students_games_free', { p_student_ids: ids, p_free: !!free });
+    if (error) {
+      const msg = (error.code || '') + ' ' + (error.message || '');
+      if (/set_students_games_free|PGRST202|42883/i.test(msg) && !/NOT_ALLOWED|TOO_MANY|AUTH/.test(msg)) return null;
+      if (/NOT_ALLOWED/.test(msg)) throw new Error('Blokadę gier mogą zmieniać tylko nauczyciel i administrator.');
+      if (/TOO_MANY/.test(msg)) throw new Error('Za dużo uczniów naraz — zaznacz najwyżej 200.');
+      if (/AUTH/.test(msg)) throw new Error('Zaloguj się ponownie.');
+      throw new Error(error.message || 'Nie udało się zapisać ustawienia gier.');
+    }
+    return typeof data === 'number' ? data : (parseInt(data, 10) || 0);
+  }
+
   // ── 🚀 Tryb na start (#89): nauczyciel / admin ustawia uczniom tryb nauki, do którego
   //    uczeń trafia raz dziennie przy pierwszym wejściu (rozdział — ostatnio uczony) ──
   // Tryby jak setMode('…') w app.html; ta sama lista co CHECK w student-start-mode.sql.
@@ -4584,10 +4681,10 @@ const DB = (() => {
 
   async function loadUserProgress(userId) {
     if (!_profile?.isAdmin && !_profile?.isTeacher) return [];
-    const { data, error } = await supabase
-      .from('unit_progress')
-      .select('book_key, unit_key, known_count, total, last_studied, word_states')
-      .eq('user_id', userId);
+    const COLS = 'book_key, unit_key, known_count, total, last_studied, word_states';
+    // completed_at — „✅ Zaliczony” (#100); bez migracji kolumny nie ma → bez niej
+    let { data, error } = await supabase.from('unit_progress').select(COLS + ', completed_at').eq('user_id', userId);
+    if (error && /completed_at/i.test(error.message || '')) ({ data, error } = await supabase.from('unit_progress').select(COLS).eq('user_id', userId));
     if (error) throw new Error(error.message);
     return data || [];
   }
@@ -5907,6 +6004,9 @@ const DB = (() => {
     // postęp
     saveUnitProgress,
     getUnitProgress,
+    getUnitProgressKeys,
+    setStateAligner,
+    hasMergeSave: () => _hasMergeSave,
     getReviewQueue,
     getDueForecast,
     getDueIndicesForUnit,
@@ -6034,6 +6134,7 @@ const DB = (() => {
     setStudentNoteDone,
     hasHomeworkTasks, loadTaskAssignments, submitStudentTask, markStudentNotesSeen, loadTaskSet,
     hasStartMode, getMyStartMode, setStudentsStartMode,
+    hasGamesFree, getMyGamesFree, setStudentsGamesFree,
     saveBookNote,
     deleteBookNote,
     // book access requests
