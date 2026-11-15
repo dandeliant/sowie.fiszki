@@ -463,7 +463,7 @@ const DB = (() => {
       _alignMemo.set(prog.wordStates, m);
     }
     if (!m.r) return prog;
-    return Object.assign({}, prog, { wordStates: m.r.states, knownCount: m.r.known, moved: m.r.moved || 0 });
+    return Object.assign({}, prog, { wordStates: m.r.states, knownCount: m.r.known, moved: m.r.moved || 0, stamp: m.r.stamp || 0 });
   }
   // Klucze zapisanych rozdziałów (naprawa po starcie — app.html: _wsRepairAll)
   function getUnitProgressKeys() { return _profile ? Object.keys(_profile.unitProgress || {}) : []; }
@@ -1147,7 +1147,27 @@ const DB = (() => {
     _applyAdminData();
   }
 
+  // 🛟 Usunięcia słówek z data.js przez admina (z datą) — przesuwają numery słówek w rozdziale.
+  //    app.html (sfAlignStates) przenosi stary, niepodpisany postęp wg tych zdarzeń.
+  let _adminDeletes = [];
+  function getAdminShifts() {
+    const out = [];
+    _adminDeletes.forEach(d => {
+      const runs = (idx, n) => [idx > 0 ? [0, 0, idx] : null, n - idx - 1 > 0 ? [idx + 1, idx, n - idx - 1] : null].filter(Boolean);
+      out.push({ t: d.t, b: d.b, u: d.u, r: runs(d.idx, d.n) });
+      // „🌍 Wszystkie” — te same słówka po kolei z rozdziałów (bez własnych słówek z przeglądarki)
+      const book = BOOKS[d.b];
+      if (!book || !book.units) return;
+      let off = 0, all = 0;
+      const keys = Object.keys(book.units);
+      keys.forEach(k => { const len = ((book.units[k] && book.units[k].words) || []).length; if (keys.indexOf(k) < keys.indexOf(d.u)) off += len; all += len; });
+      out.push({ t: d.t, b: d.b, u: 'all', r: runs(off + d.idx, all + 1) });
+    });
+    return out;
+  }
+
   function _applyAdminData() {
+    _adminDeletes = [];
     // 1. Nowe podręczniki → dodaj do BOOKS (z meta-danymi: language, schoolType, grade)
     //    Migracja #29 wprowadza kolumny school_type/language/grade.
     //    Fallback dla starych wierszy bez tych kolumn: courses + en.
@@ -1192,7 +1212,11 @@ const DB = (() => {
         // Edycja lub usunięcie słówka z data.js
         const idx = words.findIndex(w => w[0] === row.original_pl);
         if (idx !== -1) {
-          if (row.is_deleted) words.splice(idx, 1);
+          if (row.is_deleted) {
+            const t = Date.parse(row.updated_at || '') || 0;
+            if (t) _adminDeletes.push({ t, b: row.book_id, u: row.unit_key, idx, n: words.length });
+            words.splice(idx, 1);
+          }
           else words[idx] = [row.word_pl, row.word_target, ...words[idx].slice(2)];   // emoji i zdania z data.js zostają
         }
       } else if (!row.is_deleted) {
@@ -6006,6 +6030,7 @@ const DB = (() => {
     getUnitProgress,
     getUnitProgressKeys,
     setStateAligner,
+    getAdminShifts,
     hasMergeSave: () => _hasMergeSave,
     getReviewQueue,
     getDueForecast,
