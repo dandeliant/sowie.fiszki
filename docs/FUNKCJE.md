@@ -92,7 +92,7 @@
 - Nowe konto przy pierwszym wejściu dostaje trial: `activate_trial()` → `plan='premium'`, `plan_expires_at = teraz + 30 dni`, `trial_used_at = teraz` (raz w życiu; nie dostaje go konto, które ma już `plan='premium'`).
 - Przy każdym starcie aplikacji uczeń sam wykonuje `DB.downgradePlanIfExpired()` (app.html, boot): `plan='premium'` z datą w przeszłości → `plan='free'`, `plan_expires_at=null`. Strażnik profilu #74 pozwala użytkownikowi tylko na taki zapis (rezygnacja z planu).
 - Premium **bez daty** (`plan_expires_at = null`) jest na stałe — nic go nie cofa.
-- Do 30.11.2026 `isPromoActive()` daje Premium każdemu zalogowanemu niezależnie od kolumny `plan` (kolumna dalej się zmienia — trial wygasa i przechodzi na Free w bazie).
+- Do 31.01.2027 `isPromoActive()` daje Premium każdemu zalogowanemu niezależnie od kolumny `plan` (kolumna dalej się zmienia — trial wygasa i przechodzi na Free w bazie).
 
 **Błąd (do SW v1.240):** masowe „🎫 Typ konta → ⭐ Premium” wołało `DB.setUserPlan()`, które zapisywało tylko `{plan, is_teacher}` — zostawała stara data trialu, więc po jej minięciu uczeń przy wejściu wracał na Free. To samo robił zapis planu w „📋 Podręczniki” (`saveUserAccess`), który dodatkowo przy każdym „💾 Zapisz” zdejmował rolę nauczyciela (`is_teacher = plan==='teacher'`). Okienka zbiorcze zawsze otwierały się z „Free” / „Pokazuj bannery” / pustymi podręcznikami, niezależnie od stanu — a „Zastosuj” z tym domyślnym wyborem naprawdę nadpisywało dane całej grupy.
 
@@ -163,7 +163,7 @@ Obecnie **brak skrzynki na własnej domenie** — kontakt idzie na `sowie.fiszki
 - **🆕 Disambiguacja nawiasem w word_pl** dla par różnych znaczeń: `miasto (duże)`/`miasto (małe)`, `skakać (krótko)`/`skakać (wysoko)`, `godzina (zegar)`/`godzina (jednostka)`, `przed (miejsce)`/`przed (czas)`, `uroczy (przyjemny)`/`uroczy (słodki)`. Konwencja słownikowa — różne od „luźnych nawiasów" usuniętych w Tiger 1 (commit `5a7f0c0`).
 - **Premium features:**
   - 30-dniowy trial automatyczny (raz w życiu konta) + cennik (klik → prośba do admina)
-  - **🆕 Promocja Premium za darmo dla wszystkich do 30.11.2026** (override po stronie kodu — `DB.isPromoActive()` zwraca true, `isPremium()` short-circuit, `getPlanExpiryInfo()` zwraca null żeby ukryć trial/expiry banery, `maybeShowPromoBanner` w app.html — gradient pasek na górze)
+  - **🆕 Promocja Premium za darmo dla wszystkich do 31.01.2027** (przedłużona 17.11.2026 z 30.11.2026) (override po stronie kodu — `DB.isPromoActive()` zwraca true, `isPremium()` short-circuit, `getPlanExpiryInfo()` zwraca null żeby ukryć trial/expiry banery, `maybeShowPromoBanner` w app.html — gradient pasek na górze)
   - Banner wygasania 30 dni przed końcem (codziennie, dismiss-per-day) + welcome trial banner (raz)
   - Wybór głosu lektora (4 głosy UK/US × tempo) w modalu „Moje konto"
   - Export PDF karty postępów + dyplom PDF A4 landscape
