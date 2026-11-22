@@ -87,6 +87,32 @@ html[data-theme="paper"] .modal-overlay{background:rgba(60,40,20,.45);}
 .star{position:absolute;background:#fff;border-radius:50%;animation:twinkle linear infinite;}
 @keyframes twinkle{0%,100%{opacity:.12;transform:scale(1)}50%{opacity:.65;transform:scale(1.4)}}
 .wrap{position:relative;z-index:1;width:100%;max-width:var(--card-w);display:flex;flex-direction:column;align-items:center;}
+/* 🖼️ Własne tło (#103) — rozmyte, przyciemnione, „za mgłą”; pod gwiazdkami i treścią */
+#userBg{position:fixed;inset:-40px;z-index:0;pointer-events:none;background-size:cover;background-position:center;background-repeat:no-repeat;filter:blur(10px) saturate(.6);opacity:0;transition:opacity .8s ease;}
+#userBg.on{opacity:.28;}
+html[data-theme="paper"] #userBg.on{opacity:.2;filter:blur(10px) saturate(.5) brightness(1.1);}
+body.sf-focus-on #userBg.on{opacity:.15;}
+@media (prefers-reduced-motion:reduce){#userBg{transition:none;}}
+@media print{#userBg{display:none!important;}}
+.ubg-section{margin:14px 0 4px;padding:12px;border:1.5px solid var(--border);border-radius:14px;background:var(--surface2);text-align:left;}
+.ubg-title{font-size:.86rem;font-weight:800;color:var(--text);}
+.ubg-sub{font-size:.7rem;color:var(--muted);font-weight:600;line-height:1.45;margin:2px 0 10px;}
+.ubg-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;}
+.ubg-opt{position:relative;width:100%;aspect-ratio:16/10;border-radius:11px;border:2px solid var(--border);background:var(--surface) center/cover no-repeat;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:3px;font-size:.72rem;font-weight:800;color:var(--text);padding:6px;text-align:center;font-family:inherit;overflow:hidden;}
+.ubg-opt.active{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent);}
+.ubg-opt .ubg-ico{font-size:1.3rem;line-height:1;}
+.ubg-opt.has-img .ubg-lbl{background:rgba(0,0,0,.6);color:#fff;border-radius:6px;padding:1px 6px;position:absolute;left:6px;bottom:6px;}
+.ubg-del{position:absolute;top:5px;right:5px;width:28px;height:28px;border-radius:50%;border:none;background:rgba(0,0,0,.62);color:#fff;font-size:.8rem;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+.ubg-msg{font-size:.72rem;font-weight:700;min-height:16px;margin-top:8px;color:var(--muted);}
+.ubg-lock{font-size:.76rem;font-weight:700;color:var(--text);line-height:1.5;}
+.ubgm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;max-height:60vh;overflow:auto;}
+.ubgm-card{border:1.5px solid var(--border);border-radius:12px;background:var(--surface2);overflow:hidden;display:flex;flex-direction:column;}
+.ubgm-img{width:100%;aspect-ratio:16/10;background:#000 center/cover no-repeat;cursor:zoom-in;border:none;padding:0;}
+.ubgm-meta{padding:6px 8px;font-size:.72rem;font-weight:700;color:var(--text);line-height:1.35;word-break:break-word;}
+.ubgm-meta small{color:var(--muted);font-weight:600;}
+.ubgm-act{display:flex;gap:6px;flex-wrap:wrap;padding:0 8px 8px;}
+.ubgm-lb{position:fixed;inset:0;z-index:10050;background:rgba(0,0,0,.86);display:flex;align-items:center;justify-content:center;padding:20px;cursor:zoom-out;}
+.ubgm-lb img{max-width:100%;max-height:100%;border-radius:10px;box-shadow:0 10px 40px rgba(0,0,0,.5);}
 
 /* ── HEADER ── */
 header{width:100%;display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px;gap:8px;}
@@ -1457,6 +1483,7 @@ html[data-theme="paper"] .nd-inv.hw-inv-box{background-image:radial-gradient(ell
 </style>
 </head>
 <body>
+<div id="userBg" aria-hidden="true"></div>
 <div class="stars" id="stars"></div>
 <!-- 🎃 Halloween — warstwa dekoracji ZA treścią (tylko opacity/transform, bez kliknięć i przewijania) -->
 <div class="hw-layer" id="hwLayer" aria-hidden="true">
@@ -26320,6 +26347,13 @@ function buildAlphaKeys(inputId, answer) {
         }
       }
     } catch(e) { console.warn('[BOOT] avatar purge:', e.message); }
+    // Admin: codziennie kasuje pliki teł usuniętych kont (#103).
+    try {
+      if (DB.isAdmin && DB.isAdmin(currentUser) && DB.purgeUserBackgrounds) {
+        const lastKey = 'fiszki_ubg_purge_last_' + currentUser, today = new Date().toDateString();
+        if (localStorage.getItem(lastKey) !== today) { await DB.purgeUserBackgrounds(); localStorage.setItem(lastKey, today); }
+      }
+    } catch(e) { console.warn('[BOOT] user bg purge:', e.message); }
     // Admin: globalne czyszczenie wpisow activity_events >60 dni (raz dziennie)
     try {
       if (DB.isAdmin && DB.isAdmin(currentUser) && DB.cleanupOldActivityEvents) {
@@ -26416,6 +26450,7 @@ function buildAlphaKeys(inputId, answer) {
         petphrases:       () => window.sfOpenPetPhrases && window.sfOpenPetPhrases(),
         rankings:         () => window.sfOpenStaffRank && window.sfOpenStaffRank(),
         xpGuard:          () => window.sfOpenXpGuard && window.sfOpenXpGuard(),
+        userBackgrounds:  () => window.sfOpenUserBgModeration && window.sfOpenUserBgModeration(),
         newBook:          () => (typeof openAdminBookModal==='function')   && openAdminBookModal(),
         premium:          () => (typeof openPremiumPricingModal==='function') && openPremiumPricingModal(),
       };
@@ -26768,6 +26803,14 @@ function buildAlphaKeys(inputId, answer) {
       </div>
       <button type="button" class="hw-switch" id="ndSwitch" role="switch" aria-checked="false" aria-labelledby="ndToggleLabel"></button>
     </div>
+    <!-- 🖼️ Moje tło (#103, Premium) — moduł WŁASNE TŁO niżej -->
+    <div class="ubg-section" id="ubgSection" hidden>
+      <div class="ubg-title">🖼️ Moje tło</div>
+      <div class="ubg-sub">Własny obrazek jako tło aplikacji — przyciemniony i lekko rozmyty, żeby nie rozpraszał. Najwyżej 2 obrazki. Widzi je też Twój nauczyciel, który może usunąć nieodpowiedni.</div>
+      <div id="ubgBody"></div>
+      <div class="ubg-msg" id="ubgMsg" aria-live="polite"></div>
+      <input type="file" id="ubgFile" accept="image/*" hidden>
+    </div>
     <div class="theme-modal-actions">
       <button class="btn-modal-cancel" onclick="cancelThemeModal()">Anuluj</button>
       <button class="btn-modal-save" onclick="saveThemeModal()">Zastosuj</button>
@@ -26851,12 +26894,14 @@ function buildAlphaKeys(inputId, answer) {
     else { prevTheme=getSavedTheme(); buildGrid(prevTheme); }
     if (HW && HW.modalOpen) HW.modalOpen();
     if (ND && ND.modalOpen) ND.modalOpen();
+    if (window.sfUserBg) sfUserBg.modalOpen();
     document.getElementById('themeModal').style.display='flex';
   };
   window.cancelThemeModal=function(){
     if(prevTheme!==null) applyTheme(prevTheme); // przywróć live preview
     if (window.sfHalloween && sfHalloween.modalCancel) sfHalloween.modalCancel();
     if (window.sfNiepodlegla && sfNiepodlegla.modalCancel) sfNiepodlegla.modalCancel();
+    if (window.sfUserBg) sfUserBg.modalCancel();
     document.getElementById('themeModal').style.display='none';
     prevTheme=null;
   };
@@ -26870,8 +26915,320 @@ function buildAlphaKeys(inputId, answer) {
     }
     if (window.sfHalloween && sfHalloween.modalSave) sfHalloween.modalSave();
     if (window.sfNiepodlegla && sfNiepodlegla.modalSave) sfNiepodlegla.modalSave();
+    if (window.sfUserBg) sfUserBg.modalSave();
     document.getElementById('themeModal').style.display='none';
     prevTheme=null;
+  };
+})();
+</script>
+
+<script>
+// ══════════════════════════════════════════════
+//  🖼️ WŁASNE TŁO (#103, SW v1.267) — Premium: najwyżej 2 obrazki, jeden jako tło aplikacji.
+//  Warstwa #userBg (pod gwiazdkami i treścią): rozmyta i przyciemniona — „za mgłą”, w trybie
+//  skupienia jeszcze słabsza. Obraz zmniejszany w przeglądarce (canvas → JPEG ≤ 400 KB + miniatura
+//  360 px; przy okazji znikają dane EXIF, np. GPS). Pliki z prywatnego bucketu trzymamy w IndexedDB
+//  ('sf-ubg') — pobieramy raz na urządzenie. Aktywne tło z profilu (bg_active) — bez zapytań przy
+//  starcie. Usunięcie przez nauczyciela / admina → raz komunikat (bg_removed_at).
+//  Nauczyciel / admin: sfOpenUserBgModeration() — „🖼️ Tła uczniów” (teacher.html → ?go=userBackgrounds).
+// ══════════════════════════════════════════════
+(function(){
+  const IDB_NAME = 'sf-ubg', IDB_STORE = 'img';
+  let _db = null;
+  function idb() {
+    if (_db) return Promise.resolve(_db);
+    return new Promise((res, rej) => {
+      try {
+        const r = indexedDB.open(IDB_NAME, 1);
+        r.onupgradeneeded = () => { try { r.result.createObjectStore(IDB_STORE); } catch(e) {} };
+        r.onsuccess = () => { _db = r.result; res(_db); };
+        r.onerror = () => rej(r.error);
+      } catch(e) { rej(e); }
+    });
+  }
+  async function idbGet(k) {
+    try {
+      const d = await idb();
+      return await new Promise(res => { const q = d.transaction(IDB_STORE).objectStore(IDB_STORE).get(k); q.onsuccess = () => res(q.result || null); q.onerror = () => res(null); });
+    } catch(e) { return null; }
+  }
+  async function idbPut(k, v) {
+    try {
+      const d = await idb();
+      await new Promise(res => { const tx = d.transaction(IDB_STORE, 'readwrite'); tx.objectStore(IDB_STORE).put(v, k); tx.oncomplete = res; tx.onerror = res; tx.onabort = res; });
+    } catch(e) {}
+  }
+  async function idbDel(keys) {
+    try {
+      const d = await idb();
+      await new Promise(res => { const tx = d.transaction(IDB_STORE, 'readwrite'); keys.forEach(k => tx.objectStore(IDB_STORE).delete(k)); tx.oncomplete = res; tx.onerror = res; tx.onabort = res; });
+    } catch(e) {}
+  }
+  // Plik z pamięci urządzenia albo (raz) z serwera — Blob
+  async function blobFor(path) {
+    let b = await idbGet(path);
+    if (b) return b;
+    b = await DB.downloadBackground(path);
+    if (b) idbPut(path, b);
+    return b;
+  }
+  const has = () => !isGuest && typeof DB !== 'undefined' && !!DB.hasUserBackgrounds && DB.hasUserBackgrounds() === true;
+  const canUse = () => has() && hasPremiumAccess();
+
+  // ── warstwa tła ───────────────────────────────
+  let _url = null, _shown = null, _seq = 0;
+  const layer = () => document.getElementById('userBg');
+  function show(blob, path) {
+    const el = layer(); if (!el || !blob) return;
+    const u = URL.createObjectURL(blob);
+    el.style.backgroundImage = 'url("' + u + '")';
+    if (_url) { const old = _url; setTimeout(() => { try { URL.revokeObjectURL(old); } catch(e) {} }, 1500); }
+    _url = u; _shown = path;
+    requestAnimationFrame(() => el.classList.add('on'));
+  }
+  function hide() {
+    const el = layer(); _shown = null;
+    if (!el) return;
+    el.classList.remove('on');
+    setTimeout(() => {
+      if (el.classList.contains('on')) return;
+      el.style.backgroundImage = '';
+      if (_url) { try { URL.revokeObjectURL(_url); } catch(e) {} _url = null; }
+    }, 900);
+  }
+  async function showPath(path) {
+    const my = ++_seq;
+    if (!path) { hide(); return; }
+    if (_shown === path) return;
+    try { const b = await blobFor(path); if (my === _seq && b) show(b, path); }
+    catch(e) { console.warn('[🖼️ tło]', e && e.message || e); if (my === _seq) hide(); }
+  }
+  function applyActive() {
+    const info = has() ? DB.getMyBackgroundInfo() : {};
+    return showPath(canUse() ? info.path : null);
+  }
+  // Tło usunął nauczyciel / admin — powiedz raz
+  function noticeRemoved() {
+    if (!has()) return;
+    const at = DB.getMyBackgroundInfo().removedAt;
+    if (!at) return;
+    const key = 'fiszki_ubg_removed_seen_' + (currentUser || '');
+    let seen = null;
+    try { seen = localStorage.getItem(key); } catch(e) {}
+    if (seen === String(at)) return;
+    try { localStorage.setItem(key, String(at)); } catch(e) { return; }
+    setTimeout(() => toast('🖼️ Nauczyciel albo administrator usunął jedno z Twoich teł (było nieodpowiednie). Inne możesz wybrać w 🎨 Motyw.', 6500), 3500);
+  }
+  document.addEventListener('sf-booted', () => { try { applyActive(); noticeRemoved(); } catch(e) {} });
+
+  // ── przygotowanie obrazka (w przeglądarce) ─────
+  function loadImage(file) {
+    return new Promise((res, rej) => {
+      const u = URL.createObjectURL(file), im = new Image();
+      im.onload = () => { res(im); setTimeout(() => URL.revokeObjectURL(u), 2000); };
+      im.onerror = () => { URL.revokeObjectURL(u); rej(new Error('Nie da się odczytać tego pliku — wybierz zdjęcie lub obrazek JPG, PNG albo WebP.')); };
+      im.src = u;
+    });
+  }
+  function toJpeg(img, maxSide, q) {
+    const w0 = img.naturalWidth || img.width, h0 = img.naturalHeight || img.height;
+    const k = Math.min(1, maxSide / Math.max(w0, h0));
+    const w = Math.max(1, Math.round(w0 * k)), h = Math.max(1, Math.round(h0 * k));
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const g = c.getContext('2d'); g.fillStyle = '#000'; g.fillRect(0, 0, w, h); g.drawImage(img, 0, 0, w, h);
+    return new Promise(res => c.toBlob(b => res({ blob: b, w: w, h: h }), 'image/jpeg', q));
+  }
+  async function prepare(file) {
+    if (!file) throw new Error('Nie wybrano pliku.');
+    if (file.type && !/^image\//.test(file.type)) throw new Error('To nie jest obrazek — wybierz zdjęcie lub obrazek (JPG, PNG, WebP).');
+    if (file.size > 25 * 1024 * 1024) throw new Error('Ten plik jest bardzo duży (ponad 25 MB) — wybierz mniejszy obrazek.');
+    const img = await loadImage(file);
+    const w0 = img.naturalWidth || img.width, h0 = img.naturalHeight || img.height;
+    if (w0 < 200 || h0 < 200) throw new Error('Obrazek jest za mały — wybierz większy (co najmniej 200 × 200 px).');
+    let full = null;
+    for (const [side, q] of [[1600, .78], [1600, .66], [1280, .64], [1024, .6], [800, .55]]) {
+      full = await toJpeg(img, side, q);
+      if (full.blob && full.blob.size <= 380 * 1024) break;
+    }
+    if (!full || !full.blob || full.blob.size > 400 * 1024) throw new Error('Nie udało się zmniejszyć obrazka do 400 KB — wybierz inny.');
+    const th = await toJpeg(img, 360, .7);
+    if (!th.blob) throw new Error('Nie udało się przygotować miniatury.');
+    return { full: full.blob, thumb: th.blob, width: full.w, height: full.h };
+  }
+
+  // ── sekcja „🖼️ Moje tło” w oknie motywów ───────
+  let _list = [], _prev = null, _sel = null, _busy = false, _thumbUrls = [];
+  const $ = id => document.getElementById(id);
+  function msg(t, bad) { const m = $('ubgMsg'); if (m) { m.textContent = t || ''; m.style.color = bad ? 'var(--danger)' : 'var(--muted)'; } }
+  function freeThumbs() { _thumbUrls.forEach(u => { try { URL.revokeObjectURL(u); } catch(e) {} }); _thumbUrls = []; }
+  async function render() {
+    const body = $('ubgBody'); if (!body) return;
+    if (!hasPremiumAccess()) {
+      body.innerHTML = '<div class="ubg-lock">🔒 Własne tło to funkcja <b>Premium</b>.</div>'
+        + '<button type="button" class="btn-sm accent" style="margin-top:8px" onclick="showPremiumModal&&showPremiumModal()">⭐ Zobacz Premium</button>';
+      return;
+    }
+    freeThumbs();
+    const opt = (cls, inner, attrs) => '<button type="button" class="ubg-opt' + cls + '"' + (attrs || '') + '>' + inner + '</button>';
+    let html = '<div class="ubg-grid">' + opt(_sel ? '' : ' active', '<span class="ubg-ico">🚫</span><span class="ubg-lbl">Bez tła</span>', ' data-ubg=""');
+    _list.forEach((r, i) => {
+      html += '<div style="position:relative">'
+        + opt((_sel === r.id ? ' active' : '') + ' has-img', '<span class="ubg-lbl">Tło ' + (i + 1) + '</span>', ' data-ubg="' + r.id + '" id="ubgOpt_' + r.id + '" aria-label="Tło ' + (i + 1) + '"')
+        + '<button type="button" class="ubg-del" data-ubgdel="' + r.id + '" title="Usuń to tło" aria-label="Usuń tło ' + (i + 1) + '">🗑️</button></div>';
+    });
+    if (_list.length < 2) html += opt('', '<span class="ubg-ico">➕</span><span class="ubg-lbl">Dodaj obrazek</span>', ' data-ubgadd="1"');
+    body.innerHTML = html + '</div>';
+    for (const r of _list) {
+      try {
+        const b = await blobFor(r.thumb_path), el = $('ubgOpt_' + r.id);
+        if (b && el) { const u = URL.createObjectURL(b); _thumbUrls.push(u); el.style.backgroundImage = 'url("' + u + '")'; }
+      } catch(e) {}
+    }
+  }
+  function previewSel() {
+    const r = _list.find(x => x.id === _sel);
+    showPath(r ? r.path : null);
+  }
+  async function onClick(e) {
+    const t = e.target;
+    if (!t || !t.closest || _busy) return;
+    const del = t.closest('[data-ubgdel]');
+    if (del) {
+      const r = _list.find(x => x.id === del.getAttribute('data-ubgdel'));
+      if (!r || !confirm('Usunąć to tło? Obrazek zniknie na stałe.')) return;
+      _busy = true; msg('⏳ Usuwam…');
+      try {
+        await DB.deleteBackground(r);
+        _list = _list.filter(x => x.id !== r.id);
+        idbDel([r.path, r.thumb_path]);
+        if (_sel === r.id) _sel = null;
+        if (_prev === r.id) _prev = null;   // baza odpięła aktywne tło
+        msg('🗑️ Tło usunięte.');
+        previewSel();
+      } catch(err) { msg('❌ ' + (err.message || err), true); }
+      _busy = false; render();
+      return;
+    }
+    if (t.closest('[data-ubgadd]')) { const f = $('ubgFile'); if (f) { f.value = ''; f.click(); } return; }
+    const o = t.closest('[data-ubg]');
+    if (o) {
+      _sel = o.getAttribute('data-ubg') || null;
+      render(); previewSel();
+      msg(_sel !== _prev ? 'Podgląd — kliknij „Zastosuj”, żeby zapisać.' : '');
+    }
+  }
+  async function onFile(e) {
+    const file = e.target && e.target.files && e.target.files[0];
+    if (!file || _busy) return;
+    _busy = true; msg('⏳ Przygotowuję obrazek…');
+    try {
+      const p = await prepare(file);
+      msg('⏳ Wysyłam (' + Math.max(1, Math.round(p.full.size / 1024)) + ' KB)…');
+      const row = await DB.addMyBackground(p.full, p.thumb, { width: p.width, height: p.height });
+      idbPut(row.path, p.full); idbPut(row.thumb_path, p.thumb);
+      _list.push(row); _sel = row.id;
+      msg('✅ Dodano! Kliknij „Zastosuj”, żeby ustawić jako tło.');
+      previewSel();
+    } catch(err) { msg('❌ ' + (err.message || err), true); }
+    _busy = false; render();
+  }
+  window.sfUserBg = {
+    apply: applyActive,
+    modalOpen: async function(){
+      const sec = $('ubgSection');
+      if (!sec) return;
+      if (!has()) { sec.hidden = true; return; }
+      sec.hidden = false; msg('');
+      _prev = _sel = DB.getMyBackgroundInfo().active;
+      _list = [];
+      if (!sec._wired) {
+        sec._wired = true;
+        sec.addEventListener('click', onClick);
+        const f = $('ubgFile'); if (f) f.addEventListener('change', onFile);
+      }
+      if (!hasPremiumAccess()) { render(); return; }
+      $('ubgBody').innerHTML = '<div class="ubg-msg">⏳ Wczytuję…</div>';
+      try {
+        const l = await DB.listMyBackgrounds();
+        if (l === null) { sec.hidden = true; return; }
+        _list = l;
+        if (_sel && !_list.some(x => x.id === _sel)) _sel = _prev = null;
+      } catch(err) { msg('❌ ' + (err.message || err), true); }
+      render();
+    },
+    modalCancel: function(){
+      if (!has()) return;
+      _sel = _prev; freeThumbs(); applyActive();
+    },
+    modalSave: async function(){
+      if (!has() || !hasPremiumAccess()) return;
+      freeThumbs();
+      if (_sel === _prev) { applyActive(); return; }
+      try { await DB.setMyBackground(_sel); toast(_sel ? '🖼️ Tło ustawione!' : '🖼️ Tło wyłączone.', 2200); }
+      catch(err) { toast('❌ ' + (err.message || err), 4000); }
+      applyActive();
+    }
+  };
+
+  // ── 🖼️ Tła uczniów — nauczyciel / admin ──────
+  let _rows = [];
+  const fmtDay = d => { try { return new Date(d).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', year: 'numeric' }); } catch(e) { return ''; } };
+  window.sfOpenUserBgModeration = async function(){
+    if (isGuest || !(isCurrentUserAdmin() || isCurrentUserTeacher())) { toast('Tła uczniów widzi nauczyciel i administrator.', 3000); return; }
+    openGenericModal('🖼️ Tła uczniów',
+      '<div style="font-size:.76rem;color:var(--muted);font-weight:600;line-height:1.5;margin-bottom:10px">Własne tła, które '
+      + (isCurrentUserAdmin() ? 'użytkownicy ustawili' : 'Twoi uczniowie ustawili') + ' w aplikacji (Premium, najwyżej 2 na osobę). '
+      + 'Nieodpowiednie usuń — uczeń dostanie krótką informację, że tło zostało usunięte.</div>'
+      + '<div id="ubgmBody"><div style="font-size:.8rem;color:var(--muted);font-weight:700">⏳ Wczytuję…</div></div>'
+      + '<div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="btn-modal-cancel" onclick="closeGenericModal()">Zamknij</button></div>');
+    const body = () => document.getElementById('ubgmBody');
+    const note = html => { const b = body(); if (b) b.innerHTML = '<div style="font-size:.8rem;font-weight:700;line-height:1.5;color:var(--text)">' + html + '</div>'; };
+    let rows;
+    try { rows = await DB.listStudentBackgrounds(); }
+    catch(e) { note('<span style="color:var(--danger)">❌ ' + escHtml(e.message || String(e)) + '</span>'); return; }
+    if (rows === null) { note('Ta funkcja wymaga migracji <b>#103</b> (<code>user-backgrounds.sql</code>) w Supabase.'); return; }
+    if (!rows.length) { note('Na razie nikt nie ustawił własnego tła. 🦉'); return; }
+    if (!Array.isArray(_allProfiles) || !_allProfiles.length) { try { _allProfiles = await DB.loadAllProfiles(); } catch(e) {} }
+    const byId = {}; (_allProfiles || []).forEach(p => { byId[p.id] = p; });
+    let urls = {};
+    try { urls = await DB.signedBackgroundUrls(rows.map(r => r.thumb_path), 900); } catch(e) {}
+    _rows = rows;
+    const b = body(); if (!b) return;
+    b.innerHTML = '<div class="ubgm-grid">' + rows.map((r, i) => {
+      const p = byId[r.user_id] || {};
+      const name = (p.username ? escHtml(p.username) : 'użytkownik') + (p.nickname ? ' <small>(' + escHtml(p.nickname) + ')</small>' : '');
+      return '<div class="ubgm-card" id="ubgm_' + r.id + '">'
+        + '<button type="button" class="ubgm-img" data-i="' + i + '" title="Powiększ" aria-label="Powiększ tło: ' + escHtml(p.username || '') + '" onclick="sfUbgmZoom(' + i + ')"></button>'
+        + '<div class="ubgm-meta">' + name + '<br><small>dodane ' + fmtDay(r.created_at) + '</small></div>'
+        + '<div class="ubgm-act"><button class="btn-sm" onclick="sfUbgmZoom(' + i + ')">🔍 Powiększ</button>'
+        + '<button class="btn-sm" style="color:var(--danger)" onclick="sfUbgmDelete(' + i + ')">🗑️ Usuń</button></div></div>';
+    }).join('') + '</div>';
+    rows.forEach((r, i) => {
+      const u = urls[r.thumb_path], el = b.querySelector('.ubgm-img[data-i="' + i + '"]');
+      if (u && el) el.style.backgroundImage = 'url("' + u + '")';
+    });
+  };
+  window.sfUbgmZoom = async function(i){
+    const r = _rows[i]; if (!r) return;
+    let u = null;
+    try { u = (await DB.signedBackgroundUrls([r.path], 600))[r.path]; } catch(e) { toast('❌ ' + (e.message || e), 3500); return; }
+    if (!u) { toast('Nie udało się otworzyć obrazka.', 3000); return; }
+    const lb = document.createElement('div');
+    lb.className = 'ubgm-lb'; lb.setAttribute('role', 'dialog'); lb.setAttribute('aria-label', 'Podgląd tła (kliknij, żeby zamknąć)');
+    const img = document.createElement('img'); img.src = u; img.alt = 'Tło ucznia'; lb.appendChild(img);
+    const close = () => { lb.remove(); document.removeEventListener('keydown', esc, true); };
+    const esc = e => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+    lb.addEventListener('click', close); document.addEventListener('keydown', esc, true);
+    document.body.appendChild(lb);
+  };
+  window.sfUbgmDelete = async function(i){
+    const r = _rows[i]; if (!r) return;
+    const p = (_allProfiles || []).find(x => x.id === r.user_id) || {};
+    if (!confirm('Usunąć to tło' + (p.username ? ' (' + p.username + ')' : '') + '? Uczeń dostanie krótką informację, że tło zostało usunięte jako nieodpowiednie.')) return;
+    try { await DB.deleteBackground(r); } catch(e) { toast('❌ ' + (e.message || e), 4000); return; }
+    _rows[i] = null;
+    const c = document.getElementById('ubgm_' + r.id); if (c) c.remove();
+    toast('🗑️ Tło usunięte.', 2400);
   };
 })();
 </script>
@@ -27519,7 +27876,7 @@ function buildAlphaKeys(inputId, answer) {
       <button class="btn-modal-cancel" onclick="closePrivacyModal()" style="padding:5px 11px;font-size:.72rem">✕</button>
     </div>
     <div style="font-size:.78rem;line-height:1.55;color:var(--text);font-weight:500">
-      <p style="font-size:.68rem;color:var(--muted);margin-bottom:10px;font-style:italic">Obowiązuje od: 17 kwietnia 2026 r. · ostatnia aktualizacja: 6 listopada 2026 r.</p>
+      <p style="font-size:.68rem;color:var(--muted);margin-bottom:10px;font-style:italic">Obowiązuje od: 17 kwietnia 2026 r. · ostatnia aktualizacja: 22 listopada 2026 r.</p>
 
       <h3 style="font-family:'Playfair Display',serif;font-size:.92rem;color:var(--accent);margin-top:6px">1. Administrator danych</h3>
       <p style="margin:4px 0 10px">Administratorem danych osobowych Użytkowników Platformy „Sowie Fiszki" jest <strong>Daniel Ostrowski</strong> (osoba fizyczna prowadząca Platformę). Kontakt w sprawach danych osobowych: <a href="mailto:sowie.fiszki@gmail.com" style="color:var(--accent)">sowie.fiszki@gmail.com</a>.</p>
@@ -27534,6 +27891,7 @@ function buildAlphaKeys(inputId, answer) {
         <li><strong>Dane roli:</strong> przynależność do klasy (uczeń ↔ nauczyciel), plan konta (Free/Premium/Teacher).</li>
         <li><strong>Preferencje:</strong> wybrany motyw interfejsu (przechowywany w localStorage przeglądarki).</li>
         <li><strong>Grafika profilowa (dobrowolna):</strong> obrazek dodany w „Moje konto", zmniejszany do 256×256 px, widoczny dla uczniów z tej samej klasy i klas połączonych w rankingu, znajomych, Nauczyciela i Administratora. Nie musi przedstawiać Użytkownika — zalecamy dowolny obrazek zamiast zdjęcia twarzy. Do jej automatycznego usuwania zapisujemy datę ostatniego wejścia na Platformę.</li>
+        <li><strong>Własne tło (dobrowolne, Premium):</strong> najwyżej 2 obrazki dodane przez Użytkownika w oknie „🎨 Motyw”, zmniejszane w przeglądarce (bez zapisanych w zdjęciu danych, np. o miejscu jego zrobienia) i przechowywane w prywatnym zasobie serwera. Widzą je wyłącznie Użytkownik, jego Nauczyciel oraz Administrator, którzy mogą usunąć obrazek nieodpowiedni. Zalecamy dowolny obrazek (np. krajobraz) zamiast zdjęć osób.</li>
         <li><strong>Ksywka (dobrowolna):</strong> nazwa wyświetlana innym uczniom zamiast loginu; Nauczyciel lub Administrator może usunąć ksywkę niestosowną.</li>
         <li><strong>Znajomi (dobrowolne, tylko konta uczniów):</strong> lista znajomych i zaproszeń (kto kogo zaprosił, kiedy i czy zaproszenie przyjęto) oraz kod znajomego. Z wyszukiwarki można zaprosić tylko ucznia z klas widocznych w rankingu, a kogoś spoza nich — kodem przekazanym osobiście; zaproszenie trzeba przyjąć. Znajomi widzą nawzajem ksywkę (albo login), wyniki w rankingu, grafikę profilową i pupila oraz mogą zapraszać się do rywalizacji — bez wiadomości i czatu. Znajomość można usunąć w każdej chwili; dane znikają też po usunięciu Konta.</li>
         <li><strong>Wiadomości od Nauczyciela:</strong> krótkie wiadomości (do 500 znaków), które Nauczyciel ucznia lub Administrator wysyła do konkretnego ucznia; wyświetlają się uczniowi w okienku w aplikacji. Zapisujemy treść, nadawcę, odbiorcę, czas wysłania oraz to, czy wiadomość została wyświetlona, oznaczona jako przeczytana albo zamknięta. Wiadomość widzą tylko nadawca i odbiorca, uczeń nie może na nią odpowiedzieć. Wiadomości usuwamy automatycznie po 30 dniach, a także po usunięciu Konta.</li>
@@ -27550,6 +27908,7 @@ function buildAlphaKeys(inputId, answer) {
         <li><strong>Zarządzanie klasą przez Nauczyciela</strong> (Nauczyciel widzi login i postępy swoich uczniów) — art. 6 ust. 1 lit. b RODO.</li>
         <li><strong>Rozpatrywanie próśb o dostęp do podręczników</strong> (weryfikacja osoby wnioskującej na podstawie imienia i nazwiska) — art. 6 ust. 1 lit. a RODO (zgoda wyrażona przez wysłanie formularza).</li>
         <li><strong>Grafika profilowa i ksywka</strong> — art. 6 ust. 1 lit. a RODO (zgoda wyrażona przez ich dodanie; można ją w każdej chwili wycofać, usuwając grafikę lub ksywkę w „Moje konto").</li>
+        <li><strong>Własne tło</strong> — art. 6 ust. 1 lit. a RODO (zgoda wyrażona przez jego dodanie; można ją w każdej chwili wycofać, usuwając obrazek w oknie „🎨 Motyw”).</li>
         <li><strong>Ulepszanie Platformy, statystyki techniczne</strong> — art. 6 ust. 1 lit. f RODO (uzasadniony interes Administratora).</li>
         <li><strong>Obsługa zgłoszeń naruszeń</strong> — art. 6 ust. 1 lit. c RODO (obowiązek prawny).</li>
       </ul>
@@ -27574,6 +27933,7 @@ function buildAlphaKeys(inputId, answer) {
         <li>Po usunięciu Konta dane są usuwane niezwłocznie lub anonimizowane w terminie do 30 dni (czas wymagany na wykonanie kopii zapasowej).</li>
         <li>Prośby o dostęp do podręczników (w tym imię i nazwisko podane przy prośbie) — do 12 miesięcy od dnia rozpatrzenia, a następnie usuwane lub anonimizowane.</li>
         <li>Grafika profilowa — do czasu jej usunięcia przez Użytkownika, Nauczyciela lub Administratora; jest <strong>automatycznie usuwana po 2 miesiącach bez wejścia na Platformę</strong> albo <strong>razem z Kontem</strong> (plik jest następnie trwale kasowany z serwera).</li>
+        <li>Własne tło — do czasu jego usunięcia przez Użytkownika, Nauczyciela lub Administratora albo <strong>razem z Kontem</strong> (plik jest następnie trwale kasowany z serwera).</li>
         <li>Zgłoszenia naruszeń i ewentualna korespondencja reklamacyjna — do 3 lat od zakończenia sprawy (ze względu na możliwe roszczenia).</li>
       </ul>
 

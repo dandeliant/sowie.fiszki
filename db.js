@@ -35,6 +35,7 @@ const DB = (() => {
   let _bookPrefs      = { ignored: [], learning: [] };
   let _hasGamesFree   = null;   // migracja #101: profiles.games_free („🎮 Wszystko od razu” od nauczyciela)
   let _hasOpenModes   = null;   // migracja #102: profiles.open_modes („🔓 Tryby od razu” od nauczyciela)
+  let _hasUserBg      = null;   // migracja #103: profiles.bg_active + user_backgrounds („🖼️ Moje tło”)
   let _hasStartMode   = null;   // migracja #89: profiles.start_mode („🚀 Tryb na start” od nauczyciela); null = profil niewczytany
   let _hasComboEpoch  = false;  // migracja #93: profiles.combo_epoch — po korekcie serii stara karta nie przywróci rekordu
   let _hasStatsEpoch  = false;  // migracja #97: profiles.stats_epoch — po korekcie celności stara karta nie przywróci liczników
@@ -102,6 +103,8 @@ const DB = (() => {
       startMode:     row.start_mode      || null,   // migracja #89 — ustawia nauczyciel (RPC), nie wysyłamy w zapisie profilu
       gamesFree:     row.games_free === true,      // migracja #101 — ustawia nauczyciel (RPC), nie wysyłamy w zapisie profilu
       openModes:     Array.isArray(row.open_modes) ? row.open_modes.filter(x => typeof x === 'string') : [],   // #102 — jw.
+      bgActive:      row.bg_active     || null,   // #103 — aktywne tło (zmienia RPC set_my_background)
+      bgRemovedAt:   row.bg_removed_at || null,   // #103 — tło usunął nauczyciel / admin
       unitProgress
     };
   }
@@ -176,6 +179,7 @@ const DB = (() => {
     _hasStartMode = !!(profRes.data && Object.prototype.hasOwnProperty.call(profRes.data, 'start_mode'));
     _hasGamesFree = !!(profRes.data && Object.prototype.hasOwnProperty.call(profRes.data, 'games_free'));
     _hasOpenModes = !!(profRes.data && Object.prototype.hasOwnProperty.call(profRes.data, 'open_modes'));
+    _hasUserBg = !!(profRes.data && Object.prototype.hasOwnProperty.call(profRes.data, 'bg_active'));
     _hasComboEpoch = !!(profRes.data && Object.prototype.hasOwnProperty.call(profRes.data, 'combo_epoch'));
     _hasStatsEpoch = !!(profRes.data && Object.prototype.hasOwnProperty.call(profRes.data, 'stats_epoch'));
     _bookPrefs = _bpNorm(_hasBookPrefs ? profRes.data.book_prefs : _bpLocal());
@@ -3436,6 +3440,134 @@ const DB = (() => {
     return map;
   }
   // „Ostatnie wejście" — podstawa automatycznego usuwania zdjęć po 2 mies. nieaktywności.
+  // ═══════════════════════════════════════════════════════════════
+  //  🖼️ WŁASNE TŁO (migracja #103 user-backgrounds.sql)
+  //  Prywatny bucket „user-backgrounds”: {user_id}/{id}.jpg (tło) + {id}_t.jpg (miniatura);
+  //  ścieżki nadaje baza (trigger), najwyżej 2 tła na konto. Aktywne tło — profiles.bg_active
+  //  (wczytywane z profilem → zero zapytań przy starcie). Pliki kasujemy przez Storage API,
+  //  potem wiersz; pliki usuniętych kont sprząta admin (purgeUserBackgrounds).
+  // ═══════════════════════════════════════════════════════════════
+  const UBG_BUCKET = 'user-backgrounds';
+  const UBG_COLS = 'id, user_id, path, thumb_path, width, height, bytes, created_at';
+  // null = profil niewczytany, false = brak migracji #103 (UI chowa funkcję), true = jest.
+  function hasUserBackgrounds() { return _hasUserBg; }
+  function getMyBackgroundInfo() {
+    if (!_hasUserBg || !_profile || !_userId) return { active: null, removedAt: null, path: null };
+    const a = _profile.bgActive || null;
+    return { active: a, removedAt: _profile.bgRemovedAt || null, path: a ? _userId + '/' + a + '.jpg' : null };
+  }
+  function _ubgMissing(m) { return /user_backgrounds|set_my_background|user_bg_purge|bucket not found|does not exist|schema cache|PGRST20[25]|42P01|42883/i.test(m || ''); }
+  function _ubgErr(e) {
+    const m = (e && (e.message || e.error)) || String(e || '');
+    if (/BG_LIMIT/.test(m)) return 'Możesz mieć najwyżej 2 tła. Usuń jedno, żeby dodać nowe.';
+    if (/NOT_FOUND/.test(m)) return 'Nie znaleziono tego tła — mogło zostać usunięte.';
+    if (/exceeded|too large|maximum allowed size|payload too large|413/i.test(m)) return 'Obrazek jest za duży (najwyżej 400 KB po zmniejszeniu).';
+    if (_ubgMissing(m)) return 'Własne tło wymaga migracji #103 (user-backgrounds.sql) w Supabase.';
+    return m || 'Coś poszło nie tak.';
+  }
+  // Moje tła (najstarsze pierwsze). null = brak migracji.
+  async function listMyBackgrounds() {
+    if (!_userId) return [];
+    const { data, error } = await supabase.from('user_backgrounds').select(UBG_COLS).eq('user_id', _userId).order('created_at', { ascending: true });
+    if (error) { if (_ubgMissing(error.message)) return null; throw new Error(_ubgErr(error)); }
+    return data || [];
+  }
+  // full / thumb — gotowe obrazy JPEG (Blob), meta: { width, height }. → wiersz tła.
+  async function addMyBackground(full, thumb, meta) {
+    if (!_userId) throw new Error('Musisz być zalogowany.');
+    if (!full || !thumb) throw new Error('Brak obrazka.');
+    if (full.size > 400 * 1024 || thumb.size > 400 * 1024) throw new Error('Obrazek jest za duży (najwyżej 400 KB po zmniejszeniu).');
+    const { data: row, error } = await supabase.from('user_backgrounds')
+      .insert({ user_id: _userId, width: (meta && meta.width) || 0, height: (meta && meta.height) || 0, bytes: full.size })
+      .select(UBG_COLS).single();
+    if (error) throw new Error(_ubgErr(error));
+    const st = supabase.storage.from(UBG_BUCKET);
+    try {
+      const a = await st.upload(row.path, full, { contentType: 'image/jpeg', upsert: false });
+      if (a.error) throw a.error;
+      const b = await st.upload(row.thumb_path, thumb, { contentType: 'image/jpeg', upsert: false });
+      if (b.error) throw b.error;
+    } catch(e) {
+      // nie wyszło — sprzątamy, żeby nie zostało „puste” tło zajmujące miejsce
+      try { await st.remove([row.path, row.thumb_path]); } catch(_) {}
+      try { await supabase.from('user_backgrounds').delete().eq('id', row.id); } catch(_) {}
+      try { await supabase.rpc('user_bg_purge_done', { p_paths: [row.path, row.thumb_path] }); } catch(_) {}
+      throw new Error(_ubgErr(e));
+    }
+    return row;
+  }
+  // Usuń tło (własne albo — nauczyciel / admin — ucznia): najpierw pliki, potem wiersz
+  // (baza odpina aktywne tło i — gdy usuwa ktoś inny — zapisuje bg_removed_at).
+  async function deleteBackground(row) {
+    if (!row || !row.id) return;
+    const paths = [row.path, row.thumb_path].filter(Boolean);
+    let filesOk = false;
+    try {
+      const { data, error } = await supabase.storage.from(UBG_BUCKET).remove(paths);
+      filesOk = !error && Array.isArray(data) && data.length > 0;
+      if (error) console.warn('[🖼️ remove]', error.message);
+    } catch(e) {}
+    const { data, error } = await supabase.from('user_backgrounds').delete().eq('id', row.id).select('id');
+    if (error) throw new Error(_ubgErr(error));
+    if (!data || !data.length) throw new Error('Nie można usunąć tego tła — brak uprawnień albo zostało już usunięte.');
+    if (filesOk) { try { await supabase.rpc('user_bg_purge_done', { p_paths: paths }); } catch(e) {} }
+    if (_profile && row.user_id === _userId && _profile.bgActive === row.id) _profile.bgActive = null;
+  }
+  // Wszystkie tła użytkownika (przed usunięciem konta; nauczyciel / admin — ucznia).
+  async function deleteUserBackgrounds(userId) {
+    const uid = userId || _userId;
+    if (!uid) return 0;
+    const { data, error } = await supabase.from('user_backgrounds').select(UBG_COLS).eq('user_id', uid);
+    if (error) return 0;
+    let n = 0;
+    for (const r of (data || [])) { try { await deleteBackground(r); n++; } catch(e) {} }
+    return n;
+  }
+  // Aktywne tło (null = bez tła).
+  async function setMyBackground(id) {
+    if (!_userId) throw new Error('Musisz być zalogowany.');
+    const { error } = await supabase.rpc('set_my_background', { p_id: id || null });
+    if (error) throw new Error(_ubgErr(error));
+    if (_profile) _profile.bgActive = id || null;
+  }
+  // Plik tła / miniatury (Blob) — prywatny bucket, tylko po zalogowaniu.
+  async function downloadBackground(path) {
+    const { data, error } = await supabase.storage.from(UBG_BUCKET).download(path);
+    if (error) throw new Error(_ubgErr(error));
+    return data;
+  }
+  // Krótkie linki do podglądu (moderacja): mapa path → url (sec — ważność w sekundach).
+  async function signedBackgroundUrls(paths, sec) {
+    const list = [...new Set((paths || []).filter(Boolean))];
+    if (!list.length) return {};
+    const { data, error } = await supabase.storage.from(UBG_BUCKET).createSignedUrls(list, sec || 900);
+    if (error) throw new Error(_ubgErr(error));
+    const map = {};
+    (data || []).forEach(x => { if (x && x.path && x.signedUrl) map[x.path] = x.signedUrl; });
+    return map;
+  }
+  // Nauczyciel / admin: tła uczniów (RLS — swoich uczniów / wszystkie), najnowsze pierwsze. null = brak migracji.
+  async function listStudentBackgrounds() {
+    if (!_userId) return [];
+    const { data, error } = await supabase.from('user_backgrounds').select(UBG_COLS)
+      .neq('user_id', _userId).order('created_at', { ascending: false }).limit(1000);
+    if (error) { if (_ubgMissing(error.message)) return null; throw new Error(_ubgErr(error)); }
+    return data || [];
+  }
+  // Admin: pliki teł usuniętych kont (kolejka) → skasuj ze Storage. Zwraca liczbę plików.
+  async function purgeUserBackgrounds() {
+    if (!_profile?.isAdmin || _hasUserBg === false) return 0;
+    const { data, error } = await supabase.rpc('user_bg_purge_list');
+    if (error) { if (!_ubgMissing(error.message)) console.warn('[user_bg_purge_list]', error.message); return 0; }
+    const paths = (data || []).map(r => r.path).filter(Boolean);
+    for (let i = 0; i < paths.length; i += 100) {
+      const part = paths.slice(i, i + 100);
+      const { error: e2 } = await supabase.storage.from(UBG_BUCKET).remove(part);
+      if (!e2) { try { await supabase.rpc('user_bg_purge_done', { p_paths: part }); } catch(e) {} }
+    }
+    return paths.length;
+  }
+
   // ═══ SESJE GIER (#66) ═══════════════════════════════════════════
   // game-stats.js zapisuje sesje gier w localStorage['fiszki_game_sessions'];
   // tu wysyłamy je upsertem (sesja może być aktualizowana, dopóki trwa).
@@ -4714,6 +4846,8 @@ const DB = (() => {
     if (!_userId) throw new Error('Nie jesteś zalogowany.');
     // Zdjęcie profilowe kasujemy ze Storage, zanim zniknie konto (#62).
     try { await removeMyAvatar(); } catch(e) {}
+    // 🖼️ Własne tła (#103) — tak samo (resztę sprzątnie kolejka admina).
+    try { if (_hasUserBg) await deleteUserBackgrounds(_userId); } catch(e) {}
     const { data, error } = await supabase.rpc('delete_own_account');
     if (error) throw new Error(error.message);
     // Wyloguj i wyczyść lokalną sesję
@@ -5679,6 +5813,7 @@ const DB = (() => {
     if (!_profile?.isAdmin && !_profile?.isTeacher) throw new Error('Brak uprawnień');
     // Zdjęcie profilowe usuwamy ze Storage, póki konto jeszcze istnieje (#62).
     try { await clearUserAvatar(userId); } catch(e) {}
+    try { if (_hasUserBg) await deleteUserBackgrounds(userId); } catch(e) {}   // 🖼️ #103
     const { error } = await supabase.rpc('admin_delete_user', { target_user_id: userId });
     if (error) throw new Error(error.message);
     // Konta usunięte kaskadowo (np. opiekun) — pliki z kolejki sprząta admin.
@@ -6298,6 +6433,10 @@ const DB = (() => {
     loadGlobalLeaderboard,
     loadGameSessions,
     purgeAvatars,
+    // 🖼️ Własne tło (#103)
+    hasUserBackgrounds, getMyBackgroundInfo, listMyBackgrounds, addMyBackground, deleteBackground,
+    deleteUserBackgrounds, setMyBackground, downloadBackground, signedBackgroundUrls, listStudentBackgrounds,
+    purgeUserBackgrounds,
     setMyNickname,
     clearUserNickname,
     loadClassNicknames,
