@@ -309,6 +309,8 @@ header{width:100%;display:flex;align-items:flex-start;justify-content:space-betw
 .focus-bar{display:none;}
 .study-pick-hint{display:none;width:100%;text-align:center;font-size:.78rem;font-weight:700;color:var(--muted);margin:2px 0 8px;}
 #sStudy.sf-pick .study-pick-hint{display:block;}
+.gate-hint{display:none;width:100%;box-sizing:border-box;text-align:center;font-size:.76rem;font-weight:700;color:var(--text);line-height:1.45;margin:0 0 8px;padding:8px 12px;border-radius:10px;background:rgba(255,209,102,.12);border:1px solid rgba(255,209,102,.45);}
+#sStudy.sf-pick .gate-hint.on{display:block;}
 #sStudy.sf-pick > .mode-switcher ~ *:not(.modal-overlay),
 #sStudy.sf-pick > .reward-shelf, #sStudy.sf-pick > .reward-count{display:none !important;}
 #sStudy.sf-focus{position:fixed;inset:0;z-index:1000;background:var(--bg);overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0 16px 40px;align-items:center;}
@@ -3646,6 +3648,7 @@ szkoła	school"></textarea>
   <div class="reward-shelf" id="rShelf"></div>
   <div class="reward-count" id="rCount" style="display:none"></div>
   <div class="study-pick-hint">👇 Wybierz tryb nauki — otworzy się na pełnym ekranie, żeby nic Cię nie rozpraszało.</div>
+  <div id="gateHint" class="gate-hint"></div>
   <div class="mode-switcher" style="flex-direction:column;gap:0;padding:6px">
     <!-- Nauka -->
     <div style="width:100%;font-size:.55rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;padding:3px 8px">📚 Nauka</div>
@@ -4508,7 +4511,7 @@ szkoła	school"></textarea>
         <button class="btn-sm accent" onclick="openClassLeaderboard()" title="Ranking: przyswojone słówka, XP dziś/tydzień/miesiąc, streak, seria">🏆 Rankingi</button>
         <button class="btn-sm accent" onclick="openClassChallenges()" title="Wspólne wyzwania klasy">🎯 Wyzwania</button>
         <button class="btn-sm accent" onclick="openQuizCreate(_curClassId)" title="Kartkówka online z automatycznym sprawdzaniem">📝 Kartkówka</button>
-        <button class="btn-sm" id="btnClassGamesFree" onclick="openGamesFreeModal()" title="Zaznaczonym uczniom gry i wszystkie tryby od razu — bez 10 słówek w ✏️ Wpisz" style="display:none">🎮 Gry bez blokady</button>
+        <button class="btn-sm" id="btnClassGamesFree" onclick="openGamesFreeModal()" title="Co zaznaczeni uczniowie mają otwarte od razu — bez zaliczania ✏️ Wpisz (np. młodszemu: Fiszki i gry)" style="display:none">🔓 Tryby od razu</button>
         <button class="btn-sm accent" id="btnClassStartMode" onclick="openStartModeModal()" title="Zaznaczeni uczniowie raz dziennie, przy pierwszym wejściu, trafią od razu do wybranego trybu nauki" style="display:none">🚀 Tryb na start</button>
         <button class="btn-sm" id="btnClassFlags" onclick="sfOpenClassFlagsWeek()" title="Ostatnie 7 dni: za szybkie odpowiedzi, zgadywanie, wklejanie, limit XP, niezaliczone dni Wpisz" style="display:none">🛡️ Uczciwa nauka</button>
         <button class="btn-sm" onclick="showScreen('sAdminClasses')">← Klasy</button>
@@ -9892,6 +9895,8 @@ function _syncGenBtn() {
   if (b) b.style.display = active ? 'none' : '';
 }
 function generate() {
+  // 🔒 najpierw ✏️ Wpisz: start sesji w zablokowanym trybie (np. domyślne Fiszki i „🎲 Generuj”)
+  if (!active && !_gateBypassOnce && !modeGateOk(mode)) { showGamesGateMsg(); return; }
   if (!pool.length) { showDone(); return; }
   active = true; revealed = false; flipped = false; hideDiff();
   _syncGenBtn(); // sesja trwa — schowaj „Generuj" (dalej karty lecą same)
@@ -11272,7 +11277,8 @@ async function _typedDayClaim() {
   }
 }
 function _typedDayCelebrate(o) {
-  // gry i tryby odblokowuje osobny licznik (10 słówek za 1. razem — _gateTrack), nie samo zaliczenie dnia
+  // od v1.266 zaliczenie dnia odblokowuje gry i pozostałe tryby (blokada „najpierw ✏️ Wpisz”)
+  try { updateGamesGate(); } catch(e) {}
   _showDailyDoneMsg(_typedDistinct(o));
 }
 
@@ -11346,8 +11352,10 @@ function _typedDayProgress(firstTryCorrect) {
   _typedDaySave(o);
   const hits = _typedHits(o);
   if (!_typedDayCheckCredit(o) && hits % 5 === 0) { // postęp co 5 trafień
-    setTimeout(() => toast('💪 Postęp dnia: ' + hits + '/' + TYPED_DAY_HITS_GOAL + ' poprawnych wpisów (' + _typedDistinct(o) + ' słówek)', 2800), 1700);
+    const more = allModesUnlocked() ? '' : ' — potem 🔓 gry i pozostałe tryby';
+    setTimeout(() => toast('💪 Postęp dnia: ' + hits + '/' + TYPED_DAY_HITS_GOAL + ' poprawnych wpisów (' + _typedDistinct(o) + ' słówek)' + more, 2800), 1700);
   }
+  try { updateGamesGate(); } catch(e) {}   // 🔒 pasek postępu blokady „najpierw ✏️ Wpisz”
 }
 function _showDailyDoneMsg(learned) {
   const n = learned || TYPED_DAY_MIN_WORDS;
@@ -11365,9 +11373,9 @@ function _showDailyDoneMsg(learned) {
         '<div style="font-size:3.2rem;line-height:1;margin-bottom:6px">🎉</div>' +
         '<div style="font-family:\'Playfair Display\',serif;font-size:1.45rem;color:var(--accent);margin-bottom:10px">Dzienna nauka zaliczona!</div>' +
         '<div style="font-size:.92rem;color:var(--text);line-height:1.55;margin-bottom:6px">Nauczyłeś się dziś dobrze <strong>' + n + '</strong> ' + (n === 1 ? 'słówka' : 'słówek') + '. 👏</div>' +
-        '<div style="font-size:.82rem;color:var(--muted);line-height:1.55;margin-bottom:20px">' + (gamesUnlocked()
+        '<div style="font-size:.82rem;color:var(--muted);line-height:1.55;margin-bottom:20px">' + (gamesGateFree()
           ? 'Możesz spokojnie skończyć na dziś, uczyć się dalej albo przejść do gier i innych trybów.'
-          : 'Możesz spokojnie skończyć na dziś albo uczyć się dalej. 🔓 Gry i pozostałe tryby: ' + _gateCount() + '/' + GAME_GATE_WORDS + ' słówek wpisanych za 1. razem.') + '</div>' +
+          : '🔓 <b>Gry i wszystkie tryby są odblokowane na dziś!</b> Możesz spokojnie skończyć, uczyć się dalej albo zagrać.') + '</div>' +
         '<button id="dailyDoneClose" style="background:var(--accent2,#06d6a0);color:#fff;border:none;padding:12px 28px;border-radius:11px;font-size:.98rem;font-weight:800;cursor:pointer;font-family:inherit">✅ Super, rozumiem</button>' +
       '</div>';
     const close = () => { const m = document.getElementById('dailyDoneModal'); if (m) m.remove(); };
@@ -11885,29 +11893,27 @@ function trackMissed() {
 }
 
 // ══════════════════════════════════════════════
-//  🐢 STRAŻNIK TEMPA (#93) — za szybkie odpowiedzi się nie liczą
-//  Zgłoszenie właściciela: uczeń klikał na zmianę Spację i → w Fiszkach, żeby szybko
-//  „nabić” poziom. Nikogo nie karzemy: odpowiedź szybsza, niż da się przeczytać słówko,
-//  po prostu się nie liczy — bez XP, serii 🎯, nagród, postępu „umiem” / „Opanowane”,
-//  pupila, licznika gier i słówek dnia (karta wraca później w tej nauce).
-//  • Fiszki: ocena wcześniej niż PACE_MIN_LOOK po odwróceniu karty jest ignorowana
-//    (odpowiedź jeszcze się nie odsłoniła); przytrzymany klawisz (e.repeat) — też.
-//  • „Za szybko”: od pokazania pytania do odpowiedzi < PACE_FAST (Fiszki 1 s, Gramatyka
-//    1 s, Quiz / Speed / Prawda-Fałsz 0,5 s). Tryby z wpisywaniem i mówieniem — bez zmian.
-//  • Seria: ≥ 4 z 6 ostatnich za szybkich albo (Fiszki) mediana 8 ostatnich < 1,2 s →
-//    przerwa PACE_COOL (25 s), w której nic się nie liczy, i raz komunikat 🐢. Każda kolejna
-//    seria przedłuża przerwę; 3 spokojne odpowiedzi (≥ 2 s) kończą ją wcześniej.
-//  • Licznik serii: localStorage['fiszki_pace_<login>'] (dzień); do bazy (report_fast_answers,
-//    #93) najwyżej raz na 10 min i tylko gdy była seria. Gość — nic nie wysyłamy.
+//  🐢 STRAŻNIK ZGADYWANIA (#93; od SW v1.266 bez przerw) — liczy się trafność, nie samo tempo
+//  #93: uczeń klikał na chybił-trafił, żeby szybko „nabić” poziom. 22.11.2026 uczniowie poprosili
+//  o zniesienie 25-sekundowej przerwy (cooldown) — kto zna słówka, ma szybko zdobywać punkty.
+//  • Quiz / Speed / Prawda-Fałsz / Gramatyka A-B-C: szybka (< PACE_GUESS_MS) BŁĘDNA odpowiedź to
+//    „strzał”. PACE_GUESS_N strzałów wśród PACE_WIN ostatnich odpowiedzi → stan „zgadywanie” (raz
+//    komunikat 🐢): kolejne SZYBKIE odpowiedzi się nie liczą (bez XP, serii 🎯, nagród, postępu
+//    „umiem” / „Opanowane”, pupila — słówko wraca później), a pierwsza spokojna poprawna kończy ten
+//    stan. Szybkie POPRAWNE odpowiedzi liczą się zawsze w pełni.
+//  • Fiszki: nie liczy się tylko ocena, zanim odpowiedź się odsłoniła (< PACE_MIN_LOOK po odwróceniu
+//    karty) i przytrzymany klawisz (e.repeat). Tryby z wpisywaniem i mówieniem — bez zmian.
+//  • Bezpiecznik w bazie zostaje: limit XP (#93 — 400 / min, 15 000 / dzień).
+//  • Licznik serii: localStorage['fiszki_pace_<login>'] (dzień); do bazy (report_fast_answers, #93)
+//    najwyżej raz na 10 min i tylko gdy była seria zgadywania. Gość — nic nie wysyłamy.
 // ══════════════════════════════════════════════
 const PACE_MIN_LOOK = 450;
-const PACE_FAST = { card: 1000, grammar: 1000, other: 500 };
-const PACE_MED = { card: 1200 };
+const PACE_GUESS_MS = { grammar: 2000, other: 1500 };   // „strzał” = błędna odpowiedź szybsza niż to
 const PACE_KIND = { card: 'card', quiz: 'other', speed: 'other', tf: 'other' };
-const PACE_WIN = 6, PACE_WIN_FAST = 4, PACE_MED_N = 8, PACE_COOL = 25000, PACE_CALM = 2000, PACE_REPORT_MS = 600000;
-const PACE_MSG = '🐢 Zwolnij trochę! Przeczytaj słówko i zastanów się — za bardzo szybkie odpowiedzi się nie liczą.';
-const _pace = { hist: {}, coolUntil: 0, flippedAt: 0, answerAt: 0, answerIdx: null, warnedAt: 0, lastFast: false };
-function _paceCooling() { return Date.now() < _pace.coolUntil; }
+const PACE_WIN = 5, PACE_GUESS_N = 3, PACE_REPORT_MS = 600000;
+const PACE_MSG = '🐢 Nie zgaduj! Przeczytaj słówko i zastanów się. Szybkie dobre odpowiedzi liczą się zawsze, a strzały na chybił-trafił — nie.';
+const _pace = { hist: {}, guessing: false, flippedAt: 0, answerAt: 0, answerIdx: null, warnedAt: 0, lastFast: false };
+function _paceCooling() { return _pace.guessing; }   // stan „zgadywanie” — szybkie odpowiedzi bez XP
 function _paceKey() { return 'fiszki_pace_' + (currentUser || 'guest'); }
 function _paceStore() {
   let o = {};
@@ -11932,43 +11938,40 @@ function _paceNote(burst, label) {
 function _paceWarn() {
   _pace.warnedAt = Date.now();
   toast(PACE_MSG, 5200);
-  try { setOwl('think'); owlMsg('🐢 Zwolnij trochę!', 3200); setTimeout(() => setOwl(''), 1600); } catch(e) {}
+  try { setOwl('think'); owlMsg('🐢 Nie zgaduj!', 3200); setTimeout(() => setOwl(''), 1600); } catch(e) {}
 }
-// Czy odpowiedź się liczy? kind: 'card' | 'grammar' | 'other'; ms — czas od pokazania pytania.
-function _paceCheck(kind, ms, label) {
-  const now = Date.now();
-  const fast = ms < (PACE_FAST[kind] || PACE_FAST.other);
+// Czy odpowiedź się liczy? kind: 'card' | 'grammar' | 'other'; ms — czas od pokazania pytania;
+// ok — poprawnie (za 1. razem). Fiszki: tylko ocena przed odsłonięciem karty (sprawdza rate()).
+function _paceCheck(kind, ms, label, ok) {
+  if (kind === 'card') return true;
+  const fast = ms < (PACE_GUESS_MS[kind] || PACE_GUESS_MS.other);
   _pace.lastFast = fast;
-  const h = _pace.hist[kind] || (_pace.hist[kind] = []);
-  h.push({ ms, fast });
-  while (h.length > PACE_MED_N) h.shift();
-  const last = h.slice(-PACE_WIN);
-  let burst = last.filter(x => x.fast).length >= PACE_WIN_FAST;
-  if (!burst && PACE_MED[kind] && h.length >= PACE_MED_N) {
-    const s = h.map(x => x.ms).sort((a, b) => a - b);
-    burst = (s[PACE_MED_N / 2 - 1] + s[PACE_MED_N / 2]) / 2 < PACE_MED[kind];
+  if (_pace.guessing) {
+    if (fast) { _paceNote(false, label || kind); return false; }   // szybko w trakcie zgadywania — nie liczy się
+    if (ok) { _pace.guessing = false; _pace.hist = {}; }            // spokojna, dobra odpowiedź — znów wszystko się liczy
+    return true;
   }
-  const wasCooling = _paceCooling();
-  if (burst || (wasCooling && fast)) _pace.coolUntil = now + PACE_COOL;
-  else if (wasCooling && h.length >= 3 && h.slice(-3).every(x => x.ms >= PACE_CALM)) _pace.coolUntil = 0;   // uspokoił się
-  if (burst && !wasCooling) { _paceNote(true, label || kind); _paceWarn(); }
-  const counts = !fast && !_paceCooling();
-  if (!counts) _paceNote(false, label || kind);
-  return counts;
+  const h = _pace.hist[kind] || (_pace.hist[kind] = []);
+  h.push(fast && !ok);
+  while (h.length > PACE_WIN) h.shift();
+  if (h.filter(Boolean).length >= PACE_GUESS_N) {
+    _pace.guessing = true; _pace.hist = {};
+    _paceNote(true, label || kind); _paceWarn();
+  }
+  return true;
 }
-// rate(): czy ta odpowiedź się liczy (Fiszki, Quiz, Speed, Prawda/Fałsz)
-function _paceAnswer() {
+// rate(): czy ta odpowiedź się liczy (Fiszki, Quiz, Speed, Prawda/Fałsz); ok — poprawnie za 1. razem
+function _paceAnswer(ok) {
   const kind = PACE_KIND[mode];
   if (!kind || _bookIgnored()) return true;   // „Nie zapisuj mojej nauki” — i tak nic się nie zapisuje
   const end = (mode !== 'card' && _pace.answerIdx === curIdx && _pace.answerAt >= _cardShownAt) ? _pace.answerAt : Date.now();
-  return _paceCheck(kind, end - (_cardShownAt || 0), mode);
+  return _paceCheck(kind, end - (_cardShownAt || 0), mode, ok);
 }
 // Odpowiedź „nie liczy się”: bez zmian w postępie, seria przerwana, słówko wróci za kilka kart.
 function _rateNeutral(noAdvance) {
   streak = 0;
   if (ws[curIdx]) ws[curIdx].dueIn = 4;
-  if (Date.now() - _pace.warnedAt > 4500) toast(_pace.lastFast ? '🐢 Nie liczy się — za szybko. Przeczytaj słówko spokojnie!'
-    : '🐢 Tak trzymaj, spokojnie! Jeszcze 1–2 karty i odpowiedzi znów się liczą.', 2200);
+  if (Date.now() - _pace.warnedAt > 4500) toast('🐢 Za szybko po zgadywaniu — ta odpowiedź się nie liczy. Odpowiedz spokojnie i dobrze, a znów wszystko się liczy!', 2800);
   hideDiff(); updateStats();
   if (noAdvance) return;
   if (!pool.length) { setTimeout(showDone, 800); return; }
@@ -12265,9 +12268,8 @@ function rate(r, noAdvance, selfRated) {
   // 🐢 Fiszki: ocena, zanim odpowiedź się odsłoniła (< 0,45 s po odwróceniu) — ignorujemy
   if (mode === 'card' && selfRated && Date.now() - _pace.flippedAt < PACE_MIN_LOOK) { _actRate(r, selfRated, 'early'); return; }
   clearInterval(studySpeedTimer); // zatrzymaj timer speed jeśli aktywny
-  if (!_paceAnswer()) { _actRate(r, selfRated, 'fast'); _rateNeutral(noAdvance); return; }   // 🐢 za szybko — nie liczy się
+  if (!_paceAnswer(r === 'good' || r === 'easy')) { _actRate(r, selfRated, 'fast'); _rateNeutral(noAdvance); return; }   // 🐢 szybko po zgadywaniu — nie liczy się
   _actRate(r, selfRated);         // 📜 przebieg nauki (#96)
-  _gateTrack(r);                  // blokada gier i trybów: licznik słówek dnia (Wpisz / Wpisz zd., za 1. razem)
   if (mode === 'card' && selfRated && r === 'easy') _selfEasyMark();   // 🃏 #95: „Łatwe” — sprawdzi je Wpisz
   else if (mode === 'type' && !selfRated) { _selfEasyCheck(r); _easyQTyped++; }   // 🔎 sprawdzian „Łatwych” na końcu sesji Wpisz
 
@@ -12360,7 +12362,7 @@ function resetLives() { lives = 3; document.getElementById('gameoverBar').style.
 
 function setMode(m) {
   if (isPremiumMode(m)) { showPremiumModal(); return; }
-  // 🔒 Najpierw nauka: poza Fiszki / Wpisz / Wpisz zd. — dopiero po 10 słówkach w Wpisz (blokada dzienna)
+  // 🔒 Najpierw ✏️ Wpisz: pozostałe tryby — po zaliczeniu dzisiejszej nauki w Wpisz albo wg nauczyciela (#101 / #102)
   if (!_gateBypassOnce && !modeGateOk(m)) { _act('locked', { v: m }); showGamesGateMsg(); return; }
   // Skoczek (jump) ma wlasny, zaktualizowany plik skoczek.html (tryby Trudny/Latwy,
   // skacze tylko postac). Kafelek przekierowuje tam — jedna wersja gry zamiast
@@ -14424,70 +14426,60 @@ function closePremiumModal() {
 }
 
 // ══════════════════════════════════════════════
-//  BLOKADA — najpierw nauka (SW v1.251). Gry i pozostałe tryby odblokowują się
-//  na dany dzień, gdy uczeń wpisze poprawnie ZA 1. RAZEM 10 różnych słówek
-//  w trybie Wpisz / Wpisz zd. (samoocena w Fiszkach i Quiz się nie liczą).
-//  Zawsze otwarte: Fiszki, Wpisz, Wpisz zd. Zablokowane: pozostałe tryby nauki,
-//  rząd „🎮 Gry”, gry z listy unitów, kafelki INNE (i gry z game-stats.js
-//  otwarte z adresu). Nie dotyczy nauczyciela, admina i opiekuna.
+//  BLOKADA — najpierw ✏️ Wpisz (SW v1.266; od v1.251 było: 10 słówek, Fiszki i Wpisz zd. otwarte).
+//  Na początku dnia uczeń ma tylko ✏️ Wpisz. Gry i pozostałe tryby (także 🃏 Fiszki i ✏️ Wpisz zd.)
+//  odblokowują się, gdy zaliczy dzisiejszą naukę w Wpisz („🎉 Dzienna nauka zaliczona” —
+//  _typedDayStore().credited; od #94 potwierdza baza). Zaliczenie z innego urządzenia: _gateSyncDay
+//  (daily_xp_log.typed) przy starcie. Zablokowane: tryby nauki poza Wpisz, rząd „🎮 Gry”, gry z listy
+//  unitów, kafelki INNE (i gry z game-stats.js otwarte z adresu).
+//  Wyjątki od nauczyciela: „🎮 Wszystko od razu” (#101 games_free) albo wybrane tryby (#102 open_modes;
+//  'games' = gry). Nie dotyczy nauczyciela, admina i opiekuna.
 // ══════════════════════════════════════════════
-const GAME_GATE_WORDS = 10;
-const GAME_GATE_MODES = ['type', 'typeSent'];                // co liczy się do odblokowania
-const GAME_GATE_OPEN_MODES = ['card', 'type', 'typeSent'];   // tryby zawsze otwarte
+const GAME_GATE_OPEN_MODES = ['type'];                          // tryby zawsze otwarte
+const GAME_GATE_GAME_MODES = ['jump', 'bridge', 'butterfly'];   // gry z rzędu „🎮 Gry” uruchamiane przez setMode
 // gry z listy unitów (sWordList) — kontenery przycisków
 const GAME_GATE_ROWS = ['spellCardRowBtns', 'sentBuildRowBtns', 'cubesRowBtns', 'duelRowBtns', 'cwRowBtns', 'wsRowBtns',
   'memRowBtns', 'snakeRowBtns', 'imgCardRowBtns', 'boardRowBtns', 'dobbleRowBtns', 'scrGameRowBtns', 'sentScrGameRowBtns'];
-const GAME_GATE_MSG = 'Gry i pozostałe tryby odblokują się, gdy dziś wpiszesz poprawnie ' + GAME_GATE_WORDS
-  + ' różnych słówek w trybie ✏️ Wpisz albo ✏️ Wpisz zd. — za pierwszym razem. 🃏 Fiszki są zawsze otwarte. Miłej nauki!';
-function _gateKey() { return 'fiszki_games_gate_' + (currentUser || 'guest'); }
-function _gateStore() {
-  const d = _localDay();
-  let o = {};
-  try { o = JSON.parse(localStorage.getItem(_gateKey()) || '{}') || {}; } catch(e) {}
-  if (o.day !== d) o = { day: d, words: {}, typed: false };
-  if (!o.words) o.words = {};
-  return o;
-}
-function _gateSave(o) { try { localStorage.setItem(_gateKey(), JSON.stringify(o)); } catch(e) {} }
+const GAME_GATE_MSG = 'Najpierw ✏️ Wpisz! Gry i pozostałe tryby (także 🃏 Fiszki) odblokują się, gdy zaliczysz dzisiejszą naukę w trybie ✏️ Wpisz — '
+  + TYPED_DAY_HITS_GOAL + ' poprawnych wpisów za pierwszym razem z co najmniej ' + TYPED_DAY_WORDS_GOAL + ' różnych słówek. Miłej nauki!';
 function gamesGateExempt() {
   if (isGuest) return false;
   return isCurrentUserAdmin() || isCurrentUserTeacher() || isCurrentUserParent();
 }
-// Bez blokady gier: konta staff albo uczeń, któremu nauczyciel ją wyłączył (#101 — „🎮 Gry bez blokady”).
-// Tylko blokada gier — kara za „byle co”, sprawdzian „Łatwych” i Przebieg nauki dalej liczą (gamesGateExempt).
+// Bez blokady: konta staff albo uczeń, któremu nauczyciel otworzył wszystko (#101 — „🎮 Wszystko od razu”).
+// Tylko blokada trybów i gier — kara za „byle co”, sprawdzian „Łatwych” i Przebieg nauki dalej liczą (gamesGateExempt).
 function gamesGateFree() {
   if (gamesGateExempt()) return true;
   return !isGuest && typeof DB !== 'undefined' && !!DB.getMyGamesFree && DB.getMyGamesFree();
 }
-function _gateCount(o) { return Object.keys((o || _gateStore()).words).length; }
-function gamesUnlocked() {
-  if (gamesGateFree()) return true;
-  return _gateCount(_gateStore()) >= GAME_GATE_WORDS;
+// 🔓 Tryby otwarte od razu przez nauczyciela (#102): ['card', 'quiz', …, 'games']
+function myOpenModes() {
+  if (isGuest || gamesGateExempt() || typeof DB === 'undefined' || !DB.getMyOpenModes) return [];
+  try { return DB.getMyOpenModes() || []; } catch(e) { return []; }
 }
-// Czy tryb nauki jest dostępny (Fiszki / Wpisz / Wpisz zd. — zawsze; reszta po odblokowaniu).
+// Dzisiejsza nauka w Wpisz zaliczona (na tym urządzeniu albo — po _gateSyncDay — na innym)
+function gateDayDone() { return !!_typedDayStore().credited; }
+function allModesUnlocked() { return gamesGateFree() || gateDayDone(); }
+// Gry: rząd „🎮 Gry”, gry z listy unitów, kafelki INNE
+function gamesUnlocked() { return allModesUnlocked() || myOpenModes().includes('games'); }
+// Postęp do odblokowania (pasek w oknie blokady, podpowiedź nad trybami, nagłówek gier)
+function _gateProgress() {
+  const o = _typedDayStore();
+  return { hits: Math.min(_typedHits(o), TYPED_DAY_HITS_GOAL), words: _typedDistinct(o), goal: TYPED_DAY_HITS_GOAL };
+}
+// Czy tryb nauki jest dostępny (Wpisz — zawsze; reszta po zaliczeniu dnia albo wg nauczyciela).
 let _gateBypassOnce = false;   // 🚀 tryb na start od nauczyciela (#89)
-function modeGateOk(m) { return GAME_GATE_OPEN_MODES.includes(m) || gamesUnlocked(); }
-// Wołane w rate(): w Wpisz / Wpisz zd. ocena 'easy' / 'good' = poprawnie za 1. razem
-// (po błędzie — 'hard', po pokazaniu odpowiedzi — 'again').
-function _gateTrack(r) {
-  if (!GAME_GATE_MODES.includes(mode) || !(r === 'easy' || r === 'good')) return;
-  if (curIdx === null || !activeWords[curIdx] || gamesGateFree()) return;
-  const o = _gateStore();
-  if (_gateCount(o) >= GAME_GATE_WORDS) return;
-  const key = currentBookId + '|' + currentUnitKey + '|' + activeWords[curIdx][0];
-  if (o.words[key]) return;
-  o.words[key] = 1; _gateSave(o);
-  const n = _gateCount(o);
-  if (n >= GAME_GATE_WORDS) setTimeout(() => toast('🎮 Gry i wszystkie tryby odblokowane na dziś! Brawo, ' + GAME_GATE_WORDS + ' słówek wpisanych!', 3800), 900);
-  else setTimeout(() => toast('🔓 Do odblokowania gier i trybów: ' + n + '/' + GAME_GATE_WORDS + ' słówek', 2200), 900);
-  updateGamesGate();
+function modeGateOk(m) {
+  if (GAME_GATE_OPEN_MODES.includes(m) || allModesUnlocked()) return true;
+  return myOpenModes().includes(GAME_GATE_GAME_MODES.includes(m) ? 'games' : m);
 }
 function updateGamesGate() {
-  const open = gamesUnlocked();
-  // dla gier w osobnych plikach (game-stats.js): kto jest uczniem objętym blokadą i ile słówek trzeba
+  const open = gamesUnlocked(), all = allModesUnlocked();
+  // dla gier w osobnych plikach (game-stats.js): s = 1 — uczeń objęty blokadą gier; zaliczenie dnia
+  // game-stats.js sprawdza sam (fiszki_typed_day); v = 2 — zasada „najpierw Wpisz” (v1.266)
   try {
     if (currentUser || isGuest) localStorage.setItem('fiszki_games_gate_role_' + (currentUser || 'guest'),
-      JSON.stringify({ s: gamesGateFree() ? 0 : 1, need: GAME_GATE_WORDS }));
+      JSON.stringify({ s: (gamesGateFree() || myOpenModes().includes('games')) ? 0 : 1, v: 2, goal: TYPED_DAY_HITS_GOAL }));
   } catch(e) {}
   document.querySelectorAll('.mode-btn').forEach(btn => {
     if (btn.closest('#gamesModeRow')) return;
@@ -14497,22 +14489,42 @@ function updateGamesGate() {
   GAME_GATE_ROWS.forEach(id => { const el = document.getElementById(id); if (el) el.classList.toggle('gate-locked-area', !open); });
   const apps = document.getElementById('sApps');
   if (apps) apps.classList.toggle('gate-locked-area', !open && hasPremiumAccess());
+  const pr = _gateProgress();
+  const hint = document.getElementById('gateHint');
+  if (hint) {
+    hint.classList.toggle('on', !all);
+    if (!all) hint.innerHTML = '🔒 <b>Najpierw ✏️ Wpisz</b> — pozostałe tryby' + (open ? '' : ' i gry') + ' odblokują się po zaliczeniu dzisiejszej nauki: <b>'
+      + pr.hits + ' / ' + pr.goal + '</b> poprawnych wpisów' + (myOpenModes().length ? ' · 🔓 część trybów nauczyciel otworzył Ci od razu' : '');
+  }
   const row = document.getElementById('gamesModeRow'), hdr = document.getElementById('gamesModeHdr');
   if (!row || !hdr) return;
   row.classList.toggle('games-locked', !open);
   hdr.innerHTML = open ? '🎮 Gry'
-    : '🎮 Gry <span style="color:var(--accent);text-transform:none;letter-spacing:0">🔒 gry i tryby po ' + GAME_GATE_WORDS + ' słówkach w Wpisz: ' + _gateCount() + '/' + GAME_GATE_WORDS + '</span>';
+    : '🎮 Gry <span style="color:var(--accent);text-transform:none;letter-spacing:0">🔒 po zaliczeniu Wpisz: ' + pr.hits + '/' + pr.goal + '</span>';
 }
 function showGamesGateMsg() {
-  const n = _gateCount();
+  const pr = _gateProgress();
   const go = (m, label) => '<button class="btn-sm accent" style="font-size:.8rem;padding:8px 14px" onclick="closeGenericModal&&closeGenericModal();_gateGoMode(\'' + m + '\')">' + label + '</button>';
-  openGenericModal('🔒 Najpierw nauka, potem gry',
+  openGenericModal('🔒 Najpierw ✏️ Wpisz, potem reszta',
     '<div style="text-align:center;line-height:1.6">'
     + '<div style="font-size:2.4rem">🦉</div>'
     + '<div style="font-size:1rem;font-weight:800;color:var(--text);margin:6px 0 10px">' + GAME_GATE_MSG + '</div>'
-    + '<div style="height:10px;background:var(--surface2);border-radius:100px;overflow:hidden;margin:6px auto 4px;max-width:280px"><div style="height:100%;width:' + Math.round(n / GAME_GATE_WORDS * 100) + '%;background:linear-gradient(90deg,var(--accent2),var(--accent))"></div></div>'
-    + '<div style="font-size:.8rem;color:var(--muted);font-weight:700;margin-bottom:14px">Dziś: ' + n + ' / ' + GAME_GATE_WORDS + ' słówek</div>'
-    + '<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">' + go('type', '✏️ Wpisz') + go('typeSent', '✏️ Wpisz zd.') + '</div></div>');
+    + '<div style="height:10px;background:var(--surface2);border-radius:100px;overflow:hidden;margin:6px auto 4px;max-width:280px"><div style="height:100%;width:' + Math.round(pr.hits / pr.goal * 100) + '%;background:linear-gradient(90deg,var(--accent2),var(--accent))"></div></div>'
+    + '<div style="font-size:.8rem;color:var(--muted);font-weight:700;margin-bottom:14px">Dziś: ' + pr.hits + ' / ' + pr.goal + ' poprawnych wpisów · ' + pr.words + ' ' + plural(pr.words, 'słówko', 'słówka', 'słówek') + '</div>'
+    + '<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">' + go('type', '✏️ Wpisz') + '</div></div>');
+}
+// 🔓 Dzień „Wpisz” zaliczony na innym urządzeniu (daily_xp_log.typed, dzień polski) — odblokuj też tutaj
+async function _gateSyncDay() {
+  if (isGuest || allModesUnlocked() || typeof DB === 'undefined' || !DB.getMyTypedToday) return;
+  const day = _localDay();
+  let done = false;
+  try { done = await DB.getMyTypedToday(day); } catch(e) { return; }
+  if (!done || day !== _localDay()) return;
+  const o = _typedDayStore();
+  if (o.credited) return;
+  o.credited = true; o.synced = true; _typedDaySave(o);
+  updateGamesGate();
+  toast('🔓 Dzisiejsza nauka w ✏️ Wpisz jest już zaliczona — gry i wszystkie tryby odblokowane!', 4000);
 }
 // Przycisk w oknie blokady: na ekranie nauki — od razu tryb; gdzie indziej — podpowiedź.
 function _gateGoMode(m) {
@@ -23992,8 +24004,7 @@ function renderClassStudents(memberIds, allProfiles) {
   const _smBadge = m => (typeof window.startModeBadgeHtml === 'function') ? window.startModeBadgeHtml(m) : '';
   const gfHdrBtn = document.getElementById('btnClassGamesFree');
   if (gfHdrBtn) gfHdrBtn.style.display = (members.length && typeof window.gamesFreeAvailable === 'function' && window.gamesFreeAvailable()) ? '' : 'none';
-  const _gfBadge = p => (p && p.games_free && typeof window.gamesFreeAvailable === 'function' && window.gamesFreeAvailable())
-    ? ' <span title="🎮 Gry bez blokady — gry i wszystkie tryby od razu, bez 10 słówek w Wpisz" style="display:inline-block;font-size:.6rem;font-weight:800;padding:2px 7px;border-radius:999px;background:rgba(6,214,160,.14);border:1px solid rgba(6,214,160,.45);color:var(--text);vertical-align:middle;white-space:nowrap">🎮 bez blokady</span>' : '';
+  const _gfBadge = p => (typeof window.openModesBadgeHtml === 'function') ? window.openModesBadgeHtml(p) : '';
 
   if (!members.length) {
     const fb = document.getElementById('btnClassFlags'); if (fb) fb.style.display = 'none';
@@ -24213,12 +24224,12 @@ function renderStudentSearchList(query) {
   const who = r => escHtml(r.nickname ? r.nickname + ' (' + r.username + ')' : (r.username || '?'));
   const box = (t, inner) => '<div style="margin:12px 0 0"><div style="font-size:.74rem;font-weight:800;color:var(--accent);margin-bottom:6px">' + t + '</div>' + inner + '</div>';
   const row = h => '<div style="font-size:.78rem;line-height:1.45;padding:6px 9px;background:var(--surface2);border-radius:9px;margin-bottom:5px;color:var(--text)">' + h + '</div>';
-  const NO93 = '<div style="font-size:.82rem;color:var(--muted);font-weight:600;line-height:1.5">Ta funkcja wymaga migracji <b>#93</b> (<code>xp-anticheat.sql</code>) w Supabase.<br>Do czasu jej uruchomienia: aplikacja i tak nie liczy za szybkich odpowiedzi 🐢, a dawne przypadki pokaże raport <code>wykryj-podejrzane-xp.sql</code>.</div>';
+  const NO93 = '<div style="font-size:.82rem;color:var(--muted);font-weight:600;line-height:1.5">Ta funkcja wymaga migracji <b>#93</b> (<code>xp-anticheat.sql</code>) w Supabase.<br>Do czasu jej uruchomienia: aplikacja i tak nie liczy zgadywania 🐢 (szybkich błędnych odpowiedzi), a dawne przypadki pokaże raport <code>wykryj-podejrzane-xp.sql</code>.</div>';
   function flagHtml(f) {
     const d = '<b>' + fmtDay(f.day) + '</b> · ';
     if (f.kind === 'fast') {
       const m = String(f.info || '').split(',').filter(Boolean).map(x => MODE_PL[x] || x).join(', ');
-      return d + '🐢 za szybkie odpowiedzi: ' + f.events + ' ' + plN(f.events, 'seria', 'serie', 'serii') + ', ' + f.blocked
+      return d + '🐢 zgadywanie (szybkie błędne odpowiedzi): ' + f.events + ' ' + plN(f.events, 'seria', 'serie', 'serii') + ', ' + f.blocked
         + ' ' + plN(f.blocked, 'odpowiedź nie liczyła', 'odpowiedzi nie liczyły', 'odpowiedzi nie liczyło') + ' się' + (m ? ' · ' + escHtml(m) : '');
     }
     if (f.kind === 'limit') return d + '⛔ limit tempa XP: odrzucono ' + f.dropped_xp + ' XP (' + f.events + '×)' + (f.day_xp != null ? ' · XP tego dnia: ' + f.day_xp : '');
@@ -24271,7 +24282,7 @@ function renderStudentSearchList(query) {
   }
   const rowNotable = r => r.fast_bursts > 0 || r.limit_events > 0 || r.day_high > 0 || r.typed_days > 0 || r.junk >= JUNK_ALERT || r.paste >= PASTE_ALERT || (r.self_easy || 0) >= SELF_EASY_ALERT;
   const rowParts = r => [
-    r.fast_bursts ? '🐢 ' + r.fast_bursts + ' ' + plN(r.fast_bursts, 'seria', 'serie', 'serii') + ' za szybkich odpowiedzi' : '',
+    r.fast_bursts ? '🐢 ' + r.fast_bursts + ' ' + plN(r.fast_bursts, 'seria', 'serie', 'serii') + ' zgadywania (szybkich błędnych odpowiedzi)' : '',
     r.junk ? '🧹 ' + r.junk + ' ' + plN(r.junk, 'próba', 'próby', 'prób') + ' na chybił-trafił' : '',
     r.paste ? '✋ ' + r.paste + ' ' + plN(r.paste, 'próba', 'próby', 'prób') + ' wklejenia' : '',
     r.self_easy ? '🃏 ' + r.self_easy + '× „Łatwe” w Fiszkach, a potem błąd w Wpisz' : '',
@@ -24321,9 +24332,9 @@ function renderStudentSearchList(query) {
       const quiet = members.filter(p => !by[p.id]);
       const th = 'padding:4px 5px;text-align:center';
       const cell = (v, warn) => '<td style="' + th + (warn ? ';color:var(--accent);font-weight:800' : '') + '">' + (v ? v : '<span style="color:var(--muted)">·</span>') + '</td>';
-      html = '<div style="font-size:.74rem;color:var(--muted);font-weight:600;line-height:1.5;margin-bottom:8px">Ostatnie 7 dni. 🐢 serie za szybkich odpowiedzi (nie liczyły się) · 🧹 próby „na chybił-trafił” (np. 1 litera i Enter) · ✋ próby wklejenia · 🃏 „Łatwe” w Fiszkach, a potem błąd w Wpisz · ⛔ XP odrzucone przez limit · ❌ dni „Wpisz” niezaliczone w bazie. Kliknij ucznia, żeby zobaczyć szczegóły.</div>';
+      html = '<div style="font-size:.74rem;color:var(--muted);font-weight:600;line-height:1.5;margin-bottom:8px">Ostatnie 7 dni. 🐢 serie zgadywania (szybkie błędne odpowiedzi; kolejne szybkie się nie liczyły) · 🧹 próby „na chybił-trafił” (np. 1 litera i Enter) · ✋ próby wklejenia · 🃏 „Łatwe” w Fiszkach, a potem błąd w Wpisz · ⛔ XP odrzucone przez limit · ❌ dni „Wpisz” niezaliczone w bazie. Kliknij ucznia, żeby zobaczyć szczegóły.</div>';
       html += rows.length ? '<div style="overflow:auto"><table style="width:100%;font-size:.76rem;border-collapse:collapse">'
-        + '<tr style="color:var(--muted)"><th style="padding:4px 5px;text-align:left">Uczeń</th><th style="' + th + '" title="Serie za szybkich odpowiedzi">🐢</th><th style="' + th + '" title="Próby na chybił-trafił">🧹</th><th style="' + th + '" title="Próby wklejenia">✋</th><th style="' + th + '" title="„Łatwe” w Fiszkach, a potem błąd w Wpisz">🃏</th><th style="' + th + '" title="XP odrzucone przez limit">⛔</th><th style="' + th + '" title="Dni Wpisz niezaliczone w bazie">❌</th><th style="' + th + '">Ostatnio</th></tr>'
+        + '<tr style="color:var(--muted)"><th style="padding:4px 5px;text-align:left">Uczeń</th><th style="' + th + '" title="Serie zgadywania (szybkie błędne odpowiedzi)">🐢</th><th style="' + th + '" title="Próby na chybił-trafił">🧹</th><th style="' + th + '" title="Próby wklejenia">✋</th><th style="' + th + '" title="„Łatwe” w Fiszkach, a potem błąd w Wpisz">🃏</th><th style="' + th + '" title="XP odrzucone przez limit">⛔</th><th style="' + th + '" title="Dni Wpisz niezaliczone w bazie">❌</th><th style="' + th + '">Ostatnio</th></tr>'
         + rows.map(r => '<tr role="button" tabindex="0" style="cursor:pointer;border-top:1px solid var(--border)" onclick="sfOpenXpGuard(\'' + r.user_id + '\',\'' + escHtml(r.username || '').replace(/'/g, '') + '\')">'
           + '<td style="padding:5px;font-weight:700">' + (rowNotable(r) ? '🛡️ ' : '') + who(r) + '</td>'
           + cell(r.fast_bursts, r.fast_bursts > 0) + cell(r.junk, r.junk >= JUNK_ALERT) + cell(r.paste, r.paste >= PASTE_ALERT) + cell(r.self_easy || 0, (r.self_easy || 0) >= SELF_EASY_ALERT)
@@ -24371,7 +24382,7 @@ function renderStudentSearchList(query) {
       const list = Object.values(by).sort((a, b) => (b.fresh - a.fresh) || (b.any - a.any) || (new Date(b.last) - new Date(a.last)));
       const nNew = list.filter(u => u.fresh).length;
       html = '<div style="font-size:.74rem;color:var(--muted);font-weight:600;line-height:1.5;margin-bottom:8px">Ostatnie 30 dni. Kliknij ucznia, żeby zobaczyć szczegóły i ewentualnie poprawić punkty.'
-        + ' 🐢 = serie za szybkich odpowiedzi (nie liczyły się), 🧹 = próby „na chybił-trafił” (np. 1 litera i Enter), ✋ = próby wklejenia, 🃏 = „Łatwe” w Fiszkach, a potem błąd w Wpisz,'
+        + ' 🐢 = serie zgadywania — szybkich błędnych odpowiedzi (kolejne szybkie się nie liczyły), 🧹 = próby „na chybił-trafił” (np. 1 litera i Enter), ✋ = próby wklejenia, 🃏 = „Łatwe” w Fiszkach, a potem błąd w Wpisz,'
         + ' ⛔ = XP odrzucone przez limit, 📈 = bardzo dużo XP jednego dnia, ❌ = dzień „Wpisz” niezaliczony w bazie.'
         + (nNew ? ' <b style="color:var(--accent)">🆕 = nowe od Twojego ostatniego przeglądu.</b>' : '') + '</div>';
       if (_curClassId && document.getElementById('sClassDetail') && document.getElementById('sClassDetail').classList.contains('active'))
@@ -24576,7 +24587,7 @@ function _actLine(e) {
   const mut = x => '<span style="color:var(--muted)">' + x + '</span>';
   const word = e.w ? ' „<b>' + escHtml(e.w) + '</b>”' + (e.d === 'en' ? mut(' (EN→PL)') : '') : '';
   const nc = e.x === 'early' ? ' ' + warn('🐢 kliknięte, zanim odpowiedź się pokazała — nie liczyło się')
-    : e.x === 'fast' ? ' ' + warn('🐢 za szybko — nie liczyło się') : '';
+    : e.x === 'fast' ? ' ' + warn('🐢 szybko po zgadywaniu — nie liczyło się') : '';
   switch (e.k) {
     case 'screen': return mut('📍 ekran: ' + escHtml(ACT_SCREEN_PL[e.v] || e.v || '?'));
     case 'mode': return '▶️ tryb <b>' + escHtml(md) + '</b>' + (e.b ? mut(' · ' + escHtml(_actBookUnit(e.b, e.u))) : '');
@@ -24955,12 +24966,13 @@ async function openStudentProgress(userId, username, returnTo) {
       if (_studProgReturnTo !== 'parent' && (isCurrentUserAdmin() || isCurrentUserTeacher()))
         trBox.innerHTML += ' <button class="btn-sm" title="Za szybkie odpowiedzi, limit XP i korekta punktów" onclick="sfOpenXpGuard(\'' + userId + '\',\'' + esc(username) + '\')">🛡️ Tempo i korekta XP</button>'
           + ' <button class="btn-sm" title="Zalicz wybrane rozdziały na 100% (np. po zmianach w słówkach)" onclick="openCompleteUnitsModal([\'' + userId + '\'],\'' + esc(username) + '\')">✅ Zalicz rozdziały</button>';
-      // 🎮 Gry bez blokady (#101) — przełącznik dla tego ucznia
+      // 🔓 Tryby od razu (#101 / #102) — dla tego ucznia
       if (_studProgReturnTo !== 'parent' && typeof window.gamesFreeAvailable === 'function' && window.gamesFreeAvailable()
           && !(profile.is_admin || profile.is_teacher || profile.is_parent)) {
-        const gfOn = !!(((_allProfiles || []).find(x => x.id === userId) || profile).games_free);
-        trBox.innerHTML += ' <button class="btn-sm' + (gfOn ? ' accent' : '') + '" title="Gry i wszystkie tryby od razu, bez 10 słówek w ✏️ Wpisz — kliknij, żeby przełączyć" onclick="sfGamesFreeToggle(this,\'' + userId + '\')">'
-          + (gfOn ? '🎮 Gry: bez blokady' : '🔒 Gry: po nauce') + '</button>';
+        const omP = (_allProfiles || []).find(x => x.id === userId) || profile;
+        (window._omProfiles = window._omProfiles || {})[userId] = omP;
+        trBox.innerHTML += ' <button class="btn-sm' + (window.openModesSummary(omP) ? ' accent' : '') + '" title="Co ten uczeń ma otwarte od razu — bez zaliczania ✏️ Wpisz" onclick="openGamesFreeModal(\'' + userId + '\',this)">'
+          + window.openModesBtnText(omP) + '</button>';
       }
       unitsEl.appendChild(trBox);
     } catch(e) { console.warn('[acq stud]', e); }
@@ -26003,71 +26015,124 @@ function buildAlphaKeys(inputId, answer) {
     renderClassStudents(_curClassMembers, _allProfiles);
   };
 
-  // ── 🎮 Gry bez blokady (#101): zaznaczonym uczniom gry i wszystkie tryby od razu ──
+  // ── 🔓 Tryby od razu (#101 + #102): co uczeń ma otwarte przed zaliczeniem dnia w ✏️ Wpisz ──
+  //    „🎮 Wszystko od razu” = games_free (#101); wybrane tryby = open_modes (#102; 'games' = gry).
+  const OPEN_GROUPS = [
+    ['📚 Nauka', ['card', 'quiz', 'speed', 'match', 'tf']],
+    ['✏️ Pisanie', ['missing', 'gap', 'scramble', 'sentscr', 'typeSent', 'write']],
+    ['🎧 Słuchanie i mówienie', ['dictate', 'dictSent', 'speak', 'speakSent']],
+    ['🎮 Gry', ['games']]
+  ];
+  const OPEN_ALL = OPEN_GROUPS.reduce((a, g) => a.concat(g[1]), []);
+  const openLabel = m => m === 'games' ? '🎮 Gry (rząd „Gry”, gry rozdziałów, INNE)' : label(m);
+  const _om = p => (p && Array.isArray(p.open_modes)) ? p.open_modes.filter(m => OPEN_ALL.includes(m)) : [];
+  const _omProf = id => (_allProfiles || []).find(p => p.id === id) || (window._omProfiles || {})[id] || null;
   window.gamesFreeAvailable = function(){
     return !isGuest && typeof DB !== 'undefined' && !!DB.hasGamesFree && DB.hasGamesFree() === true
       && (isCurrentUserAdmin() || isCurrentUserTeacher());
   };
-  async function _gfApply(ids, free){
-    const n = await DB.setStudentsGamesFree(ids, free);
-    if (n === null) throw new Error('Uruchom migrację #101 (student-games-free.sql) w Supabase.');
-    const studs = ids.map(id => (_allProfiles || []).find(p => p.id === id)).filter(p => p && !isStaffProfile(p));
-    if (n === studs.length) studs.forEach(p => { p.games_free = !!free; });
+  window.openModesAvailable = function(){
+    return window.gamesFreeAvailable() && !!DB.hasOpenModes && DB.hasOpenModes() === true;
+  };
+  // Krótki opis ustawienia ('' = zwykła blokada „najpierw ✏️ Wpisz”)
+  window.openModesSummary = function(p){
+    if (!p) return '';
+    if (p.games_free) return '🎮 wszystko od razu';
+    const m = _om(p);
+    return m.length ? '🔓 ' + m.length + ' ' + plural(m.length, 'tryb', 'tryby', 'trybów') + ' od razu' : '';
+  };
+  window.openModesBtnText = function(p){
+    const s = window.openModesSummary(p);
+    return s ? 'Tryby: ' + s : '🔒 Tryby: najpierw ✏️ Wpisz';
+  };
+  // Plakietka przy uczniu na liście klasy
+  window.openModesBadgeHtml = function(p){
+    if (!p || !window.gamesFreeAvailable()) return '';
+    const s = window.openModesSummary(p);
+    if (!s) return '';
+    const t = p.games_free ? 'Gry i wszystkie tryby od razu — bez zaliczania ✏️ Wpisz' : 'Od razu otwarte: ' + _om(p).map(openLabel).join(', ');
+    return ' <span title="' + escHtml(t) + '" style="display:inline-block;font-size:.6rem;font-weight:800;padding:2px 7px;border-radius:999px;background:rgba(6,214,160,.14);border:1px solid rgba(6,214,160,.45);color:var(--text);vertical-align:middle;white-space:nowrap">' + escHtml(s) + '</span>';
+  };
+  async function _omApply(ids, modes, all){
+    let n;
+    if (window.openModesAvailable()) n = await DB.setStudentsOpenModes(ids, modes, all);
+    else if (!all && modes.length) throw new Error('Wybór pojedynczych trybów wymaga migracji #102 (student-open-modes.sql) w Supabase.');
+    else n = await DB.setStudentsGamesFree(ids, all);
+    if (n === null) throw new Error(window.openModesAvailable() ? 'Uruchom migrację #102 (student-open-modes.sql) w Supabase.' : 'Uruchom migrację #101 (student-games-free.sql) w Supabase.');
+    const sorted = (all || !modes.length) ? null : modes.slice().sort();
+    const studs = ids.map(_omProf).filter(p => p && !isStaffProfile(p));
+    if (n === studs.length) studs.forEach(p => { p.games_free = !!all; if (window.openModesAvailable()) p.open_modes = sorted; });
     else { try { _allProfiles = await DB.loadAllProfiles(); } catch(e) {} }
     return n;
   }
-  window.openGamesFreeModal = function(){
-    if (!window.gamesFreeAvailable()) { toast('Gry bez blokady wymagają migracji #101 (student-games-free.sql) w Supabase.', 3400); return; }
-    const ids = selectedIds();
+  // oneId — jeden uczeń (Postępy ucznia, btn = przycisk do odświeżenia); bez — zaznaczeni na liście klasy
+  window.openGamesFreeModal = function(oneId, btn){
+    if (!window.gamesFreeAvailable()) { toast('Ta funkcja wymaga migracji #101 (student-games-free.sql) w Supabase.', 3400); return; }
+    const ids = oneId ? [oneId] : selectedIds();
     if (!ids.length) { toast('☑️ Najpierw zaznacz uczniów na liście („Zaznacz” u góry — cała klasa).', 3400); return; }
-    const profs = ids.map(id => (_allProfiles || []).find(p => p.id === id)).filter(Boolean);
-    const studs = profs.filter(p => !isStaffProfile(p)), on = studs.filter(p => p.games_free).length;
+    const profs = ids.map(_omProf).filter(Boolean);
+    const studs = profs.filter(p => !isStaffProfile(p));
     const staffN = profs.length - studs.length;
-    window._gfSel = ids;
-    openGenericModal('🎮 Gry bez blokady',
+    window._omCtx = { ids: ids, btn: btn || null, one: !!oneId };
+    const can = window.openModesAvailable();
+    const allOn = studs.length > 0 && studs.every(p => p.games_free);
+    const common = studs.length ? OPEN_ALL.filter(m => studs.every(p => !p.games_free && _om(p).includes(m))) : [];
+    const differ = new Set(studs.map(p => p.games_free ? '*' : _om(p).join(','))).size > 1;
+    const box = m => '<label style="display:flex;align-items:center;gap:7px;padding:6px 9px;border:1.5px solid var(--border);border-radius:9px;cursor:pointer;background:var(--surface2);font-size:.76rem;font-weight:700;color:var(--text)">'
+      + '<input type="checkbox" value="' + m + '"' + (common.includes(m) ? ' checked' : '') + (can ? '' : ' disabled') + ' style="accent-color:var(--accent);flex-shrink:0">'
+      + '<span>' + escHtml(openLabel(m)) + ((typeof PREMIUM_MODES !== 'undefined' && PREMIUM_MODES.includes(m)) ? ' <span title="Tryb Premium" aria-label="tryb Premium">⭐</span>' : '') + '</span></label>';
+    const grid = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:5px;margin-bottom:8px';
+    const hdr = 'font-size:.6rem;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin:2px 2px 4px';
+    let list = '';
+    OPEN_GROUPS.forEach(g => { list += '<div style="' + hdr + '">' + g[0] + '</div><div style="' + grid + '">' + g[1].map(box).join('') + '</div>'; });
+    const radio = (val, txt, on) => '<label style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;border:1.5px solid var(--border);border-radius:10px;cursor:pointer;background:var(--surface2);font-size:.8rem;font-weight:800;color:var(--text);margin-bottom:6px">'
+      + '<input type="radio" name="omKind" value="' + val + '"' + (on ? ' checked' : '') + ' onchange="_omKindChange()" style="accent-color:var(--accent);margin-top:2px;flex-shrink:0"><span>' + txt + '</span></label>';
+    const who = oneId ? (studs[0] ? escHtml(studs[0].username || '') : '') : '';
+    openGenericModal('🔓 Tryby od razu' + (who ? ' — ' + who : ''),
       '<div style="font-size:.8rem;line-height:1.55;color:var(--text);font-weight:600">'
-      + 'Zwykle gry i pozostałe tryby odblokowują się dopiero, gdy uczeń wpisze dziś poprawnie <b>' + GAME_GATE_WORDS + ' słówek</b> w ✏️ Wpisz. '
-      + 'Tu możesz wybranym uczniom tę blokadę wyłączyć — gry i wszystkie tryby będą otwarte od razu.</div>'
-      + '<div style="font-size:.76rem;font-weight:700;margin:10px 0 4px">👥 Zaznaczeni uczniowie: <b>' + studs.length + '</b>'
-      + ' · teraz bez blokady: ' + on + ', z blokadą: ' + (studs.length - on)
-      + (staffN ? '<br><span style="color:var(--muted);font-weight:600">Konta nauczycieli / opiekunów (' + staffN + ') zostaną pominięte.</span>' : '') + '</div>'
+      + 'Na początku dnia uczeń ma tylko <b>✏️ Wpisz</b>. Gry i pozostałe tryby (także 🃏 Fiszki) odblokowują się, gdy zaliczy dzisiejszą naukę w Wpisz. '
+      + 'Tu wybierzesz, co ' + (oneId ? 'ten uczeń ma' : 'zaznaczeni uczniowie mają') + ' otwarte od razu — np. młodszemu uczniowi 🃏 Fiszki, 🎯 Quiz i 🎮 Gry.</div>'
+      + (oneId ? '' : '<div style="font-size:.76rem;font-weight:700;margin:10px 0 4px">👥 Zaznaczeni uczniowie: <b>' + studs.length + '</b>'
+        + (differ ? ' · <span style="color:var(--muted)">mają różne ustawienia — zaznaczone są tylko wspólne</span>' : '')
+        + (staffN ? '<br><span style="color:var(--muted);font-weight:600">Konta nauczycieli / opiekunów (' + staffN + ') zostaną pominięte.</span>' : '') + '</div>')
+      + '<div style="margin-top:10px">' + radio('gate', '🔒 Najpierw ✏️ Wpisz — a od razu otwarte tylko to, co zaznaczysz poniżej:', !allOn) + '</div>'
+      + '<div id="omList" style="margin:0 0 8px 6px' + (allOn ? ';opacity:.45;pointer-events:none' : '') + '">' + list + '</div>'
+      + (can ? '' : '<div style="font-size:.7rem;color:var(--danger);font-weight:700;margin:-4px 0 8px">Wybór pojedynczych trybów wymaga migracji #102 (student-open-modes.sql) w Supabase.</div>')
+      + radio('all', '🎮 Wszystko od razu — bez blokady (gry i wszystkie tryby)', allOn)
       + '<div style="font-size:.68rem;color:var(--muted);font-weight:600;line-height:1.45;margin:6px 0 10px">Uczeń zobaczy zmianę po odświeżeniu aplikacji. Kara za wpisywanie „byle czego”, sprawdzian „Łatwych” i 📜 Przebieg nauki działają dalej.</div>'
       + '<div id="gfMsg" style="font-size:.76rem;font-weight:700;min-height:16px;margin-bottom:8px"></div>'
       + '<div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">'
       + '<button class="btn-modal-cancel" onclick="closeGenericModal()">Anuluj</button>'
-      + '<button class="btn-sm" onclick="applyGamesFree(false)">🔒 Przywróć blokadę</button>'
-      + '<button class="btn-sm accent" onclick="applyGamesFree(true)">🎮 Odblokuj gry od razu</button></div>');
+      + '<button class="btn-sm accent" onclick="applyOpenModes()">💾 Zapisz</button></div>');
   };
-  window.applyGamesFree = async function(free){
-    const ids = (window._gfSel || []).slice();
+  window._omKindChange = function(){
+    const all = (document.querySelector('input[name="omKind"]:checked') || {}).value === 'all';
+    const l = document.getElementById('omList');
+    if (l) { l.style.opacity = all ? '.45' : ''; l.style.pointerEvents = all ? 'none' : ''; }
+  };
+  window.applyOpenModes = async function(){
+    const ctx = window._omCtx || {}, ids = (ctx.ids || []).slice();
     const msg = document.getElementById('gfMsg');
     if (!ids.length) { closeGenericModal(); return; }
+    const all = (document.querySelector('input[name="omKind"]:checked') || {}).value === 'all';
+    const modes = all ? [] : Array.from(document.querySelectorAll('#omList input[type="checkbox"]:checked')).map(x => x.value);
     if (msg) { msg.style.color = 'var(--muted)'; msg.textContent = '⏳ Zapisuję…'; }
     let n;
-    try { n = await _gfApply(ids, free); }
+    try { n = await _omApply(ids, modes, all); }
     catch(e) { if (msg) { msg.style.color = 'var(--danger)'; msg.textContent = '❌ ' + (e.message || e); } return; }
     closeGenericModal();
     const skipped = ids.length - n;
-    toast((free ? '🎮 Gry bez blokady — ' : '🔒 Blokada „najpierw nauka” przywrócona — ') + 'dla ' + n + ' ' + plural(n, 'ucznia', 'uczniów', 'uczniów')
-      + (skipped > 0 ? ' (pominięto: ' + skipped + ')' : ''), 3600);
+    const what = all ? '🎮 Wszystko od razu' : (modes.length ? '🔓 Od razu: ' + modes.map(openLabel).join(', ') : '🔒 Najpierw ✏️ Wpisz (bez wyjątków)');
+    toast(what + ' — dla ' + n + ' ' + plural(n, 'ucznia', 'uczniów', 'uczniów') + (skipped > 0 ? ' (pominięto: ' + skipped + ')' : '')
+      + '. Uczeń zobaczy zmianę po odświeżeniu aplikacji.', 4200);
+    if (ctx.one) {
+      const b = ctx.btn, p = _omProf(ids[0]);
+      if (b && document.contains(b) && p) { b.textContent = window.openModesBtnText(p); b.classList.toggle('accent', !!window.openModesSummary(p)); }
+      return;
+    }
     _bulkSelected.clear();
     if (typeof bulkRefreshToolbar === 'function') bulkRefreshToolbar();
     renderClassStudents(_curClassMembers, _allProfiles);
-  };
-  // Postępy ucznia: przełącznik dla jednego ucznia
-  window.sfGamesFreeToggle = async function(btn, userId){
-    const p = (_allProfiles || []).find(x => x.id === userId);
-    const free = !(p && p.games_free);
-    btn.disabled = true;
-    try {
-      await _gfApply([userId], free);
-      const now = (_allProfiles || []).find(x => x.id === userId);
-      const isFree = now ? !!now.games_free : free;
-      btn.textContent = isFree ? '🎮 Gry: bez blokady' : '🔒 Gry: po nauce';
-      btn.classList.toggle('accent', isFree);
-      toast(isFree ? '🎮 Gry bez blokady — uczeń zobaczy zmianę po odświeżeniu aplikacji.' : '🔒 Przywrócono blokadę „najpierw nauka”.', 3200);
-    } catch(e) { toast('❌ ' + (e.message || e), 3600); }
-    btn.disabled = false;
   };
 
   // ── Uczeń: przy starcie aplikacji ──────────────────────────────
@@ -26311,6 +26376,8 @@ function buildAlphaKeys(inputId, answer) {
   // 🚀 Tryb na start (#89): uczeń raz dziennie trafia od razu do trybu ustawionego przez nauczyciela.
   // Przed obsługą ?go= / ?game= (czyszczą adres) — adres z linku ma pierwszeństwo.
   try { if (!isGuest && typeof window.startModeBoot === 'function') window.startModeBoot(); } catch(e) { console.warn('[BOOT] start mode:', e.message || e); }
+  // 🔓 dzień „Wpisz” zaliczony na innym urządzeniu → tryby i gry otwarte także tutaj (1 małe zapytanie, tylko uczeń z blokadą)
+  setTimeout(() => { try { _gateSyncDay(); } catch(e) {} }, 2500);
 
   // ═══ Obsluga linkow z teacher.html (URL ?go=xxx) ═══
   // teacher.html jest osobna strona z menu kafelkow — kazdy linkuje
@@ -27583,7 +27650,7 @@ function buildAlphaKeys(inputId, answer) {
   <button class="btn-sm" id="bulkBtnBanners" onclick="openBulkBannersModal()" title="Włącz/wyłącz bannery Premium" style="font-size:.74rem">🔕 Bannery</button>
   <button class="btn-sm" onclick="openBulkBooksModal()" title="Przydziel podręczniki" style="font-size:.74rem">📚 Podręczniki</button>
   <button class="btn-sm" onclick="openCompleteUnitsModal(Array.from(_bulkSelected))" title="Zalicz zaznaczonym uczniom wybrane rozdziały na 100%" style="font-size:.74rem">✅ Zalicz rozdziały</button>
-  <button class="btn-sm" id="bulkBtnGamesFree" onclick="openGamesFreeModal()" title="Gry bez blokady „najpierw nauka” dla zaznaczonych" style="font-size:.74rem;display:none">🎮 Gry bez blokady</button>
+  <button class="btn-sm" id="bulkBtnGamesFree" onclick="openGamesFreeModal()" title="Co zaznaczeni uczniowie mają otwarte od razu — bez zaliczania ✏️ Wpisz" style="font-size:.74rem;display:none">🔓 Tryby od razu</button>
   <button class="btn-sm" id="bulkBtnStartMode" onclick="openStartModeModal()" title="Tryb nauki, do którego zaznaczeni uczniowie trafią raz dziennie przy pierwszym wejściu" style="font-size:.74rem;display:none">🚀 Tryb na start</button>
   <button class="btn-sm" id="bulkBtnRemoveClass" onclick="bulkRemoveFromClass()" title="Usuń zaznaczone osoby z tej klasy (konta zostają)" style="font-size:.74rem;display:none">🚪 Usuń z klasy</button>
   <button class="btn-sm" id="bulkBtnDelete" onclick="bulkDeleteUsers()" title="Usuń zaznaczone konta z bazy danych na stałe" style="font-size:.74rem;color:var(--danger);border-color:rgba(255,118,117,.45)">🗑️ Usuń z bazy</button>
@@ -39251,9 +39318,9 @@ ${bodyHtml}
     g.done = true; if (ok) g.ok++;
     if (g.answers) g.answers.push(hmwAns(it._i, it.q, given, correct, ok));
     try { if (ok && typeof playOk === 'function') playOk(); else if (!ok && typeof playBad === 'function') playBad(); } catch(e) {}
-    // 🐢 wybór A/B/C szybciej, niż da się przeczytać zdanie — bez XP i pupila (wynik zostaje)
+    // 🐢 szybki wybór A/B/C po serii zgadywania — bez XP i pupila (wynik zostaje)
     let paceOk = true;
-    try { if (it.type === 'abc' && typeof _paceCheck === 'function') paceOk = _paceCheck('grammar', Date.now() - (g.shownAt || 0), 'grammar'); } catch(e) {}
+    try { if (it.type === 'abc' && typeof _paceCheck === 'function') paceOk = _paceCheck('grammar', Date.now() - (g.shownAt || 0), 'grammar', ok); } catch(e) {}
     try { if (ok && paceOk && !isGuest && typeof addXP === 'function') (typeof addBonusXP === 'function' ? addBonusXP(4) : addXP(4)); } catch(e) {}
     try { if (paceOk && window.sfPet) window.sfPet.onAnswer('grammar', ok ? 'good' : 'hard', false); } catch(e) {}
     speak(fullSentence(it.q, correct));

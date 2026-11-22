@@ -33,7 +33,8 @@ const DB = (() => {
   let _hasXpAtomic    = false;  // migracja #85: XP dodawane w bazie (add_my_xp), bez XP w zapisie profilu
   let _hasBookPrefs   = false;  // migracja #86: profiles.book_prefs („Uczę się” / „Nie zapisuj mojej nauki”)
   let _bookPrefs      = { ignored: [], learning: [] };
-  let _hasGamesFree   = null;   // migracja #101: profiles.games_free („🎮 Gry bez blokady” od nauczyciela)
+  let _hasGamesFree   = null;   // migracja #101: profiles.games_free („🎮 Wszystko od razu” od nauczyciela)
+  let _hasOpenModes   = null;   // migracja #102: profiles.open_modes („🔓 Tryby od razu” od nauczyciela)
   let _hasStartMode   = null;   // migracja #89: profiles.start_mode („🚀 Tryb na start” od nauczyciela); null = profil niewczytany
   let _hasComboEpoch  = false;  // migracja #93: profiles.combo_epoch — po korekcie serii stara karta nie przywróci rekordu
   let _hasStatsEpoch  = false;  // migracja #97: profiles.stats_epoch — po korekcie celności stara karta nie przywróci liczników
@@ -100,6 +101,7 @@ const DB = (() => {
       avatarPath:    row.avatar_path     || null,
       startMode:     row.start_mode      || null,   // migracja #89 — ustawia nauczyciel (RPC), nie wysyłamy w zapisie profilu
       gamesFree:     row.games_free === true,      // migracja #101 — ustawia nauczyciel (RPC), nie wysyłamy w zapisie profilu
+      openModes:     Array.isArray(row.open_modes) ? row.open_modes.filter(x => typeof x === 'string') : [],   // #102 — jw.
       unitProgress
     };
   }
@@ -173,6 +175,7 @@ const DB = (() => {
     _hasBookPrefs = !!(profRes.data && Object.prototype.hasOwnProperty.call(profRes.data, 'book_prefs'));
     _hasStartMode = !!(profRes.data && Object.prototype.hasOwnProperty.call(profRes.data, 'start_mode'));
     _hasGamesFree = !!(profRes.data && Object.prototype.hasOwnProperty.call(profRes.data, 'games_free'));
+    _hasOpenModes = !!(profRes.data && Object.prototype.hasOwnProperty.call(profRes.data, 'open_modes'));
     _hasComboEpoch = !!(profRes.data && Object.prototype.hasOwnProperty.call(profRes.data, 'combo_epoch'));
     _hasStatsEpoch = !!(profRes.data && Object.prototype.hasOwnProperty.call(profRes.data, 'stats_epoch'));
     _bookPrefs = _bpNorm(_hasBookPrefs ? profRes.data.book_prefs : _bpLocal());
@@ -4326,7 +4329,8 @@ const DB = (() => {
     // nie ma, więc ponawiamy bez kolumny, której brakuje.
     const extra = ['nickname', 'avatar_url'];
     if (_hasStartMode !== false) extra.push('start_mode');   // własny profil (select *) już powiedział, czy jest #89
-    if (_hasGamesFree !== false) extra.push('games_free');   // #101 — „🎮 Gry bez blokady”
+    if (_hasGamesFree !== false) extra.push('games_free');   // #101 — „🎮 Wszystko od razu”
+    if (_hasOpenModes !== false) extra.push('open_modes');   // #102 — „🔓 Tryby od razu”
     let { data, error } = await run(COLS + ', ' + extra.join(', '));
     while (error && extra.length) {
       const miss = extra.findIndex(c => new RegExp('\\b' + c + '\\b', 'i').test(error.message || ''));
@@ -4579,7 +4583,7 @@ const DB = (() => {
     }
     return data;
   }
-  // ── 🎮 Gry bez blokady (#101): nauczyciel / admin wyłącza wybranym uczniom blokadę „najpierw nauka” ──
+  // ── 🎮 Wszystko od razu (#101): nauczyciel / admin wyłącza wybranym uczniom blokadę „najpierw ✏️ Wpisz” ──
   // null = profil niewczytany, false = brak migracji #101 (UI chowa funkcję), true = jest.
   function hasGamesFree() { return _hasGamesFree; }
   // Czy zalogowany uczeń ma gry bez blokady (z profilu wczytanego w init — bez dodatkowego zapytania)
@@ -4601,6 +4605,42 @@ const DB = (() => {
       throw new Error(error.message || 'Nie udało się zapisać ustawienia gier.');
     }
     return typeof data === 'number' ? data : (parseInt(data, 10) || 0);
+  }
+
+  // ── 🔓 Tryby od razu (#102): wybrane tryby otwarte przed zaliczeniem dnia w ✏️ Wpisz ──
+  // null = profil niewczytany, false = brak migracji #102 (UI pokazuje tylko „wszystko / nic” z #101), true = jest.
+  function hasOpenModes() { return _hasOpenModes; }
+  // Tryby otwarte zalogowanemu uczniowi od razu (z profilu wczytanego w init): ['card', 'quiz', …, 'games']
+  function getMyOpenModes() { return (_hasOpenModes && _profile && Array.isArray(_profile.openModes)) ? _profile.openModes.slice() : []; }
+  // Nauczyciel / admin: all = true → wszystko od razu (games_free); inaczej wybrane tryby (pusta lista =
+  // zwykła blokada). → liczba uczniów z takim ustawieniem teraz; null = brak migracji #102.
+  async function setStudentsOpenModes(studentIds, modes, all) {
+    const ids = [...new Set((studentIds || []).filter(x => typeof x === 'string' && x))];
+    if (!ids.length) return 0;
+    if (ids.length > 200) throw new Error('Za dużo uczniów naraz — zaznacz najwyżej 200.');
+    if (_hasOpenModes === false) return null;
+    const list = [...new Set((modes || []).filter(x => typeof x === 'string' && x))];
+    const { data, error } = await supabase.rpc('set_students_open_modes', { p_student_ids: ids, p_modes: list, p_all: !!all });
+    if (error) {
+      const msg = (error.code || '') + ' ' + (error.message || '');
+      if (/set_students_open_modes|PGRST202|42883/i.test(msg) && !/NOT_ALLOWED|TOO_MANY|AUTH/.test(msg)) return null;
+      if (/NOT_ALLOWED/.test(msg)) throw new Error('Tryby uczniów mogą zmieniać tylko nauczyciel i administrator.');
+      if (/TOO_MANY/.test(msg)) throw new Error('Za dużo uczniów naraz — zaznacz najwyżej 200.');
+      if (/AUTH/.test(msg)) throw new Error('Zaloguj się ponownie.');
+      throw new Error(error.message || 'Nie udało się zapisać trybów.');
+    }
+    return typeof data === 'number' ? data : (parseInt(data, 10) || 0);
+  }
+  // 🔓 Czy dzień „Wpisz” jest już zaliczony w bazie (daily_xp_log.typed — np. na innym urządzeniu).
+  // day — dzień polski 'YYYY-MM-DD' (jak claim_typed_day, #94). Błąd / offline → false.
+  async function getMyTypedToday(day) {
+    if (!_userId || !day) return false;
+    try {
+      const { data, error } = await supabase.from('daily_xp_log').select('typed')
+        .eq('user_id', _userId).eq('day', day).maybeSingle();
+      if (error) return false;
+      return !!(data && data.typed);
+    } catch(e) { return false; }
   }
 
   // ── 🚀 Tryb na start (#89): nauczyciel / admin ustawia uczniom tryb nauki, do którego
@@ -6160,6 +6200,7 @@ const DB = (() => {
     hasHomeworkTasks, loadTaskAssignments, submitStudentTask, markStudentNotesSeen, loadTaskSet,
     hasStartMode, getMyStartMode, setStudentsStartMode,
     hasGamesFree, getMyGamesFree, setStudentsGamesFree,
+    hasOpenModes, getMyOpenModes, setStudentsOpenModes, getMyTypedToday,
     saveBookNote,
     deleteBookNote,
     // book access requests

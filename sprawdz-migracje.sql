@@ -159,6 +159,7 @@ with c(nr, plik, ok) as (values
   ('99', 'teacher-complete-units.sql',            pg_temp.tab('public.unit_completions') and pg_temp.fn('teacher_complete_units')),
   ('100', 'unit-progress-merge.sql',              pg_temp.col('unit_progress', 'completed_at') and pg_temp.fn('save_unit_progress')),
   ('101', 'student-games-free.sql',               pg_temp.col('profiles', 'games_free') and pg_temp.fn('set_students_games_free')),
+  ('102', 'student-open-modes.sql',               pg_temp.col('profiles', 'open_modes') and pg_temp.fn('set_students_open_modes')),
   ('x2', 'add-live-games.sql',                    pg_temp.fn('create_live_game')),
   ('x3', 'add-live-time-limit-and-score-rpc.sql', pg_temp.fn('update_live_player_score')),
   ('x4', 'fix-live-join-token.sql + fix-live-join-ambiguous.sql', pg_temp.fn('join_live_game')),

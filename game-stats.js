@@ -313,15 +313,24 @@
   if (file && file !== 'grammar-city' && file.indexOf('.') < 0) file += '.html';   // Vercel: /car-racer
   const page = PAGES[file];
 
-  // 🔒 Najpierw nauka (SW v1.251): uczeń objęty blokadą w app.html (zapis
-  // fiszki_games_gate_role_<login>) musi dziś wpisać za 1. razem `need` słówek
-  // w trybie Wpisz — także gdy otworzy grę z adresu / zakładki. Brak zapisu
-  // (nauczyciel, admin, opiekun, nowe urządzenie) = gra otwarta.
+  // 🔒 Najpierw ✏️ Wpisz (SW v1.266): uczeń objęty blokadą w app.html (zapis
+  // fiszki_games_gate_role_<login>, v: 2) musi dziś zaliczyć naukę w trybie Wpisz
+  // (fiszki_typed_day.credited — ten sam zapis co „🎉 Dzienna nauka zaliczona”) — także
+  // gdy otworzy grę z adresu / zakładki. Brak zapisu (nauczyciel, admin, opiekun,
+  // nowe urządzenie) = gra otwarta. Starszy zapis (bez v) — dawna zasada: 10 słówek.
   function gateLocked() {
     try {
       const u = currentUserLogin() || 'guest';
       const role = JSON.parse(localStorage.getItem('fiszki_games_gate_role_' + u) || 'null');
       if (!role || !role.s) return null;
+      if (role.v === 2) {
+        const t = JSON.parse(localStorage.getItem('fiszki_typed_day') || '{}') || {};
+        const today = t.day === localDay() && (!t.user || t.user === u || u === 'guest');
+        if (today && t.credited) return null;
+        const goal = role.goal || 15;
+        const hits = today ? Object.values(t.words || {}).reduce((a, n) => a + (n || 0), 0) : 0;
+        return { v: 2, n: Math.min(hits, goal), need: goal };
+      }
       const need = role.need || 10;
       const g = JSON.parse(localStorage.getItem('fiszki_games_gate_' + u) || '{}') || {};
       const n = (g.day === localDay() && g.words) ? Object.keys(g.words).length : 0;
@@ -338,10 +347,12 @@
     ov.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:rgba(10,12,24,.92);display:flex;align-items:center;justify-content:center;padding:20px;font-family:system-ui,-apple-system,"Segoe UI",sans-serif';
     ov.innerHTML = '<div style="background:#1e2235;color:#f4f4f8;border:2px solid #ffd166;border-radius:18px;max-width:400px;width:100%;padding:26px 22px;text-align:center;box-shadow:0 14px 44px rgba(0,0,0,.5)">'
       + '<div style="font-size:2.8rem;line-height:1">🦉</div>'
-      + '<div style="font-size:1.25rem;font-weight:800;margin:8px 0 10px">🔒 Najpierw nauka, potem gry</div>'
-      + '<div style="font-size:.95rem;line-height:1.55;margin-bottom:12px">Gry odblokują się, gdy dziś wpiszesz poprawnie <b>' + st.need + '</b> różnych słówek w trybie ✏️ Wpisz albo ✏️ Wpisz zd. — za pierwszym razem.</div>'
+      + '<div style="font-size:1.25rem;font-weight:800;margin:8px 0 10px">' + (st.v === 2 ? '🔒 Najpierw ✏️ Wpisz, potem gry' : '🔒 Najpierw nauka, potem gry') + '</div>'
+      + '<div style="font-size:.95rem;line-height:1.55;margin-bottom:12px">' + (st.v === 2
+        ? 'Gry odblokują się, gdy zaliczysz dzisiejszą naukę w trybie ✏️ Wpisz — <b>' + st.need + '</b> poprawnych wpisów za pierwszym razem.'
+        : 'Gry odblokują się, gdy dziś wpiszesz poprawnie <b>' + st.need + '</b> różnych słówek w trybie ✏️ Wpisz albo ✏️ Wpisz zd. — za pierwszym razem.') + '</div>'
       + '<div style="height:10px;background:#2e3350;border-radius:100px;overflow:hidden;margin:0 auto 6px;max-width:260px"><div style="height:100%;width:' + Math.round(st.n / st.need * 100) + '%;background:linear-gradient(90deg,#06d6a0,#ffd166)"></div></div>'
-      + '<div style="font-size:.82rem;color:#b9bdd6;font-weight:700;margin-bottom:18px">Dziś: ' + st.n + ' / ' + st.need + ' słówek</div>'
+      + '<div style="font-size:.82rem;color:#b9bdd6;font-weight:700;margin-bottom:18px">Dziś: ' + st.n + ' / ' + st.need + (st.v === 2 ? ' poprawnych wpisów' : ' słówek') + '</div>'
       + '<a href="' + back + '" style="display:inline-block;background:#06d6a0;color:#0b1020;text-decoration:none;padding:12px 24px;border-radius:11px;font-weight:800">← Wróć do nauki</a></div>';
     (document.body || document.documentElement).appendChild(ov);
     try { ov.querySelector('a').focus(); } catch (e) {}
