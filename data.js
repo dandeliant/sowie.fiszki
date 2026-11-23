@@ -1664,6 +1664,259 @@ const BOOKS = {
     }
   }
 
+  // ─── GERUND / INFINITIVE (Gramatyka i dodatki) ─────────────
+  // Czasownik + -ing / czasownik + to. Hasła „admit + -ing”, „decide + to”: przy wpisywaniu
+  // „+” jest pomijany (norm), lektor go nie czyta (_ttsTidy), „Luka” szuka samego czasownika.
+  ,gerundInfinitive: {
+    id: 'gerundInfinitive',
+    language: 'en', schoolType: 'grammar',
+    name: 'Gerund / Infinitive',
+    shortName: 'Gerund / Infinitive',
+    icon: '🔗',
+    color: '#00b894',
+    description: 'Czasownik + -ing czy + to? Znaczenia i przykłady zdań',
+    units: {
+      unit1: {
+        name: 'Czasownik + -ing', icon: '🏃', color: '#00b894',
+        words: [
+          ['przyznawać się do zrobienia czegoś', 'admit + -ing', 'Przyznał się do stłuczenia okna.', 'He admitted breaking the window.'],
+          ['być przyzwyczajonym do robienia czegoś', 'be used to + -ing', 'Jestem przyzwyczajony do wczesnego wstawania.', "I'm used to getting up early."],
+          ['kontynuować robienie czegoś', 'continue + -ing', 'Mimo deszczu dalej grali w piłkę.', 'They continued playing football despite the rain.'],
+          ['tęsknić za robieniem czegoś', 'miss + -ing', 'Tęsknię za pływaniem w morzu.', 'I miss swimming in the sea.'],
+          ['czerpać przyjemność z robienia czegoś, lubić coś robić', 'enjoy + -ing', 'Moja siostra lubi piec ciasta.', 'My sister enjoys baking cakes.'],
+          ['nienawidzić robienia czegoś', 'hate + -ing', 'Nienawidzę sprzątać swojego pokoju.', 'I hate tidying my room.'],
+          ['lubić coś robić', 'like + -ing', 'Lubię grać w gry planszowe z rodziną.', 'I like playing board games with my family.'],
+          ['nie lubić czegoś robić', 'dislike + -ing', 'Tomek nie lubi odrabiać lekcji w weekend.', 'Tom dislikes doing homework at the weekend.'],
+          ['kochać / uwielbiać coś robić', 'love + -ing', 'Uwielbiamy jeździć na rowerze po lesie.', 'We love cycling in the forest.'],
+          ['mieć ochotę coś zrobić', 'fancy + -ing', 'Masz ochotę pójść do kina?', 'Do you fancy going to the cinema?'],
+          ['mieć coś przeciwko robieniu czegoś', 'mind + -ing', 'Czy mógłbyś zamknąć okno? (Czy miałbyś coś przeciwko…)', 'Would you mind closing the window?'],
+          ['wciąż coś robić, ciągle coś robić', 'keep + -ing', 'Mój pies ciągle szczeka na listonosza.', 'My dog keeps barking at the postman.'],
+          ['nie mieć nic przeciwko robieniu czegoś', 'not mind + -ing', 'Nie mam nic przeciwko pomaganiu ci w lekcjach.', "I don't mind helping you with your homework."],
+          ['unikać robienia czegoś', 'avoid + -ing', 'Staram się unikać jedzenia słodyczy.', 'I try to avoid eating sweets.'],
+          ['rozważać zrobienie czegoś', 'consider + -ing', 'Rozważamy przeprowadzkę do innego miasta.', "We're considering moving to another city."],
+          ['nie móc znieść robienia czegoś, nie znosić czegoś robić', "can't stand + -ing", 'Nie znoszę czekać w kolejkach.', "I can't stand waiting in queues."],
+          ['woleć coś robić', 'prefer + -ing', 'Wolę chodzić pieszo niż jeździć autobusem.', 'I prefer walking to taking the bus.'],
+          ['sugerować, proponować zrobienie czegoś', 'suggest + -ing', 'Mama zaproponowała pójście na spacer.', 'Mum suggested going for a walk.'],
+          ['spędzać czas na robieniu czegoś', 'spend time + -ing', 'Spędzam dużo czasu na graniu w gry komputerowe.', 'I spend a lot of time playing computer games.'],
+          ['nie móc się doczekać zrobienia czegoś, oczekiwać czegoś z niecierpliwością', 'look forward to + -ing', 'Nie mogę się doczekać spotkania z tobą.', "I'm looking forward to seeing you."],
+          ['marnować czas na robienie czegoś', 'waste time + -ing', 'Nie marnuj czasu na oglądanie głupich filmików.', "Don't waste time watching silly videos."],
+          ['skończyć coś robić', 'finish + -ing', 'Skończyłam odrabiać lekcje o szóstej.', 'I finished doing my homework at six.'],
+          ['nie móc się powstrzymać od robienia czegoś', "can't help + -ing", 'Nie mogę się powstrzymać od śmiechu, kiedy oglądam ten filmik.', "I can't help laughing when I watch this video."],
+          ['przestać coś robić', 'stop + -ing', 'Przestań mówić i posłuchaj!', 'Stop talking and listen!'],
+          ['rzucić coś, przestać coś robić (na stałe)', 'give up + -ing', 'Mój tata chce rzucić palenie.', 'My dad wants to give up smoking.'],
+          ['ćwiczyć robienie czegoś', 'practise + -ing', 'Codziennie ćwiczę grę na gitarze.', 'I practise playing the guitar every day.'],
+          ['pamiętać, że się coś zrobiło', 'remember + -ing', 'Pamiętam, że zamknąłem drzwi na klucz.', 'I remember locking the door.'],
+          ['zapomnieć, że się coś zrobiło', 'forget + -ing', 'Nigdy nie zapomnę, jak pierwszy raz zobaczyłem morze.', "I'll never forget seeing the sea for the first time."],
+          ['spróbować czegoś (sprawdzić, czy pomoże), wypróbować', 'try + -ing', 'Jeśli boli cię głowa, spróbuj napić się wody.', 'If you have a headache, try drinking some water.'],
+        ]
+      },
+      unit2: {
+        name: 'Czasownik + to + czasownik', icon: '🎯', color: '#0984e3',
+        words: [
+          ['radzić (komuś), żeby coś zrobił, doradzać', 'advise (somebody) + to', 'Lekarz poradził mi, żebym więcej odpoczywał.', 'The doctor advised me to rest more.'],
+          ['umówić się, zorganizować zrobienie czegoś', 'arrange + to', 'Umówiliśmy się, że spotkamy się przed kinem.', 'We arranged to meet in front of the cinema.'],
+          ['prosić (kogoś), żeby coś zrobił', 'ask (somebody) + to', 'Nauczyciel poprosił nas, żebyśmy byli cicho.', 'The teacher asked us to be quiet.'],
+          ['pozwalać (komuś) coś zrobić', 'allow (somebody) + to', 'Rodzice pozwalają mi grać w gry w weekendy.', 'My parents allow me to play games at weekends.'],
+          ['spodziewać się, że się coś zrobi', 'expect + to', 'Spodziewam się, że zdam ten test.', 'I expect to pass this test.'],
+          ['zasługiwać na (zrobienie) czegoś', 'deserve + to', 'Ciężko pracowała i zasługuje na wygraną.', 'She worked hard and deserves to win.'],
+          ['mieć nadzieję, że się coś zrobi', 'hope + to', 'Mam nadzieję, że w przyszłym roku odwiedzę Londyn.', 'I hope to visit London next year.'],
+          ['chcieć coś zrobić', 'want + to', 'Chcę zostać weterynarzem.', 'I want to become a vet.'],
+          ['postanowić, zdecydować się coś zrobić', 'decide + to', 'Postanowiliśmy pojechać nad morze.', 'We decided to go to the seaside.'],
+          ['nauczyć się coś robić', 'learn + to', 'Nauczyłem się pływać, kiedy miałem pięć lat.', 'I learned to swim when I was five.'],
+          ['zaoferować, że się coś zrobi', 'offer + to', 'Kolega zaproponował, że pomoże mi z matematyką.', 'My friend offered to help me with maths.'],
+          ['planować coś zrobić', 'plan + to', 'Planujemy kupić psa.', "We're planning to get a dog."],
+          ['zamierzać coś zrobić', 'intend + to', 'Zamierzam w tym roku więcej czytać.', 'I intend to read more this year.'],
+          ['wybrać, że się coś zrobi, zdecydować się na coś', 'choose + to', 'Wielu uczniów decyduje się uczyć angielskiego przez internet.', 'Many students choose to learn English online.'],
+          ['zgodzić się coś zrobić', 'agree + to', 'Tata zgodził się zawieźć nas do parku.', 'Dad agreed to drive us to the park.'],
+          ['nie móc sobie pozwolić na zrobienie czegoś, nie stać kogoś na coś', "can't afford + to", 'Nie stać nas na kupno nowego samochodu.', "We can't afford to buy a new car."],
+          ['zdołać coś zrobić, dać radę coś zrobić', 'manage + to', 'W końcu zdołałem rozwiązać to zadanie.', 'I finally managed to solve the problem.'],
+          ['mieć zamiar, chcieć coś zrobić', 'mean + to', 'Przepraszam, nie chciałem cię urazić.', "Sorry, I didn't mean to hurt you."],
+          ['potrzebować coś zrobić, musieć coś zrobić', 'need + to', 'Muszę kupić nowe buty.', 'I need to buy new shoes.'],
+          ['udawać, że się coś robi', 'pretend + to', 'Mój brat udawał, że śpi.', 'My brother pretended to be asleep.'],
+          ['obiecać, że się coś zrobi', 'promise + to', 'Obiecuję, że jutro oddam ci książkę.', 'I promise to give your book back tomorrow.'],
+          ['odmówić zrobienia czegoś, nie zgodzić się czegoś zrobić', 'refuse + to', 'Kot nie chciał zejść z drzewa.', 'The cat refused to come down from the tree.'],
+          ['wydawać się (coś robić, jakimś)', 'seem + to', 'Wydajesz się zmęczony.', 'You seem to be tired.'],
+          ['zaczynać coś robić', 'start + to', 'Zaczęło padać, kiedy wyszliśmy z domu.', 'It started to rain when we left the house.'],
+          ['zatrzymać się, żeby coś zrobić', 'stop + to', 'Zatrzymaliśmy się, żeby kupić coś do picia.', 'We stopped to buy something to drink.'],
+          ['kazać komuś coś zrobić, powiedzieć komuś, żeby coś zrobił', 'tell (somebody) + to', 'Nauczyciele często każą nam być cicho.', 'Teachers often tell us to be quiet.'],
+          ['próbować coś zrobić, starać się', 'try + to', 'Staram się codziennie uczyć pięciu nowych słówek.', 'I try to learn five new words every day.'],
+          ['chciałbym / chciałabym coś zrobić', 'would like + to', 'Chciałbym zamówić pizzę.', 'I would like to order a pizza.'],
+          ['bardzo bym chciał / chciała coś zrobić', 'would love + to', 'Bardzo chciałabym pojechać do Japonii.', 'I would love to go to Japan.'],
+          ['wolałbym / wolałabym coś zrobić', 'would prefer + to', 'Wolałbym dziś zostać w domu.', 'I would prefer to stay at home today.'],
+          ['pamiętać, żeby coś zrobić', 'remember + to', 'Pamiętaj, żeby nakarmić rybki!', 'Remember to feed the fish!'],
+          ['zapomnieć coś zrobić', 'forget + to', 'Nie zapomnij zabrać parasola.', "Don't forget to take an umbrella."],
+        ]
+      },
+    }
+  }
+
+  // ─── CZASOWNIKI STATYCZNE (Gramatyka i dodatki) ────────────
+  // Stative verbs — zwykle bez formy Continuous; ostatni rozdział: czasowniki, które bywają w Continuous.
+  ,stativeVerbs: {
+    id: 'stativeVerbs',
+    language: 'en', schoolType: 'grammar',
+    name: 'Czasowniki statyczne',
+    shortName: 'Stative verbs',
+    icon: '🧊',
+    color: '#74b9ff',
+    description: 'Czasowniki stanu (stative verbs) — znaczenia i przykłady zdań',
+    units: {
+      unit1: {
+        name: 'Emocje i upodobania', icon: '💛', color: '#fd79a8',
+        words: [
+          ['uwielbiać', 'adore', 'Uwielbiam moją babcię.', 'I adore my grandma.'],
+          ['zadziwiać, zdumiewać', 'amaze', 'Jego wiedza zawsze mnie zadziwia.', 'His knowledge always amazes me.'],
+          ['zdumiewać, wprawiać w osłupienie', 'astonish', 'Te wyniki zdumiewają naukowców.', 'These results astonish the scientists.'],
+          ['robić wrażenie na kimś', 'impress', 'Twój angielski robi na mnie wrażenie.', 'Your English impresses me.'],
+          ['zaskakiwać, dziwić', 'surprise', 'Nic mnie już nie dziwi.', 'Nothing surprises me any more.'],
+          ['podobać się komuś, przemawiać do kogoś', 'appeal to (somebody)', 'Ten pomysł bardzo do mnie przemawia.', 'This idea really appeals to me.'],
+          ['doceniać', 'appreciate', 'Doceniam twoją pomoc.', 'I appreciate your help.'],
+          ['przejmować się kimś/czymś, zależeć komuś na kimś/czymś', 'care about', 'Naprawdę zależy mi na moich przyjaciołach.', 'I really care about my friends.'],
+          ['lubić, darzyć kogoś uczuciem', 'care for', 'Nie przepadam za muzyką jazzową.', "I don't really care for jazz music."],
+          ['pragnąć', 'desire', 'Ona pragnie tylko spokoju i ciszy.', 'She desires nothing but peace and quiet.'],
+          ['gardzić', 'despise', 'Gardzę kłamcami.', 'I despise liars.'],
+          ['nie znosić, nienawidzić', 'detest', 'Mój brat nie znosi szpinaku.', 'My brother detests spinach.'],
+          ['nie lubić', 'dislike', 'Wiele dzieci nie lubi brokułów.', 'Many children dislike broccoli.'],
+          ['nie ufać', 'distrust', 'Nie ufam reklamom w internecie.', 'I distrust online adverts.'],
+          ['zazdrościć', 'envy', 'Zazdroszczę ci cierpliwości.', 'I envy your patience.'],
+          ['bać się, obawiać się', 'fear', 'Wielu ludzi boi się pająków.', 'Many people fear spiders.'],
+          ['nienawidzić, nie znosić', 'hate', 'Nienawidzę poniedziałków!', 'I hate Mondays!'],
+          ['lubić, podobać się', 'like', 'Podoba mi się twoja nowa fryzura.', 'I like your new haircut.'],
+          ['nie cierpieć, nienawidzić', 'loathe', 'Nie cierpię zatłoczonych autobusów.', 'I loathe crowded buses.'],
+          ['kochać, uwielbiać', 'love', 'Kocham moją rodzinę.', 'I love my family.'],
+          ['mieć coś przeciwko', 'mind', 'Masz coś przeciwko, jeśli otworzę okno?', 'Do you mind if I open the window?'],
+          ['współczuć komuś, litować się nad kimś', 'pity', 'Współczuję każdemu, kto musi dziś pracować.', 'I pity anyone who has to work today.'],
+          ['woleć', 'prefer', 'Wolę herbatę od kawy.', 'I prefer tea to coffee.'],
+          ['mieć za złe, czuć urazę z powodu czegoś', 'resent', 'Ona ma mu za złe, że nie zadzwonił.', 'She resents him for not calling.'],
+          ['szanować', 'respect', 'Szanuję twoje zdanie.', 'I respect your opinion.'],
+          ['ufać', 'trust', 'Ufam mojej najlepszej przyjaciółce.', 'I trust my best friend.'],
+          ['cenić', 'value', 'Cenię twoją szczerość.', 'I value your honesty.'],
+        ]
+      },
+      unit2: {
+        name: 'Potrzeby i pragnienia', icon: '🎯', color: '#e17055',
+        words: [
+          ['potrzebować', 'need', 'Potrzebuję nowego zeszytu.', 'I need a new notebook.'],
+          ['wymagać, potrzebować', 'require', 'Ta gra wymaga dużo cierpliwości.', 'This game requires a lot of patience.'],
+          ['chcieć', 'want', 'Chcę nowy rower na urodziny.', 'I want a new bike for my birthday.'],
+          ['życzyć sobie, pragnąć, aby coś było inaczej', 'wish', 'Szkoda, że nie mam psa. (Chciałbym mieć psa.)', 'I wish I had a dog.'],
+          ['tęsknić za kimś/czymś, bardzo czegoś pragnąć', 'long for', 'Tęsknię za wakacjami.', 'I long for the holidays.'],
+          ['zamierzać, mieć zamiar', 'intend', 'Zamierzam zdać ten egzamin.', 'I intend to pass this exam.'],
+        ]
+      },
+      unit3: {
+        name: 'Wiedza i rozumienie', icon: '🧠', color: '#6c5ce7',
+        words: [
+          ['wiedzieć, znać', 'know', 'Znam odpowiedź na to pytanie.', 'I know the answer to this question.'],
+          ['rozumieć', 'understand, see', 'Rozumiem, co masz na myśli.', 'I understand what you mean.'],
+          ['pojmować, rozumieć', 'comprehend', 'Nie pojmuję, jak to możliwe.', "I can't comprehend how that is possible."],
+          ['pamiętać', 'remember', 'Pamiętam twoje urodziny.', 'I remember your birthday.'],
+          ['pamiętać, przypominać sobie', 'recall', 'Nie przypominam sobie jego imienia.', "I don't recall his name."],
+          ['rozpoznawać', 'recognise', 'Rozpoznajesz tę piosenkę?', 'Do you recognise this song?'],
+          ['zdawać sobie sprawę, uświadamiać sobie', 'realise', 'Zdaję sobie sprawę, że to trudne.', "I realise that it's difficult."],
+          ['znaczyć, oznaczać, mieć na myśli', 'mean', 'Co znaczy to słowo?', 'What does this word mean?'],
+        ]
+      },
+      unit4: {
+        name: 'Opinie i przekonania', icon: '💭', color: '#0984e3',
+        words: [
+          ['wierzyć, sądzić, uważać', 'believe', 'Wierzę, że ci się uda.', 'I believe you will succeed.'],
+          ['sądzić, uważać', 'think', 'Myślę, że masz rację.', "I think you're right."],
+          ['uważać kogoś/coś za…', 'consider', 'Uważam go za dobrego przyjaciela.', 'I consider him a good friend.'],
+          ['przypuszczać, sądzić', 'suppose', 'Przypuszczam, że wróci późno.', "I suppose he'll be back late."],
+          ['zakładać, przypuszczać', 'assume', 'Zakładam, że wszyscy odrobiliście lekcje.', "I assume you've all done your homework."],
+          ['przypuszczać (na podstawie tego, co wiadomo), zakładać', 'presume', 'Przypuszczam, że to twój plecak.', 'I presume this is your backpack.'],
+          ['podejrzewać', 'suspect', 'Podejrzewam, że on coś ukrywa.', "I suspect he's hiding something."],
+          ['wątpić', 'doubt', 'Wątpię, żeby jutro padało.', 'I doubt it will rain tomorrow.'],
+          ['przypuszczać, wyobrażać sobie', 'imagine', 'Przypuszczam, że jesteś głodny po podróży.', "I imagine you're hungry after the journey."],
+          ['spodziewać się, przypuszczać', 'expect', 'Spodziewam się, że test będzie łatwy.', 'I expect the test will be easy.'],
+          ['uważać, mieć poczucie, że…', 'feel', 'Uważam, że powinniśmy mu pomóc.', 'I feel we should help him.'],
+          ['zgadzać się, podzielać opinię', 'agree', 'Zgadzam się z tobą.', 'I agree with you.'],
+          ['nie zgadzać się, mieć odmienne zdanie', 'disagree', 'Nie zgadzam się z tym pomysłem.', 'I disagree with this idea.'],
+          ['przypuszczać, sądzić (potocznie: chyba)', 'guess', 'Chyba masz rację.', "I guess you're right."],
+        ]
+      },
+      unit5: {
+        name: 'Zmysły i wrażenia', icon: '👀', color: '#00b894',
+        words: [
+          ['słyszeć', 'hear', 'Słyszysz tę muzykę?', 'Can you hear that music?'],
+          ['widzieć', 'see', 'Z mojego okna widzę morze.', 'I can see the sea from my window.'],
+          ['pachnieć, mieć określony zapach, czuć zapach', 'smell', 'Te róże pięknie pachną.', 'These roses smell lovely.'],
+          ['smakować, mieć określony smak, czuć smak', 'taste', 'Ta zupa smakuje wspaniale.', 'This soup tastes great.'],
+          ['brzmieć', 'sound', 'To brzmi jak świetny plan!', 'That sounds like a great plan!'],
+          ['wyglądać', 'look', 'Wyglądasz dziś na szczęśliwą.', 'You look happy today.'],
+          ['czuć się, być w dotyku (np. miękkim lub szorstkim)', 'feel', 'Ten koc jest bardzo miękki w dotyku.', 'This blanket feels very soft.'],
+          ['wydawać się', 'seem', 'Twój nowy nauczyciel wydaje się miły.', 'Your new teacher seems nice.'],
+          ['wydawać się, sprawiać wrażenie', 'appear', 'Wygląda na to, że nikogo nie ma w domu.', 'There appears to be nobody at home.'],
+          ['przypominać kogoś/coś, być podobnym do kogoś/czegoś', 'resemble', 'Bardzo przypominasz swoją mamę.', 'You really resemble your mum.'],
+        ]
+      },
+      unit6: {
+        name: 'Posiadanie', icon: '🎒', color: '#fdcb6e',
+        words: [
+          ['mieć, posiadać', 'have', 'Mam dwóch braci.', 'I have two brothers.'],
+          ['posiadać, mieć na własność', 'own', 'Moi dziadkowie mają mały dom na wsi.', 'My grandparents own a small house in the country.'],
+          ['posiadać', 'possess', 'On posiada wiele talentów.', 'He possesses many talents.'],
+          ['należeć do kogoś/czegoś', 'belong to', 'Ten długopis należy do Anny.', 'This pen belongs to Anna.'],
+          ['nie mieć czegoś, wykazywać brak czegoś', 'lack', 'Brakuje mu pewności siebie.', 'He lacks confidence.'],
+          ['być komuś winnym (pieniądze), zawdzięczać', 'owe', 'Jestem ci winien pięć złotych.', 'I owe you five zlotys.'],
+        ]
+      },
+      unit7: {
+        name: 'Budowa, zawartość i związki', icon: '🧩', color: '#a29bfe',
+        words: [
+          ['składać się z', 'consist of', 'Drużyna składa się z jedenastu zawodników.', 'The team consists of eleven players.'],
+          ['zawierać', 'contain', 'Ta butelka zawiera wodę.', 'This bottle contains water.'],
+          ['zawierać, obejmować', 'include', 'Cena obejmuje śniadanie.', 'The price includes breakfast.'],
+          ['obejmować, składać się z', 'comprise', 'Kurs składa się z dziesięciu lekcji.', 'The course comprises ten lessons.'],
+          ['obejmować, wiązać się z, wymagać', 'involve', 'Ta praca wymaga dużo podróżowania.', 'This job involves a lot of travelling.'],
+          ['dotyczyć', 'concern', 'Ta wiadomość dotyczy wszystkich uczniów.', 'This message concerns all students.'],
+          ['zależeć od', 'depend on', 'Wszystko zależy od pogody.', 'Everything depends on the weather.'],
+          ['dotyczyć, pozostawać w związku z', 'relate to', 'Te pytania dotyczą ostatniego rozdziału.', 'These questions relate to the last chapter.'],
+          ['równać się, być równym', 'equal', 'Dwa plus dwa równa się cztery.', 'Two plus two equals four.'],
+          ['stanowić, reprezentować, symbolizować', 'represent', 'Ten kolor symbolizuje pokój.', 'This colour represents peace.'],
+          ['stanowić, tworzyć', 'constitute', 'Dziewczyny stanowią połowę drużyny.', 'Girls constitute half of the team.'],
+          ['różnić się od', 'differ from', 'Brytyjski angielski różni się od amerykańskiego.', 'British English differs from American English.'],
+          ['mieć zastosowanie, dotyczyć', 'apply', 'Ta zasada dotyczy wszystkich.', 'This rule applies to everyone.'],
+        ]
+      },
+      unit8: {
+        name: 'Miary i dopasowanie', icon: '📏', color: '#55efc4',
+        words: [
+          ['kosztować', 'cost', 'Ten bilet kosztuje 10 funtów.', 'This ticket costs £10.'],
+          ['ważyć, mieć określoną wagę', 'weigh', 'Mój pies waży dwadzieścia kilogramów.', 'My dog weighs twenty kilograms.'],
+          ['mierzyć, mieć określone wymiary', 'measure', 'Pokój ma cztery metry długości.', 'The room measures four metres in length.'],
+          ['pasować rozmiarem, mieścić się', 'fit', 'Te buty idealnie na mnie pasują.', 'These shoes fit me perfectly.'],
+          ['pasować komuś, odpowiadać, być odpowiednim', 'suit', 'Ten kolor bardzo ci pasuje.', 'This colour really suits you.'],
+          ['pasować do czegoś, być zgodnym z czymś', 'match', 'Twoja torba pasuje do butów.', 'Your bag matches your shoes.'],
+        ]
+      },
+      unit9: {
+        name: 'Istnienie i znaczenie', icon: '⚖️', color: '#636e72',
+        words: [
+          ['być', 'be', 'Moja siostra potrafi być bardzo zabawna.', 'My sister can be very funny.'],
+          ['istnieć', 'exist', 'Czy smoki naprawdę istnieją?', 'Do dragons really exist?'],
+          ['pozostawać', 'remain', 'Pogoda pozostaje słoneczna.', 'The weather remains sunny.'],
+          ['mieć znaczenie, liczyć się', 'matter', 'Twoje zdanie ma dla mnie znaczenie.', 'Your opinion matters to me.'],
+          ['zasługiwać na', 'deserve', 'Zasługujesz na nagrodę.', 'You deserve a prize.'],
+          ['liczyć się, mieć znaczenie', 'count', 'Liczy się każda minuta.', 'Every minute counts.'],
+          ['spełniać wymagania, warunki lub potrzeby', 'satisfy', 'To rozwiązanie spełnia wszystkie wymagania.', 'This solution satisfies all the requirements.'],
+        ]
+      },
+      unit10: {
+        name: 'Statyczne, ale bywają w Continuous', icon: '🔄', color: '#e84393',
+        words: [
+          ['mieć nadzieję', 'hope', 'Mam nadzieję, że tego lata odwiedzę kuzynów. (I hope… i I’m hoping… — obie formy są naturalne.)', "I'm hoping to visit my cousins this summer."],
+          ['zapominać, zapomnieć', 'forget', 'Coraz bardziej zapominam francuski. (Continuous — zapominanie stopniowe.)', "I'm forgetting my French."],
+          ['zauważać', 'notice', 'Zauważam coraz więcej błędów. (Continuous — obserwowanie zmian.)', "I'm noticing more and more mistakes."],
+          ['wybaczać', 'forgive', 'Wybaczam ci. (To typowa forma — Present Simple.)', 'I forgive you.'],
+          ['zaprzeczać', 'deny', 'On wszystkiemu zaprzecza. (Continuous — czynność mówienia.)', "He's denying everything."],
+          ['żałować', 'regret', 'Już tego żałuję. (Zwykle statyczny, ale tak mówi się naturalnie.)', "I'm regretting it already."],
+        ]
+      },
+    }
+  }
+
   // ─── BUSINESS ENGLISH ─────────────────────────────────
   ,businessEnglish: {
     id: 'businessEnglish',

@@ -12708,10 +12708,12 @@ function spk(txt, lang, rate) {
     const rateObj = RATE_OPTIONS.find(r => r.key === pref.rate);
     rate = rateObj ? rateObj.value : 0.85;
   }
-  const u = new SpeechSynthesisUtterance(txt); u.lang = lang; u.rate = rate; u.pitch = 1;
+  const u = new SpeechSynthesisUtterance(_ttsTidy(txt)); u.lang = lang; u.rate = rate; u.pitch = 1;
   const v = getV(lang); if (v) u.voice = v;
   speechSynthesis.speak(u);
 }
+// Lektor: wzory „admit + -ing”, „decide + to” (Gerund / Infinitive, Link) — bez czytania „plus”.
+function _ttsTidy(t) { return String(t == null ? '' : t).replace(/\s*\+\s*-?\s*/g, ' ').replace(/\s{2,}/g, ' ').trim(); }
 // Direction-aware TTS — używa języka aktywnego podręcznika
 function speakQCurr(e) { if (e) e.stopPropagation(); if (curIdx !== null) { if (studyDir==='pl_en') spkPl(activeWords[curIdx][0]); else _speakTargetCurr(); } }
 function speakACurr(e) { if (e) e.stopPropagation(); if (curIdx !== null) { if (studyDir==='pl_en') _speakTargetCurr(); else spkPl(activeWords[curIdx][0]); } }
@@ -14230,7 +14232,7 @@ function lev(a,b){const m=a.length,n=b.length,dp=Array.from({length:m+1},(_,i)=>
 // Normalizacja do porównań: małe litery, łączniki/ukośniki → spacja,
 // usunięcie interpunkcji (. , ! ? … ' " „ ” ; : ( ) [ ] { } * _ itp.),
 // zwinięcie spacji. Zachowuje litery (w tym polskie i akcentowane).
-function norm(s){return String(s||'').toLowerCase().replace(/[\/\-–—]+/g,' ').replace(/[.,!?…'"''"„”;:()\[\]{}*_\\]/g,'').replace(/\s+/g,' ').trim();}
+function norm(s){return String(s||'').toLowerCase().replace(/[\/\-–—+]+/g,' ').replace(/[.,!?…'"''"„”;:()\[\]{}*_\\]/g,'').replace(/\s+/g,' ').trim();}
 function fuzzy(u,c){const un=norm(u),cn=norm(c);if(un===cn)return true;return lev(un,cn)<=Math.max(1,Math.floor(cn.length*.13));}
 // ŚCISŁE dopasowanie słowa (tryb „Wpisz"): ignoruje tylko interpunkcję,
 // ale WYMAGA poprawności słowa (brak tolerancji literówek). Akceptuje
@@ -22222,6 +22224,14 @@ function buildGapMode() {
     if (stemMatch) {
       gapAnswer = stemMatch[0]; // Akceptuj odmienioną formę
       gapped = target.replace(stemRegex, '<span class="gap-blank">______</span>');
+    } else {
+      // Wzory „admit + -ing”, „decide + to”, „allow (somebody) + to”, „be used to + -ing” —
+      // luka na sam czasownik ze zdania (np. „He ______ breaking the window.” → admitted)
+      const hit = _gapCoreHit(target, wordTarget);
+      if (hit) {
+        gapAnswer = hit.text;
+        gapped = target.slice(0, hit.index) + '<span class="gap-blank">______</span>' + target.slice(hit.index + hit.text.length);
+      }
     }
   }
 
@@ -22232,6 +22242,31 @@ function buildGapMode() {
   setTimeout(() => inp.focus(), 120);
 }
 
+// Gdy hasła nie ma w zdaniu dosłownie: rdzeń (bez „+ -ing”, „+ to”, nawiasów, somebody / something),
+// każdy wariant („understand, see”), odmieniony zwrot („belong to” → „belongs to”, „look forward to” →
+// „looking forward to”) albo sam czasownik („admit” → „admitted”). null = nie znaleziono (luka na końcu).
+function _gapCoreHit(sentence, wordTarget) {
+  const esc = x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const clean = x => x.replace(/\([^)]*\)/g, ' ').replace(/\+\s*-?\s*(ing|to)\b/gi, ' ')
+    .replace(/\b(somebody|something|sb|sth)\b/gi, ' ').replace(/[+…]/g, ' ').replace(/\s+/g, ' ').trim();
+  const tryRe = re => { const m = re.exec(sentence); return m ? { text: m[0], index: m.index } : null; };
+  const LEAD = ['not', "can't", 'cannot', 'be', 'would', 'i', 'to', 'the', 'a', 'an'];   // pomijane na początku wzoru
+  for (const core of String(wordTarget || '').split(/[,;/]/).map(clean).filter(Boolean)) {
+    const cands = [core];
+    if (/^be /i.test(core)) cands.push(core.slice(3));                     // „be used to” → „I'm used to…”
+    for (const c of cands) { const h = tryRe(new RegExp('\\b' + esc(c) + '\\b', 'i')); if (h) return h; }
+    const ws = core.split(' ');
+    while (ws.length > 1 && LEAD.includes(ws[0].toLowerCase())) ws.shift();
+    if (!ws.length || ws[0].length < 3 || LEAD.includes(ws[0].toLowerCase())) continue;
+    if (ws.length > 1) {   // cały zwrot z odmienionym pierwszym wyrazem
+      const h = tryRe(new RegExp('\\b' + esc(ws[0]) + '\\w*\\s+' + ws.slice(1).map(esc).join('\\s+') + '\\b', 'i'));
+      if (h) return h;
+    }
+    const h = tryRe(new RegExp('\\b' + esc(ws[0]) + '\\w*\\b', 'i'));
+    if (h) return h;
+  }
+  return null;
+}
 function checkGap() {
   if (revealed) return;
   const inp = document.getElementById('gapInp'), u = inp.value.trim();
@@ -25515,24 +25550,40 @@ h2{font-size:.85rem;color:#666;margin-bottom:16px;font-weight:400}
 }
 
 // ══════════════════════════════════════════════
-// ── Alpha keyboards — dynamiczne, tylko litery z odpowiedzi ──
+// ── Alpha keyboards — dynamiczne, tylko znaki z odpowiedzi ──
+// Od v1.268: litery każdego alfabetu (é, è, ç, ü, ö, ñ, ß, cyrylica…), cyfry i znaki, które trzeba
+// wpisać ($, £, €, %, &, @, #, °…). Pomijamy spacje i interpunkcję, którą norm() i tak ignoruje
+// (. , ! ? ' " ( ) : ; - / + …) — jej wpisywanie nie jest potrzebne do zaliczenia.
+// Wcześniej filtr [A-ZĄĆĘŁŃÓŚŹŻ] gubił é, $, £ itd. — uczeń nie miał ich na pasku.
+const ALPHA_SKIP = /[\s.,!?…'"‘’‚“”„«»;:()\[\]{}*_\\\/\-–—+]/;
 function buildAlphaKeys(inputId, answer) {
   const container = document.querySelector('.alpha-keys[data-for="' + inputId + '"]');
   if (!container) return;
   container.innerHTML = '';
 
-  // Wyciągnij unikalne litery z odpowiedzi, posortuj alfabetycznie
-  const letters = [...new Set(answer.toUpperCase().replace(/[^A-ZĄĆĘŁŃÓŚŹŻ]/g, '').split(''))].sort();
-  const hasSpace = answer.includes(' ');
+  const text = String(answer || '').normalize('NFC');
+  const seen = new Set(), keys = [];
+  for (const c of text) {                       // for…of — całe znaki (także spoza BMP)
+    if (ALPHA_SKIP.test(c) || /\p{M}|\p{Extended_Pictographic}|\p{Cf}/u.test(c)) continue;
+    const low = c.toLocaleLowerCase('pl');
+    if (seen.has(low)) continue;
+    seen.add(low);
+    const up = low.toLocaleUpperCase('pl');
+    keys.push({ ins: low, show: [...up].length === 1 ? up : low });   // ß → „ß” (wielka to „SS”)
+  }
+  const rank = k => /\p{L}/u.test(k.ins) ? 0 : (/\p{N}/u.test(k.ins) ? 1 : 2);   // litery, cyfry, znaki
+  keys.sort((a, b) => rank(a) - rank(b) || a.show.localeCompare(b.show, 'pl'));
+  const hasSpace = /\s/.test(text);
 
-  letters.forEach(ch => {
+  keys.forEach(k => {
+    const ch = k.ins;
     const key = document.createElement('div');
     key.className = 'alpha-key';
-    key.textContent = ch;
+    key.textContent = k.show;
     key.addEventListener('click', () => {
       const inp = document.getElementById(inputId);
       if (!inp || inp.disabled) return;
-      inp.value += ch.toLowerCase();
+      inp.value += ch;
       inp.focus();
       inp.dispatchEvent(new Event('input', { bubbles: true }));
     });
