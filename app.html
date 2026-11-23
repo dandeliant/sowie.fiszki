@@ -6052,6 +6052,7 @@ const STANDALONE_HREF_TO_ACTIVITY = {
   'motyle.html': 'motyle',
   'memory.html': 'memory_standalone',
   'wisielec.html': 'hangman_standalone',
+  'hangman.html': 'hangman_standalone',
   'have_you_ever.html': 'speaking_have_you_ever',
   'present_perfect_speaking.html': 'speaking_present_perfect_shops',
   'must_cant_speaking.html': 'speaking_must_cant_shops',
@@ -20990,7 +20991,14 @@ function hangSVG(errors) {
   return svg;
 }
 
+// 🚀 Wisielec — od SW v1.269 osobna strona hangman.html (nowa grafika); dawny ekran w app.html → openHangmanLegacy
+// (zostawiony, nieużywany). Rząd „🎮 Gry” i memRowBtns — wpis 📜 robi już blokada gier (listener click).
 function openHangman(unitKey) {
+  const k = unitKey || currentUnitKey || 'all';
+  if (!currentBookId) { if (typeof toast === 'function') toast('Najpierw wybierz podręcznik.', 2000); return; }
+  window.location.href = 'hangman.html?book=' + encodeURIComponent(currentBookId) + '&unit=' + encodeURIComponent(k);
+}
+function openHangmanLegacy(unitKey) {
   hangUnitKey = unitKey;
   const units = getUnitsForPlay(currentBookId);
   const u = units[unitKey];
@@ -21942,7 +21950,14 @@ function openFeedMonster(unitKey) {
 // ══════════════════════════════════════════════
 let memCards = [], memRevealed = [], memMatched = 0, memTotalPairs = 0, memMoves = 0, memBusy = false, memUnitKey = null;
 
+// 🎴 Memory — od SW v1.269 osobna strona memory.html (nowa grafika); dawny ekran w app.html → openMemoryLegacy
+// (zostawiony, nieużywany). Rząd „🎮 Gry” i memRowBtns — wpis 📜 robi już blokada gier (listener click).
 function openMemory(unitKey) {
+  const k = unitKey || currentUnitKey || 'all';
+  if (!currentBookId) { if (typeof toast === 'function') toast('Najpierw wybierz podręcznik.', 2000); return; }
+  window.location.href = 'memory.html?book=' + encodeURIComponent(currentBookId) + '&unit=' + encodeURIComponent(k);
+}
+function openMemoryLegacy(unitKey) {
   memUnitKey = unitKey;
   const units = getUnitsForPlay(currentBookId);
   const u = units[unitKey];
@@ -26461,6 +26476,15 @@ function buildAlphaKeys(inputId, answer) {
   // 🚀 Tryb na start (#89): uczeń raz dziennie trafia od razu do trybu ustawionego przez nauczyciela.
   // Przed obsługą ?go= / ?game= (czyszczą adres) — adres z linku ma pierwszeństwo.
   try { if (!isGuest && typeof window.startModeBoot === 'function') window.startModeBoot(); } catch(e) { console.warn('[BOOT] start mode:', e.message || e); }
+  // 🏆 Odznaki zdobyte w grach w osobnych plikach (np. memory.html → „Mistrz Memory”) — zapisane w kolejce
+  try {
+    if (!isGuest && typeof checkAndUnlock === 'function') {
+      const k = 'fiszki_ach_pending_' + currentUser;
+      const list = JSON.parse(localStorage.getItem(k) || '[]') || [];
+      localStorage.removeItem(k);
+      if (Array.isArray(list)) list.forEach(id => { try { if (typeof id === 'string') checkAndUnlock(id); } catch(e) {} });
+    }
+  } catch(e) {}
   // 🔓 dzień „Wpisz” zaliczony na innym urządzeniu → tryby i gry otwarte także tutaj (1 małe zapytanie, tylko uczeń z blokadą)
   setTimeout(() => { try { _gateSyncDay(); } catch(e) {} }, 2500);
 
@@ -26547,10 +26571,12 @@ function buildAlphaKeys(inputId, answer) {
         location.href = 'most.html?book=' + encodeURIComponent(bookP) + '&unit=' + encodeURIComponent(targetUnit);
         return;
       }
-      // Memory i Hangman maja wlasne ekrany (sMemory/sHangman) i nie
-      // wymagaja chain selectBook->openWordList->startStudy->setMode.
-      // Wystarczy selectBook i wywolanie openMemory/openHangman.
+      // Memory i Wisielec — od SW v1.269 osobne pliki memory.html / hangman.html. Redirect.
       if (game === 'memory' || game === 'hangman') {
+        location.href = (game === 'memory' ? 'memory.html' : 'hangman.html') + '?book=' + encodeURIComponent(bookP) + '&unit=' + encodeURIComponent(targetUnit);
+        return;
+      }
+      if (false) {
         setTimeout(() => {
           try {
             if (typeof selectBook === 'function') selectBook(bookP);

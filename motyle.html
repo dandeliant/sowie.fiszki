@@ -6,125 +6,349 @@
 <title>🦋 Łap motyle — Sowie Fiszki</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;700&family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet">
 <script src="data.js"></script>
 <script src="game-stats.js"></script>
 <style>
+/* ═══ Łap motyle — łąka o poranku. Scena 3D (three.js) z zapasowym widokiem 2D (SVG + canvas). ═══ */
 :root{
-  --sky-1:#8ed8ff; --sky-2:#06b6d4; --grass:#8ddb84; --water:#0891b2; --ink:#0c1e35;
-  --text:#fff; --muted:rgba(255,255,255,.75);
-  --panel:rgba(12,30,53,.78);
-  --border:rgba(255,255,255,.25);
-  --accent:#fcd34d; --accent2:#10b981; --ok:#10b981; --danger:#ef4444; --pink:#ff6b9d;
+  --mn:125,240,175; --hn:255,201,87; --ok:52,226,150; --bad:255,90,110;
+  --text:#fff; --muted:rgba(226,248,234,.86);
+  --hfont:'Fredoka','Nunito',system-ui,sans-serif;
 }
 *{box-sizing:border-box;margin:0;padding:0;}
 html,body{height:100%;}
 body{
-  font-family:'Nunito',system-ui,sans-serif;
-  color:var(--text);
-  background:linear-gradient(180deg,#a8e6ff 0%,#8ed8ff 60%,#bff0b8 100%);
+  font-family:'Nunito',system-ui,sans-serif;color:var(--text);
+  background:#8cc8ec linear-gradient(180deg,#5fa9e3 0%,#a8d9f5 40%,#fde5c2 60%,#86bf5c 62%,#4b8532 100%) fixed;
   min-height:100vh;overflow-x:hidden;position:relative;
 }
-body::before{
-  content:"🦋 🌸 🌼 🍀 🌳";
-  position:fixed;inset:0;font-size:48px;opacity:.08;
-  word-spacing:120px;line-height:160px;letter-spacing:24px;
-  pointer-events:none;transform:rotate(-4deg);overflow:hidden;
+.bf-bg{position:fixed;inset:0;width:100%;height:100%;display:block;z-index:0;pointer-events:none;}
+body.in-game .bf-bg{filter:brightness(.4) saturate(.8);}
+body.in-game{background:#0c1d13;}
+
+/* ── Ramka: szkło + świecące narożniki (jak w Moście, w kolorach łąki) ── */
+.sf{
+  --c:var(--mn); --k:14px; --t:2px; --g1:rgba(16,52,36,.84); --g2:rgba(7,28,19,.9);
+  background:
+    linear-gradient(rgb(var(--c)) 0 0) left top/var(--k) var(--t) no-repeat,
+    linear-gradient(rgb(var(--c)) 0 0) left top/var(--t) var(--k) no-repeat,
+    linear-gradient(rgb(var(--c)) 0 0) right top/var(--k) var(--t) no-repeat,
+    linear-gradient(rgb(var(--c)) 0 0) right top/var(--t) var(--k) no-repeat,
+    linear-gradient(rgb(var(--c)) 0 0) left bottom/var(--k) var(--t) no-repeat,
+    linear-gradient(rgb(var(--c)) 0 0) left bottom/var(--t) var(--k) no-repeat,
+    linear-gradient(rgb(var(--c)) 0 0) right bottom/var(--k) var(--t) no-repeat,
+    linear-gradient(rgb(var(--c)) 0 0) right bottom/var(--t) var(--k) no-repeat,
+    radial-gradient(120% 90% at 50% 0%,rgba(255,255,255,.08),transparent 60%),
+    linear-gradient(180deg,var(--g1),var(--g2));
+  border:1px solid rgba(var(--c),.45);border-radius:4px;
+  box-shadow:0 0 14px rgba(var(--c),.28),inset 0 0 18px rgba(var(--c),.1),0 10px 30px rgba(0,0,0,.22);
 }
+
 .back-link{
-  position:fixed;top:14px;left:14px;z-index:10;
-  display:inline-flex;align-items:center;gap:6px;padding:9px 16px;
-  background:rgba(0,0,0,.25);border:1.5px solid rgba(255,255,255,.4);
-  border-radius:100px;color:#fff;font-weight:700;font-size:.85rem;
-  text-decoration:none;backdrop-filter:blur(10px);transition:all .2s;
+  position:fixed;top:12px;left:12px;z-index:40;
+  display:inline-flex;align-items:center;gap:6px;padding:8px 15px;
+  background:rgba(8,32,20,.74);border:1px solid rgba(var(--mn),.55);
+  border-radius:100px;color:#eafff2;font-weight:800;font-size:.84rem;
+  text-decoration:none;box-shadow:0 0 12px rgba(var(--mn),.22);transition:background .2s,box-shadow .2s;
 }
-.back-link:hover{background:rgba(0,0,0,.4);}
-.wrap{max-width:560px;margin:0 auto;padding:74px 18px 40px;position:relative;z-index:1;}
-.title-card{
-  background:var(--panel);backdrop-filter:blur(14px);
-  border:2px solid var(--border);border-radius:28px;
-  padding:36px 30px;box-shadow:0 30px 60px rgba(8,30,53,.4);
+.back-link:hover{background:rgba(14,52,32,.9);box-shadow:0 0 18px rgba(var(--mn),.45);}
+body.in-game .back-link{position:absolute;}
+body.live-mode .back-link{display:none;}
+
+/* ── „Jak grać?” ── */
+.htp-btn{
+  position:fixed;top:12px;right:12px;z-index:40;cursor:pointer;
+  display:inline-flex;align-items:center;gap:6px;padding:8px 14px;font-family:inherit;
+  background:rgba(8,32,20,.74);border:1px solid rgba(var(--mn),.55);border-radius:100px;
+  color:#eafff2;font-weight:800;font-size:.84rem;box-shadow:0 0 12px rgba(var(--mn),.22);
 }
-.icon{font-size:4rem;text-align:center;margin-bottom:6px;line-height:1;}
+.htp-btn:hover{background:rgba(14,52,32,.9);}
+body.in-game .htp-btn{position:absolute;}
+body.live-mode .htp-btn{display:none;}
+.htp-modal{position:fixed;inset:0;z-index:80;display:none;align-items:center;justify-content:center;padding:16px;background:rgba(4,14,8,.72);}
+.htp-modal.open{display:flex;}
+.htp-box{--k:18px;max-width:540px;width:100%;max-height:calc(100vh - 32px);overflow:auto;padding:24px 22px 20px;}
+.htp-box h2{font-family:var(--hfont);font-weight:700;font-size:1.35rem;color:#b9ffd6;margin-bottom:12px;text-shadow:0 0 12px rgba(var(--mn),.5);}
+.htp-box ol{padding-left:22px;display:flex;flex-direction:column;gap:8px;font-size:.92rem;line-height:1.45;color:#e8fff0;}
+.htp-box ol strong{color:#ffd98a;}
+.htp-box .htp-close{margin-top:16px;width:100%;}
+
+/* ── Ekran wyboru ── */
+.wrap{max-width:560px;margin:0 auto;padding:72px 16px 26px;position:relative;z-index:1;}
+.title-card{--k:20px;padding:26px 26px 26px;}
+.bf-logo{display:flex;justify-content:center;align-items:center;height:92px;margin-bottom:4px;perspective:420px;}
+.bf-logo .lw{display:block;width:62px;height:62px;}
+.bf-logo .lw.l{transform-origin:100% 50%;animation:bfLogoL 1.15s ease-in-out infinite alternate;}
+.bf-logo .lw.r{transform-origin:0 50%;animation:bfLogoR 1.15s ease-in-out infinite alternate;}
+.bf-logo .bd{width:6px;height:48px;margin:0 -1px;border-radius:4px;background:linear-gradient(180deg,#2b1f17,#4a3424 55%,#2b1f17);position:relative;z-index:1;}
+@keyframes bfLogoL{from{transform:rotateY(0deg)}to{transform:rotateY(52deg)}}
+@keyframes bfLogoR{from{transform:rotateY(0deg)}to{transform:rotateY(-52deg)}}
 .title{
-  font-family:'Fredoka',sans-serif;font-size:clamp(1.7rem,4vw,2.3rem);font-weight:700;
-  text-align:center;margin-bottom:6px;color:var(--accent);
-  text-shadow:0 4px 12px rgba(0,0,0,.3);
+  font-family:var(--hfont);font-size:clamp(1.7rem,4.8vw,2.4rem);font-weight:700;letter-spacing:.03em;
+  text-align:center;margin-bottom:6px;color:#fff3c4;
+  text-shadow:0 0 14px rgba(var(--hn),.55),0 2px 0 rgba(0,0,0,.3);
 }
-.subtitle{text-align:center;color:var(--muted);font-size:.92rem;margin-bottom:22px;line-height:1.5;}
-label{display:block;font-size:.7rem;text-transform:uppercase;letter-spacing:.1em;color:var(--accent);font-weight:800;margin:14px 0 5px;}
+.subtitle{text-align:center;color:var(--muted);font-size:.92rem;margin-bottom:14px;line-height:1.5;}
+label{display:block;font-size:.72rem;text-transform:uppercase;letter-spacing:.12em;color:#9ff5c4;font-weight:800;margin:14px 0 6px;font-family:var(--hfont);}
 select{
-  width:100%;padding:12px 14px;font-size:.95rem;font-family:inherit;font-weight:600;
-  background:rgba(0,0,0,.3);border:1.5px solid var(--border);border-radius:12px;
+  width:100%;padding:12px 14px;font-size:.95rem;font-family:inherit;font-weight:700;
+  background:rgba(2,18,10,.6);border:1px solid rgba(var(--mn),.45);border-radius:6px;
   color:var(--text);outline:none;
 }
-select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(252,211,77,.3);}
+select option{background:#0d2a1a;color:#fff;}
+select:focus{border-color:rgb(var(--mn));box-shadow:0 0 0 3px rgba(var(--mn),.25);}
+select:disabled{opacity:.55;}
 .btn-start{
-  width:100%;margin-top:24px;padding:16px;font-size:1.15rem;font-weight:900;
-  font-family:'Fredoka',sans-serif;letter-spacing:.06em;cursor:pointer;
-  background:linear-gradient(135deg,#fbbf24,#f59e0b);border:none;border-radius:100px;
-  color:var(--ink);box-shadow:0 10px 30px rgba(245,158,11,.5);transition:all .2s;
+  width:100%;margin-top:20px;padding:15px;font-size:1.15rem;font-weight:700;
+  font-family:var(--hfont);letter-spacing:.06em;cursor:pointer;
+  background:linear-gradient(135deg,#ffd76a,#ff9b1f);border:none;border-radius:100px;
+  color:#2a1500;box-shadow:0 0 22px rgba(var(--hn),.5),inset 0 1px 0 rgba(255,255,255,.55);transition:transform .15s,box-shadow .2s;
 }
-.btn-start:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 16px 40px rgba(245,158,11,.7);}
+.btn-start:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 0 30px rgba(var(--hn),.75),inset 0 1px 0 rgba(255,255,255,.55);}
 .btn-start:disabled{opacity:.5;cursor:not-allowed;}
+.order-btn{
+  width:100%;margin-top:10px;cursor:pointer;font-family:inherit;font-weight:800;font-size:.84rem;padding:9px;
+  background:rgba(2,18,10,.45);border:1px solid rgba(var(--mn),.4);border-radius:100px;color:#e2ffee;
+}
+.order-btn:hover{background:rgba(14,52,32,.7);}
 .info{
-  margin-top:18px;padding:12px 14px;background:rgba(0,0,0,.25);
-  border:1px dashed rgba(255,255,255,.25);border-radius:12px;
-  font-size:.78rem;color:var(--muted);line-height:1.5;
+  margin-top:16px;padding:12px 14px;background:rgba(2,18,10,.45);
+  border:1px dashed rgba(var(--mn),.35);border-radius:6px;
+  font-size:.8rem;color:var(--muted);line-height:1.5;
 }
-.info strong{color:var(--accent);}
-.footer{text-align:center;font-size:.7rem;color:rgba(255,255,255,.6);font-weight:600;margin-top:24px;padding:10px;}
+.info strong{color:#ffd98a;}
+.footer{text-align:center;font-size:.72rem;color:rgba(255,255,255,.85);font-weight:700;margin-top:10px;padding:6px;text-shadow:0 1px 2px rgba(0,0,0,.45);}
+.bottom-back{text-align:center;margin:20px 0 10px;}
+.bottom-back .back-link,body.in-game .bottom-back .back-link{position:static;}
+.bf-loader{display:none;position:fixed;inset:0;z-index:5;align-items:center;justify-content:center;font-family:var(--hfont);font-weight:600;font-size:1.1rem;color:#f2fff7;text-shadow:0 0 10px rgba(0,0,0,.6);}
+body.bf-boot .wrap{visibility:hidden;}
+body.bf-boot .bf-loader{display:flex;}
 
-#gameScreen{display:none;width:100%;max-width:760px;margin:0 auto;padding:14px;position:relative;z-index:1}
+/* ═══ Ekran gry ═══ */
+#gameScreen{display:none;width:100%;max-width:1180px;margin:0 auto;padding:52px 12px 12px;position:relative;z-index:1;}
 body.in-game .wrap{display:none;}
-body.in-game{padding:0;}
-body.live-mode .back-link{display:none;}
+body.live-mode #gameScreen{padding-top:10px;}
 .live-banner{
-  background:linear-gradient(135deg,rgba(255,209,102,.92),rgba(124,58,237,.92));
-  border-radius:14px;padding:10px 14px;margin-bottom:10px;
+  --c:var(--hn);--k:10px;
+  padding:9px 14px;margin-bottom:8px;
   display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;
-  font-size:.85rem;font-weight:800;color:#fff;
+  font-size:.86rem;font-weight:800;color:#fff;font-family:var(--hfont);letter-spacing:.02em;
 }
-.live-banner .lb-time{font-family:'Courier New',monospace;background:rgba(0,0,0,.18);padding:4px 10px;border-radius:8px}
+.live-banner .lb-time{font-family:'Courier New',monospace;background:rgba(var(--hn),.18);border:1px solid rgba(var(--hn),.5);padding:4px 10px;border-radius:4px;}
 
-.bf-moth{position:absolute;z-index:8;text-align:center;pointer-events:none;transition:none;}
-.bf-moth .bf-wings{font-size:2.2rem;animation:bfFlap .6s ease-in-out infinite}
-.bf-moth .bf-lbl{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);padding:3px 8px;background:rgba(39,174,96,.92);color:#fff;border-radius:10px;font-weight:700;font-size:.65rem;white-space:nowrap;pointer-events:none;line-height:1.1}
-@keyframes bfFlap{0%,100%{transform:scaleX(1)}50%{transform:scaleX(.6)}}
-@keyframes bfShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(4px)}}
-.bf-star{position:absolute;font-size:1.2rem;pointer-events:none;animation:bfStarPop .8s ease-out forwards}
-@keyframes bfStarPop{0%{opacity:1;transform:translate(-50%,-50%) scale(0)}30%{opacity:1;transform:translate(-50%,-50%) scale(1.3)}100%{opacity:0;transform:translate(-50%,-120%) scale(.6)}}
-
-#endOverlay{
-  position:fixed;inset:0;background:rgba(12,30,53,.92);z-index:50;
-  display:none;flex-direction:column;align-items:center;justify-content:center;padding:20px;
+#bfGame{
+  position:relative;width:100%;overflow:hidden;border-radius:10px;
+  height:clamp(380px,calc(100vh - 150px),760px);height:clamp(380px,calc(100svh - 150px),760px);
+  background:#8cc8ec linear-gradient(180deg,#5fa9e3 0%,#a8d9f5 40%,#fde5c2 58%,#86bf5c 60%,#4b8532 100%);
+  border:1px solid rgba(var(--mn),.45);box-shadow:0 0 24px rgba(var(--mn),.2),0 18px 50px rgba(0,0,0,.45);
+  user-select:none;-webkit-user-select:none;touch-action:none;-webkit-tap-highlight-color:transparent;
+  --lf:15px;--lmax:210px;
 }
+#bfGame.playing{cursor:none;}
+body.live-mode #bfGame{height:clamp(380px,calc(100vh - 80px),780px);height:clamp(380px,calc(100svh - 80px),780px);}
+@media (max-width:640px){
+  #gameScreen{padding:50px 8px 10px;}
+  #bfGame{height:clamp(400px,calc(100vh - 170px),780px);height:clamp(400px,calc(100svh - 170px),780px);}
+}
+.bf-scene2d{position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none;z-index:0;}
+#bf2dCanvas{position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none;z-index:1;}
+.bf3d-canvas{position:absolute;inset:0;width:100%;height:100%;display:none;pointer-events:none;z-index:1;outline:none;}
+#bfGame.bf3d .bf3d-canvas{display:block;}
+#bfGame.bf3d .bf-scene2d,#bfGame.bf3d #bf2dCanvas{display:none;}
+#bfGame::after{content:"";position:absolute;inset:0;pointer-events:none;z-index:9;background:radial-gradient(120% 95% at 50% 42%,transparent 62%,rgba(8,28,14,.3) 100%);}
+
+/* Napisy przy motylach (pozycję liczy gra co klatkę) */
+#bfLabels{position:absolute;inset:0;z-index:10;pointer-events:none;overflow:hidden;}
+.bf-lbl{position:absolute;left:0;top:0;will-change:transform,opacity;pointer-events:none;}
+.bf-lbl>span{
+  --c:var(--mn);--k:7px;--t:2px;
+  display:block;max-width:var(--lmax);padding:4px 10px 5px;white-space:nowrap;overflow:hidden;text-align:center;
+  font-family:var(--hfont);font-weight:600;font-size:var(--lf);line-height:1.15;color:#fff;letter-spacing:.01em;
+  text-shadow:0 1px 2px rgba(0,0,0,.6);
+  background:
+    linear-gradient(rgb(var(--c)) 0 0) left top/var(--k) var(--t) no-repeat,
+    linear-gradient(rgb(var(--c)) 0 0) left top/var(--t) var(--k) no-repeat,
+    linear-gradient(rgb(var(--c)) 0 0) right top/var(--k) var(--t) no-repeat,
+    linear-gradient(rgb(var(--c)) 0 0) right top/var(--t) var(--k) no-repeat,
+    linear-gradient(rgb(var(--c)) 0 0) left bottom/var(--k) var(--t) no-repeat,
+    linear-gradient(rgb(var(--c)) 0 0) left bottom/var(--t) var(--k) no-repeat,
+    linear-gradient(rgb(var(--c)) 0 0) right bottom/var(--k) var(--t) no-repeat,
+    linear-gradient(rgb(var(--c)) 0 0) right bottom/var(--t) var(--k) no-repeat,
+    linear-gradient(180deg,rgba(14,48,32,.82),rgba(6,26,17,.88));
+  border:1px solid rgba(var(--c),.55);border-radius:4px;
+  box-shadow:0 2px 8px rgba(0,0,0,.3),0 0 10px rgba(var(--c),.22);
+}
+.bf-lbl>span.wrap{white-space:normal;overflow-wrap:anywhere;}
+.bf-lbl.ok>span{--c:var(--ok);background-color:rgba(20,120,70,.9);animation:bfLblOk .55s ease-out forwards;}
+.bf-lbl.bad>span{--c:var(--bad);animation:bfLblBad .5s ease-out;}
+@keyframes bfLblOk{0%{transform:scale(1)}30%{transform:scale(1.18);box-shadow:0 0 22px rgba(var(--ok),1)}100%{transform:scale(1.05);box-shadow:0 0 12px rgba(var(--ok),.6)}}
+@keyframes bfLblBad{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px);box-shadow:0 0 18px rgba(var(--bad),1)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(3px)}}
+
+#bfFx{position:absolute;inset:0;z-index:15;pointer-events:none;overflow:hidden;}
+.bf-float{position:absolute;transform:translate(-50%,-50%);font-family:var(--hfont);font-weight:700;font-size:1.35rem;pointer-events:none;
+  text-shadow:0 2px 6px rgba(0,0,0,.55);animation:bfFloat 1s ease-out forwards;white-space:nowrap;}
+.bf-float.ok{color:#c6ffdf;}
+.bf-float.bad{color:#ffc2cb;}
+@keyframes bfFloat{0%{opacity:0;transform:translate(-50%,-30%) scale(.6)}15%{opacity:1;transform:translate(-50%,-60%) scale(1.15)}100%{opacity:0;transform:translate(-50%,-190%) scale(1)}}
+
+/* HUD: wynik + słoik (lewo), czas + dźwięk (prawo) — ścięte rogi */
+.hud{position:absolute;top:10px;left:10px;right:10px;z-index:20;display:flex;justify-content:space-between;align-items:flex-start;pointer-events:none;gap:8px;}
+.hud-l,.hud-r{display:flex;gap:8px;align-items:flex-start;}
+.hud-box{filter:drop-shadow(0 0 6px rgba(var(--mn),.5));transition:filter .25s;}
+.hud-box .bd{padding:1.5px;background:linear-gradient(135deg,rgb(var(--mn)),rgba(var(--mn),.45));clip-path:polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px);}
+.hud-box .in{display:flex;align-items:center;gap:7px;height:40px;padding:0 13px 0 11px;background:linear-gradient(180deg,rgba(16,52,36,.95),rgba(6,26,17,.96));clip-path:polygon(9.4px 0,100% 0,100% calc(100% - 9.4px),calc(100% - 9.4px) 100%,0 100%,0 9.4px);}
+.hud-box svg{width:22px;height:22px;flex:none;}
+.hud-score svg{filter:drop-shadow(0 0 4px rgba(255,200,60,.9));}
+.hud-v{font-family:var(--hfont);font-weight:700;font-size:1.2rem;line-height:1;color:#fff;text-shadow:0 0 8px rgba(var(--mn),.6);white-space:nowrap;min-width:1.4ch;text-align:right;}
+.hud-pv{display:flex;flex-direction:column;justify-content:center;gap:3px;align-items:flex-end;}
+.hud-bar{display:block;width:58px;height:4px;background:rgba(var(--mn),.18);border-radius:2px;overflow:hidden;}
+.hud-bar b{display:block;height:100%;width:100%;background:linear-gradient(90deg,#3fe08f,#d9ff9a);box-shadow:0 0 6px rgba(var(--mn),.9);}
+.hud-time.low{filter:drop-shadow(0 0 9px rgba(var(--hn),.95));}
+.hud-time.low .bd{background:linear-gradient(135deg,rgb(var(--hn)),rgba(var(--hn),.45));}
+.hud-time.low .hud-bar b{background:linear-gradient(90deg,#ff9b1f,#ffd76a);}
+.hud-box.bump .in{animation:bfBump .45s ease-out;}
+@keyframes bfBump{0%{transform:scale(1)}30%{transform:scale(1.12)}100%{transform:scale(1)}}
+.hud-box.ok{filter:drop-shadow(0 0 9px rgba(var(--ok),.95));}
+.hud-box.bad{filter:drop-shadow(0 0 9px rgba(var(--bad),.95));}
+.hud-box.ok .bd{background:linear-gradient(135deg,rgb(var(--ok)),rgba(var(--ok),.45));}
+.hud-box.bad .bd{background:linear-gradient(135deg,rgb(var(--bad)),rgba(var(--bad),.45));}
+.hud-snd{pointer-events:auto;cursor:pointer;width:42px;height:42px;border-radius:50%;font-size:1.1rem;line-height:1;
+  background:rgba(8,32,20,.78);border:1px solid rgba(var(--mn),.55);color:#fff;box-shadow:0 0 10px rgba(var(--mn),.3);}
+.hud-snd:hover{background:rgba(14,52,32,.92);}
+@media (max-width:420px){
+  .hud-box .in{height:36px;padding:0 10px 0 9px;gap:5px;}
+  .hud-box svg{width:19px;height:19px;}
+  .hud-v{font-size:1.05rem;}
+  .hud-bar{width:44px;}
+  .hud-snd{width:38px;height:38px;font-size:1rem;}
+  .hud-l,.hud-r{gap:6px;}
+}
+
+/* Polskie słowo (pytanie) */
+#bfTop{position:absolute;left:10px;right:10px;top:60px;z-index:18;display:flex;flex-direction:column;align-items:center;gap:6px;pointer-events:none;}
+@media (min-width:900px){ #bfTop{top:10px;left:250px;right:250px;} }
+#bfWord{
+  --k:12px;padding:8px 22px 9px;max-width:100%;min-width:170px;text-align:center;pointer-events:auto;cursor:pointer;
+  font-family:var(--hfont);font-weight:600;font-size:clamp(19px,2.7vw,30px);line-height:1.2;color:#fff;
+  white-space:nowrap;overflow:hidden;text-shadow:0 0 10px rgba(var(--hn),.55),0 2px 3px rgba(0,0,0,.4);
+}
+#bfWord.wrap{white-space:normal;overflow-wrap:anywhere;}
+#bfWord .spk{font-size:.62em;opacity:.7;margin-left:8px;vertical-align:middle;}
+#bfWord.shake{animation:bfLblBad .45s ease-out;--c:var(--bad);}
+#bfWord.pop{animation:bfBump .4s ease-out;}
+.bf-streak{font-family:var(--hfont);font-weight:700;font-size:.9rem;padding:3px 12px;border-radius:100px;color:#2a1500;
+  background:linear-gradient(135deg,#ffe28a,#ffad33);box-shadow:0 0 12px rgba(var(--hn),.6);opacity:0;transform:scale(.6);transition:opacity .2s,transform .2s;}
+.bf-streak.on{opacity:1;transform:scale(1);}
+.bf-hint{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);z-index:19;pointer-events:none;max-width:calc(100% - 24px);
+  padding:8px 16px;border-radius:100px;background:rgba(6,26,17,.82);border:1px solid rgba(var(--hn),.6);color:#fff7dc;
+  font-weight:800;font-size:.9rem;text-align:center;opacity:0;transition:opacity .35s;box-shadow:0 0 14px rgba(var(--hn),.35);}
+.bf-hint.on{opacity:1;}
+
+/* Nakładka startu / końca gry */
+#bfOverlay{position:absolute;inset:0;background:rgba(4,18,10,.45);z-index:30;display:flex;align-items:center;justify-content:center;padding:16px;}
+.ov-box{--k:16px;padding:20px 26px 22px;text-align:center;color:#fff;max-width:400px;width:100%;}
+#bfOvEmoji{font-size:2.6rem;margin-bottom:6px;line-height:1;}
+#bfOvTitle{font-family:var(--hfont);font-size:1.5rem;font-weight:700;margin-bottom:4px;color:#fff3c4;text-shadow:0 0 12px rgba(var(--hn),.6);}
+#bfOvDesc{font-size:.92rem;color:#e2f7ea;margin-bottom:12px;line-height:1.45;}
+.ov-stats{display:none;grid-template-columns:repeat(3,1fr);gap:8px;margin:2px 0 12px;}
+.ov-stats.on{display:grid;}
+.ov-stats div{background:rgba(2,18,10,.5);border:1px solid rgba(var(--mn),.3);border-radius:6px;padding:7px 4px;}
+.ov-stats b{display:block;font-family:var(--hfont);font-weight:700;font-size:1.3rem;color:#fff;}
+.ov-stats span{font-size:.7rem;color:#bfeccf;font-weight:800;text-transform:uppercase;letter-spacing:.05em;}
+.ov-rec{font-size:.86rem;font-weight:800;color:#ffd98a;margin-bottom:12px;}
+.ov-rec:empty{display:none;}
+.ov-box .btn-start{font-size:1rem;padding:11px 28px;width:auto;margin:0;}
+
+/* Przyciski pod planszą */
+.bf-controls{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:12px;}
+.bf-btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;text-decoration:none;
+  padding:10px 22px;border:none;border-radius:100px;font-family:var(--hfont);font-weight:700;font-size:.98rem;letter-spacing:.03em;
+}
+.bf-btn.hn{background:linear-gradient(135deg,#ffd76a,#ff9b1f);color:#2a1500;box-shadow:0 0 18px rgba(var(--hn),.5),inset 0 1px 0 rgba(255,255,255,.5);}
+.bf-btn.mn{background:linear-gradient(135deg,#b4ffd6,#3fd28a);color:#03200f;box-shadow:0 0 18px rgba(var(--mn),.5),inset 0 1px 0 rgba(255,255,255,.5);}
+.bf-btn:hover{filter:brightness(1.08);}
+#gameScreen .bottom-back{margin:16px 0 4px;}
+
+/* Koniec gry w trybie LIVE */
+#endOverlay{position:fixed;inset:0;background:rgba(4,16,9,.9);z-index:50;display:none;flex-direction:column;align-items:center;justify-content:center;padding:20px;}
 #endOverlay.visible{display:flex;}
-#endOverlay .end-card{
-  background:rgba(12,30,53,.95);border:2px solid var(--accent);border-radius:24px;
-  padding:32px 28px;text-align:center;max-width:440px;width:100%;
-  box-shadow:0 30px 60px rgba(0,0,0,.5);
-}
-#endOverlay .end-emoji{font-size:4rem;margin-bottom:8px;line-height:1}
-#endOverlay .end-title{font-family:'Fredoka',sans-serif;font-size:1.5rem;color:var(--accent);margin-bottom:6px}
-#endOverlay .end-sub{font-size:.92rem;color:var(--muted);margin-bottom:18px;line-height:1.5}
-#endOverlay .btn-end{
-  display:inline-block;padding:12px 22px;background:linear-gradient(135deg,#fbbf24,#f59e0b);
-  border:none;border-radius:100px;color:var(--ink);font-weight:900;font-size:.95rem;
-  cursor:pointer;text-decoration:none;font-family:inherit;
-}
+#endOverlay .end-card{--c:var(--hn);--k:18px;padding:30px 26px;text-align:center;max-width:440px;width:100%;}
+#endOverlay .end-emoji{font-size:3.6rem;margin-bottom:8px;line-height:1;}
+#endOverlay .end-title{font-family:var(--hfont);font-weight:700;font-size:1.5rem;color:#ffd98a;margin-bottom:6px;text-shadow:0 0 12px rgba(var(--hn),.6);}
+#endOverlay .end-sub{font-size:.92rem;color:var(--muted);margin-bottom:18px;line-height:1.5;}
+#endOverlay .btn-end{display:inline-block;padding:12px 22px;background:linear-gradient(135deg,#ffd76a,#ff9b1f);border:none;border-radius:100px;color:#2a1500;font-weight:900;font-size:.95rem;cursor:pointer;text-decoration:none;font-family:inherit;}
 
-@media print{.back-link{display:none!important;}body{background:#fff;color:#000;}}
+@media (prefers-reduced-motion:reduce){.bf-logo .lw{animation:none!important;}}
+@media print{
+  .back-link,.htp-btn,.htp-modal{display:none!important;}
+  body{background:#fff;color:#000;}
+  .bf-bg{display:none;}
+}
 </style>
 </head>
 <body>
-<a href="app.html" class="back-link">← Powrót do Sowie Fiszki</a>
+<!-- Wspólne grafiki SVG: łąka 2D (tło strony i zapasowy widok gry), gradienty ikon -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <linearGradient id="mSky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4f9be0"/><stop offset=".34" stop-color="#8cc4ee"/><stop offset=".56" stop-color="#d6ecf4"/><stop offset=".64" stop-color="#ffe6c4"/>
+    </linearGradient>
+    <radialGradient id="mSun" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#fffbe8" stop-opacity=".95"/><stop offset=".16" stop-color="#ffe9b8" stop-opacity=".6"/><stop offset="1" stop-color="#ffd9a0" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="mMeadow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#9cc65e"/><stop offset=".35" stop-color="#7cb34a"/><stop offset="1" stop-color="#4a8632"/>
+    </linearGradient>
+    <linearGradient id="mHillFar" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#a9c8bf"/><stop offset="1" stop-color="#c6dccf"/>
+    </linearGradient>
+    <linearGradient id="mHillMid" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7fae6c"/><stop offset="1" stop-color="#97bf72"/>
+    </linearGradient>
+    <linearGradient id="mStar" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff3a6"/><stop offset="1" stop-color="#ffb300"/>
+    </linearGradient>
+  </defs>
+  <symbol id="bfMeadowSym" viewBox="0 0 1000 600" preserveAspectRatio="xMidYMid slice">
+    <rect width="1000" height="600" fill="url(#mSky)"/>
+    <circle cx="700" cy="318" r="330" fill="url(#mSun)"/>
+    <circle cx="700" cy="318" r="19" fill="#fffaf0"/>
+    <g fill="#fff" opacity=".82">
+      <ellipse cx="160" cy="92" rx="90" ry="20"/><ellipse cx="210" cy="80" rx="54" ry="22"/><ellipse cx="120" cy="86" rx="40" ry="16"/>
+      <ellipse cx="520" cy="60" rx="110" ry="18"/><ellipse cx="560" cy="48" rx="56" ry="20"/>
+      <ellipse cx="860" cy="130" rx="80" ry="15"/><ellipse cx="890" cy="120" rx="44" ry="16"/>
+    </g>
+    <path d="M0 350C80 330 160 318 250 326S420 300 520 312 700 296 800 308 930 300 1000 312V420H0z" fill="url(#mHillFar)"/>
+    <path d="M0 372C90 352 170 346 260 356S430 336 540 348 720 334 820 346 950 340 1000 350V430H0z" fill="url(#mHillMid)"/>
+    <g id="bfSvgTrees" fill="#4c7c40"></g>
+    <rect y="376" width="1000" height="224" fill="url(#mMeadow)"/>
+    <g id="bfSvgFlowers"></g>
+    <!-- drzewa po bokach -->
+    <g>
+      <path d="M66 470c6-60 8-120 4-170h22c-4 50-2 110 6 170z" fill="#5b4330"/>
+      <g fill="#3f7334"><circle cx="40" cy="250" r="70"/><circle cx="110" cy="230" r="66"/><circle cx="80" cy="180" r="60"/><circle cx="150" cy="280" r="50"/><circle cx="10" cy="310" r="50"/></g>
+      <g fill="#5a9446" opacity=".9"><circle cx="70" cy="200" r="34"/><circle cx="125" cy="246" r="30"/><circle cx="30" cy="262" r="30"/></g>
+      <path d="M930 460c-6-50-6-110-2-160h20c-2 50 0 110 8 160z" fill="#5b4330"/>
+      <g fill="#3f7334"><circle cx="950" cy="250" r="66"/><circle cx="890" cy="270" r="54"/><circle cx="930" cy="190" r="56"/><circle cx="1000" cy="300" r="56"/></g>
+      <g fill="#5a9446" opacity=".9"><circle cx="925" cy="215" r="30"/><circle cx="975" cy="262" r="28"/></g>
+    </g>
+    <path id="bfSvgGrass" fill="#3d7a2a"/>
+  </symbol>
+</svg>
+<svg class="bf-bg" aria-hidden="true"><use href="#bfMeadowSym"/></svg>
 
+<a href="app.html" class="back-link">← Powrót do Sowie Fiszki</a>
+<button type="button" class="htp-btn" onclick="bfHelp(true)">ℹ️ Jak grać?</button>
+<div class="bf-loader">🦋 Ładowanie łąki…</div>
+
+<!-- ─── SETUP SCREEN ─── -->
 <div class="wrap" id="setupScreen">
-  <div class="title-card">
-    <div class="icon">🦋</div>
+  <div class="title-card sf">
+    <div class="bf-logo" aria-hidden="true"><canvas class="lw l" id="bfLogoL" width="124" height="124"></canvas><div class="bd"></div><canvas class="lw r" id="bfLogoR" width="124" height="124"></canvas></div>
     <h1 class="title">Łap motyle</h1>
-    <div class="subtitle">Przesuwaj siatkę i łap motyla z poprawnym tłumaczeniem!<br>45 sekund · punkty za celność.</div>
+    <div class="subtitle">Machnij siatką i złap motyla z dobrym tłumaczeniem!<br>45 sekund · z czasem motyli przybywa i latają szybciej.</div>
 
     <label for="bookSel">📚 Podręcznik</label>
     <select id="bookSel" onchange="onBookChange()">
@@ -136,57 +360,103 @@ body.live-mode .back-link{display:none;}
       <option value="">— Najpierw wybierz podręcznik —</option>
     </select>
 
-    <button type="button" id="orderBtn" onclick="toggleOrder()" title="Kolejność słówek: po kolei (wg listy) lub losowo" style="width:100%;margin-top:8px;background:rgba(255,255,255,.12);border:1.5px solid rgba(255,255,255,.35);border-radius:100px;color:#fff;font-weight:700;font-size:.82rem;padding:9px;cursor:pointer">🔢 Po kolei</button>
-    <button class="btn-start" id="startBtn" onclick="startGameFromSelector()" disabled>🦋 START</button>
+    <button type="button" id="orderBtn" class="order-btn" onclick="toggleOrder()" title="Kolejność słówek: po kolei (wg listy) lub losowo">🔢 Po kolei</button>
+    <button class="btn-start" id="startBtn" onclick="bfStartClick()" disabled>🦋 START</button>
 
     <div class="info">
-      💡 Pojawia się <strong>polskie słowo</strong> na górze, motyle z różnymi tłumaczeniami spadają z góry. Łap te z <strong>poprawnym tłumaczeniem</strong>. +10 pkt za trafienie · –5 za błąd.
+      💡 U góry pojawia się <strong>polskie słowo</strong>, a po łące latają motyle z tłumaczeniami. <strong>Kliknij</strong> (na telefonie <strong>dotknij</strong>) motyla z dobrym tłumaczeniem — siatka machnie i go złapie. <strong>+10 pkt</strong> za dobrego motyla · <strong>−5</strong> za pomyłkę.
     </div>
   </div>
+  <div class="bottom-back"><a href="app.html" class="back-link">← Wróć do Sowie Fiszki</a></div>
   <div class="footer">© 2026 Sowie Fiszki</div>
 </div>
 
+<!-- ─── GAME SCREEN ─── -->
 <div id="gameScreen">
-  <div class="live-banner" id="liveBanner" style="display:none">
+  <div class="live-banner sf" id="liveBanner" style="display:none">
     <span>🎮 Gra Live · <span id="lbNick" style="font-weight:900">—</span></span>
     <span class="lb-time" id="lbTime">∞</span>
   </div>
 
-  <div style="position:relative;width:100%;height:420px;border-radius:16px;overflow:hidden;touch-action:none;background:linear-gradient(to bottom,#8ed8ff 0%,#dff6ff 58%,#bff0b8 58%,#8ddb84 100%)" id="bfGame">
-    <div style="position:absolute;left:8%;top:10%;width:80px;height:26px;background:rgba(255,255,255,.7);border-radius:999px"></div>
-    <div style="position:absolute;left:62%;top:6%;width:100px;height:30px;background:rgba(255,255,255,.6);border-radius:999px"></div>
-    <div style="position:absolute;left:35%;top:15%;width:70px;height:22px;background:rgba(255,255,255,.5);border-radius:999px"></div>
-    <div style="position:absolute;top:8px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.6);color:#fff;padding:8px 14px;border-radius:12px;font-weight:700;font-size:.75rem;z-index:20;text-align:center;white-space:nowrap">
-      🇵🇱 <span id="bfWord">—</span> &nbsp; ⭐ <span id="bfScore">0</span> &nbsp; ⏱ <span id="bfTime">45</span>
+  <!-- Plansza: scena 3D (canvas WebGL) albo zapasowy widok 2D (SVG + canvas); napisy, HUD i nakładki w HTML -->
+  <div id="bfGame">
+    <svg class="bf-scene2d" aria-hidden="true"><use href="#bfMeadowSym"/></svg>
+    <canvas id="bf2dCanvas" aria-hidden="true"></canvas>
+    <canvas class="bf3d-canvas" id="bf3dCanvas" aria-hidden="true"></canvas>
+    <div id="bfLabels"></div>
+    <div id="bfFx"></div>
+
+    <div class="hud">
+      <div class="hud-l">
+        <div class="hud-box hud-score" id="bfHudScore" aria-label="Wynik"><div class="bd"><div class="in">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1.8l3.1 6.4 7 1-5.1 4.9 1.2 7L12 17.8l-6.2 3.3 1.2-7L1.9 9.2l7-1z" fill="url(#mStar)" stroke="#fff6c8" stroke-width=".8"/></svg>
+          <span class="hud-v" id="bfScore">0</span>
+        </div></div></div>
+        <div class="hud-box hud-jar" id="bfHudJar" aria-label="Złapane motyle"><div class="bd"><div class="in">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2.4" width="10" height="3.2" rx="1.1" fill="#d2a86a"/><path d="M7.6 5.6h8.8c0 1.6 2.1 2.1 2.1 4.6v9.3a2.6 2.6 0 0 1-2.6 2.6H8.1a2.6 2.6 0 0 1-2.6-2.6v-9.3c0-2.5 2.1-3 2.1-4.6z" fill="rgba(200,240,255,.28)" stroke="#dff6ff" stroke-width="1.2"/><path d="M12 14.6c-1.2-2.1-3.7-2.3-3.7-.3 0 1.7 2.1 2.3 3.7.9 1.6 1.4 3.7.8 3.7-.9 0-2-2.5-1.8-3.7.3z" fill="#ffb347"/><path d="M12 12.6v4.8" stroke="#3a2a1c" stroke-width=".9" stroke-linecap="round"/></svg>
+          <span class="hud-v" id="bfJar">0</span>
+        </div></div></div>
+      </div>
+      <div class="hud-r">
+        <div class="hud-box hud-time" id="bfHudTime" aria-label="Czas"><div class="bd"><div class="in">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="8.6" fill="rgba(200,255,225,.15)" stroke="#c8ffe1" stroke-width="1.6"/><path d="M12 8v5.2l3.4 2" stroke="#fff" stroke-width="1.8" stroke-linecap="round" fill="none"/><path d="M9.5 2.6h5" stroke="#c8ffe1" stroke-width="1.8" stroke-linecap="round"/></svg>
+          <div class="hud-pv"><span class="hud-v" id="bfTime">45</span><i class="hud-bar"><b id="bfTimeBar"></b></i></div>
+        </div></div></div>
+        <button type="button" class="hud-snd" id="bfSndBtn" onclick="bfToggleSound()" aria-label="Dźwięk">🔊</button>
+      </div>
     </div>
-    <div id="bfPlayer" style="position:absolute;bottom:10px;left:50%;transform:translateX(-50%);z-index:15;pointer-events:none;font-size:36px;text-align:center">
-      <div style="font-size:28px">🖐️</div>
-      <div style="width:6px;height:40px;background:linear-gradient(#d9a35f,#9f6a2f);border-radius:6px;margin:-4px auto 0"></div>
-      <div style="width:50px;height:50px;border:5px solid #ddd;border-radius:50%;margin:-36px auto 0;background:radial-gradient(circle,rgba(255,255,255,.15) 0 50%,transparent 51%)"></div>
+
+    <div id="bfTop">
+      <div id="bfWord" class="sf" onclick="bfSayAgain()" title="Kliknij, żeby usłyszeć słowo jeszcze raz">—</div>
+      <div id="bfStreak" class="bf-streak"></div>
     </div>
-    <div id="bfButterflies" style="position:absolute;inset:0;z-index:8"></div>
-    <div id="bfEffects" style="position:absolute;inset:0;pointer-events:none;z-index:25"></div>
-    <div id="bfStart" style="position:absolute;inset:0;background:rgba(0,0,0,.7);z-index:30;display:flex;align-items:center;justify-content:center">
-      <div style="text-align:center;color:#fff;padding:20px">
-        <div style="font-size:2rem;margin-bottom:6px">🦋 Łap motyle!</div>
-        <div style="font-size:.8rem;margin-bottom:12px;color:#ccc">Przesuwaj siatkę i łap motyla z poprawnym tłumaczeniem</div>
-        <button class="btn-start" onclick="bfStartGame()" style="font-size:.95rem;padding:10px 24px;width:auto;margin:0">▶ Start</button>
+    <div id="bfHint" class="bf-hint"></div>
+
+    <div id="bfOverlay">
+      <div class="ov-box sf">
+        <div id="bfOvEmoji">🦋</div>
+        <div id="bfOvTitle">Łap motyle!</div>
+        <div id="bfOvDesc">Kliknij motyla z dobrym tłumaczeniem — siatka go złapie.</div>
+        <div class="ov-stats" id="bfOvStats"></div>
+        <div class="ov-rec" id="bfOvRec"></div>
+        <button class="btn-start" id="bfOvBtn" onclick="bfStartGame()">▶ Start</button>
       </div>
     </div>
   </div>
 
-  <div style="margin-top:14px;text-align:center">
-    <button class="btn-start" id="restartBtn" onclick="bfStartGame()" style="display:none;width:auto;padding:10px 22px;margin:0 6px;font-size:.95rem">🔄 Zagraj ponownie</button>
-    <a href="app.html" class="btn-start" id="backToMenuBtn" style="display:none;width:auto;padding:10px 22px;margin:0 6px;font-size:.95rem;text-decoration:none;display:inline-block">← Menu</a>
+  <div class="bf-controls">
+    <button type="button" class="bf-btn mn" id="restartBtn" onclick="bfStartGame()" style="display:none">🔄 Zagraj ponownie</button>
+    <a href="app.html" class="bf-btn hn" id="backToMenuBtn" style="display:none">← Menu</a>
   </div>
+  <div class="bottom-back"><a href="app.html" class="back-link">← Wróć do Sowie Fiszki</a></div>
 </div>
 
+<!-- ─── END OVERLAY (Live) ─── -->
 <div id="endOverlay">
-  <div class="end-card">
+  <div class="end-card sf">
     <div class="end-emoji" id="eoEmoji">⏳</div>
     <div class="end-title" id="eoTitle">Koniec gry</div>
     <div class="end-sub" id="eoSub">Twój wynik: 0 pkt</div>
     <button class="btn-end" id="eoBtn" onclick="location.href='app.html'">← Powrót</button>
+  </div>
+</div>
+
+<!-- ─── JAK GRAĆ? ─── -->
+<div class="htp-modal" id="htpModal" onclick="if(event.target===this)bfHelp(false)">
+  <div class="htp-box sf" role="dialog" aria-modal="true" aria-labelledby="htpTitle">
+    <h2 id="htpTitle">ℹ️ Jak grać w „Łap motyle”?</h2>
+    <ol>
+      <li>Wybierz <strong>podręcznik</strong> i <strong>unit</strong>, a potem kliknij <strong>🦋 START</strong>.</li>
+      <li>U góry pojawia się <strong>polskie słowo</strong> — lektor czyta je na głos. Kliknij słowo, żeby usłyszeć je jeszcze raz.</li>
+      <li>Po łące latają <strong>motyle z tłumaczeniami</strong>. Tylko jeden napis pasuje do polskiego słowa.</li>
+      <li><strong>Myszka:</strong> najedź siatką na właściwego motyla i <strong>kliknij</strong> — siatka machnie i go złapie. Samo najechanie niczego nie łapie. <strong>Telefon / tablet:</strong> po prostu <strong>dotknij</strong> motyla albo jego napisu.</li>
+      <li>Dobry motyl: <strong>+10 pkt ⭐</strong>, motyl trafia do słoika, lektor czyta słowo w języku obcym i pojawia się nowe polskie słowo. Pozostałe motyle odlatują, a na łąkę wlatują nowe.</li>
+      <li>Zły motyl: <strong>−5 pkt</strong> i motyl ucieka z siatki. Spróbuj jeszcze raz!</li>
+      <li>Masz <strong>45 sekund</strong>. Z czasem motyli przybywa i latają coraz szybciej.</li>
+      <li>Na komputerze możesz też grać klawiaturą: <strong>strzałki</strong> albo <strong>W A S D</strong> przesuwają siatkę, <strong>spacja</strong> — machnięcie.</li>
+      <li><strong>🔢 Po kolei / 🔀 Losowo</strong> zmienia kolejność słówek, a <strong>🔊</strong> włącza i wyłącza dźwięk.</li>
+    </ol>
+    <button type="button" class="btn-start htp-close" onclick="bfHelp(false)">OK, gramy!</button>
   </div>
 </div>
 
@@ -277,19 +547,57 @@ function shuffle(arr){
   return a;
 }
 function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
+function bf$(id){ return document.getElementById(id); }
+const bfClamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const bfNorm = s => String(s == null ? '' : s).trim().toLowerCase();
+const BF_TOUCH = (() => { try { return matchMedia('(pointer:coarse)').matches; } catch(e) { return false; } })();
+const BF_RM = (() => { try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch(e) { return false; } })();
 
+// ── Dźwięk (WebAudio) + przełącznik 🔊 (localStorage['fiszki_motyle_sound']) ──
+let bfSound = (() => { try { return localStorage.getItem('fiszki_motyle_sound') !== '0'; } catch(e) { return true; } })();
 let _ac = null;
-function _ensureAc(){ if (!_ac) { try { _ac = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {} } return _ac; }
-function tone(freq, dur, type, gain){
-  const ac = _ensureAc(); if (!ac) return;
-  const o = ac.createOscillator(), g = ac.createGain();
-  o.type = type || 'sine'; o.frequency.value = freq;
-  g.gain.value = gain || .07;
-  o.connect(g); g.connect(ac.destination);
-  o.start(); o.stop(ac.currentTime + (dur || .15));
+function _ensureAc(){
+  if (!_ac) { try { _ac = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {} }
+  if (_ac && _ac.state === 'suspended') { try { _ac.resume(); } catch(e) {} }
+  return _ac;
 }
-function playOk(){ tone(660, .07); setTimeout(() => tone(880, .09), 80); }
-function playBad(){ tone(220, .12, 'square', .06); }
+function tone(freq, dur, type, gain, when, slideTo){
+  if (!bfSound) return;
+  const ac = _ensureAc(); if (!ac) return;
+  try {
+    const t0 = ac.currentTime + (when || 0), d = dur || .15;
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = type || 'sine'; o.frequency.setValueAtTime(freq, t0);
+    if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t0 + d);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(gain || .07, t0 + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + d);
+    o.connect(g); g.connect(ac.destination);
+    o.start(t0); o.stop(t0 + d + 0.03);
+  } catch(e) {}
+}
+let _noiseBuf = null;
+function playSwish(){
+  if (!bfSound) return;
+  const ac = _ensureAc(); if (!ac) return;
+  try {
+    if (!_noiseBuf) {
+      const n = Math.floor(ac.sampleRate * 0.3); _noiseBuf = ac.createBuffer(1, n, ac.sampleRate);
+      const d = _noiseBuf.getChannelData(0); for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+    }
+    const s = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain(), t0 = ac.currentTime;
+    s.buffer = _noiseBuf; f.type = 'bandpass'; f.Q.value = 1.3;
+    f.frequency.setValueAtTime(450, t0); f.frequency.exponentialRampToValueAtTime(2400, t0 + 0.16);
+    g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.11, t0 + 0.04); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.24);
+    s.connect(f); f.connect(g); g.connect(ac.destination); s.start(t0); s.stop(t0 + 0.26);
+  } catch(e) {}
+}
+function playOk(){ tone(784, .16, 'sine', .07); tone(988, .16, 'sine', .065, .07); tone(1319, .26, 'triangle', .055, .14); }
+function playBad(){ tone(262, .24, 'triangle', .085, 0, 160); }
+function playEnd(good){
+  const n = good ? [523, 659, 784, 1047] : [523, 494, 440];
+  n.forEach((f, i) => tone(f, .22, 'triangle', .06, i * .13));
+}
 
 function _voiceFor(lang){
   try {
@@ -298,6 +606,7 @@ function _voiceFor(lang){
   } catch(e) { return null; }
 }
 function spkPl(text){
+  if (!autoVoice) return;
   try {
     const u = new SpeechSynthesisUtterance(text);
     u.lang = 'pl-PL'; const v = _voiceFor('pl'); if (v) u.voice = v;
@@ -305,6 +614,7 @@ function spkPl(text){
   } catch(e) {}
 }
 function spkForeign(text){
+  if (!autoVoice) return;
   try {
     const u = new SpeechSynthesisUtterance(text);
     u.lang = bookLang === 'fr' ? 'fr-FR' : (bookLang === 'de' ? 'de-DE' : (bookLang === 'ru' ? 'ru-RU' : 'en-GB'));
@@ -317,16 +627,25 @@ function toast(msg){ console.log('[toast]', msg); }
 // ═══════════════════════════════════════════════════════════════
 //  STATE GRY
 // ═══════════════════════════════════════════════════════════════
+const BF_TIME = 45;          // czas gry solo (s)
+const BF_GRACE = 0.4;        // czas ochronny po zmianie słowa (s) — siatka nic nie łapie
 let activeWords = [];
 let activeAllWords = [];
 let bookLang = 'en';
-let autoVoice = true;
+let autoVoice = bfSound;
 
-let bfRunning = false, bfScore = 0, bfTime = 45;
-let bfCurrent = null;
-let bfFalling = [];
-let bfSpawnInt = null, bfTimerInt = null, bfAnimFrame = null;
-let bfSeqIdx = 0;
+let bfRunning = false, bfScore = 0, bfTime = BF_TIME, bfTimeMax = BF_TIME;
+let bfCurrent = null;        // { pl, en, wrong[] } — aktualne słowo
+let bfFalling = [];          // wszystkie motyle na łące (także odlatujące i ozdobne)
+let bfAnimFrame = null;
+let bfSeqIdx = 0, bfBag = [], bfLastIdx = -1;
+let bfGameT = 0, bfGraceUntil = 0, bfRound = 0, bfSpawnT = 0, bfWave = 0, bfAmbT = 0;
+let bfCaught = 0, bfJarN = 0, bfMistakes = 0, bfStreak = 0, bfEnded = false, bfPaused = false, bfNextId = 1;
+let bfLastT = 0, bfLoopOn = false;
+// Układ planszy w pikselach (liczony w bfLayout): promień motyla R, promień obręczy siatki, pas lotu top..bot
+const BF = { W: 640, H: 420, S: 420, R: 30, hoopR: 46, lf: 15, spd: 55, top: 90, bot: 360, cap: 5, jarX: 120, jarY: 30, handX: 430, handY: 520 };
+// Siatka: x,y = kursor/palec, rx,ry = narysowana pozycja (płynnie dogania), swingT 0..1 = machnięcie
+const bfNet = { x: 320, y: 300, rx: 320, ry: 300, vx: 0, sx: 0, shown: false, swingT: 0, swingDir: 1, cool: 0, shakeT: 0, keys: {} };
 // Kolejność słówek: false = po kolei (domyślnie), true = losowo. Wspólny
 // klucz z aplikacją (localStorage['fiszki_study_random']).
 let orderRandom = (()=>{ try { return localStorage.getItem('fiszki_study_random')==='1'; } catch(e){ return false; } })();
@@ -334,9 +653,262 @@ function updateOrderBtn(){ const b=document.getElementById('orderBtn'); if(b) b.
 function toggleOrder(){ orderRandom=!orderRandom; try{ localStorage.setItem('fiszki_study_random', orderRandom?'1':'0'); }catch(e){} updateOrderBtn(); }
 
 // ═══════════════════════════════════════════════════════════════
+//  SKRZYDŁA MOTYLI — atlas 8 gatunków (canvas, 4×2 komórki po 256 px).
+//  Komórka = prawa połowa motyla: ciało przy lewej krawędzi, głowa u góry.
+//  Ten sam atlas rysuje widok 2D (drawImage) i tekstura w scenie 3D.
+//  0 monarcha · 1 morfo · 2 rusałka pawik · 3 latolistek cytrynek ·
+//  4 bielinek · 5 paź królowej · 6 rusałka admirał · 7 mieniak (fiolet)
+// ═══════════════════════════════════════════════════════════════
+const BF_SPECIES = 8, BF_CELL = 256;
+let _bfAtlas = null;
+function bfAtlas(){
+  if (_bfAtlas) return _bfAtlas;
+  const N = BF_CELL, c = document.createElement('canvas'); c.width = N * 4; c.height = N * 2;
+  const g = c.getContext('2d');
+  for (let s = 0; s < BF_SPECIES; s++) {
+    g.save(); g.translate((s % 4) * N, Math.floor(s / 4) * N);
+    g.beginPath(); g.rect(0, 0, N, N); g.clip();
+    try { bfPaintWing(g, N, s); } catch(e) { console.warn('[motyle] skrzydło', s, e); }
+    g.restore();
+  }
+  _bfAtlas = c; return c;
+}
+function bfWingPaths(N, s){
+  const X = v => v * N, fw = new Path2D(), hw = new Path2D();
+  if (s === 3) {          // cytrynek: szpiczaste końce skrzydeł
+    fw.moveTo(2, X(.45)); fw.bezierCurveTo(X(.2), X(.3), X(.56), X(.08), X(.94), X(.05));
+    fw.bezierCurveTo(X(.95), X(.2), X(.9), X(.36), X(.78), X(.47)); fw.bezierCurveTo(X(.6), X(.54), X(.3), X(.56), 2, X(.56)); fw.closePath();
+    hw.moveTo(2, X(.5)); hw.bezierCurveTo(X(.3), X(.46), X(.68), X(.5), X(.74), X(.66)); hw.lineTo(X(.71), X(.78));
+    hw.bezierCurveTo(X(.62), X(.9), X(.42), X(.95), X(.28), X(.9)); hw.bezierCurveTo(X(.14), X(.86), X(.05), X(.78), 2, X(.68)); hw.closePath();
+  } else {
+    const b = s === 1 ? 0.025 : 0;   // morfo: szersze, okrągłe skrzydła
+    fw.moveTo(2, X(.44)); fw.bezierCurveTo(X(.18), X(.3), X(.5), X(.07), X(.9), X(.06));
+    fw.bezierCurveTo(X(.97 + b), X(.14), X(.94 + b), X(.34), X(.8), X(.46)); fw.bezierCurveTo(X(.62), X(.53), X(.3), X(.56), 2, X(.56)); fw.closePath();
+    if (s === 5) {        // paź królowej: ogonek na tylnym skrzydle
+      hw.moveTo(2, X(.5)); hw.bezierCurveTo(X(.3), X(.46), X(.68), X(.5), X(.72), X(.64));
+      hw.bezierCurveTo(X(.75), X(.76), X(.67), X(.85), X(.61), X(.88)); hw.lineTo(X(.61), X(.985)); hw.lineTo(X(.54), X(.985)); hw.lineTo(X(.51), X(.92));
+      hw.bezierCurveTo(X(.34), X(.95), X(.14), X(.88), 2, X(.68)); hw.closePath();
+    } else {
+      hw.moveTo(2, X(.5)); hw.bezierCurveTo(X(.3), X(.47), X(.66 + b), X(.5), X(.72 + b), X(.64));
+      hw.bezierCurveTo(X(.76 + b), X(.8), X(.56), X(.95), X(.34), X(.93)); hw.bezierCurveTo(X(.16), X(.91), X(.05), X(.8), 2, X(.68)); hw.closePath();
+    }
+  }
+  return { fw, hw };
+}
+function bfPaintWing(g, N, s){
+  const { fw, hw } = bfWingPaths(N, s), X = v => v * N;
+  const FB = [X(.05), X(.5)], HB = [X(.05), X(.6)];
+  const FT = [[.42,.17],[.62,.1],[.82,.08],[.93,.2],[.9,.32],[.8,.44],[.58,.53]].map(q => [X(q[0]), X(q[1])]);
+  const HT = [[.45,.5],[.66,.58],[.72,.74],[.62,.88],[.44,.93],[.24,.9]].map(q => [X(q[0]), X(q[1])]);
+  const rg = (x, y, r, st) => { const gr = g.createRadialGradient(X(x), X(y), 0, X(x), X(y), X(r)); st.forEach(q => gr.addColorStop(q[0], q[1])); return gr; };
+  const fill = (p, f) => { g.fillStyle = f; g.fill(p); };
+  const clip = (p, fn) => { g.save(); g.clip(p); fn(); g.restore(); };
+  const veins = (p, base, tips, col, lw) => clip(p, () => {
+    g.strokeStyle = col; g.lineWidth = lw; g.lineCap = 'round';
+    tips.forEach(t => { g.beginPath(); g.moveTo(base[0], base[1]); g.quadraticCurveTo(base[0] + (t[0] - base[0]) * 0.5, base[1] + (t[1] - base[1]) * 0.3, t[0], t[1]); g.stroke(); });
+  });
+  const border = (p, col, w) => clip(p, () => { g.strokeStyle = col; g.lineWidth = X(w) * 2; g.lineJoin = 'round'; g.stroke(p); });
+  const dot = (x, y, r, col) => { g.fillStyle = col; g.beginPath(); g.arc(X(x), X(y), X(r), 0, Math.PI * 2); g.fill(); };
+  const dots = (p, pts, r, col) => clip(p, () => pts.forEach(q => dot(q[0], q[1], r, col)));
+  const band = (p, pts, col, w, dash) => clip(p, () => {
+    g.strokeStyle = col; g.lineWidth = X(w); g.lineCap = 'round'; if (dash) g.setLineDash(dash.map(X));
+    g.beginPath(); g.moveTo(X(pts[0][0]), X(pts[0][1])); g.quadraticCurveTo(X(pts[1][0]), X(pts[1][1]), X(pts[2][0]), X(pts[2][1])); g.stroke(); g.setLineDash([]);
+  });
+  const blob = (p, x, y, rx, ry, rot, col) => clip(p, () => { g.fillStyle = col; g.beginPath(); g.ellipse(X(x), X(y), X(rx), X(ry), rot, 0, Math.PI * 2); g.fill(); });
+  const FM = [[.62,.085],[.72,.075],[.92,.2],[.9,.28],[.86,.36],[.8,.43]];          // punkty przy brzegu przedniego skrzydła
+  const HM = [[.71,.67],[.72,.75],[.67,.84],[.57,.9],[.46,.92],[.34,.915]];          // … i tylnego
+  switch (s) {
+    case 0: // monarcha
+      fill(hw, rg(.05, .6, .8, [[0,'#ffc766'],[.55,'#f39a22'],[1,'#d8680b']]));
+      veins(hw, HB, HT, '#1b130e', X(.022)); border(hw, '#1b130e', .075); dots(hw, HM, .012, '#fff');
+      fill(fw, rg(.05, .5, .95, [[0,'#ffc25a'],[.5,'#f28a17'],[1,'#d4620a']]));
+      veins(fw, FB, FT, '#1b130e', X(.02)); border(fw, '#1b130e', .065);
+      blob(fw, .9, .13, .25, .14, -0.45, '#1b130e');
+      dots(fw, [[.72,.13],[.78,.18],[.84,.235]], .02, '#ffae3d'); dots(fw, FM, .011, '#fff');
+      break;
+    case 1: { // morfo
+      const blue = [[0,'#8beaff'],[.35,'#2f8cff'],[.75,'#1546c9'],[1,'#0b2470']];
+      fill(hw, rg(.08, .62, .8, blue)); veins(hw, HB, HT, 'rgba(190,240,255,.28)', X(.008));
+      border(hw, '#0d1424', .09); dots(hw, HM, .01, '#e8f6ff');
+      fill(fw, rg(.08, .5, .9, blue)); veins(fw, FB, FT, 'rgba(190,240,255,.3)', X(.008));
+      border(fw, '#0d1424', .085); dots(fw, [[.84,.09],[.93,.2],[.9,.3],[.85,.38]], .011, '#e8f6ff');
+      break; }
+    case 2: // rusałka pawik
+      fill(hw, rg(.05, .6, .8, [[0,'#4a2620'],[.35,'#a3262c'],[1,'#7c1620']])); border(hw, '#3a2018', .05);
+      dots(hw, [[.5,.77]], .15, '#17100e'); dots(hw, [[.5,.77]], .105, '#3d74b8'); dots(hw, [[.5,.77]], .065, '#14151f'); dots(hw, [[.47,.74],[.53,.8]], .014, '#e8f2ff');
+      fill(fw, rg(.05, .5, .95, [[0,'#4e2620'],[.3,'#b8292f'],[1,'#8e1a22']])); border(fw, '#3a2018', .04);
+      dots(fw, [[.32,.21],[.44,.15],[.56,.11]], .022, '#f2d06b');
+      dots(fw, [[.76,.2]], .14, '#ead07a'); dots(fw, [[.76,.2]], .105, '#7c3a2a'); dots(fw, [[.76,.2]], .082, '#3e6fb5'); dots(fw, [[.76,.2]], .045, '#141018'); dots(fw, [[.79,.17]], .014, '#fff');
+      break;
+    case 3: // cytrynek
+      fill(hw, rg(.05, .6, .8, [[0,'#fff7a8'],[.6,'#f4e34a'],[1,'#e2cf2e']])); veins(hw, HB, HT, 'rgba(170,150,30,.4)', X(.01));
+      dots(hw, [[.42,.7]], .024, '#f08a1e'); border(hw, 'rgba(150,120,20,.55)', .012);
+      fill(fw, rg(.05, .5, .9, [[0,'#fff7a8'],[.6,'#f6e54c'],[1,'#e4d130']])); veins(fw, FB, FT, 'rgba(170,150,30,.4)', X(.01));
+      dots(fw, [[.48,.33]], .022, '#f08a1e'); border(fw, 'rgba(150,120,20,.55)', .012);
+      break;
+    case 4: // bielinek
+      fill(hw, rg(.05, .6, .8, [[0,'#cfcfc4'],[.25,'#f8f7ee'],[1,'#fffef8']])); veins(hw, HB, HT, 'rgba(120,120,110,.3)', X(.008));
+      dots(hw, [[.5,.56]], .026, '#3a3a38');
+      fill(fw, rg(.05, .5, .9, [[0,'#c9c9be'],[.25,'#f7f6ec'],[1,'#fffef7']])); veins(fw, FB, FT, 'rgba(120,120,110,.3)', X(.008));
+      blob(fw, .88, .1, .2, .1, -0.4, 'rgba(52,52,50,.9)'); dots(fw, [[.6,.3],[.62,.43]], .034, '#333');
+      break;
+    case 5: // paź królowej
+      fill(hw, rg(.05, .6, .8, [[0,'#3a3220'],[.25,'#f6dc5a'],[1,'#f2d24a']]));
+      veins(hw, HB, HT, '#141210', X(.02)); border(hw, '#141210', .14);
+      dots(hw, [[.65,.68],[.62,.79],[.53,.86],[.42,.88]], .026, '#5b8fd8'); dots(hw, [[.7,.73],[.64,.86],[.5,.925]], .02, '#f6dc5a');
+      dots(hw, [[.2,.84]], .05, '#2a3f8f'); dots(hw, [[.2,.84]], .034, '#e3462a');
+      fill(fw, rg(.05, .5, .9, [[0,'#2e281c'],[.2,'#f6dc5a'],[1,'#f2d24a']]));
+      veins(fw, FB, FT, '#141210', X(.022));
+      clip(fw, () => { g.strokeStyle = '#141210'; g.lineWidth = X(.05); g.lineCap = 'butt'; [[.18,.3,.22,.46],[.34,.2,.38,.42],[.52,.12,.55,.36]].forEach(q => { g.beginPath(); g.moveTo(X(q[0]), X(q[1])); g.lineTo(X(q[2]), X(q[3])); g.stroke(); }); });
+      border(fw, '#141210', .1); dots(fw, [[.66,.09],[.82,.1],[.92,.24],[.88,.36],[.79,.44]], .02, '#f6dc5a');
+      break;
+    case 6: // rusałka admirał
+      fill(hw, rg(.05, .6, .8, [[0,'#3a2a22'],[1,'#17100d']]));
+      clip(hw, () => { g.strokeStyle = '#e2541f'; g.lineWidth = X(.17); g.stroke(hw); });
+      border(hw, '#17100d', .028); dots(hw, [[.62,.83],[.5,.89],[.38,.9]], .014, '#120c0a'); dots(hw, [[.2,.88]], .03, '#5f86c9');
+      fill(fw, rg(.05, .5, .9, [[0,'#3b2a22'],[1,'#120d0b']]));
+      band(fw, [[.33,.13],[.5,.3],[.74,.46]], '#e5531c', .1);
+      dots(fw, [[.8,.12],[.88,.18],[.72,.2],[.9,.27]], .024, '#f6f4ee'); border(fw, '#0e0a08', .02);
+      break;
+    case 7: { // mieniak (fioletowy)
+      const vi = [[0,'#3a1f6e'],[.4,'#6a36c8'],[.8,'#9564f2'],[1,'#3b1d6a']];
+      fill(hw, rg(.05, .6, .8, vi)); band(hw, [[.08,.62],[.35,.7],[.62,.72]], 'rgba(244,240,255,.92)', .065, [.05, .025]);
+      dots(hw, [[.6,.82]], .05, '#1d1030'); dots(hw, [[.6,.82]], .038, '#f0a03a'); dots(hw, [[.6,.82]], .02, '#1d1030');
+      border(hw, '#24123f', .04);
+      fill(fw, rg(.05, .5, .9, vi)); band(fw, [[.24,.44],[.42,.33],[.62,.24]], 'rgba(244,240,255,.92)', .06, [.05, .025]);
+      dots(fw, [[.75,.15],[.82,.21]], .022, '#f4f0ff'); border(fw, '#24123f', .04);
+      break; }
+  }
+  // drobne łuski + przyciemnienie przy ciele, obrys
+  const both = new Path2D(); both.addPath(hw); both.addPath(fw);
+  clip(both, () => {
+    for (let i = 0; i < 420; i++) {
+      const x = (Math.sin(i * 12.9898 + s * 7.1) * 43758.5453 % 1 + 1) % 1, y = (Math.sin(i * 78.233 + s * 3.3) * 12543.31 % 1 + 1) % 1;
+      g.fillStyle = i % 2 ? 'rgba(255,255,255,.07)' : 'rgba(0,0,0,.07)'; g.fillRect(X(x), X(y), 1.6, 1.6);
+    }
+    const gr = g.createRadialGradient(0, X(.55), 0, 0, X(.55), X(.2)); gr.addColorStop(0, 'rgba(40,28,20,.6)'); gr.addColorStop(1, 'rgba(40,28,20,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, N, N);
+  });
+  g.strokeStyle = 'rgba(25,18,12,.9)'; g.lineWidth = 2; g.stroke(hw); g.stroke(fw);
+}
+// kąt machnięcia skrzydeł (rad): ~−0,2 (rozłożone) … ~1,2 (uniesione)
+function bfFlap(ph){ return -0.22 + 1.42 * (0.5 + 0.5 * Math.sin(ph)); }
+
+// ═══════════════════════════════════════════════════════════════
+//  WIDOK (tylko wygląd): scena 3D (three.js, skrypt niżej) albo zapasowy 2D.
+//  Logika liczy wszystko w pikselach planszy (motyle, siatka, napisy);
+//  widok 3D umieszcza modele dokładnie pod tymi punktami ekranu.
+// ═══════════════════════════════════════════════════════════════
+const BF_FORCE_2D = (() => { try { return new URLSearchParams(location.search).get('2d') === '1'; } catch(e) { return false; } })();
+const BFV = {
+  is3D(){ return !!(window.BF3D && window.BF3D.on); },
+  frame(dt, t){
+    if (this.is3D()) {
+      try {
+        window.BF3D.frame(dt, t);
+        if (window.BF3D.tooSlow) bfUse2D();      // bardzo słaby sprzęt → widok 2D
+        return;
+      } catch(e) { console.warn('[motyle 3D]', e); bfUse2D(); }
+    }
+    bf2dDraw(dt, t);
+  },
+  burst(x, y, kind){
+    if (this.is3D()) { try { window.BF3D.burst(x, y, kind); return; } catch(e) { console.warn('[motyle 3D]', e); } }
+    bf2dBurst(x, y, kind);
+  }
+};
+function bfHelp(open){
+  const m = bf$('htpModal'); if (!m) return;
+  m.classList.toggle('open', !!open);
+  if (bfRunning) bfPaused = !!open;          // gra stoi, gdy czytasz instrukcję
+  if (open) { const b = m.querySelector('.htp-close'); if (b) b.focus(); }
+}
+// ── Start: krótko czekamy (maks. 3 s) na scenę 3D — w razie problemów gra rusza w 2D ──
+function bfWhen3D(cb){
+  const t0 = Date.now();
+  (function wait(){
+    const B = window.BF3D;
+    if (BF_FORCE_2D || !B || B.ready || B.failed || Date.now() - t0 > 3000) { cb(); return; }
+    setTimeout(wait, 80);
+  })();
+}
+function bfStartClick(){
+  const b = bf$('startBtn');
+  const B = window.BF3D;
+  _ensureAc();
+  if (BF_FORCE_2D || !B || B.ready || B.failed) { startGameFromSelector(); return; }
+  const txt = b.textContent;
+  b.disabled = true; b.textContent = '⏳ Ładowanie łąki…';
+  bfWhen3D(() => { b.disabled = false; b.textContent = txt; startGameFromSelector(); });
+}
+// Wejście na ekran gry: układ planszy + (jeśli gotowa) scena 3D + pętla animacji
+function bfViewEnter(){
+  bfLayout();
+  bfTry3D();
+  requestAnimationFrame(bfLayout);
+  bfLoopStart();
+}
+function bfTry3D(){
+  const B = window.BF3D;
+  if (BF_FORCE_2D || !B || B.on || !B.ready || B.failed || B.tooSlow) return;
+  if (!document.body.classList.contains('in-game')) return;
+  let ok = false;
+  try { ok = B.attach(bf$('bf3dCanvas')); } catch(e) { console.warn('[motyle 3D]', e); ok = false; }
+  if (!ok) return;
+  bf$('bfGame').classList.add('bf3d');
+  bfLayout();
+}
+function bfUse2D(){
+  const B = window.BF3D;
+  try { if (B && B.on) B.detach(); } catch(e) {}
+  const g = bf$('bfGame'); if (g) g.classList.remove('bf3d');
+  bfLayout();
+}
+// ── Układ planszy: rozmiary motyli, siatki i napisów, pas lotu pod HUD-em ──
+function bfLayout(){
+  const g = bf$('bfGame'); if (!g) return;
+  const W = g.clientWidth, H = g.clientHeight; if (!W || !H) return;
+  const S = Math.min(W, H);
+  BF.W = W; BF.H = H; BF.S = S;
+  BF.R = Math.round(bfClamp(S * 0.085, 30, 54));
+  BF.hoopR = Math.round(bfClamp(S * 0.1, 38, 70));
+  BF.lf = Math.round(bfClamp(S * 0.034, 14, 20));
+  BF.spd = S * 0.13;
+  BF.cap = W < 430 ? 4 : (W < 800 ? 5 : 6);
+  g.style.setProperty('--lf', BF.lf + 'px');
+  g.style.setProperty('--lmax', Math.round(Math.min(W * 0.44, 240)) + 'px');
+  const top = bf$('bfTop'), w = bf$('bfWord');
+  const tb = top && w ? top.offsetTop + w.offsetTop + w.offsetHeight : 110;
+  BF.top = tb + BF.R * 0.95 + 6;
+  BF.bot = H - (BF.lf * 1.6 + 14) - BF.R * 0.7 - 10;
+  if (BF.bot - BF.top < BF.R * 3) BF.bot = BF.top + BF.R * 3;
+  const jar = bf$('bfHudJar'), gr = g.getBoundingClientRect();
+  if (jar) { const r = jar.getBoundingClientRect(); BF.jarX = r.left - gr.left + 20; BF.jarY = r.top - gr.top + r.height / 2; }
+  BF.handX = W * 0.66; BF.handY = H * 1.28;
+  if (!bfRunning) { bfNet.x = bfNet.rx = W * 0.5; bfNet.y = bfNet.ry = H * 0.72; }
+  bf2dResize();
+  if (BFV.is3D()) { try { window.BF3D.layout(W, H); } catch(e) { console.warn('[motyle 3D]', e); } }
+  bfFitWord();
+}
+let _bfFitT = null;
+window.addEventListener('resize', () => { clearTimeout(_bfFitT); _bfFitT = setTimeout(bfLayout, 120); });
+// ── Dopasowanie tekstu (długie słowa: mniejsza czcionka, potem zawijanie) ──
+function bfFitText(el, min){
+  if (!el || !el.clientWidth) return;
+  el.style.fontSize = ''; el.classList.remove('wrap');
+  let fs = parseFloat(getComputedStyle(el).fontSize) || 16, guard = 40;
+  while (el.scrollWidth > el.clientWidth + 1 && fs > min && guard--) { fs -= 1; el.style.fontSize = fs + 'px'; }
+  if (el.scrollWidth > el.clientWidth + 1) el.classList.add('wrap');
+}
+function bfFitWord(){ bfFitText(bf$('bfWord'), 14); }
+
+// ═══════════════════════════════════════════════════════════════
 //  SETUP
 // ═══════════════════════════════════════════════════════════════
 (function(){
+  bfSvgMeadow();
+  bfLogo();
+  bfSndUpd();
   if (typeof BOOKS === 'undefined') return;
   const bs = document.getElementById('bookSel');
   Object.values(BOOKS)
@@ -361,13 +933,18 @@ function toggleOrder(){ orderRandom=!orderRandom; try{ localStorage.setItem('fis
       bs.value = bookParam;
       onBookChange();
       const us = document.getElementById('unitSel');
-      const targetUnit = (unitParam === 'all' || !unitParam) ? 'all' : unitParam;
+      const targetUnit = (unitParam === 'all' || unitParam === '__all__' || !unitParam) ? 'all' : unitParam;
       if (BOOKS[bookParam].units?.[targetUnit] || targetUnit === 'all') us.value = targetUnit;
       if (LIVE) {
         document.body.classList.add('live-mode');
         document.getElementById('lbNick').textContent = LIVE.nick || '—';
       }
-      setTimeout(() => { try { startGameFromSelector(); } catch(e) {} }, 350);
+      // Krótko czekamy na scenę 3D (maks. 3 s), potem start — w razie problemów w widoku 2D
+      document.body.classList.add('bf-boot');
+      setTimeout(() => bfWhen3D(() => {
+        try { startGameFromSelector(); } catch(e) {}
+        document.body.classList.remove('bf-boot');
+      }), 350);
     }
   } catch(e) {}
   updateOrderBtn();
@@ -393,6 +970,22 @@ function onBookChange(){
   us.disabled = false; us.value = 'all'; lb.disabled = false;
 }
 
+// Słówka do gry: bez pustych i powtórzeń; wyrażenia też (napisy przy motylach
+// mieszczą się w 1–2 liniach), bardzo długie tylko gdy krótkich jest za mało.
+function bfPrepWords(all){
+  const seen = new Set(), out = [];
+  all.forEach(w => {
+    const pl = String(w[0] || '').trim(), en = String(w[1] || '').trim();
+    if (!pl || !en) return;
+    const k = pl + '\u0001' + en; if (seen.has(k)) return;
+    seen.add(k); out.push([pl, en]);
+  });
+  const short = out.filter(w => w[1].length <= 28 && w[0].length <= 36);
+  const pick = short.length >= 3 ? short : out;
+  const uniq = new Set(pick.map(w => bfNorm(w[1])));
+  return (pick.length >= 3 && uniq.size >= 2) ? pick : null;
+}
+
 function startGameFromSelector(){
   const bId = document.getElementById('bookSel').value;
   const uKey = document.getElementById('unitSel').value;
@@ -400,22 +993,23 @@ function startGameFromSelector(){
   bookLang = BOOKS[bId].language || 'en';
 
   const allWords = [];
-  if (uKey === 'all') {
+  if (uKey === 'all' || uKey === '__all__') {
     Object.values(BOOKS[bId].units || {}).forEach(u => {
       (u.words || []).forEach(w => allWords.push([w[0]||'', w[1]||'']));
     });
   } else if (BOOKS[bId].units?.[uKey]) {
     (BOOKS[bId].units[uKey].words || []).forEach(w => allWords.push([w[0]||'', w[1]||'']));
   }
-  const filtered = allWords.filter(w => w[0] && w[1] && !/\s/.test(w[0].trim()) && !/\s/.test(w[1].trim()));
-  if (filtered.length < 4) { alert('Ten unit ma za mało pojedynczych słówek (min 4).'); return; }
+  const words = bfPrepWords(allWords);
+  if (!words) { alert('Ten unit ma za mało słówek do tej gry (min. 3).'); return; }
 
-  activeWords = filtered;
-  activeAllWords = filtered;
+  activeWords = words;
+  activeAllWords = words;
 
   document.body.classList.add('in-game');
   document.getElementById('gameScreen').style.display = 'block';
   document.getElementById('setupScreen').style.display = 'none';
+  bfViewEnter();
 
   if (LIVE) {
     document.getElementById('liveBanner').style.display = 'flex';
@@ -443,10 +1037,7 @@ function _liveStartGlobalTimer(){
     document.getElementById('lbTime').textContent = '⏱️ ' + m + ':' + (s < 10 ? '0' : '') + s;
     if (left <= 0) {
       clearInterval(_liveGlobalTimerInterval); _liveGlobalTimerInterval = null;
-      bfRunning = false;
-      clearInterval(bfSpawnInt); clearInterval(bfTimerInt);
-      cancelAnimationFrame(bfAnimFrame);
-      _bfShowEnd();
+      if (bfRunning) { bfTime = 0; bfHudTime(true); bfFinish(); } else _bfShowEnd();
     }
   }
   tick();
@@ -454,38 +1045,75 @@ function _liveStartGlobalTimer(){
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  LOGIKA GRY (skopiowana z app.html)
+//  LOGIKA GRY
+//  Poprawność motyla jest sprawdzana W CHWILI ZŁAPANIA (napis motyla ==
+//  aktualna odpowiedź). Łapie tylko machnięcie siatką (klik / dotknięcie /
+//  spacja) — samo najechanie niczego nie zalicza. Po zmianie słowa stare
+//  motyle odlatują (nie da się ich złapać), a przez BF_GRACE s siatka nic nie
+//  łapie. Złapany motyl od razu zmienia stan → bez podwójnych zaliczeń.
 // ═══════════════════════════════════════════════════════════════
 function bfReset() {
-  bfRunning = false;
-  bfScore = 0;
-  bfTime = (LIVE && LIVE.timeLimit > 0) ? LIVE.timeLimit : 45;
-  bfFalling.forEach(el => el.remove());
-  bfFalling = [];
-  clearInterval(bfSpawnInt); clearInterval(bfTimerInt);
-  cancelAnimationFrame(bfAnimFrame);
-  document.getElementById('bfScore').textContent = '0';
-  document.getElementById('bfTime').textContent = bfTime;
-  document.getElementById('bfWord').textContent = '—';
-  document.getElementById('bfButterflies').innerHTML = '';
-  document.getElementById('bfEffects').innerHTML = '';
-  document.getElementById('bfStart').style.display = 'flex';
-  document.getElementById('bfStart').innerHTML =
-    '<div style="text-align:center;color:#fff;padding:20px">' +
-    '<div style="font-size:2rem;margin-bottom:6px">🦋 Łap motyle!</div>' +
-    '<div style="font-size:.8rem;margin-bottom:12px;color:#ccc">Przesuwaj siatkę i łap motyla z poprawnym tłumaczeniem</div>' +
-    '<button class="btn-start" onclick="bfStartGame()" style="font-size:.95rem;padding:10px 24px;width:auto;margin:0">▶ Start</button>' +
-    '</div>';
+  bfRunning = false; bfEnded = false; bfPaused = false;
+  bfScore = 0; bfCaught = 0; bfJarN = 0; bfMistakes = 0; bfStreak = 0; bfGameT = 0;
+  bfTimeMax = bfTime = (LIVE && LIVE.timeLimit > 0) ? LIVE.timeLimit : BF_TIME;
+  bfCurrent = null;
+  bfFalling.filter(b => b.state !== 'ambient').forEach(bfKill);
+  bfFalling = bfFalling.filter(b => b.state === 'ambient');
+  bf$('bfScore').textContent = '0';
+  bf$('bfJar').textContent = '0';
+  bfHudTime(true);
+  bf$('bfWord').textContent = '—';
+  bfStreakBadge();
+  bf$('bfFx').innerHTML = '';
+  bfNet.shown = false; bfNet.swingT = 0; bfNet.cool = 0; bfNet.shakeT = 0;
+  bf$('bfGame').classList.remove('playing');
+  bfOverlay('🦋', 'Łap motyle!', BF_TOUCH ? 'Dotknij motyla z dobrym tłumaczeniem — siatka go złapie.' : 'Kliknij motyla z dobrym tłumaczeniem — siatka go złapie.', null, '', '▶ Start');
+}
+function bfOverlay(emoji, title, desc, stats, rec, btn){
+  const ov = bf$('bfOverlay');
+  if (!emoji) { ov.style.display = 'none'; return; }
+  ov.style.display = 'flex';
+  bf$('bfOvEmoji').textContent = emoji;
+  bf$('bfOvTitle').textContent = title;
+  bf$('bfOvDesc').textContent = desc;
+  const st = bf$('bfOvStats');
+  st.classList.toggle('on', !!stats);
+  st.innerHTML = stats ? stats.map(s => '<div><b>' + esc(s[0]) + '</b><span>' + esc(s[1]) + '</span></div>').join('') : '';
+  bf$('bfOvRec').textContent = rec || '';
+  bf$('bfOvBtn').textContent = btn;
+  bf$('bfOvBtn').style.display = LIVE ? 'none' : '';
 }
 
 function bfNewWord() {
   if (!activeWords || !activeWords.length) return;
-  const idx = orderRandom ? Math.floor(Math.random() * activeWords.length) : (bfSeqIdx++ % activeWords.length);
+  let idx;
+  if (orderRandom) {
+    // losowo bez powtórek pod rząd (worek)
+    if (!bfBag.length) {
+      bfBag = shuffle(activeWords.map((_, i) => i));
+      if (bfBag.length > 1 && bfBag[bfBag.length - 1] === bfLastIdx) bfBag.unshift(bfBag.pop());
+    }
+    idx = bfBag.pop();
+  } else idx = bfSeqIdx++ % activeWords.length;
+  bfLastIdx = idx;
   const [pl, en] = activeWords[idx];
-  const others = activeAllWords.filter(w => w[1] !== en);
-  const wrong = shuffle(others).slice(0, 3).map(w => w[1]);
-  bfCurrent = {pl, en, wrong};
-  document.getElementById('bfWord').textContent = pl;
+  const enK = bfNorm(en), plK = bfNorm(pl), seen = new Set([enK]), wrong = [];
+  shuffle(activeAllWords).forEach(w => {
+    const k = bfNorm(w[1]);
+    if (seen.has(k) || bfNorm(w[0]) === plK) return;     // bez synonimów tego samego polskiego słowa
+    seen.add(k); wrong.push(w[1]);
+  });
+  if (!wrong.length) activeAllWords.forEach(w => { if (bfNorm(w[1]) !== enK && wrong.indexOf(w[1]) < 0) wrong.push(w[1]); });
+  bfCurrent = { pl, en, wrong: wrong.slice(0, 5) };
+  bfRound++;
+  bfGraceUntil = bfGameT + BF_GRACE;
+  // motyle z poprzedniego słowa odlatują — ich już nie da się złapać
+  bfFalling.forEach(b => { if (b.state === 'fly') bfFlee(b); });
+  bfSpawnT = 0.15; bfWave = Math.min(BF.cap, 3) - 1;
+  const w = bf$('bfWord');
+  w.innerHTML = '🇵🇱 ' + esc(pl) + '<span class="spk" aria-hidden="true">🔊</span>';
+  bfFitWord();
+  w.classList.remove('pop'); void w.offsetWidth; w.classList.add('pop');
   if (autoVoice) bfSpeakPlWhenIdle(pl);
 }
 
@@ -506,165 +1134,1289 @@ function bfSpeakPlWhenIdle(text){
   };
   setTimeout(tick, 250);
 }
+function bfSayAgain(){ _ensureAc(); if (bfCurrent && autoVoice) spkPl(bfCurrent.pl); }
 
-function bfSpawn() {
-  if (!bfRunning || !bfCurrent) return;
-  const container = document.getElementById('bfButterflies');
-  const isCorrect = Math.random() < 0.4;
-  const label = isCorrect ? bfCurrent.en : bfCurrent.wrong[Math.floor(Math.random() * bfCurrent.wrong.length)];
-  if (!label) return;
+const bfIsRight = b => !!(bfCurrent && b.label != null && bfNorm(b.label) === bfNorm(bfCurrent.en));
+const bfTempo = () => 1 + Math.min(0.9, bfGameT / 50);     // tempo rośnie z czasem (do ×1,9)
 
-  const moth = document.createElement('div');
-  moth.className = 'bf-moth';
-  moth.dataset.correct = isCorrect ? '1' : '0';
-  moth.style.left = (4 + Math.random() * 78) + '%';
-  moth.style.top = '-60px';
-  moth.dataset.drift = (Math.random() * 1.2 - 0.6).toFixed(2);
-  moth.innerHTML = '<div class="bf-wings">🦋</div><div class="bf-lbl">' + esc(label) + '</div>';
-  container.appendChild(moth);
-  bfFalling.push(moth);
+// Nowy motyl wlatuje z boku albo „wyrasta” z kwiatów na dole
+function bfNewBug(label, amb){
+  const { W, H, R } = BF;
+  const side = amb ? (Math.random() < 0.5 ? 0 : 1) : (Math.random() < 0.38 ? 0 : (Math.random() < 0.62 ? 1 : 2));
+  const y0 = amb ? H * 0.2 : BF.top, y1 = amb ? H * 0.8 : BF.bot;
+  let x, y;
+  if (side === 0) { x = -R * 1.8; y = y0 + Math.random() * (y1 - y0); }
+  else if (side === 1) { x = W + R * 1.8; y = y0 + Math.random() * (y1 - y0); }
+  else { x = W * (0.14 + Math.random() * 0.72); y = H + R * 1.5; }
+  const used = new Array(BF_SPECIES).fill(0);
+  bfFalling.forEach(b => { if (b.state === 'fly' || b.state === 'ambient') used[b.sp]++; });
+  const min = Math.min(...used), choice = used.map((n, i) => n === min ? i : -1).filter(i => i >= 0);
+  const b = {
+    id: bfNextId++, label, round: bfRound, sp: choice[Math.floor(Math.random() * choice.length)],
+    x, y, vx: 0, vy: 0, tx: 0, ty: 0, bx: x, by: y, head: 0,
+    ph: Math.random() * 6.28, fr: 30 + Math.random() * 9, age: 0, life: 7 + Math.random() * 3.5,
+    state: amb ? 'ambient' : 'fly', st: 0, entered: false, leaving: false, scale: 1, op: -1,
+    spdK: 0.85 + Math.random() * 0.3, seed: Math.random() * 100, el: null, lw: 0, lh: 0
+  };
+  if (label != null) bfMakeLabel(b);
+  bfPickTarget(b);
+  const dx = b.tx - x, dy = b.ty - y, d = Math.hypot(dx, dy) || 1;
+  b.vx = dx / d * BF.spd; b.vy = dy / d * BF.spd;
+  bfFalling.push(b);
+  return b;
+}
+function bfSpawn(correct){
+  if (!bfCurrent) return null;
+  let label = bfCurrent.en;
+  if (!correct) {
+    // zły napis — najrzadszy z tych, które teraz latają
+    const cnt = new Map();
+    bfFalling.forEach(b => { if (b.state === 'fly' && b.round === bfRound) cnt.set(b.label, (cnt.get(b.label) || 0) + 1); });
+    const ws = shuffle(bfCurrent.wrong).sort((a, b) => (cnt.get(a) || 0) - (cnt.get(b) || 0));
+    label = ws[0];
+  }
+  if (label == null) return null;
+  return bfNewBug(label, false);
+}
+function bfMakeLabel(b){
+  const el = document.createElement('div'), sp = document.createElement('span');
+  el.className = 'bf-lbl'; sp.textContent = b.label; el.appendChild(sp);
+  el.style.transform = 'translate(-9999px,0)';
+  bf$('bfLabels').appendChild(el);
+  bfFitText(sp, 11);
+  b.el = el; b.lw = el.offsetWidth || 80; b.lh = el.offsetHeight || 26;
+}
+function bfKill(b){ if (b.el) { b.el.remove(); b.el = null; } }
+function bfPickTarget(b){
+  const { W, H, R, S } = BF, amb = b.state === 'ambient';
+  const m = Math.max(R * 1.2, (b.lw || 0) / 2 + 8);
+  const y0 = amb ? H * 0.18 : BF.top, y1 = amb ? H * 0.82 : BF.bot;
+  let tx = W / 2, ty = (y0 + y1) / 2;
+  for (let i = 0; i < 5; i++) {
+    tx = m + Math.random() * Math.max(1, W - 2 * m); ty = y0 + Math.random() * Math.max(1, y1 - y0);
+    if (Math.hypot(tx - b.x, ty - b.y) > S * 0.28) break;
+  }
+  b.tx = tx; b.ty = ty;
+}
+function bfExitTarget(b){
+  b.tx = b.x < BF.W / 2 ? -BF.R * 4 : BF.W + BF.R * 4;
+  b.ty = b.y + (Math.random() - 0.5) * BF.H * 0.3;
+}
+function bfOff(b){ const m = BF.R * 2.2 + (b.lw || 0) / 2; return b.x < -m || b.x > BF.W + m || b.y < -BF.R * 2.5 || b.y > BF.H + BF.R * 2.5 + (b.lh || 0); }
+function bfFlee(b){
+  b.state = 'flee'; b.st = 0;
+  const s = b.x < BF.W / 2 ? -1 : 1;
+  b.fx = s * 0.8; b.fy = -0.6;
 }
 
-function bfGetNetRect() {
-  const player = document.getElementById('bfPlayer');
-  const ring = player.getBoundingClientRect();
-  return {left: ring.left + 8, right: ring.right - 8, top: ring.top, bottom: ring.bottom - 10};
-}
-
-function bfUpdate() {
-  if (!bfRunning) return;
-  const netRect = bfGetNetRect();
-  const gameRect = document.getElementById('bfGame').getBoundingClientRect();
-
+function bfStep(dt){
+  if (bfPaused) return;
+  if (bfRunning) {
+    bfGameT += dt;
+    bfTime -= dt;
+    if (bfTime <= 0) { bfTime = 0; bfHudTime(); bfFinish(); }
+    else bfHudTime();
+  }
+  const tempo = bfRunning ? bfTempo() : 1;
+  if (bfRunning) {
+    // vis = motyle z napisami na łące (także te, które już wylatują), liveOk = dobre, które jeszcze zostają
+    let vis = 0, live = 0, liveOk = 0;
+    for (const b of bfFalling) if (b.state === 'fly' && b.round === bfRound) { vis++; if (!b.leaving) { live++; if (bfIsRight(b)) liveOk++; } }
+    bfSpawnT -= dt;
+    if (bfSpawnT <= 0) {
+      if (vis < BF.cap || (liveOk === 0 && vis < BF.cap + 2)) {
+        // zawsze co najmniej jeden dobry motyl; czasem drugi, gdy na łące jest tłoczno
+        const ok = liveOk === 0 || (liveOk === 1 && live >= 3 && Math.random() < 0.22);
+        bfSpawn(liveOk >= 2 ? false : ok);
+        bfSpawnT = (bfWave > 0 ? (bfWave--, 0.24) : 1.75 / tempo) * (0.85 + Math.random() * 0.3);
+      } else bfSpawnT = 0.3;
+    }
+    if (liveOk === 0 && bfSpawnT > 0.45) bfSpawnT = 0.45;   // dobry odleciał → szybko następny
+  } else {
+    // ozdobne motyle (bez napisów) na ekranie startu i końca
+    let amb = 0; for (const b of bfFalling) if (b.state === 'ambient') amb++;
+    bfAmbT -= dt;
+    if (amb < 3 && bfAmbT <= 0) { bfNewBug(null, true); bfAmbT = 1.3; }
+  }
   for (let i = bfFalling.length - 1; i >= 0; i--) {
-    const el = bfFalling[i];
-    const top = parseFloat(el.style.top) || 0;
-    const drift = parseFloat(el.dataset.drift);
-    const newTop = top + 0.8;
-    let left = parseFloat(el.style.left);
-    left += drift * 0.06;
-    if (left < 2) left = 2;
-    if (left > 86) left = 86;
-    el.style.top = newTop + 'px';
-    el.style.left = left + '%';
-
-    const b = el.getBoundingClientRect();
-    const mRect = {left: b.left + 10, right: b.right - 10, top: b.top + 8, bottom: b.bottom - 8};
-
-    if (!(mRect.right < netRect.left || mRect.left > netRect.right || mRect.bottom < netRect.top || mRect.top > netRect.bottom)) {
-      if (el.dataset.correct === '1') {
-        bfScore += 10;
-        document.getElementById('bfScore').textContent = bfScore;
-        bfSpawnStars(b.left + b.width/2 - gameRect.left, b.top + b.height/2 - gameRect.top);
-        playOk();
-        spkForeign(bfCurrent.en);
-        bfNewWord();
-      } else {
-        bfScore = Math.max(0, bfScore - 5);
-        document.getElementById('bfScore').textContent = bfScore;
-        bfShakeGame();
-        playBad();
-      }
-      el.remove();
-      bfFalling.splice(i, 1);
-      continue;
+    const b = bfFalling[i];
+    bfMove(b, dt, tempo);
+    if (b.dead) { bfKill(b); bfFalling.splice(i, 1); }
+  }
+  bfSeparate(dt);
+  bfNetStep(dt);
+}
+function bfMove(b, dt, tempo){
+  const { W, H, R } = BF;
+  b.age += dt; b.st += dt;
+  const spd = BF.spd * b.spdK * (b.state === 'ambient' ? 0.8 : tempo) * (b.leaving ? 1.7 : 1);
+  b.ph += dt * b.fr * (b.state === 'flee' || b.state === 'escape' ? 1.45 : 1);
+  if (b.state === 'fly' || b.state === 'ambient') {
+    if (!b.leaving && b.age > b.life * (b.state === 'ambient' ? 2 : 1)) { b.leaving = true; bfExitTarget(b); }
+    const dx = b.tx - b.x, dy = b.ty - b.y, d = Math.hypot(dx, dy) || 1;
+    if (!b.leaving && d < R) bfPickTarget(b);
+    const wob = Math.sin(b.age * 1.7 + b.seed) * 0.6 + Math.sin(b.age * 3.1 + b.seed * 2) * 0.25;   // „zygzak” lotu
+    const ux = dx / d, uy = dy / d, c = Math.cos(wob), s = Math.sin(wob);
+    const ax = (ux * c - uy * s) * spd, ay = (ux * s + uy * c) * spd, k = Math.min(1, dt * 1.7);
+    b.vx += (ax - b.vx) * k; b.vy += (ay - b.vy) * k;
+    b.x += b.vx * dt; b.y += b.vy * dt;
+    if (!b.entered && b.x > R * 0.7 && b.x < W - R * 0.7 && b.y > R * 0.7 && b.y < H - R * 0.7) b.entered = true;
+    if (b.entered && !b.leaving && b.state === 'fly') {     // miękko trzymaj w pasie lotu
+      const kk = Math.min(1, dt * 6), m = Math.max(R, b.lw / 2 + 4);
+      if (b.y < BF.top) b.y += (BF.top - b.y) * kk; else if (b.y > BF.bot) b.y -= (b.y - BF.bot) * kk;
+      if (b.x < m) b.x += (m - b.x) * kk; else if (b.x > W - m) b.x -= (b.x - (W - m)) * kk;
     }
-
-    if (newTop > 430) {
-      el.remove();
-      bfFalling.splice(i, 1);
+    if (b.leaving && bfOff(b)) b.dead = true;
+  } else if (b.state === 'flee' || b.state === 'escape') {
+    const acc = b.state === 'escape' ? 3.4 : 2.6;
+    b.vx += b.fx * spd * acc * dt; b.vy += b.fy * spd * acc * dt;
+    b.x += (b.vx + Math.sin(b.st * 9 + b.seed) * spd * 0.45) * dt; b.y += b.vy * dt;
+    if (bfOff(b) || b.st > 4) b.dead = true;
+  } else if (b.state === 'caught') {
+    // najpierw do środka siatki, potem łukiem do słoika w HUD-zie
+    const t = b.st;
+    if (t < 0.2) { const u = t / 0.2, e = u * u * (3 - 2 * u); b.x = b.cx0 + (b.nx - b.cx0) * e; b.y = b.cy0 + (b.ny - b.cy0) * e; b.scale = 1 - 0.22 * e; }
+    else {
+      const u = Math.min(1, (t - 0.2) / 0.72), e = u * u * (3 - 2 * u), mx = (b.nx + BF.jarX) / 2, my = Math.min(b.ny, BF.jarY) - BF.H * 0.18;
+      b.x = (1 - e) * (1 - e) * b.nx + 2 * (1 - e) * e * mx + e * e * BF.jarX;
+      b.y = (1 - e) * (1 - e) * b.ny + 2 * (1 - e) * e * my + e * e * BF.jarY;
+      b.scale = 0.78 - 0.52 * e;
+      if (u >= 1) { b.dead = true; bfJarIn(); }
     }
   }
-
-  bfAnimFrame = requestAnimationFrame(bfUpdate);
+  if (b.state !== 'caught') {
+    const th = bfClamp(-b.vx / (BF.spd + 1) * 0.85, -1.05, 1.05);    // przechył w stronę lotu
+    b.head += (th - b.head) * Math.min(1, dt * 5);
+  }
+  b.bx = b.x; b.by = b.y - Math.sin(b.ph) * R * 0.07;
+  // środek napisu: pod motylem, ale (gdy motyl już jest na łące) zawsze w całości na planszy
+  b.lcx = b.entered && b.state === 'fly' && b.lw ? bfClamp(b.bx, b.lw / 2 + 4, W - b.lw / 2 - 4) : b.bx;
 }
-
-function bfSpawnStars(x, y) {
-  const container = document.getElementById('bfEffects');
-  const emojis = ['⭐','✨','🌟','💫','🎉'];
-  for (let i = 0; i < 6; i++) {
-    const star = document.createElement('div');
-    star.className = 'bf-star';
-    star.textContent = emojis[Math.floor(Math.random() * emojis.length)];
-    star.style.left = (x + (Math.random() - 0.5) * 60) + 'px';
-    star.style.top = (y + (Math.random() - 0.5) * 40) + 'px';
-    star.style.animationDelay = (Math.random() * 0.2) + 's';
-    container.appendChild(star);
-    setTimeout(() => star.remove(), 1000);
+// Motyle z napisami nie mogą na siebie nachodzić (napisy muszą być czytelne)
+function bfSeparate(dt){
+  const R = BF.R, k = Math.min(1, dt * 5) * 0.5, arr = [];
+  for (const b of bfFalling) if (b.state === 'fly' && b.el) arr.push(b);
+  for (let i = 0; i < arr.length; i++) for (let j = i + 1; j < arr.length; j++) {
+    const a = arr[i], c = arr[j];
+    const aw = Math.max(R * 1.05, a.lw / 2) + 6, cw = Math.max(R * 1.05, c.lw / 2) + 6;
+    const ox = aw + cw - Math.abs(a.x - c.x); if (ox <= 0) continue;
+    const aT = a.y - R * 0.8, aB = a.y + R * 0.62 + a.lh + 4, cT = c.y - R * 0.8, cB = c.y + R * 0.62 + c.lh + 4;
+    const oy = (aB - aT) / 2 + (cB - cT) / 2 - Math.abs((aT + aB) / 2 - (cT + cB) / 2); if (oy <= 0) continue;
+    if (ox < oy) { const s = a.x < c.x ? -1 : 1; a.x += s * ox * k; c.x -= s * ox * k; }
+    else { const s = (aT + aB) < (cT + cB) ? -1 : 1; a.y += s * oy * k; c.y -= s * oy * k; }
   }
 }
-
-function bfShakeGame() {
-  const game = document.getElementById('bfGame');
-  game.style.animation = 'bfShake .4s ease';
-  setTimeout(() => game.style.animation = '', 400);
+function bfNetStep(dt){
+  const N = bfNet, K = N.keys;
+  const kx = (K.r ? 1 : 0) - (K.l ? 1 : 0), ky = (K.d ? 1 : 0) - (K.u ? 1 : 0);
+  if (bfRunning && (kx || ky)) {
+    N.x = bfClamp(N.x + kx * BF.S * 0.95 * dt, 0, BF.W);
+    N.y = bfClamp(N.y + ky * BF.S * 0.95 * dt, 0, BF.H);
+  }
+  const px = N.rx, f = Math.min(1, dt * 24);
+  N.rx += (N.x - N.rx) * f; N.ry += (N.y - N.ry) * f;
+  N.vx = N.vx * 0.8 + ((N.rx - px) / Math.max(dt, 1e-3)) * 0.2;
+  if (N.swingT > 0) { N.swingT += dt / 0.3; if (N.swingT >= 1) N.swingT = 0; }
+  if (N.cool > 0) N.cool -= dt;
+  if (N.shakeT > 0) N.shakeT = Math.max(0, N.shakeT - dt);
+  N.sx = N.shakeT > 0 ? Math.sin(N.shakeT * 70) * 7 * (N.shakeT / 0.4) : 0;
+}
+// Machnięcie siatką w punkcie (x, y) — jedyny sposób na złapanie motyla
+function bfSwing(x, y){
+  if (!bfRunning || bfPaused) return;
+  if (x != null) { bfNet.x = x; bfNet.y = y; }
+  if (bfNet.cool > 0) return;
+  bfNet.cool = 0.28; bfNet.swingT = 0.001; bfNet.swingDir = -bfNet.swingDir;
+  playSwish();
+  if (bfGameT < bfGraceUntil) return;          // czas ochronny po zmianie słowa
+  const px = bfNet.x, py = bfNet.y, R = BF.R;
+  let best = null, bestS = 1e9;
+  for (const b of bfFalling) {
+    if (b.state !== 'fly' || !b.entered || !b.el || b.round !== bfRound) continue;
+    const d = Math.hypot(b.bx - px, b.by - py);
+    const lx0 = b.lcx - b.lw / 2, lx1 = b.lcx + b.lw / 2, ly0 = b.by + R * 0.62, ly1 = ly0 + b.lh;
+    const dl = Math.hypot(Math.max(lx0 - px, 0, px - lx1), Math.max(ly0 - py, 0, py - ly1));
+    if (!(d < BF.hoopR * 0.8 + R * 0.55 || dl < BF.hoopR * 0.3)) continue;
+    const sc = Math.min(d, dl + R * 0.4);
+    if (sc < bestS) { bestS = sc; best = b; }
+  }
+  if (best) bfCatch(best);
+}
+function bfCatch(b){
+  const R = BF.R;
+  b.st = 0;
+  if (bfIsRight(b)) {
+    b.state = 'caught';
+    b.cx0 = b.x; b.cy0 = b.y; b.nx = bfNet.x; b.ny = bfNet.y; b.lx = b.lcx != null ? b.lcx : b.bx; b.ly = b.by + R * 0.62;
+    if (b.el) b.el.classList.add('ok');
+    bfScore += 10; bfCaught++; bfStreak++;
+    bfHudScore('ok');
+    BFV.burst(b.bx, b.by, 'ok');
+    bfFloat(b.bx, b.by - R * 1.1, '+10', 'ok');
+    playOk();
+    spkForeign(bfCurrent.en);
+    bfNewWord();
+    bfStreakBadge();
+  } else {
+    b.state = 'escape';
+    b.fx = b.x < bfNet.x ? -0.45 : 0.45; b.fy = -1;
+    b.vx = b.fx * BF.spd; b.vy = -BF.spd * 0.4;
+    if (b.el) b.el.classList.add('bad');
+    bfScore = Math.max(0, bfScore - 5); bfMistakes++; bfStreak = 0;
+    bfHudScore('bad');
+    BFV.burst(b.bx, b.by, 'bad');
+    bfFloat(b.bx, b.by - R * 1.1, '−5', 'bad');
+    playBad();
+    bfNet.shakeT = 0.4;
+    const w = bf$('bfWord'); w.classList.remove('shake'); void w.offsetWidth; w.classList.add('shake');
+    bfStreakBadge();
+  }
+}
+function bfJarIn(){
+  bfJarN = Math.min(bfCaught, bfJarN + 1);
+  bf$('bfJar').textContent = bfJarN;
+  const j = bf$('bfHudJar'); j.classList.remove('bump'); void j.offsetWidth; j.classList.add('bump');
+}
+function bfFloat(x, y, txt, cls){
+  const el = document.createElement('div');
+  el.className = 'bf-float ' + cls; el.textContent = txt;
+  el.style.left = x + 'px'; el.style.top = y + 'px';
+  bf$('bfFx').appendChild(el);
+  setTimeout(() => el.remove(), 1050);
+}
+// ── HUD ──
+function bfHudScore(st){
+  bf$('bfScore').textContent = bfScore;
+  const s = bf$('bfHudScore');
+  s.classList.remove('bump', 'ok', 'bad'); void s.offsetWidth; s.classList.add('bump');
+  if (st) s.classList.add(st);
+  clearTimeout(bfHudScore._t); bfHudScore._t = setTimeout(() => s.classList.remove('ok', 'bad'), 700);
+}
+function bfHudTime(force){
+  const sec = Math.ceil(bfTime);
+  if (force || sec !== bfHudTime._s) {
+    bfHudTime._s = sec;
+    bf$('bfTime').textContent = sec;
+    bf$('bfHudTime').classList.toggle('low', bfRunning && sec <= 5);
+  }
+  const pct = Math.round(Math.max(0, bfTime / bfTimeMax) * 1000) / 10;
+  if (force || pct !== bfHudTime._p) { bfHudTime._p = pct; bf$('bfTimeBar').style.width = pct + '%'; }
+}
+function bfStreakBadge(){
+  const el = bf$('bfStreak'); if (!el) return;
+  if (bfStreak >= 2) { el.textContent = '🔥 Seria ×' + bfStreak; el.classList.remove('on'); void el.offsetWidth; el.classList.add('on'); }
+  else el.classList.remove('on');
+}
+function bfHint(on){
+  const h = bf$('bfHint'); if (!h) return;
+  clearTimeout(bfHint._t);
+  if (on) {
+    h.textContent = BF_TOUCH ? '👆 Dotknij motyla z dobrym tłumaczeniem!' : '👆 Najedź siatką na motyla z dobrym tłumaczeniem i kliknij!';
+    h.classList.add('on');
+    bfHint._t = setTimeout(() => h.classList.remove('on'), 4200);
+  } else h.classList.remove('on');
+}
+function bfSndUpd(){
+  const b = bf$('bfSndBtn'); if (!b) return;
+  b.textContent = bfSound ? '🔊' : '🔇';
+  b.title = bfSound ? 'Wyłącz dźwięk' : 'Włącz dźwięk';
+}
+function bfToggleSound(){
+  bfSound = !bfSound; autoVoice = bfSound;
+  try { localStorage.setItem('fiszki_motyle_sound', bfSound ? '1' : '0'); } catch(e) {}
+  if (!bfSound) { try { speechSynthesis.cancel(); } catch(e) {} } else _ensureAc();
+  bfSndUpd();
+  try { document.activeElement.blur(); } catch(e) {}
+}
+// Napisy: pozycja przy motylu (pod nim), przezroczystość przy odlocie
+function bfDrawLabels(){
+  const R = BF.R;
+  for (const b of bfFalling) {
+    if (!b.el) continue;
+    let x = b.lcx != null ? b.lcx : b.bx, y = b.by + R * 0.62, op = 1;
+    if (b.state === 'caught') { x = b.lx; y = b.ly; op = Math.max(0, 1 - b.st / 0.7); }
+    else if (b.state === 'flee') op = Math.max(0, 1 - b.st / 0.28);
+    else if (b.state === 'escape' && b.st > 0.6) op = Math.max(0, 1 - (b.st - 0.6) / 0.35);
+    b.el.style.transform = 'translate(' + x.toFixed(1) + 'px,' + y.toFixed(1) + 'px) translateX(-50%)';
+    const o = Math.round(op * 100) / 100;
+    if (o !== b.op) { b.op = o; b.el.style.opacity = o; }
+  }
 }
 
 function bfStartGame() {
-  if (!activeWords || activeWords.length < 4) {
+  if (!activeWords || activeWords.length < 3) {
     toast('Brak słówek');
     return;
   }
+  try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch(e) {}
+  _ensureAc();
+  bf$('endOverlay').classList.remove('visible');
   bfReset();
-  bfSeqIdx = 0;
+  bfSeqIdx = 0; bfBag = []; bfLastIdx = -1;
   bfRunning = true;
-  document.getElementById('bfStart').style.display = 'none';
+  bfOverlay(null);
   document.getElementById('restartBtn').style.display = 'none';
   document.getElementById('backToMenuBtn').style.display = 'none';
+  bfFalling.forEach(b => { if (b.state === 'ambient') bfFlee(b); });
+  bfLayout();
+  bfNet.x = bfNet.rx = BF.W * 0.5; bfNet.y = bfNet.ry = BF.H * 0.72;
+  bfNet.shown = true;
+  bf$('bfGame').classList.add('playing');
+  bfLoopStart();
   bfNewWord();
-  bfSpawn();
-  bfSpawnInt = setInterval(bfSpawn, 1600);
-  bfTimerInt = setInterval(() => {
-    bfTime--;
-    document.getElementById('bfTime').textContent = bfTime;
-    if (bfTime <= 0) {
-      bfRunning = false;
-      clearInterval(bfSpawnInt);
-      clearInterval(bfTimerInt);
-      cancelAnimationFrame(bfAnimFrame);
-      _bfShowEnd();
-    }
-  }, 1000);
-  bfUpdate();
+  bfHint(true);
+}
+function bfFinish(){
+  if (!bfRunning) return;
+  bfRunning = false; bfEnded = true; bfPaused = false;
+  bfFalling.forEach(b => { if (b.state === 'fly') bfFlee(b); });
+  bfNet.shown = false; bfNet.keys = {};
+  bf$('bfGame').classList.remove('playing');
+  bf$('bfHudTime').classList.remove('low');
+  bfHint(false);
+  _bfShowEnd();
 }
 
 function _bfShowEnd() {
+  bfRunning = false;
+  bfJarN = bfCaught; bf$('bfJar').textContent = bfCaught;
   if (LIVE) {
     _livePushScore(bfScore);
     document.getElementById('eoEmoji').textContent = '⏳';
     document.getElementById('eoTitle').textContent = 'Koniec rundy!';
-    document.getElementById('eoSub').textContent = 'Twój wynik: ' + bfScore + ' pkt · czekamy aż nauczyciel zakończy grę i pokaże ranking klasy.';
+    document.getElementById('eoSub').textContent = 'Twój wynik: ' + bfScore + ' pkt · czekamy, aż nauczyciel zakończy grę i pokaże ranking klasy.';
     document.getElementById('eoBtn').style.display = 'none';
     document.getElementById('endOverlay').classList.add('visible');
     return;
   }
-  const startEl = document.getElementById('bfStart');
-  startEl.style.display = 'flex';
-  startEl.innerHTML = '<div style="text-align:center;color:#fff;padding:20px"><div style="font-size:2rem;margin-bottom:6px">🏆 Koniec!</div><div style="font-size:1.4rem;font-weight:900;margin-bottom:8px">Wynik: ' + bfScore + ' pkt</div><button class="btn-start" onclick="bfStartGame()" style="font-size:.95rem;padding:10px 24px;width:auto;margin:0">🔄 Graj ponownie</button></div>';
-  document.getElementById('restartBtn').style.display = 'inline-block';
-  document.getElementById('backToMenuBtn').style.display = 'inline-block';
-  if (bfScore >= 50) playOk();
+  let best = 0, rec = '';
+  try { best = parseInt(localStorage.getItem('fiszki_motyle_best') || '0', 10) || 0; } catch(e) {}
+  if (bfScore > best && bfScore > 0) { rec = '🏅 Nowy rekord!'; try { localStorage.setItem('fiszki_motyle_best', String(bfScore)); } catch(e) {} }
+  else if (best > 0) rec = '🏅 Rekord: ' + best + ' pkt';
+  const tries = bfCaught + bfMistakes, acc = tries ? Math.round(bfCaught / tries * 100) : 0;
+  const emoji = bfScore >= 100 ? '🏆' : (bfScore >= 50 ? '🌟' : '🦋');
+  const title = bfCaught === 0 ? 'Koniec czasu!' : (bfScore >= 100 ? 'Mistrz łąki!' : 'Świetnie!');
+  bfOverlay(emoji, title, 'Wynik: ' + bfScore + ' pkt ⭐', [[String(bfCaught), 'złapane'], [String(bfMistakes), 'pomyłki'], [acc + '%', 'celność']], rec, '🔄 Graj ponownie');
+  document.getElementById('restartBtn').style.display = 'inline-flex';
+  document.getElementById('backToMenuBtn').style.display = 'inline-flex';
+  playEnd(bfScore >= 50);
 }
 
+// ── Pętla animacji: logika → napisy → widok (3D albo 2D). Karta ukryta = pauza ──
+function bfLoopStart(){
+  if (bfLoopOn || document.hidden) return;
+  bfLoopOn = true; bfLastT = 0;
+  bfAnimFrame = requestAnimationFrame(bfLoop);
+}
+function bfLoopStop(){ bfLoopOn = false; if (bfAnimFrame) cancelAnimationFrame(bfAnimFrame); bfAnimFrame = null; }
+function bfLoop(now){
+  if (!bfLoopOn) return;
+  bfAnimFrame = requestAnimationFrame(bfLoop);
+  const dt = bfLastT ? Math.min(0.1, (now - bfLastT) / 1000) : 1 / 60;
+  bfLastT = now;
+  bfStep(dt);
+  bfDrawLabels();
+  BFV.frame(dt, now / 1000);
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) bfLoopStop();
+  else if (document.body.classList.contains('in-game')) bfLoopStart();
+});
+
+// ── Sterowanie: mysz / dotyk (siatka podąża, klik albo dotknięcie = machnięcie), klawiatura ──
 (function() {
-  const game = document.getElementById('bfGame');
+  const game = bf$('bfGame');
   if (!game) return;
-  function moveNet(clientX, clientY) {
+  const pos = e => { const r = game.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  game.addEventListener('pointermove', e => {
     if (!bfRunning) return;
-    const rect = game.getBoundingClientRect();
-    const player = document.getElementById('bfPlayer');
-    let x = clientX - rect.left;
-    let y = clientY - rect.top;
-    x = Math.max(30, Math.min(rect.width - 30, x));
-    y = Math.max(40, Math.min(rect.height - 20, y));
-    player.style.left = x + 'px';
-    player.style.top = y + 'px';
-    player.style.bottom = 'auto';
-    player.style.transform = 'translate(-50%,-50%)';
-  }
-  game.addEventListener('mousemove', e => moveNet(e.clientX, e.clientY));
-  game.addEventListener('touchmove', e => { if (e.touches[0]) moveNet(e.touches[0].clientX, e.touches[0].clientY); }, {passive: true});
+    const p = pos(e); bfNet.x = p[0]; bfNet.y = p[1];
+  });
+  game.addEventListener('pointerdown', e => {
+    if (e.target && e.target.closest && e.target.closest('button, a, #bfWord, #bfOverlay')) return;
+    _ensureAc();
+    if (!bfRunning) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    const p = pos(e);
+    if (e.pointerType !== 'mouse') { bfNet.rx = p[0]; bfNet.ry = p[1]; }   // palec: siatka od razu w miejscu dotyku
+    bfSwing(p[0], p[1]);
+    e.preventDefault();
+  });
+  game.addEventListener('contextmenu', e => { if (bfRunning) e.preventDefault(); });
 })();
+const BF_KEYS = { ArrowLeft: 'l', a: 'l', A: 'l', ArrowRight: 'r', d: 'r', D: 'r', ArrowUp: 'u', w: 'u', W: 'u', ArrowDown: 'd', s: 'd', S: 'd' };
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { bfHelp(false); return; }
+  if (!document.body.classList.contains('in-game') || e.ctrlKey || e.metaKey || e.altKey) return;
+  const tag = (e.target && e.target.tagName) || '';
+  if (/^(INPUT|SELECT|TEXTAREA)$/.test(tag)) return;
+  const m = bf$('htpModal'); if (m && m.classList.contains('open')) return;
+  if (!bfRunning) return;
+  const k = BF_KEYS[e.key];
+  if (k) { bfNet.keys[k] = true; e.preventDefault(); return; }
+  if ((e.key === ' ' || e.key === 'Enter') && !/^(BUTTON|A)$/.test(tag)) { e.preventDefault(); if (!e.repeat) bfSwing(); }
+});
+document.addEventListener('keyup', e => { const k = BF_KEYS[e.key]; if (k) bfNet.keys[k] = false; });
+window.addEventListener('blur', () => { bfNet.keys = {}; });
+
+// ═══════════════════════════════════════════════════════════════
+//  WIDOK 2D (zapasowy): tło SVG + canvas z motylami, siatką i iskierkami
+// ═══════════════════════════════════════════════════════════════
+const BF2 = { ctx: null, dpr: 1, sp: [], motes: [], lean: 0, w: 0, h: 0 };
+function bf2dResize(){
+  const c = bf$('bf2dCanvas'); if (!c) return;
+  const dpr = Math.min(window.devicePixelRatio || 1, BF_TOUCH ? 1.25 : 1.5);
+  const w = Math.round(BF.W * dpr), h = Math.round(BF.H * dpr);
+  if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+  BF2.dpr = dpr; BF2.ctx = c.getContext('2d');
+  if (!BF2.motes.length) for (let i = 0; i < 26; i++) BF2.motes.push({ x: Math.random(), y: Math.random(), s: 1 + Math.random() * 2.2, p: Math.random() * 6.28 });
+}
+function bf2dDraw(dt, t){
+  const g = BF2.ctx; if (!g) return;
+  const W = BF.W, H = BF.H;
+  g.setTransform(BF2.dpr, 0, 0, BF2.dpr, 0, 0);
+  g.clearRect(0, 0, W, H);
+  // pyłki w powietrzu
+  g.fillStyle = 'rgba(255,250,225,.55)';
+  for (const m of BF2.motes) {
+    m.y -= dt * 0.012; m.x += Math.sin(t * 0.4 + m.p) * dt * 0.006;
+    if (m.y < -0.02) { m.y = 1.02; m.x = Math.random(); }
+    g.beginPath(); g.arc(m.x * W, m.y * H, m.s, 0, Math.PI * 2); g.fill();
+  }
+  for (const b of bfFalling) bf2dBug(g, b);
+  if (bfNet.shown) bf2dNet(g);
+  // iskierki
+  if (BF2.sp.length) {
+    g.save(); g.globalCompositeOperation = 'lighter';
+    for (let i = BF2.sp.length - 1; i >= 0; i--) {
+      const p = BF2.sp[i];
+      p.life -= dt; if (p.life <= 0) { BF2.sp.splice(i, 1); continue; }
+      p.vy += 120 * dt; p.vx *= 0.97; p.x += p.vx * dt; p.y += p.vy * dt;
+      const a = p.life / p.max, r = p.s * (0.4 + 0.6 * a);
+      g.globalAlpha = a; g.fillStyle = p.c; g.strokeStyle = p.c;
+      g.beginPath(); g.arc(p.x, p.y, r * 0.45, 0, Math.PI * 2); g.fill();
+      g.lineWidth = 1.2; g.beginPath(); g.moveTo(p.x - r, p.y); g.lineTo(p.x + r, p.y); g.moveTo(p.x, p.y - r); g.lineTo(p.x, p.y + r); g.stroke();
+    }
+    g.restore();
+  }
+}
+function bf2dBug(g, b){
+  const atlas = bfAtlas(), N = BF_CELL, sx = (b.sp % 4) * N, sy = Math.floor(b.sp / 4) * N;
+  const R = BF.R * (b.scale || 1), kx = Math.max(0.14, Math.cos(bfFlap(b.ph)));
+  g.save(); g.translate(b.bx, b.by); g.rotate(-b.head);
+  for (const s of [1, -1]) { g.save(); g.scale(s * kx, 1); g.drawImage(atlas, sx, sy, N, N, 0, -R * 0.5, R, R); g.restore(); }
+  g.fillStyle = '#2b2019';
+  g.beginPath(); g.ellipse(0, R * 0.2, R * 0.05, R * 0.19, 0, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.ellipse(0, 0, R * 0.075, R * 0.1, 0, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.arc(0, -R * 0.13, R * 0.06, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = '#2b2019'; g.lineWidth = Math.max(1, R * 0.025);
+  g.beginPath(); g.moveTo(-R * 0.02, -R * 0.17); g.quadraticCurveTo(-R * 0.08, -R * 0.35, -R * 0.15, -R * 0.45);
+  g.moveTo(R * 0.02, -R * 0.17); g.quadraticCurveTo(R * 0.08, -R * 0.35, R * 0.15, -R * 0.45); g.stroke();
+  g.beginPath(); g.arc(-R * 0.15, -R * 0.45, R * 0.025, 0, Math.PI * 2); g.arc(R * 0.15, -R * 0.45, R * 0.025, 0, Math.PI * 2); g.fill();
+  g.restore();
+}
+function bf2dNet(g){
+  const N = bfNet, r = BF.hoopR, x = N.rx + (N.sx || 0), y = N.ry;
+  const s = N.swingT > 0 ? Math.sin(Math.min(1, N.swingT) * Math.PI) : 0;
+  BF2.lean += (bfClamp(-N.vx * 0.0009, -0.35, 0.35) - BF2.lean) * 0.15;
+  const rot = BF2.lean + s * 0.6 * N.swingDir;
+  let dx = BF.handX - x, dy = BF.handY - y; const dl = Math.hypot(dx, dy) || 1; dx /= dl; dy /= dl;
+  const x0 = x + dx * r * 0.95, y0 = y + dy * r * 0.88;
+  g.save(); g.lineCap = 'round';
+  [['#5e3b1e', r * 0.22], ['#c08a52', r * 0.15]].forEach(q => { g.strokeStyle = q[0]; g.lineWidth = q[1]; g.beginPath(); g.moveTo(x0, y0); g.lineTo(BF.handX, BF.handY); g.stroke(); });
+  g.strokeStyle = 'rgba(255,236,205,.45)'; g.lineWidth = r * 0.04; g.beginPath(); g.moveTo(x0 - dy * r * 0.03, y0 + dx * r * 0.03); g.lineTo(BF.handX - dy * r * 0.03, BF.handY + dx * r * 0.03); g.stroke();
+  g.restore();
+  const mesh = (a) => {
+    g.strokeStyle = 'rgba(255,255,255,' + a + ')'; g.lineWidth = 1;
+    for (let k = -2 * r; k <= 2 * r; k += r * 0.26) { g.beginPath(); g.moveTo(k - r * 2, -r * 2); g.lineTo(k + r * 2, r * 2); g.moveTo(k + r * 2, -r * 2); g.lineTo(k - r * 2, r * 2); g.stroke(); }
+  };
+  g.save(); g.translate(x, y); g.rotate(rot); g.scale(1 + 0.08 * s, 1 + 0.08 * s);
+  const bag = new Path2D();
+  bag.moveTo(-r, 0); bag.bezierCurveTo(-r * 1.02, r * 0.9, -r * 0.35, r * 1.75, r * 0.1, r * 1.6); bag.bezierCurveTo(r * 0.6, r * 1.45, r * 1.02, r * 0.8, r, 0); bag.closePath();
+  g.fillStyle = 'rgba(255,255,255,.13)'; g.fill(bag);
+  g.save(); g.clip(bag); mesh(.42); g.restore();
+  g.strokeStyle = 'rgba(255,255,255,.55)'; g.lineWidth = 1.2; g.stroke(bag);
+  g.scale(1, 0.92 - 0.25 * s);
+  const hoop = new Path2D(); hoop.ellipse(0, 0, r, r, 0, 0, Math.PI * 2);
+  g.fillStyle = 'rgba(255,255,255,.05)'; g.fill(hoop);
+  g.save(); g.clip(hoop); mesh(.22); g.restore();
+  g.lineWidth = r * 0.13; g.strokeStyle = '#1d6a3b'; g.stroke(hoop);
+  g.lineWidth = r * 0.065; g.strokeStyle = '#46c97c'; g.stroke(hoop);
+  g.restore();
+}
+function bf2dBurst(x, y, kind){
+  const cols = kind === 'ok' ? ['#ffd34d', '#ffffff', '#ff9ad5', '#8ff0c0'] : ['#ff6b6b', '#ffa94d'];
+  const n = kind === 'ok' ? 24 : 12;
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, sp = (kind === 'ok' ? 60 : 40) + Math.random() * (kind === 'ok' ? 170 : 100), life = 0.45 + Math.random() * 0.45;
+    BF2.sp.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 50, life, max: life, c: cols[i % cols.length], s: (kind === 'ok' ? 5 : 3.5) + Math.random() * 4 });
+  }
+}
+
+// ── Łąka SVG: drzewa na wzgórzu, kwiaty i trawa (generowane raz, ziarno stałe) ──
+function bfSvgMeadow(){
+  let s = 12345; const r = () => (s = s * 16807 % 2147483647) / 2147483647;
+  const NS = 'http://www.w3.org/2000/svg';
+  const trees = bf$('bfSvgTrees');
+  if (trees && !trees.childNodes.length) {
+    let d = '';
+    for (let i = 0; i < 70; i++) { const x = r() * 1000, y = 352 + r() * 12 + Math.sin(x * 0.01) * 6, rr = 6 + r() * 9; d += 'M' + (x - rr).toFixed(1) + ' ' + y.toFixed(1) + 'a' + rr.toFixed(1) + ' ' + (rr * 1.25).toFixed(1) + ' 0 1 0 ' + (2 * rr).toFixed(1) + ' 0a' + rr.toFixed(1) + ' ' + (rr * 1.25).toFixed(1) + ' 0 1 0 -' + (2 * rr).toFixed(1) + ' 0z'; }
+    const p = document.createElementNS(NS, 'path'); p.setAttribute('d', d); trees.appendChild(p);
+  }
+  const fl = bf$('bfSvgFlowers');
+  if (fl && !fl.childNodes.length) {
+    const cols = [['#ffffff', '#ffd23f'], ['#e5342a', '#2a1a14'], ['#4d7cf0', '#3a2a7a'], ['#ffd21f', '#c9a400'], ['#f59ad0', '#ffe08a']];
+    let h = '';
+    for (let i = 0; i < 230; i++) {
+      const y = 382 + Math.pow(r(), 1.6) * 215, k = (y - 376) / 224, x = r() * 1000, rr = 1.2 + k * 5.5, c = cols[Math.floor(r() * cols.length)];
+      h += '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="' + rr.toFixed(1) + '" fill="' + c[0] + '"/>';
+      if (rr > 2.5) h += '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="' + (rr * 0.38).toFixed(1) + '" fill="' + c[1] + '"/>';
+    }
+    fl.innerHTML = h;
+  }
+  const gr = bf$('bfSvgGrass');
+  if (gr && !gr.getAttribute('d')) {
+    let d = 'M0 600';
+    for (let x = 0; x <= 1000; x += 7) { const hh = 18 + r() * 34; d += 'L' + x + ' ' + (600 - hh * 0.25).toFixed(1) + 'L' + (x + 2 + r() * 4).toFixed(1) + ' ' + (600 - hh).toFixed(1) + 'L' + (x + 5).toFixed(1) + ' ' + (600 - hh * 0.2).toFixed(1); }
+    gr.setAttribute('d', d + 'L1000 600Z');
+  }
+}
+// ── Logo: motyl z atlasu (dwie połówki machają skrzydłami w CSS) ──
+function bfLogo(){
+  try {
+    const a = bfAtlas(), N = BF_CELL;
+    const L = bf$('bfLogoL'), Rr = bf$('bfLogoR'); if (!L || !Rr) return;
+    const gr = Rr.getContext('2d'), gl = L.getContext('2d');
+    gr.drawImage(a, 0, 0, N, N, 0, 0, Rr.width, Rr.height);
+    gl.save(); gl.translate(L.width, 0); gl.scale(-1, 1); gl.drawImage(a, 0, 0, N, N, 0, 0, L.width, L.height); gl.restore();
+  } catch(e) {}
+}
+</script>
+<script>
+'use strict';
+// ═══════════════════════════════════════════════════════════════
+//  MOTYLE 3D — łąka o poranku w three.js r160.
+//  Globalny THREE wczytuje moduł na końcu strony (jsDelivr) i woła __bf3dBoot().
+//  Tylko wygląd: logika gry jest wyżej (piksele planszy). Co klatkę BF3D.frame
+//  czyta bfFalling / bfNet / BF i stawia modele motyli i siatki dokładnie pod
+//  tymi punktami ekranu (płaszczyzna lotu w stałej odległości od kamery).
+//  Dwa przebiegi: łąka (scena tła), potem — po wyczyszczeniu głębi — motyle,
+//  siatka i iskierki (nic z łąki ich nie zasłoni).
+//  Wydajność: bez cieni i post-processingu, instancje (trawa, kwiaty, drzewa
+//  w oddali), piksele ≤ 1,5 (dotyk 1,15) i automatyczne obniżanie jakości.
+// ═══════════════════════════════════════════════════════════════
+window.BF3D = (function(){
+  const API = { ready: false, failed: false, on: false, tooSlow: false };
+  if (BF_FORCE_2D || !window.WebGLRenderingContext) { API.failed = true; return API; }
+  const TOUCH = BF_TOUCH, RM = BF_RM;
+  let T = null, R = null, S = null;
+  const DB = 3.6, DN = 3.32;        // odległość płaszczyzny lotu motyli i siatki od kamery (m)
+  const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+  function rng(seed){ let s = Math.floor(Math.abs(seed) * 9973) % 2147483646 + 1; return () => (s = s * 16807 % 2147483647) / 2147483647; }
+  function hash2(x, y){ const h = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return h - Math.floor(h); }
+  function noise2(x, y){
+    const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi, u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+    const a = hash2(xi, yi), b = hash2(xi + 1, yi), c = hash2(xi, yi + 1), d = hash2(xi + 1, yi + 1);
+    return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+  }
+  function fbm2(x, y, o){ o = o || 4; let s = 0, a = 0.5, f = 1, n = 0; for (let i = 0; i < o; i++) { s += a * noise2(x * f + i * 31.7, y * f - i * 17.3); n += a; f *= 2.02; a *= 0.5; } return s / n; }
+  // wysokość terenu: blisko płasko, dalej łagodne pagórki
+  function hAt(x, z){
+    const kf = smooth(-30, -170, z), kn = smooth(-8, -40, z) * (1 - smooth(-60, -140, z));
+    return (kf > 0 ? kf * (fbm2(x * 0.012 + 3.1, z * 0.012, 3) * 16 - 6) : 0) + (kn > 0 ? kn * (fbm2(x * 0.06, z * 0.06, 2) - 0.5) * 1.1 : 0);
+  }
+
+  // ── tekstury z canvasu (liczone raz) ──
+  function cv(w, h){ const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+  function tex(c, srgb, rep){
+    const t = new T.CanvasTexture(c);
+    if (srgb) t.colorSpace = T.SRGBColorSpace;
+    if (rep) t.wrapS = t.wrapT = T.RepeatWrapping;
+    t.anisotropy = S.aniso; return t;
+  }
+  function grassCanvas(){
+    const N = 256, c = cv(N, N), g = c.getContext('2d'), r = rng(7);
+    g.fillStyle = '#c3d69a'; g.fillRect(0, 0, N, N);
+    const cols = ['#a9c47a', '#d6e6a6', '#b8cf84', '#9cb86c', '#e2edb4', '#c9dc92', '#8fae60', '#f0f4c6'];
+    for (let i = 0; i < 2600; i++) {
+      const x = r() * N, y = r() * N, l = 3 + r() * 8, a = -Math.PI / 2 + (r() - 0.5) * 0.9;
+      g.strokeStyle = cols[(r() * cols.length) | 0]; g.globalAlpha = 0.5 + r() * 0.5; g.lineWidth = 1 + r() * 1.3;
+      for (const ox of [-N, 0, N]) for (const oy of [-N, 0, N]) {
+        const X0 = x + ox, Y0 = y + oy; if (X0 < -12 || X0 > N + 12 || Y0 < -12 || Y0 > N + 12) continue;
+        g.beginPath(); g.moveTo(X0, Y0); g.lineTo(X0 + Math.cos(a) * l, Y0 + Math.sin(a) * l); g.stroke();
+      }
+    }
+    g.globalAlpha = 1; return c;
+  }
+  function leafCanvas(){
+    const N = 256, c = cv(N, N), g = c.getContext('2d'), r = rng(3);
+    for (let i = 0; i < 95; i++) {
+      const a = r() * Math.PI * 2, rad = Math.sqrt(r()) * N * 0.4, x = N / 2 + Math.cos(a) * rad, y = N / 2 + Math.sin(a) * rad;
+      const L = N * (0.065 + r() * 0.05), Wd = L * 0.46;
+      g.save(); g.translate(x, y); g.rotate(r() * Math.PI * 2);
+      g.fillStyle = 'hsl(' + (78 + r() * 30).toFixed(0) + ',' + (30 + r() * 25).toFixed(0) + '%,' + (66 + r() * 28).toFixed(0) + '%)';
+      g.beginPath(); g.ellipse(0, 0, L, Wd, 0, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = 'rgba(60,90,40,.35)'; g.lineWidth = 1; g.beginPath(); g.moveTo(-L, 0); g.lineTo(L, 0); g.stroke();
+      g.restore();
+    }
+    return c;
+  }
+  function flowerCanvas(type){
+    const N = 128, c = cv(N, N), g = c.getContext('2d'), m = N / 2, P2 = Math.PI * 2;
+    const disc = (r, c0, c1, dots) => {
+      const gr = g.createRadialGradient(m - r * 0.3, m - r * 0.3, 0, m, m, r); gr.addColorStop(0, c0); gr.addColorStop(1, c1);
+      g.fillStyle = gr; g.beginPath(); g.arc(m, m, r, 0, P2); g.fill();
+      if (dots) { g.fillStyle = dots; for (let i = 0; i < 26; i++) { const a = i * 2.4, rr = Math.sqrt(i / 26) * r * 0.85; g.beginPath(); g.arc(m + Math.cos(a) * rr, m + Math.sin(a) * rr, 1.3, 0, P2); g.fill(); } }
+    };
+    if (type === 0) {        // stokrotka
+      for (let i = 0; i < 22; i++) {
+        g.save(); g.translate(m, m); g.rotate(i / 22 * P2 + (i % 2) * 0.07);
+        const gr = g.createLinearGradient(0, 0, 0, -N * 0.48); gr.addColorStop(0, '#dcd8cc'); gr.addColorStop(0.3, '#ffffff'); gr.addColorStop(1, '#f6f3ea');
+        g.fillStyle = gr; g.beginPath(); g.ellipse(0, -N * 0.27, N * 0.05, N * 0.2, 0, 0, P2); g.fill();
+        g.strokeStyle = 'rgba(160,150,140,.35)'; g.lineWidth = 1; g.stroke(); g.restore();
+      }
+      disc(N * 0.12, '#ffe27a', '#e09d10', 'rgba(150,90,10,.5)');
+    } else if (type === 1) { // mak
+      for (let i = 0; i < 4; i++) {
+        const a = i / 4 * P2 + 0.3, px = m + Math.cos(a) * N * 0.15, py = m + Math.sin(a) * N * 0.15;
+        const gr = g.createRadialGradient(m, m, N * 0.04, px, py, N * 0.3); gr.addColorStop(0, '#7a0a08'); gr.addColorStop(0.35, '#d8261a'); gr.addColorStop(1, '#ff5b3a');
+        g.fillStyle = gr; g.beginPath(); g.arc(px, py, N * 0.27, 0, P2); g.fill();
+        g.strokeStyle = 'rgba(120,10,8,.35)'; g.lineWidth = 1.2; g.stroke();
+      }
+      disc(N * 0.085, '#3a3a2a', '#0e0c08', 'rgba(220,210,120,.8)');
+    } else if (type === 2) { // chaber
+      for (let i = 0; i < 13; i++) {
+        g.save(); g.translate(m, m); g.rotate(i / 13 * P2);
+        const gr = g.createLinearGradient(0, -N * 0.06, 0, -N * 0.44); gr.addColorStop(0, '#3448b8'); gr.addColorStop(1, '#6f9bff');
+        g.fillStyle = gr; g.beginPath(); g.moveTo(-N * 0.03, -N * 0.07); g.lineTo(-N * 0.085, -N * 0.4);
+        g.lineTo(-N * 0.05, -N * 0.36); g.lineTo(-N * 0.03, -N * 0.44); g.lineTo(0, -N * 0.37); g.lineTo(N * 0.03, -N * 0.44); g.lineTo(N * 0.05, -N * 0.36); g.lineTo(N * 0.085, -N * 0.4);
+        g.lineTo(N * 0.03, -N * 0.07); g.closePath(); g.fill(); g.restore();
+      }
+      disc(N * 0.1, '#6a3fb0', '#2c1a5a', 'rgba(200,180,255,.6)');
+    } else {                 // jaskier
+      for (let i = 0; i < 5; i++) {
+        const a = i / 5 * P2 - Math.PI / 2, px = m + Math.cos(a) * N * 0.17, py = m + Math.sin(a) * N * 0.17;
+        const gr = g.createRadialGradient(px, py, 0, px, py, N * 0.22); gr.addColorStop(0, '#fff07a'); gr.addColorStop(0.6, '#ffd21f'); gr.addColorStop(1, '#e8a800');
+        g.fillStyle = gr; g.beginPath(); g.arc(px, py, N * 0.2, 0, P2); g.fill();
+        g.fillStyle = 'rgba(255,255,255,.55)'; g.beginPath(); g.ellipse(px - N * 0.04, py - N * 0.05, N * 0.06, N * 0.03, a, 0, P2); g.fill();
+      }
+      disc(N * 0.07, '#d9d860', '#9a9a20', 'rgba(255,240,120,.9)');
+    }
+    return c;
+  }
+  function glowCanvas(){
+    const c = cv(64, 64), g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.22, 'rgba(255,255,255,.6)'); gr.addColorStop(0.55, 'rgba(255,255,255,.15)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, 64, 64); return c;
+  }
+  function cloudCanvas(seed){
+    const w = 256, h = 110, c = cv(w, h), g = c.getContext('2d'), r = rng(seed);
+    for (let i = 0; i < 48; i++) {
+      const x = w * 0.1 + r() * w * 0.8, dx = Math.abs(x - w / 2) / (w / 2), rad = (h * 0.13 + r() * h * 0.22) * (1 - dx * 0.55), y = h * 0.62 - r() * h * 0.22 * (1 - dx);
+      const gr = g.createRadialGradient(x, y - rad * 0.3, rad * 0.1, x, y, rad);
+      gr.addColorStop(0, 'rgba(255,255,255,.95)'); gr.addColorStop(0.6, 'rgba(248,250,255,.55)'); gr.addColorStop(1, 'rgba(240,244,252,0)');
+      g.fillStyle = gr; g.beginPath(); g.arc(x, y, rad, 0, Math.PI * 2); g.fill();
+    }
+    g.globalCompositeOperation = 'source-atop';
+    const lg = g.createLinearGradient(0, 0, 0, h); lg.addColorStop(0, 'rgba(255,246,228,.2)'); lg.addColorStop(1, 'rgba(170,190,215,.4)');
+    g.fillStyle = lg; g.fillRect(0, 0, w, h); return c;
+  }
+  function raysCanvas(){
+    const N = 256, c = cv(N, N), g = c.getContext('2d'), r = rng(9), m = N / 2;
+    g.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 34; i++) {
+      const a = r() * Math.PI * 2, w = 0.02 + r() * 0.06, L = N * (0.3 + r() * 0.2);
+      const gr = g.createRadialGradient(m, m, 0, m, m, L); gr.addColorStop(0, 'rgba(255,248,220,.5)'); gr.addColorStop(1, 'rgba(255,248,220,0)');
+      g.fillStyle = gr; g.beginPath(); g.moveTo(m, m); g.arc(m, m, L, a - w, a + w); g.closePath(); g.fill();
+    }
+    return c;
+  }
+  function netCanvas(){
+    const N = 64, c = cv(N, N), g = c.getContext('2d');
+    g.strokeStyle = 'rgba(255,255,255,.92)'; g.lineWidth = 2.1;
+    for (let k = -N; k <= 2 * N; k += 16) { g.beginPath(); g.moveTo(k, 0); g.lineTo(k + N, N); g.stroke(); g.beginPath(); g.moveTo(k, N); g.lineTo(k + N, 0); g.stroke(); }
+    return c;
+  }
+  function sparkMat(cross){
+    return new T.ShaderMaterial({
+      uniforms: { uPx: { value: 400 } }, transparent: true, depthWrite: false, depthTest: !cross, blending: T.AdditiveBlending,
+      vertexShader: 'attribute float aSize; attribute vec4 aCol; uniform float uPx; varying vec4 vCol;\nvoid main(){ vCol = aCol; vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_PointSize = aSize * uPx / max(-mv.z, 0.1); gl_Position = projectionMatrix * mv; }',
+      fragmentShader: 'varying vec4 vCol;\nvoid main(){ vec2 p = gl_PointCoord * 2.0 - 1.0; float r2 = dot(p, p);\n float a = exp(-r2 * 5.0)' + (cross ? ' + 0.55 * (exp(-abs(p.x) * 16.0) * exp(-abs(p.y) * 2.2) + exp(-abs(p.y) * 16.0) * exp(-abs(p.x) * 2.2))' : '') + ';\n a *= vCol.a; if (a < 0.01) discard; gl_FragColor = vec4(vCol.rgb, min(a, 1.0)); }'
+    });
+  }
+
+  // ── mgła: odległość + ciepła poświata od strony słońca (ta sama barwa co horyzont nieba) ──
+  const SUN = [0.42, 0.13, -1]; { const l = Math.hypot(SUN[0], SUN[1], SUN[2]); SUN[0] /= l; SUN[1] /= l; SUN[2] /= l; }
+  const HAZE_GLSL = [
+    '#define BF_SUN vec3(' + SUN.map(v => v.toFixed(4)).join(',') + ')',
+    'vec3 bfHaze(vec3 dir){ float sa = pow(max(dot(dir, BF_SUN), 0.0), 7.0); return mix(vec3(0.78,0.87,0.93), vec3(1.0,0.91,0.78), sa); }',
+    'float bfFogF(float dist){ return clamp(1.0 - exp(-max(dist - 16.0, 0.0) * 0.0042), 0.0, 1.0) * (1.0 - smoothstep(460.0, 640.0, dist)) + smoothstep(460.0, 640.0, dist); }',
+    'vec3 bfFog(vec3 col, vec3 wp, vec3 cp){ vec3 d = wp - cp; float dist = length(d); return mix(col, bfHaze(d / max(dist, 0.001)), bfFogF(dist)); }'
+  ].join('\n');
+  function patchFog(){
+    const C = T.ShaderChunk;
+    C.fog_pars_vertex = '#ifdef USE_FOG\nvarying vec3 vBfW;\n#endif';
+    C.fog_vertex = '#ifdef USE_FOG\nvBfW = cameraPosition + ( vec4( mvPosition.xyz, 0.0 ) * viewMatrix ).xyz;\n#endif';
+    C.fog_pars_fragment = '#ifdef USE_FOG\nvarying vec3 vBfW;\n' + HAZE_GLSL + '\n#endif';
+    C.fog_fragment = '#ifdef USE_FOG\ngl_FragColor.rgb = bfFog( gl_FragColor.rgb, vBfW, cameraPosition );\n#endif';
+  }
+  // Wiatr w shaderze (trawa, łodygi, kwiaty, liście) + opcjonalnie bez odwracania normalnych na tylnej stronie
+  function windify(mat, key, kExpr, amt, noFlip){
+    mat.onBeforeCompile = sh => {
+      sh.uniforms.uT = S.uT; sh.uniforms.uWind = { value: amt };
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float uT; uniform float uWind;')
+        .replace('#include <project_vertex>', [
+          'vec4 mvPosition = vec4( transformed, 1.0 );',
+          '#ifdef USE_INSTANCING',
+          '  mvPosition = instanceMatrix * mvPosition;',
+          '  float wPh = instanceMatrix[3].x * 0.37 + instanceMatrix[3].z * 0.23;',
+          '#else',
+          '  float wPh = mvPosition.x * 0.21 + mvPosition.z * 0.17 + mvPosition.y * 0.3;',
+          '#endif',
+          'float wK = ' + kExpr + ';',
+          'float wS = sin(uT * 1.6 + wPh) * 0.62 + sin(uT * 2.75 + wPh * 1.8) * 0.38;',
+          'mvPosition.x += wS * uWind * wK;',
+          'mvPosition.z += wS * uWind * wK * 0.3;',
+          'mvPosition = modelViewMatrix * mvPosition;',
+          'gl_Position = projectionMatrix * mvPosition;'
+        ].join('\n'));
+      if (noFlip) sh.fragmentShader = sh.fragmentShader.replace('#include <normal_fragment_begin>', T.ShaderChunk.normal_fragment_begin.replace('normal *= faceDirection;', ''));
+    };
+    mat.customProgramCacheKey = () => 'bfw-' + key;
+    return mat;
+  }
+  function MX(x, y, z, rx, ry, rz, s){
+    const m = new T.Matrix4(), q = new T.Quaternion().setFromEuler(new T.Euler(rx || 0, ry || 0, rz || 0));
+    const sc = Array.isArray(s) ? new T.Vector3(s[0], s[1], s[2]) : new T.Vector3(s || 1, s || 1, s || 1);
+    return m.compose(new T.Vector3(x, y, z), q, sc);
+  }
+  // Scalanie geometrii (pozycja, normalna, kolor) → jedna BufferGeometry
+  function merge(list){
+    const P = [], Nn = [], C = [], I = []; let v = 0; const vv = new T.Vector3(), col = new T.Color();
+    for (const [geo, m, color] of list) {
+      const p = geo.attributes.position, n = geo.attributes.normal, nm = new T.Matrix3().getNormalMatrix(m); col.set(color);
+      for (let k = 0; k < p.count; k++) {
+        vv.fromBufferAttribute(p, k).applyMatrix4(m); P.push(vv.x, vv.y, vv.z);
+        vv.fromBufferAttribute(n, k).applyMatrix3(nm).normalize(); Nn.push(vv.x, vv.y, vv.z);
+        C.push(col.r, col.g, col.b);
+      }
+      if (geo.index) for (let k = 0; k < geo.index.count; k++) I.push(geo.index.getX(k) + v); else for (let k = 0; k < p.count; k++) I.push(k + v);
+      v += p.count; geo.dispose();
+    }
+    const g = new T.BufferGeometry();
+    g.setAttribute('position', new T.Float32BufferAttribute(P, 3)); g.setAttribute('normal', new T.Float32BufferAttribute(Nn, 3));
+    g.setAttribute('color', new T.Float32BufferAttribute(C, 3)); g.setIndex(I); g.computeBoundingSphere();
+    return g;
+  }
+
+  // ═══ BUDOWA SCENY ═══
+  function build(){
+    patchFog();
+    S.scene = new T.Scene(); S.scene.fog = new T.Fog(0xffffff, 1, 1000);   // tylko włącza USE_FOG — mgłę liczy bfFog()
+    S.fg = new T.Scene();
+    S.cam = new T.PerspectiveCamera(46, 1.6, 0.1, 2000); S.cam.rotation.order = 'YXZ';
+    S.camBase = new T.Vector3(0, 1.35, 0); S.camP = -0.065; S.tanV = Math.tan(23 * Math.PI / 180);
+    const sc = S.scene;
+    sc.add(new T.HemisphereLight(0xd8ecff, 0x5a7430, 1.2));
+    const sun = new T.DirectionalLight(0xfff0d8, 2.3); sun.position.set(SUN[0] * 100, SUN[1] * 100 + 25, SUN[2] * 100); sc.add(sun);
+    const fill = new T.DirectionalLight(0xd4e6ff, 0.75); fill.position.set(-30, 25, 40); sc.add(fill);
+    S.tparts = {};
+    for (const [k, fn] of [['sky', buildSky], ['ground', buildGround], ['hills', buildHills], ['trees', buildTrees], ['grass', buildGrass], ['flowers', buildFlowers], ['air', buildAir], ['fg', buildFg]]) {
+      const t0 = performance.now(); fn(); S.tparts[k] = Math.round(performance.now() - t0);
+    }
+  }
+  function buildSky(){
+    const m = new T.ShaderMaterial({
+      side: T.BackSide, depthWrite: false, fog: false,
+      vertexShader: 'varying vec3 vD;\nvoid main(){ vD = position; vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position = p.xyww; }',
+      fragmentShader: HAZE_GLSL + '\nvarying vec3 vD;\nvoid main(){ vec3 d = normalize(vD); float e = d.y; vec3 hz = bfHaze(d);\n' +
+        ' vec3 c = mix(hz, vec3(0.56,0.78,0.95), smoothstep(0.0, 0.16, e)); c = mix(c, vec3(0.27,0.55,0.89), smoothstep(0.14, 0.8, e)); if (e < 0.0) c = hz;\n' +
+        ' float sd = max(dot(d, BF_SUN), 0.0);\n c += vec3(1.0,0.86,0.62) * pow(sd, 10.0) * 0.32 + vec3(1.0,0.95,0.84) * pow(sd, 90.0) * 0.6;\n' +
+        ' c = mix(c, vec3(1.0,0.99,0.94), smoothstep(0.99935, 0.99965, sd));\n gl_FragColor = vec4(c, 1.0); }'
+    });
+    S.sky = new T.Mesh(new T.SphereGeometry(1000, 32, 16), m); S.sky.renderOrder = -10; S.sky.frustumCulled = false; S.scene.add(S.sky);
+    const ct = [tex(cloudCanvas(3), true), tex(cloudCanvas(11), true)], r = rng(5);
+    S.clouds = [];
+    for (let i = 0; i < 7; i++) {
+      const az = -1.05 + i * 0.34 + (r() - 0.5) * 0.15, el = 0.1 + r() * 0.22, d = 760;
+      const sp = new T.Sprite(new T.SpriteMaterial({ map: ct[i % 2], transparent: true, depthWrite: false, fog: false, toneMapped: false, opacity: 0.72 + r() * 0.22 }));
+      sp.position.set(Math.sin(az) * Math.cos(el) * d, Math.sin(el) * d, -Math.cos(az) * Math.cos(el) * d);
+      sp.scale.set(230 + r() * 170, 80 + r() * 40, 1); sp.renderOrder = -9; sp.userData.az = az; sp.userData.el = el;
+      S.scene.add(sp); S.clouds.push(sp);
+    }
+    const glow = tex(glowCanvas(), false);
+    S.sunGlow = new T.Sprite(new T.SpriteMaterial({ map: glow, color: 0xfff0cc, transparent: true, depthWrite: false, fog: false, toneMapped: false, blending: T.AdditiveBlending, opacity: 0.55 }));
+    S.sunGlow.position.set(SUN[0] * 800, SUN[1] * 800, SUN[2] * 800); S.sunGlow.scale.set(330, 330, 1); S.sunGlow.renderOrder = -8; S.scene.add(S.sunGlow);
+    S.rays = new T.Sprite(new T.SpriteMaterial({ map: tex(raysCanvas(), false), color: 0xfff4dc, transparent: true, depthWrite: false, fog: false, toneMapped: false, blending: T.AdditiveBlending, opacity: 0.2 }));
+    S.rays.position.copy(S.sunGlow.position); S.rays.scale.set(1200, 1200, 1); S.rays.renderOrder = -8; S.scene.add(S.rays);
+  }
+  function buildGround(){
+    const geo = new T.PlaneGeometry(1400, 1400, 96, 96); geo.rotateX(-Math.PI / 2); geo.translate(0, 0, -600);
+    const pos = geo.attributes.position, col = new Float32Array(pos.count * 3), c = new T.Color();
+    const c1 = new T.Color('#5c8c34'), c2 = new T.Color('#9fbb58'), c3 = new T.Color('#3d6a26');
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), z = pos.getZ(i); pos.setY(i, hAt(x, z));
+      const n1 = fbm2(x * 0.02, z * 0.02, 2), n2 = noise2(x * 0.11 + 5, z * 0.11);
+      c.copy(c1).lerp(c2, smooth(0.42, 0.72, n1)).lerp(c3, smooth(0.55, 0.8, n2) * 0.5);
+      col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+    }
+    geo.setAttribute('color', new T.BufferAttribute(col, 3)); geo.computeVertexNormals();
+    const gt = tex(grassCanvas(), true, true); gt.repeat.set(380, 380);
+    const g = new T.Mesh(geo, new T.MeshStandardMaterial({ map: gt, vertexColors: true, roughness: 1, metalness: 0 }));
+    S.scene.add(g);
+  }
+  function buildHills(){
+    const L = [
+      { z: -165, d: 16, amp: 24, base: 3, f: 0.006, seed: 1, top: '#6f9a52', foot: '#557f3c' },
+      { z: -255, d: 22, amp: 40, base: 7, f: 0.0042, seed: 2, top: '#7fa679', foot: '#668f5a' },
+      { z: -380, d: 30, amp: 72, base: 12, f: 0.003, seed: 3, top: '#98b8b2', foot: '#86a99a' }
+    ];
+    const P = [], C = [], I = []; let v = 0; const c = new T.Color(), ct = new T.Color(), cf = new T.Color();
+    const NX = 150, NZ = 5;
+    const ridge = (l, x) => l.base + l.amp * Math.pow(fbm2(x * l.f + l.seed * 13.1, l.seed * 7.7, 4), 1.35) * 1.7;
+    const hillY = (l, x, j) => { const k = j / (NZ - 1); return ridge(l, x) * (1 - Math.pow(k, 1.5)) - 2 * k; };
+    const hillZ = (l, x, j) => l.z + j * l.d + x * x * 0.00008;
+    S.hill = { L, hillY, hillZ };
+    for (const l of L) {
+      ct.set(l.top); cf.set(l.foot);
+      for (let j = 0; j < NZ; j++) for (let i = 0; i <= NX; i++) {
+        const x = -1100 + 2200 * i / NX;
+        P.push(x, hillY(l, x, j), hillZ(l, x, j));
+        c.copy(ct).lerp(cf, j / (NZ - 1)); C.push(c.r, c.g, c.b);
+      }
+      for (let j = 0; j < NZ - 1; j++) for (let i = 0; i < NX; i++) {
+        const a = v + j * (NX + 1) + i, b = a + 1, d = a + NX + 1, e = d + 1;
+        I.push(a, d, b, b, d, e);
+      }
+      v += NZ * (NX + 1);
+    }
+    const geo = new T.BufferGeometry();
+    geo.setAttribute('position', new T.Float32BufferAttribute(P, 3)); geo.setAttribute('color', new T.Float32BufferAttribute(C, 3));
+    geo.setIndex(I); geo.computeVertexNormals();
+    S.scene.add(new T.Mesh(geo, new T.MeshStandardMaterial({ vertexColors: true, roughness: 1 })));
+    // las na pierwszym wzgórzu + rząd drzew na łące (instancje „kul” koron)
+    const r = rng(17), blob = new T.IcosahedronGeometry(1, 1);
+    const bp = blob.attributes.position; for (let i = 0; i < bp.count; i++) { const x = bp.getX(i), y = bp.getY(i), z = bp.getZ(i), k = 1 + (hash2(x * 3.1 + z, y * 2.7) - 0.5) * 0.25; bp.setXYZ(i, x * k, y * k, z * k); }
+    blob.computeVertexNormals();
+    const n1 = TOUCH ? 200 : 320, n2 = TOUCH ? 50 : 80, im = new T.InstancedMesh(blob, new T.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95 }), n1 + n2);
+    const d = new T.Object3D(), col = new T.Color(), l0 = L[0];
+    for (let i = 0; i < n1 + n2; i++) {
+      let x, y, z, s;
+      if (i < n1) { x = (r() * 2 - 1) * 650; const j = 0.6 + r() * 2.2; y = hillY(l0, x, j); z = hillZ(l0, x, j); s = 3 + r() * 3; }
+      else { x = (r() * 2 - 1) * 140; z = -88 - r() * 18; y = hAt(x, z); s = 2.2 + r() * 1.8; if (Math.abs(x) < 6) x += x < 0 ? -10 : 10; }
+      d.position.set(x, y + s * 0.9, z); d.rotation.set(0, r() * 6.28, 0); d.scale.set(s, s * (1.3 + r() * 0.5), s); d.updateMatrix();
+      im.setMatrixAt(i, d.matrix);
+      col.setHSL(0.27 + r() * 0.06, 0.4 + r() * 0.15, 0.17 + r() * 0.08); im.setColorAt(i, col);
+    }
+    S.scene.add(im);
+    // mgiełka u stóp wzgórz
+    const mist = tex(glowCanvas(), false);
+    for (let i = 0; i < 6; i++) {
+      const sp = new T.Sprite(new T.SpriteMaterial({ map: mist, color: 0xffffff, transparent: true, depthWrite: false, fog: false, toneMapped: false, opacity: 0.32 }));
+      sp.position.set(-320 + i * 130 + r() * 40, 4 + r() * 5, -150 - r() * 40); sp.scale.set(240, 34, 1); S.scene.add(sp);
+    }
+  }
+  function buildTrees(){
+    const r = rng(21), P = [], Nn = [], U = [], C = [], I = []; let v = 0;
+    const q = new T.Quaternion(), e = new T.Euler(), vt = new T.Vector3(), col = new T.Color();
+    const card = (cx, cy, cz, size, nx, ny, nz, cr, cg, cb) => {
+      e.set(r() * 6.28, r() * 6.28, r() * 6.28); q.setFromEuler(e);
+      for (const ab of [[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]]) {
+        vt.set(ab[0] * size, ab[1] * size, 0).applyQuaternion(q);
+        P.push(cx + vt.x, cy + vt.y, cz + vt.z); Nn.push(nx, ny, nz); C.push(cr, cg, cb);
+      }
+      U.push(0, 0, 1, 0, 1, 1, 0, 1); I.push(v, v + 1, v + 2, v, v + 2, v + 3); v += 4;
+    };
+    const crown = (x, y, z, Rc, blobs, per, hue) => {
+      for (let b = 0; b < blobs; b++) {
+        const bx = x + (r() - 0.5) * Rc * 1.1, by = y + (r() - 0.4) * Rc * 0.7, bz = z + (r() - 0.5) * Rc, br = Rc * (0.5 + r() * 0.25);
+        for (let k = 0; k < per; k++) {
+          const u = r() * 2 - 1, th = r() * 6.283, rr = br * Math.pow(r(), 0.35), sq = Math.sqrt(1 - u * u);
+          const px = bx + rr * sq * Math.cos(th), py = by + rr * u * 0.85, pz = bz + rr * sq * Math.sin(th);
+          let nx = px - x, ny = py - y + Rc * 0.35, nz = pz - z; const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
+          const din = Math.min(1, Math.hypot(px - x, py - y, pz - z) / Rc), sh = (0.5 + 0.5 * din) * (0.78 + 0.22 * (ny * 0.5 + 0.5));
+          col.setHSL(hue + (r() - 0.5) * 0.05, 0.5 + r() * 0.15, 0.27 + r() * 0.08);
+          card(px, py, pz, Rc * (0.5 + r() * 0.3), nx, ny, nz, col.r * sh, col.g * sh, col.b * sh);
+        }
+      }
+    };
+    const trunks = [];
+    const TREES = [[-10.5, -16, 1.0], [12.5, -22, 1.1], [-25, -38, 1.25], [27, -48, 1.3], [-6, -72, 1.1], [42, -82, 1.4], [-48, -66, 1.3]];
+    const BUSH = [[-4.6, -24, 1.4], [6.8, -31, 1.8], [-14, -47, 2.2], [17, -36, 1.6], [1.5, -58, 2.4], [-30, -62, 2.6], [22, -64, 2.0], [-19, -27, 1.3]];
+    for (const [x, z, s] of TREES) {
+      const y0 = hAt(x, z), H = 7.5 * s;
+      trunks.push([new T.CylinderGeometry(0.2 * s, 0.4 * s, H * 0.64, 9, 3), MX(x, y0 + H * 0.32, z, 0, 0, (r() - 0.5) * 0.06), '#5d4733']);
+      for (let b = 0; b < 4; b++) {
+        const a = b / 4 * 6.28 + r(), len = 2.3 * s, by = y0 + H * (0.42 + r() * 0.16);
+        const dir = new T.Vector3(Math.cos(a) * 0.75, 0.66, Math.sin(a) * 0.75).normalize();
+        const m = new T.Matrix4().compose(new T.Vector3(x + dir.x * len / 2, by + dir.y * len / 2, z + dir.z * len / 2), new T.Quaternion().setFromUnitVectors(new T.Vector3(0, 1, 0), dir), new T.Vector3(1, 1, 1));
+        trunks.push([new T.CylinderGeometry(0.06 * s, 0.13 * s, len, 6), m, '#5a4532']);
+      }
+      crown(x, y0 + H * 0.78, z, 3.2 * s, 7, TOUCH ? 22 : 32, 0.25 + (r() - 0.5) * 0.04);
+    }
+    for (const [x, z, s] of BUSH) crown(x, hAt(x, z) + s * 0.65, z, s, 4, TOUCH ? 16 : 24, 0.27 + (r() - 0.5) * 0.05);
+    const tg = merge(trunks);
+    S.scene.add(new T.Mesh(tg, new T.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 })));
+    const geo = new T.BufferGeometry();
+    geo.setAttribute('position', new T.Float32BufferAttribute(P, 3)); geo.setAttribute('normal', new T.Float32BufferAttribute(Nn, 3));
+    geo.setAttribute('uv', new T.Float32BufferAttribute(U, 2)); geo.setAttribute('color', new T.Float32BufferAttribute(C, 3));
+    geo.setIndex(I); geo.computeBoundingSphere();
+    const lt = tex(leafCanvas(), true);
+    const mat = windify(new T.MeshStandardMaterial({ map: lt, alphaTest: 0.45, side: T.DoubleSide, vertexColors: true, roughness: 0.82 }), 'crown', '1.0', 0.05, true);
+    S.scene.add(new T.Mesh(geo, mat));
+  }
+  function bladeGeo(){
+    const P = [], C = [], Nn = [], I = [], rows = [0, 0.34, 0.68];
+    const c0 = new T.Color('#2f5a1a'), c1 = new T.Color('#a6cf5c'), c = new T.Color();
+    rows.forEach(u => { const w = (1 - u) * 0.5, z = u * u * 0.35; c.copy(c0).lerp(c1, u); P.push(-w, u, z, w, u, z); C.push(c.r, c.g, c.b, c.r, c.g, c.b); Nn.push(0, 0.8, 0.6, 0, 0.8, 0.6); });
+    P.push(0, 1, 0.35); C.push(c1.r, c1.g, c1.b); Nn.push(0, 0.8, 0.6);
+    I.push(0, 1, 2, 1, 3, 2, 2, 3, 4, 3, 5, 4, 4, 5, 6);
+    const g = new T.BufferGeometry();
+    g.setAttribute('position', new T.Float32BufferAttribute(P, 3)); g.setAttribute('color', new T.Float32BufferAttribute(C, 3));
+    g.setAttribute('normal', new T.Float32BufferAttribute(Nn, 3)); g.setIndex(I);
+    return g;
+  }
+  function buildGrass(){
+    const n = TOUCH ? 3000 : 7500, r = rng(31);
+    const mat = windify(new T.MeshStandardMaterial({ vertexColors: true, side: T.DoubleSide, roughness: 0.85 }), 'grass', 'position.y * position.y', 0.07, true);
+    const im = new T.InstancedMesh(bladeGeo(), mat, n), d = new T.Object3D(), col = new T.Color();
+    for (let i = 0; i < n; i++) {
+      const z = -1.9 - 24 * Math.pow(r(), 1.7), x = (r() * 2 - 1) * (Math.abs(z) * 1.15 + 1);
+      const tall = fbm2(x * 0.3, z * 0.3, 2);
+      d.position.set(x, hAt(x, z), z); d.rotation.set((r() - 0.5) * 0.25, r() * Math.PI * 2, (r() - 0.5) * 0.25);
+      const h = 0.16 + r() * 0.24 + tall * 0.2, w = 0.028 + r() * 0.03; d.scale.set(w, h, h); d.updateMatrix();
+      im.setMatrixAt(i, d.matrix);
+      col.setRGB(0.82 + r() * 0.3, 0.85 + r() * 0.25, 0.65 + r() * 0.3); im.setColorAt(i, col);
+    }
+    S.scene.add(im);
+  }
+  function buildFlowers(){
+    const n = TOUCH ? 900 : 2000, r = rng(41), types = [];
+    for (let i = 0; i < n; i++) {
+      const z = -1.9 - 75 * Math.pow(r(), 1.8), x = (r() * 2 - 1) * (Math.abs(z) * 1.15 + 1.5);
+      const k = fbm2(x * 0.12, z * 0.12, 3) + (r() - 0.5) * 0.25;
+      const t = k < 0.42 ? 0 : (k < 0.52 ? 3 : (k < 0.6 ? 2 : (k < 0.66 ? 0 : 1)));
+      types.push([x, z, t, 0.18 + r() * 0.3]);
+    }
+    const SZ = [0.12, 0.16, 0.11, 0.09];
+    const stemMat = windify(new T.MeshStandardMaterial({ color: 0x4f7f2c, roughness: 0.8 }), 'stem', 'position.y', 0.07, false);
+    const stems = new T.InstancedMesh(new T.CylinderGeometry(0.5, 0.5, 1, 4, 1, true).translate(0, 0.5, 0), stemMat, n);
+    const d = new T.Object3D();
+    types.forEach((f, i) => { d.position.set(f[0], hAt(f[0], f[1]), f[1]); d.rotation.set(0, 0, 0); d.scale.set(0.012, f[3], 0.012); d.updateMatrix(); stems.setMatrixAt(i, d.matrix); });
+    S.scene.add(stems);
+    const plane = new T.PlaneGeometry(1, 1);
+    for (let t = 0; t < 4; t++) {
+      const list = types.filter(f => f[2] === t); if (!list.length) continue;
+      const mat = windify(new T.MeshStandardMaterial({ map: tex(flowerCanvas(t), true), alphaTest: 0.4, side: T.DoubleSide, roughness: 0.7 }), 'head', '1.0', 0.07, true);
+      const im = new T.InstancedMesh(plane, mat, list.length);
+      d.rotation.order = 'YXZ';
+      list.forEach((f, i) => {
+        d.position.set(f[0], hAt(f[0], f[1]) + f[3], f[1]);
+        d.rotation.set(-1.0 + r() * 0.4, (r() - 0.5) * 0.8, r() * 6.28);
+        const s = SZ[t] * (0.8 + r() * 0.45); d.scale.set(s, s, s); d.updateMatrix(); im.setMatrixAt(i, d.matrix);
+      });
+      d.rotation.order = 'XYZ';
+      S.scene.add(im);
+    }
+  }
+  function buildAir(){
+    // pyłki / puch dmuchawców w słońcu
+    const n = TOUCH ? 60 : 130, r = rng(51), pos = new Float32Array(n * 3), sz = new Float32Array(n), cl = new Float32Array(n * 4);
+    S.pol = [];
+    for (let i = 0; i < n; i++) {
+      const p = { x: (r() * 2 - 1) * 6, y: 0.3 + r() * 3.4, z: -2.5 - r() * 10, ph: r() * 6.28, sp: 0.04 + r() * 0.08 };
+      S.pol.push(p); sz[i] = 0.025 + r() * 0.03; cl.set([1, 0.97, 0.86, 0.55 + r() * 0.35], i * 4);
+    }
+    const g = new T.BufferGeometry();
+    g.setAttribute('position', new T.BufferAttribute(pos, 3).setUsage(T.DynamicDrawUsage));
+    g.setAttribute('aSize', new T.BufferAttribute(sz, 1)); g.setAttribute('aCol', new T.BufferAttribute(cl, 4));
+    S.polMat = sparkMat(false);
+    S.polPts = new T.Points(g, S.polMat); S.polPts.frustumCulled = false; S.polPts.renderOrder = 4; S.scene.add(S.polPts);
+  }
+
+  // ═══ PIERWSZY PLAN: motyle, siatka, iskierki ═══
+  function bodyGeo(){
+    const parts = [];
+    parts.push([new T.CapsuleGeometry(0.048, 0.3, 4, 8), MX(0, -0.2, 0.035), '#3b2b1d']);
+    parts.push([new T.SphereGeometry(0.075, 10, 8), MX(0, 0.01, 0.045, 0, 0, 0, [1, 1.3, 0.9]), '#2a1f17']);
+    parts.push([new T.SphereGeometry(0.058, 10, 8), MX(0, 0.13, 0.05), '#1f160f']);
+    for (const s of [-1, 1]) {
+      const a = new T.Vector3(s * 0.025, 0.17, 0.05), b = new T.Vector3(s * 0.15, 0.46, 0.08), d = b.clone().sub(a), len = d.length();
+      const m = new T.Matrix4().compose(a.clone().add(b).multiplyScalar(0.5), new T.Quaternion().setFromUnitVectors(new T.Vector3(0, 1, 0), d.normalize()), new T.Vector3(1, 1, 1));
+      parts.push([new T.CylinderGeometry(0.008, 0.01, len, 5), m, '#241a12']);
+      parts.push([new T.SphereGeometry(0.022, 6, 5), MX(b.x, b.y, b.z), '#241a12']);
+    }
+    return merge(parts);
+  }
+  function buildFg(){
+    const fg = S.fg;
+    fg.add(new T.HemisphereLight(0xffffff, 0x86a060, 1.3));
+    S.key = new T.DirectionalLight(0xfff4e2, 1.75); fg.add(S.key); fg.add(S.key.target);
+    const wt = tex(bfAtlas(), true, false);
+    S.wingMat = new T.MeshStandardMaterial({ map: wt, alphaTest: 0.5, side: T.DoubleSide, roughness: 0.6, metalness: 0, emissive: 0xffffff, emissiveMap: wt, emissiveIntensity: 0.3 });
+    S.wingGeo = [];
+    for (let s = 0; s < BF_SPECIES; s++) {
+      const g = new T.PlaneGeometry(1, 1); g.translate(0.5, 0, 0);
+      const uv = g.attributes.uv, col = s % 4, row = Math.floor(s / 4);
+      for (let i = 0; i < uv.count; i++) { const u = uv.getX(i), w = uv.getY(i); uv.setXY(i, (col + u) / 4, 1 - (row + 1 - w) / 2); }
+      S.wingGeo.push(g);
+    }
+    S.bodyGeo = bodyGeo(); S.bodyMat = new T.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.05 });
+    S.bpool = []; S.bmap = new Map();
+    for (let i = 0; i < 24; i++) S.bpool.push(makeBug());
+    buildNet();
+    // iskierki
+    const NSP = 200; S.sp = []; for (let i = 0; i < NSP; i++) S.sp.push({ life: 0 });
+    const g = new T.BufferGeometry();
+    g.setAttribute('position', new T.BufferAttribute(new Float32Array(NSP * 3), 3).setUsage(T.DynamicDrawUsage));
+    g.setAttribute('aSize', new T.BufferAttribute(new Float32Array(NSP), 1).setUsage(T.DynamicDrawUsage));
+    g.setAttribute('aCol', new T.BufferAttribute(new Float32Array(NSP * 4), 4).setUsage(T.DynamicDrawUsage));
+    S.spMat = sparkMat(true);
+    S.spPts = new T.Points(g, S.spMat); S.spPts.frustumCulled = false; S.spPts.renderOrder = 20; fg.add(S.spPts);
+  }
+  function makeBug(){
+    const root = new T.Group(), yaw = new T.Group(), tilt = new T.Group(), pr = new T.Group(), pl = new T.Group();
+    pl.scale.x = -1;
+    const wr = new T.Mesh(S.wingGeo[0], S.wingMat), wl = new T.Mesh(S.wingGeo[0], S.wingMat), body = new T.Mesh(S.bodyGeo, S.bodyMat);
+    pr.add(wr); pl.add(wl); tilt.add(pr, pl, body); yaw.add(tilt); root.add(yaw);
+    root.visible = false; S.fg.add(root);
+    return { root, yaw, tilt, pr, pl, wr, wl, busy: false, id: 0, sp: -1, seen: 0 };
+  }
+  function buildNet(){
+    const root = new T.Group(), lean = new T.Group(), hoopG = new T.Group();
+    root.add(lean); lean.add(hoopG);
+    const hoop = new T.Mesh(new T.TorusGeometry(1, 0.075, 10, 56), new T.MeshStandardMaterial({ color: 0x2f9e5b, roughness: 0.32, metalness: 0.55 }));
+    const pts = []; for (let i = 0; i <= 14; i++) { const u = i / 14; pts.push(new T.Vector2(Math.max(0.001, 0.985 * Math.sqrt(Math.max(0, 1 - Math.pow(u, 2.4)))), -1.45 * u)); }
+    const bagGeo = new T.LatheGeometry(pts, 30); bagGeo.rotateX(Math.PI / 2);   // oś worka = −Z (w głąb ekranu)
+    const bp = bagGeo.attributes.position;
+    for (let i = 0; i < bp.count; i++) { const dpt = Math.max(0, -bp.getZ(i)); bp.setY(i, bp.getY(i) - 0.34 * Math.pow(dpt, 1.5)); }
+    bagGeo.computeVertexNormals();
+    const nt = tex(netCanvas(), true, true); nt.repeat.set(10, 5);
+    const bag = new T.Mesh(bagGeo, new T.MeshStandardMaterial({ map: nt, color: 0xffffff, transparent: true, side: T.DoubleSide, depthWrite: false, roughness: 0.9 }));
+    bag.renderOrder = 5;
+    hoopG.add(hoop, bag);
+    const handle = new T.Mesh(new T.CylinderGeometry(0.085, 0.11, 1, 10).translate(0, 0.5, 0), new T.MeshStandardMaterial({ color: 0xbf8a52, roughness: 0.55 }));
+    const fer = new T.Mesh(new T.CylinderGeometry(0.11, 0.11, 0.55, 10).translate(0, 0.27, 0), new T.MeshStandardMaterial({ color: 0xc9d2da, roughness: 0.3, metalness: 0.8 }));
+    lean.add(handle, fer);
+    root.visible = false; S.fg.add(root);
+    S.net = { root, lean, hoopG, handle, fer, lean0: 0 };
+  }
+
+  // ── piksele planszy → świat (na płaszczyźnie w odległości depth od kamery) ──
+  const _v = { a: null, b: null, Y: null };
+  function toWorld(x, y, depth, out){
+    const tv = S.tanV, a = S.W / S.H;
+    return out.set(((x / S.W) * 2 - 1) * tv * a * depth, (1 - (y / S.H) * 2) * tv * depth, -depth).applyMatrix4(S.cam.matrixWorld);
+  }
+  const pxw = depth => 2 * depth * S.tanV / S.H;   // metry na piksel w tej odległości
+
+  // ═══ ANIMACJA (co klatkę) ═══
+  function update(dt, t){
+    S.uT.value = t;
+    const c = S.cam, b = S.camBase, sw = RM ? 0 : 1;
+    c.position.set(b.x + Math.sin(t * 0.13) * 0.06 * sw, b.y + Math.sin(t * 0.19) * 0.03 * sw, b.z);
+    c.rotation.set(S.camP + Math.sin(t * 0.11) * 0.004 * sw, Math.sin(t * 0.08) * 0.012 * sw, 0);
+    c.updateMatrixWorld();
+    S.sky.position.copy(c.position);
+    S.rays.material.rotation = t * 0.012;
+    S.rays.material.opacity = 0.17 + 0.05 * Math.sin(t * 0.37);
+    S.clouds.forEach((cl, i) => { const az = cl.userData.az + t * 0.0016, el = cl.userData.el, d = 760; cl.position.set(Math.sin(az) * Math.cos(el) * d, Math.sin(el) * d, -Math.cos(az) * Math.cos(el) * d); });
+    // pyłki
+    const pa = S.polPts.geometry.attributes.position;
+    S.pol.forEach((p, i) => {
+      p.y += p.sp * dt; p.x += Math.sin(t * 0.5 + p.ph) * dt * 0.08 + dt * 0.05;
+      if (p.y > 3.9) { p.y = 0.3; p.x = (Math.random() * 2 - 1) * 6; }
+      if (p.x > 7) p.x = -7;
+      pa.setXYZ(i, p.x + Math.sin(t * 1.3 + p.ph) * 0.05, p.y, p.z);
+    });
+    pa.needsUpdate = true;
+    // światło pierwszego planu (z lewej, z przodu, z góry)
+    toWorld(S.W * 0.5, S.H * 0.5, DB, S.key.target.position);
+    S.key.position.copy(c.position).add(_v.a.set(-3, 5, 4).applyQuaternion(c.quaternion));
+    S.key.target.updateMatrixWorld();
+    updBugs();
+    updNet(dt);
+    updSparks(dt);
+  }
+  function updBugs(){
+    const fn = ++S.frameNo, pw = pxw(DB);
+    for (const b of bfFalling) {
+      let o = S.bmap.get(b.id);
+      if (!o) {
+        o = S.bpool.find(p => !p.busy); if (!o) continue;
+        o.busy = true; o.id = b.id; S.bmap.set(b.id, o);
+      }
+      if (o.sp !== b.sp) { o.sp = b.sp; o.wr.geometry = S.wingGeo[b.sp]; o.wl.geometry = S.wingGeo[b.sp]; }
+      o.seen = fn;
+      toWorld(b.bx, b.by, DB, o.root.position);
+      o.root.quaternion.copy(S.cam.quaternion);
+      o.root.scale.setScalar(BF.R * pw * (b.scale || 1));
+      o.yaw.rotation.z = b.head;
+      o.tilt.rotation.x = -0.3 + Math.sin(b.ph * 0.5) * 0.06;
+      const fl = bfFlap(b.ph);
+      o.pr.rotation.y = -fl; o.pl.rotation.y = fl;
+      o.root.visible = true;
+    }
+    for (const [id, o] of S.bmap) if (o.seen !== fn) { o.busy = false; o.root.visible = false; S.bmap.delete(id); }
+  }
+  function updNet(){
+    const N = bfNet, Nt = S.net;
+    Nt.root.visible = !!N.shown;
+    if (!N.shown) return;
+    const x = N.rx + (N.sx || 0), y = N.ry;
+    toWorld(x, y, DN, Nt.root.position);
+    Nt.root.quaternion.copy(S.cam.quaternion);
+    const s = N.swingT > 0 ? Math.sin(Math.min(1, N.swingT) * Math.PI) : 0;
+    Nt.lean0 += (clamp(-N.vx * 0.0009, -0.35, 0.35) - Nt.lean0) * 0.15;
+    const rz = Nt.lean0 + s * 0.6 * N.swingDir;
+    Nt.lean.rotation.z = rz;
+    Nt.lean.scale.setScalar(BF.hoopR * pxw(DN) * (1 + 0.1 * s));
+    Nt.hoopG.rotation.set(-0.42 + s * 0.85, s * 0.25 * N.swingDir, 0);
+    // trzonek: od obręczy w stronę „ręki” pod dolną krawędzią ekranu
+    let dx = BF.handX - x, dy = -(BF.handY - y); const dl = Math.hypot(dx, dy) || 1; dx /= dl; dy /= dl;
+    const ca = Math.cos(-rz), sa = Math.sin(-rz), lx = dx * ca - dy * sa, ly = dx * sa + dy * ca;
+    const rim = _v.b.set(lx, ly, 0).applyEuler(Nt.hoopG.rotation);
+    Nt.handle.position.copy(rim); Nt.fer.position.copy(rim);
+    const dir = _v.a.set(lx, ly, 0.42).normalize();
+    Nt.handle.quaternion.setFromUnitVectors(_v.Y, dir); Nt.fer.quaternion.copy(Nt.handle.quaternion);
+    Nt.handle.scale.set(1, (BF.H * 1.5) / BF.hoopR, 1);
+  }
+  function emit(x, y, kind){
+    const P = toWorld(x, y, DB - 0.08, new T.Vector3()), pw = pxw(DB);
+    const cr = new T.Vector3(1, 0, 0).applyQuaternion(S.cam.quaternion), cu = new T.Vector3(0, 1, 0).applyQuaternion(S.cam.quaternion);
+    const cols = kind === 'ok' ? [[1, 0.83, 0.3], [1, 1, 1], [1, 0.6, 0.85], [0.56, 0.95, 0.75]] : [[1, 0.42, 0.42], [1, 0.66, 0.3]];
+    const n = kind === 'ok' ? 30 : 14; let made = 0;
+    for (let i = 0; i < S.sp.length && made < n; i++) {
+      const p = S.sp[i]; if (p.life > 0) continue; made++;
+      const a = Math.random() * Math.PI * 2, sp = ((kind === 'ok' ? 70 : 45) + Math.random() * (kind === 'ok' ? 190 : 110)) * pw;
+      const vx = Math.cos(a) * sp, vy = Math.sin(a) * sp + 40 * pw, c = cols[i % cols.length];
+      p.x = P.x; p.y = P.y; p.z = P.z;
+      p.vx = cr.x * vx + cu.x * vy; p.vy = cr.y * vx + cu.y * vy; p.vz = cr.z * vx + cu.z * vy;
+      p.life = p.max = 0.45 + Math.random() * 0.5; p.r = c[0]; p.g = c[1]; p.b = c[2];
+      p.s = ((kind === 'ok' ? 12 : 8) + Math.random() * 12) * pw; p.gr = 160 * pw;
+    }
+  }
+  function updSparks(dt){
+    const g = S.spPts.geometry, pa = g.attributes.position, sa = g.attributes.aSize, ca = g.attributes.aCol;
+    const cu = _v.a.set(0, 1, 0).applyQuaternion(S.cam.quaternion);
+    for (let i = 0; i < S.sp.length; i++) {
+      const p = S.sp[i];
+      if (p.life <= 0) { sa.setX(i, 0); continue; }
+      p.life -= dt; p.vx *= 0.96; p.vy *= 0.96; p.vz *= 0.96;
+      p.vx -= cu.x * p.gr * dt; p.vy -= cu.y * p.gr * dt; p.vz -= cu.z * p.gr * dt;
+      p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
+      const a = Math.max(0, p.life / p.max);
+      pa.setXYZ(i, p.x, p.y, p.z); sa.setX(i, p.s * (0.4 + 0.6 * a)); ca.setXYZW(i, p.r, p.g, p.b, a);
+    }
+    pa.needsUpdate = true; sa.needsUpdate = true; ca.needsUpdate = true;
+  }
+
+  // ═══ RENDERER, POMIAR CZASU KLATKI ═══
+  function makeRenderer(canvas){
+    try { R = new T.WebGLRenderer({ canvas, antialias: !TOUCH, powerPreference: 'high-performance', stencil: false }); }
+    catch(e) { return false; }
+    R.outputColorSpace = T.SRGBColorSpace; R.toneMapping = T.ACESFilmicToneMapping; R.toneMappingExposure = 1.05;
+    R.autoClear = false; R.setClearColor(0xbfe0f2, 1);
+    S.pr = Math.min(window.devicePixelRatio || 1, TOUCH ? 1.15 : 1.5); R.setPixelRatio(S.pr);
+    S.aniso = Math.min(8, R.capabilities.getMaxAnisotropy ? R.capabilities.getMaxAnisotropy() : 4);
+    R.debug.onShaderError = (gl, prog, vs, fs) => { API.failed = true; try { console.warn('[motyle 3D] błąd shadera', gl.getShaderInfoLog(vs), gl.getShaderInfoLog(fs)); } catch(e) {} };
+    canvas.addEventListener('webglcontextlost', ev => { ev.preventDefault(); API.failed = true; API.on = false; try { bfUse2D(); } catch(_) {} });
+    return true;
+  }
+  function render(){
+    R.clear();
+    R.render(S.scene, S.cam);
+    R.clearDepth();
+    R.render(S.fg, S.cam);
+  }
+  function setPx(){
+    const px = (S.H * S.pr) / (2 * S.tanV);
+    S.spMat.uniforms.uPx.value = px; S.polMat.uniforms.uPx.value = px;
+  }
+
+  // ═══ API widoku (wołane przez BFV.* z logiki gry) ═══
+  API.attach = (canvas) => {
+    if (!S || !R || API.failed) return false;
+    API.on = true; S.endEl = document.getElementById('endOverlay'); S.lastR = 0;
+    return true;
+  };
+  API.detach = () => { API.on = false; };
+  API.layout = (W, H) => {
+    if (!R || !S) return;
+    S.W = W; S.H = H;
+    R.setPixelRatio(S.pr); R.setSize(W, H, false);
+    const a = W / H, c = S.cam;
+    c.fov = a < 0.75 ? 64 : (a < 1.15 ? 56 : 46); c.aspect = a; c.updateProjectionMatrix();
+    S.tanV = Math.tan(c.fov * Math.PI / 360);
+    setPx();
+    if (API.on) { update(0, performance.now() / 1000); render(); }
+  };
+  API.frame = (dt, t) => {
+    if (!API.on || !S) return;
+    const now = performance.now();
+    const endVis = S.endEl && S.endEl.classList.contains('visible');
+    const gap = S.lastR ? now - S.lastR : 16.7;
+    if (gap < (endVis ? 250 : (S.cap ? 1000 / S.cap - 3 : 0))) return;
+    S.lastR = now;
+    update(Math.min(0.05, gap / 1000), t);
+    render();
+    const P = S.perf;
+    if (endVis || gap > 250 || document.hidden) return;
+    P.n++; P.sum += gap;
+    if (P.n >= 90) {
+      const avg = P.sum / P.n;
+      window.__bfPerf = { avgFrameMs: +avg.toFixed(1), pr: R.getPixelRatio(), cap: S.cap, calls: R.info.render.calls, tris: R.info.render.triangles };
+      P.n = 0; P.sum = 0;
+      // słaby sprzęt: najpierw niższa rozdzielczość, potem 30 kl./s, na końcu widok 2D
+      if (avg > 26) {
+        if (S.pr > 0.76) { S.pr = Math.max(0.75, S.pr - 0.25); R.setPixelRatio(S.pr); R.setSize(S.W, S.H, false); setPx(); }
+        else if (!S.cap) S.cap = 30;
+        else if (avg > 60) API.tooSlow = true;
+      }
+    }
+  };
+  API.burst = (x, y, kind) => { if (S) emit(x, y, kind); };
+  API.renderOnce = () => { if (!S) return; update(1 / 60, performance.now() / 1000); render(); };   // do testów (karta w tle)
+  API.stats = () => ({ buildMs: S && S.buildMs, tm: S && S.tm, perf: window.__bfPerf || null, pr: R && R.getPixelRatio(), cap: S && S.cap, calls: R && R.info.render.calls, tris: R && R.info.render.triangles });
+
+  // start: moduł z three.js ustawia window.THREE i woła __bf3dBoot()
+  window.__bf3dBoot = function(){
+    if (API.ready || API.failed) return;
+    try {
+      T = window.THREE; if (!T || !T.WebGLRenderer) throw new Error('brak THREE');
+      const tb = performance.now();
+      S = { uT: { value: 0 }, W: 640, H: 400, pr: 1, cap: 0, aniso: 4, perf: { n: 0, sum: 0 }, frameNo: 0 };
+      _v.a = new T.Vector3(); _v.b = new T.Vector3(); _v.Y = new T.Vector3(0, 1, 0);
+      if (!makeRenderer(document.getElementById('bf3dCanvas'))) throw new Error('brak WebGL');
+      const t1 = performance.now();
+      build();
+      const t2 = performance.now();
+      R.setSize(640, 400, false); S.cam.aspect = 1.6; S.cam.updateProjectionMatrix(); setPx();
+      R.compile(S.scene, S.cam); R.compile(S.fg, S.cam);
+      if (API.failed) throw new Error('shader');
+      S.buildMs = Math.round(performance.now() - tb);
+      S.tm = { renderer: Math.round(t1 - tb), build: Math.round(t2 - t1), compile: Math.round(performance.now() - t2), parts: S.tparts };
+      API.ready = true;
+      if (typeof bfTry3D === 'function') bfTry3D();   // gra już trwa w 2D → przełącz na 3D
+    } catch(e) {
+      console.warn('[motyle 3D] niedostępne — zostaje widok 2D:', e && e.message);
+      API.failed = true;
+    }
+  };
+  window.__bf3dFail = () => { API.failed = true; };
+  return API;
+})();
+</script>
+<!-- Silnik 3D: three.js r160 z jsDelivr (ten sam plik co w Moście i wyścigach — wspólny cache) → globalny THREE → budowa sceny.
+     Gdy się nie wczyta (brak sieci, stara przeglądarka, brak WebGL), gra działa w widoku 2D. -->
+<script type="module">
+if (window.BF3D && !window.BF3D.failed) {
+  import('https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js')
+    .then(T => { window.THREE = T; if (window.__bf3dBoot) window.__bf3dBoot(); })
+    .catch(() => { if (window.__bf3dFail) window.__bf3dFail(); });
+}
 </script>
 <script src="consent.js"></script>
 </body>
