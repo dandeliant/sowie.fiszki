@@ -12,13 +12,13 @@
 - **Hosting:** Vercel → **https://sowiefiszki.com** (custom domain, od 29.04.2026; wcześniej GitHub Pages)
 - **Backend:** Supabase (auth + Postgres + RLS), projekt `kofenaaeleyhwhbkytcz`
 - **Charakter:** osoba fizyczna prowadząca Platformę; **model freemium** (30-dniowy trial Premium → Free / Premium po opłacie). Wcześniej projekt był non-commercial — od ~2026-04-29 przygotowywany do monetyzacji.
-- **Service Worker:** aktualnie `v1.272` (`CACHE_NAME` w `sw.js`). Format `vMAJOR.NNN` (3-cyfrowy minor z zerami wiodącymi): `v1.263` → `v1.264` … `v1.999` → `v2.000`.
+- **Service Worker:** aktualnie `v1.273` (`CACHE_NAME` w `sw.js`). Format `vMAJOR.NNN` (3-cyfrowy minor z zerami wiodącymi): `v1.263` → `v1.264` … `v1.999` → `v2.000`.
 - **Promocja Premium:** **wszyscy zalogowani użytkownicy mają Premium za darmo do 31.01.2027** (override po stronie kodu w `db.js isPremium()` — `isPromoActive()` zwraca `true` gdy `Date.now() < 2027-02-01 00:00`; ta sama data w `notesownik/notesownik-cloud.js` i `sowiemysli/sowiemysli-cloud.js` — `PROMO_END`). Po 31.01.2027 promocja (przedłużona 25.10.2026 z 31.10, potem 17.11.2026 z 30.11.2026) samoczynnie wygasa — wraca normalna logika: nowi użytkownicy mają 30-dniowy trial gratis, reszta przechodzi na Free.
 
 ## 📚 Dokumentacja szczegółowa (`docs/`)
 
 Ten plik to skrót. Szczegóły funkcji są w `docs/` — **przed zmianą danej funkcji znajdź jej opis Grepem** (np. nazwę funkcji JS, tabeli lub pliku) i przeczytaj tylko ten fragment:
-- `docs/MIGRACJE.md` — migracje #1–#103: tabele, RPC, RLS, API db.js, UI.
+- `docs/MIGRACJE.md` — migracje #1–#104: tabele, RPC, RLS, API db.js, UI.
 - `docs/FUNKCJE.md` — Fiszki/FSRS i „Opanowane”, XP, Ignoruj, oceny, tryb skupienia, nakładki świąteczne (🎃 Halloween, 🇵🇱 11 listopada), AI (OpenAI, rozmowy, głos), pupil, rankingi, statystyki, SEO, koszty i terminy, status funkcji, skrypty (sync, kopia zapasowa).
 - `docs/GRAMMAR-CITY.md` — Grammar City 3D (silnik, auta, mapy, sklep, policja, pory roku…).
 - `docs/GRY-INNE.md` — gry i losowanki z INNE, Wyścig słówek 3D, blokada gier, gry z listy unitów, nazwa „Karty do gry”.
@@ -46,7 +46,7 @@ Po dodaniu funkcji dopisz jej opis do właściwego pliku w `docs/` (nie do CLAUD
 
 ## 🗄️ Migracje SQL do Supabase
 
-- Ostatnia: **#103** (`user-backgrounds.sql`). Pełna lista z opisami: `docs/MIGRACJE.md`.
+- Ostatnia: **#104** (`tutoring-data.sql`). Pełna lista z opisami: `docs/MIGRACJE.md`.
 - Nowa migracja: sprawdź wolny numer na świeżym `origin/main`, plik idempotentny (`if not exists`, `create or replace`, `drop … if exists`), dopisz wiersz w `sprawdz-migracje.sql` i opis w `docs/MIGRACJE.md`, testuj na PGlite.
 - Kod klienta działa bez nowej migracji (fail-soft: `null` = brak migracji → UI chowa funkcję).
 - **Zawsze przypominaj użytkownikowi** o uruchomieniu nowej migracji w Supabase, kiedy tworzysz nową.
@@ -127,7 +127,7 @@ Po dodaniu funkcji dopisz jej opis do właściwego pliku w `docs/` (nie do CLAUD
 - **Regulamin** (§1–§15) i **Polityka prywatności** (12 sekcji) są w `app.html` (modal) i `index.html` (modal). Spójna treść w obu.
 - **RODO:** obowiązkowa zgoda przy rejestracji, wymóg zgody opiekuna <16 lat, prawo do bycia zapomnianym (funkcja „Usuń konto" w modalu „Moje konto" w nagłówku).
 - **Wiek użytkownika:** bez ograniczeń, ale dzieci <16 lat wymagają zgody rodzica (checkbox przy rejestracji).
-- **Dane:** login + hasło (bcrypt w Supabase Auth) + postępy nauki. Dobrowolnie: grafika profilowa (#62, publiczny bucket) i 🖼️ własne tło (#103, Premium, prywatny bucket `user-backgrounds`, max 2 obrazki — widzą je tylko właściciel, jego nauczyciel i admin; moderacja „🖼️ Tła uczniów”; obie rzeczy opisane w Polityce prywatności — nowe dane osobowe zawsze tam dopisuj). Konta nauczyciela / opiekuna mogą dobrowolnie podać e-mail wyłącznie do odzyskania hasła (#98, Edge Function `account`, wysyłka Brevo — wdrożenie: `docs/ODZYSKIWANIE-HASLA.md`); uczniowie — bez e-maila. Przy prośbie o dostęp — dobrowolne imię i nazwisko (dla admina).
+- **Dane:** login + hasło (bcrypt w Supabase Auth) + postępy nauki. Dobrowolnie: grafika profilowa (#62, publiczny bucket) i 🖼️ własne tło (#103, Premium, prywatny bucket `user-backgrounds`, max 2 obrazki — widzą je tylko właściciel, jego nauczyciel i admin; moderacja „🖼️ Tła uczniów”; obie rzeczy opisane w Polityce prywatności — nowe dane osobowe zawsze tam dopisuj). 📒 Korepetycje (#104, `korepetycje.html`, nauczyciel Premium / admin): dane uczniów nauczyciela na jego koncie — administratorem jest nauczyciel, Platforma przetwarza je w jego imieniu (art. 28 RODO); admin ich nie widzi. Konta nauczyciela / opiekuna mogą dobrowolnie podać e-mail wyłącznie do odzyskania hasła (#98, Edge Function `account`, wysyłka Brevo — wdrożenie: `docs/ODZYSKIWANIE-HASLA.md`); uczniowie — bez e-maila. Przy prośbie o dostęp — dobrowolne imię i nazwisko (dla admina).
 - **AI** — funkcje 🤖 (OpenAI przez Edge Function `ai`, migracja #73) opisane w Polityce prywatności (procesor OpenAI) i Regulaminie §8 ust. 3. Do AI tylko treść zadania — bez danych osobowych. W marketingu (home/faq) nie eksponować bez decyzji właściciela.
 
 ## 🔧 Typowe zadania

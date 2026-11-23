@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="pl" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="description" content="Korepetycje — uczniowie, kalendarz zajęć, płatności, zarobki i prognozy. Narzędzie Premium dla nauczycieli w Sowich Fiszkach.">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#6366f1">
+<title>📒 Korepetycje — Sowie Fiszki</title>
+<!-- Korepetycje (TutorFlow) w Sowich Fiszkach — dane na koncie nauczyciela (korepetycje/korepetycje-cloud.js, migracja #104).
+     Bez własnego Service Workera i manifestu TutorFlow — pamięć podręczną obsługuje główny sw.js. -->
+<link rel="apple-touch-icon" href="korepetycje/icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="korepetycje/icons/favicon-32.png">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='24' fill='%236366f1'/><path d='M28 62 L46 36 L58 52 L72 32' stroke='white' stroke-width='9' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+<link rel="stylesheet" href="korepetycje/css/tokens.css">
+<link rel="stylesheet" href="korepetycje/css/base.css">
+<link rel="stylesheet" href="korepetycje/css/components.css">
+<link rel="stylesheet" href="korepetycje/css/layout.css">
+<link rel="stylesheet" href="korepetycje/css/views.css">
+<link rel="stylesheet" href="korepetycje/css/print.css">
+<style>
+  /* 🦉 Sowie Fiszki: bramka dostępu, powrót, stan zapisu na koncie */
+  .kp-gate{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;
+    background:radial-gradient(ellipse at top,#eef0ff 0%,var(--bg,#f4f5f9) 70%);}
+  [data-theme="dark"] .kp-gate{background:radial-gradient(ellipse at top,#1b1f3a 0%,var(--bg,#090b11) 70%);}
+  .kp-gate[hidden]{display:none;}
+  .kp-gate__box{max-width:440px;width:100%;background:var(--surface,#fff);border:1px solid var(--border,rgba(15,23,42,.09));
+    border-radius:20px;padding:30px 26px;text-align:center;box-shadow:0 20px 60px rgba(15,23,42,.18);}
+  .kp-gate__owl{font-size:3rem;line-height:1;margin-bottom:6px;}
+  .kp-gate__title{font-size:1.35rem;font-weight:800;margin:0 0 10px;color:var(--text,#0f172a);}
+  .kp-gate__body{font-size:.95rem;line-height:1.55;color:var(--text,#0f172a);margin-bottom:18px;}
+  .kp-gate__btns{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;}
+  .kp-back{display:inline-flex;align-items:center;gap:6px;text-decoration:none;white-space:nowrap;}
+  .kp-sync{display:inline-flex;align-items:center;gap:4px;font-size:.74rem;font-weight:700;padding:4px 10px;border-radius:999px;
+    white-space:nowrap;border:1px solid var(--border,rgba(15,23,42,.09));color:var(--text,#0f172a);background:var(--surface-2,#fafbfd);}
+  .kp-sync[hidden]{display:none;}
+  .kp-sync[data-kind="ok"]{color:#059669;border-color:rgba(16,185,129,.35);background:rgba(16,185,129,.08);}
+  .kp-sync[data-kind="offline"],.kp-sync[data-kind="conflict"]{color:#b45309;border-color:rgba(245,158,11,.4);background:rgba(245,158,11,.1);}
+  .kp-sync[data-kind="error"]{color:#dc2626;border-color:rgba(239,68,68,.4);background:rgba(239,68,68,.08);}
+  @media (max-width:640px){ .kp-sync{font-size:0;padding:4px 7px;} .kp-sync::first-letter{font-size:.9rem;} }
+  @media print{ .kp-gate,.kp-back,.kp-sync{display:none!important;} }
+</style>
+</head>
+<body>
+
+<!-- ============ BOOT SPLASH ============ -->
+<div id="boot" class="boot">
+  <div class="boot__logo">
+    <svg viewBox="0 0 100 100" width="56" height="56"><rect width="100" height="100" rx="26" fill="url(#bg)"/><path d="M28 64 L46 38 L58 54 L72 32" stroke="white" stroke-width="9" fill="none" stroke-linecap="round" stroke-linejoin="round"/><defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6366f1"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient></defs></svg>
+  </div>
+  <div class="boot__name">Korepetycje</div>
+  <div class="boot__bar"><span></span></div>
+</div>
+
+<!-- ============ BRAMKA (logowanie / Premium) — korepetycje-cloud.js ============ -->
+<div id="kpGate" class="kp-gate" hidden>
+  <div class="kp-gate__box" role="dialog" aria-labelledby="kpGateTitle">
+    <div class="kp-gate__owl">🦉</div>
+    <h1 class="kp-gate__title" id="kpGateTitle">📒 Korepetycje</h1>
+    <div class="kp-gate__body"></div>
+    <div class="kp-gate__btns"></div>
+  </div>
+</div>
+
+<!-- ============ ONBOARDING ============ -->
+<div id="onboarding" class="onboarding" hidden></div>
+
+<!-- ============ APP SHELL ============ -->
+<div id="app" class="app" hidden>
+
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar__head">
+      <a class="brand" href="#/dashboard">
+        <span class="brand__mark">
+          <svg viewBox="0 0 100 100" width="30" height="30" aria-hidden="true"><rect width="100" height="100" rx="26" fill="url(#bg2)"/><path d="M28 64 L46 38 L58 54 L72 32" stroke="white" stroke-width="9" fill="none" stroke-linecap="round" stroke-linejoin="round"/><defs><linearGradient id="bg2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6366f1"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient></defs></svg>
+        </span>
+        <span class="brand__text">
+          <strong id="brandName">TutorFlow</strong>
+          <small id="brandTagline">Twoje korepetycje</small>
+        </span>
+      </a>
+      <button class="icon-btn sidebar__close" data-action="closeSidebar" aria-label="Zamknij menu">✕</button>
+    </div>
+
+    <button class="btn btn--brand btn--block sidebar__cta" data-action="openQuickAdd">
+      <span class="plus">+</span> Szybkie dodawanie
+    </button>
+
+    <nav class="nav" id="nav" aria-label="Nawigacja główna"></nav>
+
+    <div class="sidebar__foot">
+      <div class="theme-switch" role="group" aria-label="Motyw">
+        <button data-action="setTheme" data-theme-val="light" title="Jasny">☀</button>
+        <button data-action="setTheme" data-theme-val="system" title="Systemowy">◐</button>
+        <button data-action="setTheme" data-theme-val="dark" title="Ciemny">☾</button>
+      </div>
+      <div class="sidebar__user" data-action="go" data-route="#/settings" role="button" tabindex="0">
+        <span class="avatar avatar--sm" id="userAvatar">?</span>
+        <span class="sidebar__user-info">
+          <strong id="userName">Korepetytor</strong>
+          <small id="userSub">Ustawienia</small>
+        </span>
+      </div>
+    </div>
+  </aside>
+
+  <div class="sidebar-scrim" data-action="closeSidebar"></div>
+
+  <div class="main">
+    <header class="topbar">
+      <button class="icon-btn topbar__menu" data-action="openSidebar" aria-label="Menu">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
+      <div class="topbar__title">
+        <h1 id="viewTitle">Dashboard</h1>
+        <p id="viewSub"></p>
+      </div>
+      <button class="search-trigger" data-action="openPalette">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <span>Szukaj ucznia, lekcji, płatności…</span>
+        <kbd>Ctrl</kbd><kbd>K</kbd>
+      </button>
+      <div class="topbar__actions">
+        <button class="icon-btn show-sm" data-action="openPalette" aria-label="Szukaj">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        </button>
+        <button class="icon-btn icon-btn--bell" data-action="go" data-route="#/reminders" aria-label="Przypomnienia">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+          <span class="badge-dot" id="remindersBadge" hidden></span>
+        </button>
+        <span class="kp-sync" id="kpSync" data-kind="ok" hidden role="status" aria-live="polite"></span>
+        <a class="btn btn--sm kp-back" href="teacher.html" title="Wróć do Sowich Fiszek (Panel nauczyciela)">🦉<span class="hide-sm">Sowie Fiszki</span></a>
+        <button class="btn btn--brand btn--sm topbar__add" data-action="openQuickAdd"><span class="plus">+</span><span class="hide-sm">Dodaj</span></button>
+      </div>
+    </header>
+
+    <main class="view" id="view" tabindex="-1"></main>
+
+    <nav class="mobilebar" id="mobilebar" aria-label="Nawigacja mobilna"></nav>
+  </div>
+</div>
+
+<!-- ============ OVERLAYS ============ -->
+<div id="printRoot"></div>
+<div id="modalRoot"></div>
+<div id="sheetRoot"></div>
+<div id="toastRoot" class="toast-root" aria-live="polite"></div>
+
+<div id="palette" class="palette" hidden>
+  <div class="palette__scrim" data-action="closePalette"></div>
+  <div class="palette__box" role="dialog" aria-label="Wyszukiwarka globalna">
+    <div class="palette__input">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input type="text" id="paletteInput" placeholder="Szukaj lub wpisz komendę…" autocomplete="off" spellcheck="false">
+      <kbd>ESC</kbd>
+    </div>
+    <div class="palette__results" id="paletteResults"></div>
+    <div class="palette__foot">
+      <span><kbd>↑</kbd><kbd>↓</kbd> nawigacja</span>
+      <span><kbd>↵</kbd> wybierz</span>
+      <span><kbd>Esc</kbd> zamknij</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SCRIPTS ============ -->
+<script src="korepetycje/js/core/utils.js"></script>
+<script src="korepetycje/js/core/models.js"></script>
+<script src="korepetycje/js/core/adapter-local.js"></script>
+<script src="korepetycje/js/core/store.js"></script>
+<script src="korepetycje/js/core/seed.js"></script>
+<script src="korepetycje/js/core/compute.js"></script>
+<script src="korepetycje/js/core/insights.js"></script>
+<script src="korepetycje/js/ui/icons.js"></script>
+<script src="korepetycje/js/ui/components.js"></script>
+<script src="korepetycje/js/ui/charts.js"></script>
+<script src="korepetycje/js/ui/forms.js"></script>
+<script src="korepetycje/js/ui/lists.js"></script>
+<script src="korepetycje/js/ui/router.js"></script>
+<script src="korepetycje/js/views/dashboard.js"></script>
+<script src="korepetycje/js/views/today.js"></script>
+<script src="korepetycje/js/views/calendar.js"></script>
+<script src="korepetycje/js/views/students.js"></script>
+<script src="korepetycje/js/views/student-detail.js"></script>
+<script src="korepetycje/js/views/lessons.js"></script>
+<script src="korepetycje/js/views/finance.js"></script>
+<script src="korepetycje/js/views/payments.js"></script>
+<script src="korepetycje/js/views/expenses.js"></script>
+<script src="korepetycje/js/views/forecast.js"></script>
+<script src="korepetycje/js/views/stats.js"></script>
+<script src="korepetycje/js/views/reports.js"></script>
+<script src="korepetycje/js/views/materials.js"></script>
+<script src="korepetycje/js/views/tasks.js"></script>
+<script src="korepetycje/js/views/notes.js"></script>
+<script src="korepetycje/js/views/reminders.js"></script>
+<script src="korepetycje/js/views/print.js"></script>
+<script src="korepetycje/js/views/settings.js"></script>
+<script src="korepetycje/js/ui/palette.js"></script>
+<script src="korepetycje/js/ui/onboarding.js"></script>
+<!-- konto Sowie Fiszki: klient Supabase (sesja wspólna z aplikacją) + zapis danych na koncie -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase-config.js"></script>
+<script src="korepetycje/korepetycje-cloud.js"></script>
+<script src="korepetycje/js/app.js"></script>
+<script src="consent.js"></script>
+</body>
+</html>

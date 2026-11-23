@@ -58,9 +58,9 @@
       if (!profile) return false;
       if (profile.is_admin) return true;
       if (isPromoActive()) return true;
+      // Premium na stałe (bez daty) też się liczy — jak db.js isPremium() (wcześniej odrzucane)
       return profile.plan === 'premium'
-        && !!profile.plan_expires_at
-        && new Date(profile.plan_expires_at).getTime() > Date.now();
+        && (!profile.plan_expires_at || new Date(profile.plan_expires_at).getTime() > Date.now());
     },
     // Tworzyc/edytowac/udostepniac w chmurze moga: admin oraz nauczyciel z Premium.
     canEdit() {
