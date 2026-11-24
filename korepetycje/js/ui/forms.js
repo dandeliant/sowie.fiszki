@@ -58,12 +58,133 @@ window.TF = window.TF || {};
   }
 
   /* ============================================================
-     LEKCJA — dodawanie i edycja
+     LEKCJA — 🔁 POWTARZAJ (blok formularza)
+     ============================================================ */
+  const DOW_ACC = ['w poniedziałek', 'we wtorek', 'w środę', 'w czwartek', 'w piątek', 'w sobotę', 'w niedzielę'];
+  const REPEAT_PRESETS = [
+    ['none', 'Nie powtarzaj'], ['weekly', 'Co tydzień'], ['biweekly', 'Co 2 tygodnie'],
+    ['monthly', 'Co miesiąc'], ['yearly', 'Co rok'], ['custom', 'Niestandardowo…']
+  ];
+  const REPEAT_ENDS = [['count', 'Po liczbie lekcji'], ['until', 'Do daty'], ['never', 'Bez końca']];
+
+  function unitWord(unit, n) {
+    const f = M.RECUR_FREQ[unit].forms;
+    return U.plural(Number(n) || 1, f[0], f[1], f[2]);
+  }
+
+  /** Reguła → stan kontrolek formularza */
+  function ruleToUi(rule, anchor) {
+    const ui = { preset: 'none', interval: 1, unit: 'week', days: [], end: 'count', count: 10, until: '' };
+    if (!rule) return ui;
+    const r = S().ops.normRule(rule, anchor);
+    ui.interval = r.interval; ui.unit = r.freq; ui.days = r.days ? r.days.slice() : [];
+    ui.end = r.end; ui.count = r.count || 10; ui.until = r.until || '';
+    ui.preset = 'custom';
+    if (!r.days) {
+      Object.keys(M.RECUR_PRESETS).forEach(function (k) {
+        const p = M.RECUR_PRESETS[k];
+        if (p.freq === r.freq && p.interval === r.interval) ui.preset = k;
+      });
+    }
+    return ui;
+  }
+
+  /** Podpowiedź końca serii: koniec roku szkolnego (30 czerwca) albo +3 miesiące */
+  function suggestUntil(date) {
+    const y = Number(date.slice(0, 4)), m = Number(date.slice(5, 7));
+    const june = (m >= 7 ? y + 1 : y) + '-06-30';
+    return june > U.addDays(date, 14) ? june : U.addMonths(date, 3);
+  }
+
+  function repeatBlock(ui) {
+    return '<div class="field span2 repeat-box" id="repeatBox">' +
+      '<label for="repSel">🔁 Powtarzaj</label>' +
+      '<div class="repeat-row">' +
+        '<select class="select" name="repPreset" id="repSel">' + REPEAT_PRESETS.map(function (p) {
+          return '<option value="' + p[0] + '"' + (ui.preset === p[0] ? ' selected' : '') + '>' + p[1] + '</option>';
+        }).join('') + '</select>' +
+        '<span class="repeat-row" id="repCustom"' + (ui.preset === 'custom' ? '' : ' hidden') + '>' +
+          '<span class="small">co</span>' +
+          '<input class="input input--sm repeat-num" type="number" name="repInterval" min="1" max="99" step="1" value="' +
+            ui.interval + '" aria-label="Co ile">' +
+          '<select class="select select--sm repeat-unit" name="repUnit" aria-label="Jednostka">' +
+            ['day', 'week', 'month', 'year'].map(function (u) {
+              return '<option value="' + u + '"' + (ui.unit === u ? ' selected' : '') + '>' + unitWord(u, ui.interval) + '</option>';
+            }).join('') + '</select>' +
+        '</span>' +
+      '</div>' +
+      '<div id="repDays" class="mt-3"' + (ui.preset === 'custom' && ui.unit === 'week' ? '' : ' hidden') + '>' +
+        '<span class="label">Dni tygodnia</span>' +
+        '<div class="day-toggles">' + U.DOW_SHORT.map(function (n, i) {
+          const on = ui.days.indexOf(i) !== -1;
+          return '<button type="button" class="day-toggle' + (on ? ' is-on' : '') + '" data-rday="' + i + '" aria-pressed="' + on + '">' + n + '</button>';
+        }).join('') + '</div>' +
+      '</div>' +
+      '<div id="repEndWrap" class="mt-3"' + (ui.preset === 'none' ? ' hidden' : '') + '>' +
+        '<span class="label">Koniec</span>' +
+        '<div class="repeat-row wrap">' +
+          '<div class="segmented" id="repEndSeg">' + REPEAT_ENDS.map(function (e) {
+            return '<button type="button" data-end="' + e[0] + '"' + (ui.end === e[0] ? ' class="is-active"' : '') + '>' + e[1] + '</button>';
+          }).join('') + '</div>' +
+          '<span class="repeat-row" id="repCountWrap"' + (ui.end === 'count' ? '' : ' hidden') + '>' +
+            '<input class="input input--sm repeat-num" type="number" name="repCount" min="1" max="500" step="1" value="' + ui.count + '" aria-label="Liczba lekcji">' +
+            '<span class="small dim" id="repCountWord">' + U.plural(ui.count, 'lekcja', 'lekcje', 'lekcji') + '</span></span>' +
+          '<span id="repUntilWrap"' + (ui.end === 'until' ? '' : ' hidden') + '>' +
+            '<input class="input input--sm" type="date" name="repUntil" value="' + U.esc(ui.until) + '" aria-label="Ostatni dzień serii"></span>' +
+        '</div>' +
+        '<input type="hidden" name="repEnd" value="' + ui.end + '">' +
+      '</div>' +
+      '<span class="hint" id="repHint"></span>' +
+    '</div>';
+  }
+
+  /** Stan kontrolek → reguła (null = „Nie powtarzaj”) */
+  function readRule(form, days) {
+    const p = form.elements.repPreset.value;
+    if (p === 'none') return null;
+    let rule;
+    if (p === 'custom') {
+      rule = { freq: form.elements.repUnit.value, interval: Number(form.elements.repInterval.value) || 1 };
+      if (rule.freq === 'week' && days.length) rule.days = days.slice();
+    } else {
+      rule = { freq: M.RECUR_PRESETS[p].freq, interval: M.RECUR_PRESETS[p].interval };
+    }
+    rule.end = form.elements.repEnd.value;
+    if (rule.end === 'count') rule.count = Number(form.elements.repCount.value) || 0;
+    if (rule.end === 'until') rule.until = form.elements.repUntil.value || '';
+    return rule;
+  }
+
+  /** „Co tydzień we wtorek”, „Co miesiąc, 31. dnia”, „Co rok, 3 grudnia” */
+  function ruleSentence(rule, date) {
+    const ops = S().ops;
+    const r = ops.normRule(rule, date);
+    const label = U.cap(ops.ruleLabel(r, date));
+    if (r.freq === 'week' && !r.days) return label + ' ' + DOW_ACC[U.dow(date)];
+    if (r.freq === 'month') return label + ', ' + U.parse(date).getDate() + '. dnia' +
+      (U.parse(date).getDate() > 28 ? ' (w krótszych miesiącach — ostatniego dnia)' : '');
+    if (r.freq === 'year') return label + ', ' + U.fmtDate(date, 'day');
+    return label;
+  }
+
+  /** Polskie „zmieni się 1 lekcja / zmienią się 2 lekcje / zmieni się 5 lekcji” */
+  function willChange(n) {
+    return U.plural(n, 'zmieni się', 'zmienią się', 'zmieni się') + ' ' + U.lessonsLabel(n);
+  }
+
+  /* ============================================================
+     LEKCJA — dodawanie, edycja, kopiowanie
+     draft: { id } edycja | { studentId, date, start, … } nowa |
+            { copyFrom: lekcja, … } kopia (formularz nowej lekcji z danymi oryginału)
      ============================================================ */
   F.lesson = function (draft) {
     draft = draft || {};
     const editing = !!draft.id;
     const lesson = editing ? S().repo('lessons').byId(draft.id) : null;
+    if (editing && !lesson) {
+      UI().toast('Tych zajęć już nie ma', { type: 'warn', desc: 'Mogły zostać usunięte na innym urządzeniu.' });
+      return null;
+    }
     const st = S().settings();
     const students = S().repo('students').all();
 
@@ -72,6 +193,7 @@ window.TF = window.TF || {};
       return F.student();
     }
 
+    const copy = !editing && draft.copyFrom ? draft.copyFrom : null;
     const d = editing ? lesson : Object.assign({
       studentId: draft.studentId || '',
       date: draft.date || U.today(),
@@ -79,40 +201,38 @@ window.TF = window.TF || {};
       duration: draft.duration || st.defaultDuration || 60,
       mode: draft.mode || st.defaultMode,
       subject: draft.subject || '',
-      topic: '',
+      topic: draft.topic || '',
       price: draft.price !== undefined ? draft.price : null,
-      paymentStatus: 'unpaid',
-      note: ''
+      paymentStatus: draft.paymentStatus === 'free' ? 'free' : 'unpaid',
+      note: draft.note || ''
     }, {});
 
     const durButtons = M.DURATIONS.map((v) =>
       '<button type="button" class="' + (v === d.duration ? 'is-active' : '') + '" data-dur="' + v + '">' + v + '</button>').join('') +
       '<button type="button" class="' + (M.DURATIONS.indexOf(d.duration) === -1 ? 'is-active' : '') + '" data-dur="custom">Własny</button>';
 
-    /* Lekcja z serii — pozwól zdecydować, czego dotyczy zmiana */
+    /* Lekcja z serii — informacja; o zakresie zmian pytamy przy zapisie (jak Kalendarz Google) */
     const series = editing ? S().ops.seriesInfo(d.id) : null;
-    const scopeBlock = series
+    const initialRule = series ? series.rule : null;
+    const ruleAnchor = series ? series.anchor : d.date;
+    const ui = ruleToUi(initialRule, ruleAnchor);
+    const seriesBox = series
       ? '<div class="field span2 scope-box">' +
-          '<label>' + icon('refresh', 15) + ' Te zajęcia należą do serii ' + U.esc(series.rhythm) +
-            ' (' + U.lessonsLabel(series.total) + ', ' +
-            U.fmtDate(series.first.date, 'medium') + ' – ' + U.fmtDate(series.last.date, 'medium') + ')</label>' +
-          '<div class="segmented scope-seg" style="width:100%">' +
-            '<button type="button" class="is-active" data-scope="one" style="flex:1">Tylko te zajęcia</button>' +
-            '<button type="button" data-scope="future" style="flex:1">Te i następne (' + series.futureCount + ')</button>' +
-            '<button type="button" data-scope="all" style="flex:1">Całą serię (' + series.total + ')</button>' +
-          '</div>' +
-          '<input type="hidden" name="scope" value="one">' +
-          '<span class="hint" id="scopeHint">Zmiany zapiszą się tylko dla tego jednego terminu.</span>' +
+          '<label>🔁 Lekcja cykliczna: ' + U.esc(series.rhythmLabel) + (series.endLabel ? ' · ' + U.esc(series.endLabel) : '') + '</label>' +
+          '<span class="hint">W serii ' + U.lessonsLabel(series.total) + ' (' +
+            U.fmtDate(series.first.date, 'medium') + ' – ' + U.fmtDate(series.last.date, 'medium') + '). ' +
+            'Przy zapisie i usuwaniu zapytamy, czy zmiana dotyczy tylko tej lekcji, tej i następnych, czy wszystkich w serii. ' +
+            'Odbyte, opłacone i odwołane lekcje zostają bez zmian.</span>' +
         '</div>'
       : '';
 
     const body =
       '<form id="lessonForm" class="form-grid">' +
-        scopeBlock +
+        seriesBox +
         '<div class="field span2"><label>Uczeń</label>' +
           '<select class="select" name="studentId" required>' + studentOptions(d.studentId, { emptyLabel: '— wybierz ucznia —' }) + '</select></div>' +
 
-        field('Data', '<input class="input" type="date" name="date" value="' + d.date + '" required>') +
+        field('Data', '<input class="input" type="date" name="date" value="' + d.date + '" required' + (copy ? ' autofocus' : '') + '>') +
         field('Godzina rozpoczęcia', '<input class="input" type="time" name="start" value="' + d.start + '" step="300" required>') +
 
         '<div class="field span2"><label>Czas trwania</label>' +
@@ -120,7 +240,7 @@ window.TF = window.TF || {};
           '<div id="durCustomWrap" ' + (M.DURATIONS.indexOf(d.duration) === -1 ? '' : 'hidden') + ' style="margin-top:8px">' +
             '<div class="input-suffix"><input class="input" type="number" name="duration" min="15" max="300" step="5" value="' + d.duration + '"><span>min</span></div>' +
           '</div>' +
-          '<input type="hidden" name="durationPreset" value="' + d.duration + '">' +
+          '<input type="hidden" name="durationPreset" value="' + (M.DURATIONS.indexOf(d.duration) === -1 ? 'custom' : d.duration) + '">' +
         '</div>' +
 
         field('Typ zajęć',
@@ -129,29 +249,19 @@ window.TF = window.TF || {};
             '<option value="online"' + (d.mode === 'online' ? ' selected' : '') + '>Online</option></select>') +
         field('Przedmiot', '<input class="input" name="subject" value="' + U.esc(d.subject || '') + '" placeholder="np. Angielski">') +
 
-        field('Cena', '<div class="input-suffix"><input class="input" type="number" name="price" min="0" step="5" value="' +
+        field('Cena', '<div class="input-suffix"><input class="input" type="number" name="price" min="0" step="any" value="' +
           (d.price === null ? '' : d.price) + '" required><span>' + U.curSymbol() + '</span></div>', 'Podstawia się automatycznie ze stawki ucznia') +
         field('Status płatności', selectFrom(
           { unpaid: M.PAYMENT_STATUS.unpaid, paid: M.PAYMENT_STATUS.paid, package: M.PAYMENT_STATUS.package, free: M.PAYMENT_STATUS.free },
           'paymentStatus', d.paymentStatus)) +
 
-        field('Temat zajęć', '<input class="input" name="topic" value="' + U.esc(d.topic || '') + '" placeholder="np. Present Perfect">') +
-        (editing ? field('Status zajęć', selectFrom(M.LESSON_STATUS, 'status', lesson.status)) : field('Powtarzalność',
-          '<select class="select" name="recurrence">' +
-            '<option value="once">Jednorazowo</option>' +
-            '<option value="weekly">Co tydzień</option>' +
-            '<option value="biweekly">Co 2 tygodnie</option>' +
-            '<option value="custom">Własny harmonogram</option></select>')) +
+        (editing
+          ? field('Temat zajęć', '<input class="input" name="topic" value="' + U.esc(d.topic || '') + '" placeholder="np. Present Perfect">') +
+            field('Status zajęć', selectFrom(M.LESSON_STATUS, 'status', lesson.status))
+          : '<div class="field span2"><label>Temat zajęć</label><input class="input" name="topic" value="' + U.esc(d.topic || '') +
+            '" placeholder="np. Present Perfect"></div>') +
 
-        (editing ? '' :
-          '<div class="field span2" id="recurWrap" hidden>' +
-            '<label>Liczba powtórzeń</label>' +
-            '<div class="row gap-3"><input class="input" type="number" name="recurCount" min="2" max="52" value="8" style="max-width:120px">' +
-            '<span class="small dim" id="recurHint"></span></div>' +
-            '<div id="recurDays" class="mt-3" hidden><label class="label">Dni tygodnia</label>' +
-              '<div class="day-toggles">' + U.DOW_SHORT.map((n, i) =>
-                '<button type="button" class="day-toggle" data-rday="' + i + '">' + n + '</button>').join('') + '</div></div>' +
-          '</div>') +
+        repeatBlock(ui) +
 
         '<div class="field span2"><label>Notatka</label>' +
           '<textarea class="textarea" name="note" placeholder="Np. przynieść arkusz, sprawdzić pracę domową…">' + U.esc(d.note || '') + '</textarea></div>' +
@@ -160,14 +270,18 @@ window.TF = window.TF || {};
       '</form>';
 
     const modal = UI().modal({
-      title: editing ? 'Edytuj zajęcia' : 'Dodaj zajęcia',
+      key: 'lesson-form',
+      title: editing ? 'Edytuj zajęcia' : (copy ? 'Kopiuj zajęcia' : 'Dodaj zajęcia'),
       subtitle: editing
-        ? U.fmtDate(d.date, 'dow') + (series ? ' · część serii ' + series.rhythm : '')
-        : 'Kliknij wolne okno w kalendarzu, aby dodać jeszcze szybciej',
+        ? U.fmtDate(d.date, 'dow') + (series ? ' · lekcja cykliczna, ' + series.rhythmLabel : '')
+        : copy
+          ? 'Kopia: ' + S().studentName(copy.studentId) + ', ' + U.fmtDate(copy.date, 'dow') + ', ' + U.fmtTime(copy.start) + ' — zmień datę lub godzinę'
+          : 'Kliknij wolne okno w kalendarzu, aby dodać jeszcze szybciej',
       size: 'wide',
       body: body,
       footer:
-        (editing ? '<button class="btn btn--danger-soft" data-del-lesson>' + icon('trash', 15) + ' Usuń</button>' : '') +
+        (editing ? '<button class="btn btn--danger-soft" data-del-lesson>' + icon('trash', 15) + ' Usuń</button>' +
+          '<button class="btn" data-copy-lesson title="Nowe zajęcia z tymi samymi danymi">📄 Kopiuj</button>' : '') +
         '<div class="grow"></div>' +
         '<button class="btn" data-modal-close>Anuluj</button>' +
         '<button class="btn btn--brand" data-save-lesson>' + (editing ? 'Zapisz zmiany' : 'Dodaj zajęcia') + '</button>',
@@ -178,11 +292,14 @@ window.TF = window.TF || {};
     const durSeg = modal.el.querySelector('#durSeg');
     const durCustom = modal.el.querySelector('#durCustomWrap');
     const conflictBox = modal.el.querySelector('#conflictBox');
-    const recurSel = form.elements.recurrence;
-    const recurWrap = modal.el.querySelector('#recurWrap');
-    const recurDays = modal.el.querySelector('#recurDays');
-    let priceTouched = editing;
-    const chosenDays = [];
+    const repSel = form.elements.repPreset;
+    const repCustom = modal.el.querySelector('#repCustom');
+    const repDays = modal.el.querySelector('#repDays');
+    const repEndWrap = modal.el.querySelector('#repEndWrap');
+    const repEndSeg = modal.el.querySelector('#repEndSeg');
+    const repHint = modal.el.querySelector('#repHint');
+    let priceTouched = editing || (copy && d.price !== null);
+    const chosenDays = ui.days.slice();
 
     function currentDuration() {
       const preset = form.elements.durationPreset.value;
@@ -203,26 +320,49 @@ window.TF = window.TF || {};
         if (!draft.mode) modeSel.value = s.mode;
       }
     }
-    /** Podgląd całej serii: ile terminów, do kiedy, ile kolizji */
+
+    function currentRule() { return readRule(form, chosenDays); }
+    function ruleChanged() {
+      const r = currentRule();
+      if (!series) return !!r;
+      return !S().ops.sameRule(r, initialRule, ruleAnchor);
+    }
+
+    /** Podgląd serii: ile terminów, do kiedy, ile kolizji */
     function seriesPreview(drafted) {
-      if (editing || !recurSel || recurSel.value === 'once') return '';
-      const rule = {
-        type: recurSel.value,
-        count: Number(form.elements.recurCount && form.elements.recurCount.value) || 0,
-        days: chosenDays.length ? chosenDays : [U.dow(drafted.date)]
-      };
-      if (rule.count < 1) return '';
-      const rows = S().ops.recurringConflicts(drafted, rule);
+      const rule = currentRule();
+      if (!rule) return '';
+      if (series) {
+        if (!ruleChanged()) return '';
+        return '<div class="insight insight--info mt-2"><span class="insight__ico">🔁</span><div class="insight__body">' +
+          '<strong>Zmieniasz powtarzanie serii</strong><p>Przy zapisie wybierzesz: ta i następne lekcje albo wszystkie w serii. ' +
+          'Odbyte, opłacone i odwołane lekcje zostaną bez zmian.</p></div></div>';
+      }
+      const dates = S().ops.ruleProjection(drafted.date, rule);
+      if (!dates.length) {
+        return '<div class="insight insight--warn mt-2"><span class="insight__ico">!</span><div class="insight__body">' +
+          '<strong>Brak terminów w tej serii</strong><p>Sprawdź datę końca i dni tygodnia.</p></div></div>';
+      }
+      const ignore = editing ? d.id : null;
+      const rows = dates.map(function (dt) {
+        const busy = !(editing && dt === drafted.date) &&
+          S().ops.findConflicts({ date: dt, start: drafted.start, duration: drafted.duration }, ignore).length > 0;
+        return { date: dt, blocked: busy };
+      });
       const blocked = rows.filter((r) => r.blocked);
       const okRows = rows.filter((r) => !r.blocked);
       const last = rows[rows.length - 1];
+      const r = S().ops.normRule(rule, drafted.date);
 
       let html = '<div class="insight insight--' + (blocked.length ? 'warn' : 'info') + ' mt-2">' +
         '<span class="insight__ico">' + icon('calendar', 15) + '</span><div class="insight__body">' +
         '<strong>Seria: ' + U.lessonsLabel(rows.length) + ' do ' + U.fmtDate(last.date, 'medium') + '</strong>' +
-        '<p>' + rows.slice(0, 4).map(function (r) {
-          return (r.blocked ? '<s>' : '') + U.fmtDate(r.date, 'short') + (r.blocked ? '</s>' : '');
+        '<p>' + rows.slice(0, 4).map(function (x) {
+          return (x.blocked ? '<s>' : '') + U.fmtDate(x.date, 'short') + (x.blocked ? '</s>' : '');
         }).join(', ') + (rows.length > 4 ? ', …' : '') + '</p>';
+      if (r.end === 'never' || (r.end === 'until' && r.until > last.date)) {
+        html += '<p class="small dim">Kolejne terminy dołożymy automatycznie — zawsze na ' + S().ops.RECUR_HORIZON_MONTHS + ' miesięcy do przodu.</p>';
+      }
       if (blocked.length) {
         const ile = okRows.length + ' ' + U.plural(okRows.length, 'lekcję', 'lekcje', 'lekcji');
         html += '<p style="color:var(--warn-500)"><b>' + blocked.length + ' ' +
@@ -261,14 +401,30 @@ window.TF = window.TF || {};
         }
       }
     }
-    function updateRecurHint() {
-      const hint = modal.el.querySelector('#recurHint');
-      if (!hint) return;
-      const type = recurSel ? recurSel.value : 'once';
-      const n = Number(form.elements.recurCount && form.elements.recurCount.value) || 0;
-      if (type === 'weekly') hint.textContent = 'co tydzień, ' + U.lessonsLabel(n);
-      else if (type === 'biweekly') hint.textContent = 'co 2 tygodnie, ' + U.lessonsLabel(n);
-      else hint.textContent = U.lessonsLabel(n) + ' w wybranych dniach';
+
+    /** Pokazuje/ukrywa części bloku „🔁 Powtarzaj” i podpisuje wybraną regułę */
+    function syncRepeat() {
+      const p = repSel.value;
+      const unit = form.elements.repUnit.value;
+      const n = Number(form.elements.repInterval.value) || 1;
+      repCustom.hidden = p !== 'custom';
+      repDays.hidden = !(p === 'custom' && unit === 'week');
+      repEndWrap.hidden = p === 'none';
+      Array.prototype.forEach.call(form.elements.repUnit.options, function (o) { o.textContent = unitWord(o.value, n); });
+      const end = form.elements.repEnd.value;
+      modal.el.querySelector('#repCountWrap').hidden = end !== 'count';
+      modal.el.querySelector('#repUntilWrap').hidden = end !== 'until';
+      modal.el.querySelector('#repCountWord').textContent = U.plural(Number(form.elements.repCount.value) || 0, 'lekcja', 'lekcje', 'lekcji');
+      Array.prototype.forEach.call(repEndSeg.children, function (b) { b.classList.toggle('is-active', b.getAttribute('data-end') === end); });
+
+      const rule = currentRule();
+      const date = form.elements.date.value;
+      if (!rule || !date) { repHint.textContent = editing ? '' : 'Lekcja jednorazowa.'; return; }
+      let txt = ruleSentence(rule, date);
+      if (rule.end === 'count') txt += ' · razem ' + U.lessonsLabel(Number(rule.count) || 0);
+      else if (rule.end === 'until') txt += rule.until ? ' · do ' + U.fmtDate(rule.until, 'long') : ' · wybierz ostatni dzień';
+      else txt += ' · bez końca (lekcje planujemy ' + S().ops.RECUR_HORIZON_MONTHS + ' miesięcy do przodu)';
+      repHint.textContent = txt + '.';
     }
 
     durSeg.addEventListener('click', function (e) {
@@ -287,58 +443,40 @@ window.TF = window.TF || {};
       if (e.target.name === 'price') priceTouched = true;
       if (e.target.name === 'studentId') { syncSubject(); syncPrice(); }
       if (e.target.name === 'duration') { syncPrice(); }
-      if (e.target.name === 'recurrence' && recurWrap) {
-        recurWrap.hidden = e.target.value === 'once';
-        if (recurDays) recurDays.hidden = e.target.value !== 'custom';
-        updateRecurHint();
+      if (e.target.name === 'repPreset' && e.target.value === 'custom' && !chosenDays.length) {
+        // niestandardowo: domyślnie dzień tygodnia tej lekcji
+        const dw = U.dow(form.elements.date.value || U.today());
+        chosenDays.push(dw);
+        const b = repDays.querySelector('[data-rday="' + dw + '"]');
+        if (b) { b.classList.add('is-on'); b.setAttribute('aria-pressed', 'true'); }
       }
+      syncRepeat();
       checkConflicts();
     });
     form.addEventListener('input', function (e) {
-      if (e.target.name === 'recurCount') { updateRecurHint(); checkConflicts(); }
+      if (/^rep(Count|Interval|Until)$/.test(e.target.name)) { syncRepeat(); checkConflicts(); }
     });
-    if (recurDays) {
-      recurDays.addEventListener('click', function (e) {
-        const b = e.target.closest('[data-rday]');
-        if (!b) return;
-        const v = Number(b.getAttribute('data-rday'));
-        const i = chosenDays.indexOf(v);
-        if (i === -1) chosenDays.push(v); else chosenDays.splice(i, 1);
-        b.classList.toggle('is-on');
-        updateRecurHint();
-        checkConflicts();
-      });
-    }
-
-    /* --- przełącznik zakresu edycji serii --- */
-    const scopeSeg = modal.el.querySelector('.scope-seg');
-    if (scopeSeg && series) {
-      const hint = modal.el.querySelector('#scopeHint');
-      scopeSeg.addEventListener('click', function (e) {
-        const b = e.target.closest('[data-scope]');
-        if (!b) return;
-        Array.prototype.forEach.call(scopeSeg.children, function (x) { x.classList.remove('is-active'); });
-        b.classList.add('is-active');
-        const val = b.getAttribute('data-scope');
-        form.elements.scope.value = val;
-        hint.innerHTML = val === 'one'
-          ? 'Zmiany zapiszą się tylko dla tego jednego terminu.'
-          : val === 'future'
-            ? 'Obejmie ' + U.lessonsLabel(series.futureCount) + ' — od tego terminu do ' + U.fmtDate(series.last.date, 'medium') +
-              '. Zmiana daty przesunie całą resztę serii o tyle samo dni.'
-            : 'Obejmie wszystkie ' + U.lessonsLabel(series.total) +
-              (series.pastCount ? ', w tym ' + series.pastCount + ' z przeszłości' : '') +
-              '. Zmiana daty przesunie je wszystkie o tyle samo dni.';
-        if (val !== 'one') {
-          hint.innerHTML += '<br>Status zajęć i płatności zmienią się tylko dla tego terminu.';
-        }
-      });
-      // wejście z menu „Edytuj serię…” — od razu właściwy zakres
-      if (draft.scope && draft.scope !== 'one') {
-        const preset = scopeSeg.querySelector('[data-scope="' + draft.scope + '"]');
-        if (preset) preset.click();
+    repDays.addEventListener('click', function (e) {
+      const b = e.target.closest('[data-rday]');
+      if (!b) return;
+      const v = Number(b.getAttribute('data-rday'));
+      const i = chosenDays.indexOf(v);
+      if (i === -1) chosenDays.push(v); else chosenDays.splice(i, 1);
+      b.classList.toggle('is-on', i === -1);
+      b.setAttribute('aria-pressed', String(i === -1));
+      syncRepeat();
+      checkConflicts();
+    });
+    repEndSeg.addEventListener('click', function (e) {
+      const b = e.target.closest('[data-end]');
+      if (!b) return;
+      form.elements.repEnd.value = b.getAttribute('data-end');
+      if (form.elements.repEnd.value === 'until' && !form.elements.repUntil.value) {
+        form.elements.repUntil.value = suggestUntil(form.elements.date.value || U.today());
       }
-    }
+      syncRepeat();
+      checkConflicts();
+    });
 
     /** Tylko te pola, które użytkownik faktycznie zmienił */
     function collectChanges(v) {
@@ -363,19 +501,123 @@ window.TF = window.TF || {};
       return out;
     }
 
-    const FIELD_LABELS = {
-      studentId: 'Uczeń', date: 'Data', start: 'Godzina', duration: 'Czas trwania',
-      mode: 'Typ zajęć', subject: 'Przedmiot', topic: 'Temat', price: 'Cena',
-      paymentStatus: 'Status płatności', status: 'Status zajęć', note: 'Notatka'
-    };
-    function describeChange(k, val) {
-      if (k === 'studentId') return 'Uczeń → ' + S().studentName(val);
-      if (k === 'date') return 'Data → ' + U.fmtDate(val, 'medium');
-      if (k === 'start') return 'Godzina → ' + U.fmtTime(val);
-      if (k === 'duration') return 'Czas trwania → ' + U.durLabel(val);
-      if (k === 'price') return 'Cena → ' + U.money(val);
-      if (k === 'mode') return 'Typ → ' + (val === 'online' ? 'online' : 'stacjonarne');
-      return (FIELD_LABELS[k] || k) + ' → ' + (val === '' ? '(puste)' : val);
+    /** Pełne dane lekcji z formularza (szablon nowych terminów serii) */
+    function formData(v) {
+      return {
+        studentId: v.studentId, date: v.date, start: v.start, duration: v.duration,
+        mode: v.mode, subject: v.subject || '', topic: v.topic || '', price: Number(v.price) || 0,
+        paymentStatus: v.paymentStatus, note: v.note || ''
+      };
+    }
+
+    /** Reguła z formularza musi mieć sens, zanim cokolwiek zapiszemy */
+    function validRule(rule, date) {
+      if (!rule) return true;
+      if (rule.end === 'count' && !(Number(rule.count) >= 1)) {
+        UI().toast('Podaj liczbę lekcji w serii', { type: 'warn' });
+        form.elements.repCount.focus();
+        return false;
+      }
+      if (rule.end === 'until' && (!rule.until || rule.until < date)) {
+        UI().toast('Ostatni dzień serii musi być po dacie pierwszej lekcji', { type: 'warn' });
+        form.elements.repUntil.focus();
+        return false;
+      }
+      if (!S().ops.ruleProjection(date, rule).length) {
+        UI().toast('Ta reguła nie daje żadnego terminu', { type: 'warn', desc: 'Sprawdź dni tygodnia i datę końca.' });
+        return false;
+      }
+      return true;
+    }
+
+    function seriesDoneDesc(res, rule, from) {
+      const r = S().ops.normRule(rule, from);
+      const last = res.created.length ? res.created[res.created.length - 1].date : from;
+      return U.cap(S().ops.ruleLabel(r, from)) + ' · od ' + U.fmtDate(from, 'medium') + ' do ' + U.fmtDate(last, 'medium') +
+        (res.skipped.length ? ' · pominięto ' + res.skipped.length + ' ' +
+          U.plural(res.skipped.length, 'kolidujący termin', 'kolidujące terminy', 'kolidujących terminów') : '') +
+        (r.end === 'never' ? ' · kolejne dołożymy automatycznie' : '');
+    }
+
+    /* ---------- zapis lekcji z serii: pytamy o zakres ---------- */
+    function saveSeriesLesson(v, changes, rule, changedRule) {
+      const ops = S().ops;
+      const data = formData(v);
+      const when = U.fmtDate(d.date, 'dow') + ', ' + U.fmtTime(d.start);
+      const options = [];
+      const preview = {};
+
+      if (changedRule) {
+        options.push({ value: 'one', label: 'Tylko ta lekcja', disabled: true, desc: 'Zmiana powtarzania dotyczy całej serii.' });
+        ['future', 'all'].forEach(function (scope) {
+          const plan = ops.planReschedule(d.id, data, changes, rule, scope);
+          preview[scope] = plan;
+          const from = scope === 'all' ? (plan.anchor || series.first.date) : v.date;
+          let desc;
+          if (!rule) {
+            desc = plan.remove.length
+              ? 'Ta lekcja zostanie pojedyncza, usuniemy ' + U.lessonsAcc(plan.remove.length, 'zaplanowaną', 'zaplanowane', 'zaplanowanych') +
+                (scope === 'future' ? ' po niej.' : ' z serii.')
+              : 'Ta lekcja zostanie pojedyncza.';
+          } else {
+            const parts = [];
+            if (plan.create.length) parts.push('nowe: ' + plan.create.length);
+            if (plan.remove.length) parts.push('usunięte: ' + plan.remove.length);
+            if (plan.update.length) parts.push('zachowane: ' + plan.update.length);
+            if (plan.skipped.length + plan.blocked.length) parts.push('pominięte (kolizje): ' + (plan.skipped.length + plan.blocked.length));
+            desc = (scope === 'all' ? 'Cała seria od ' : 'Od ') + U.fmtDate(from, 'medium') + ': ' +
+              ops.ruleLabel(plan.rule, plan.anchor) + ', ' +
+              (plan.rule.end === 'never' ? 'bez końca' : 'ostatnia ' + U.fmtDate(plan.tail, 'medium')) +
+              (parts.length ? ' · lekcje ' + parts.join(', ') : '') + '.';
+          }
+          options.push({ value: scope, label: scope === 'future' ? 'Ta i następne' : 'Wszystkie w serii', desc: desc });
+        });
+      } else {
+        options.push({ value: 'one', label: 'Tylko ta lekcja', desc: when + ' — pozostałe lekcje serii bez zmian.' });
+        ['future', 'all'].forEach(function (scope) {
+          const pre = ops.previewSeriesChanges(d.id, changes, scope);
+          preview[scope] = pre;
+          const n = pre.ok.length;
+          let desc = n ? U.cap(willChange(n)) : 'Żadna lekcja się nie zmieni';
+          if (scope === 'future') desc += ' (od ' + U.fmtDate(d.date, 'medium') + ')';
+          if (pre.blocked.length) desc += ' · pominiemy ' + pre.blocked.length + ' (kolizje)';
+          if (changes.date !== undefined && scope !== 'one') desc += ' · zmiana daty przesunie je o tyle samo dni';
+          options.push({ value: scope, label: scope === 'future' ? 'Ta i następne' : 'Wszystkie w serii', desc: desc + '.', disabled: !n });
+        });
+      }
+
+      UI().choice({
+        title: changedRule ? 'Zmienić powtarzanie serii?' : 'Zapisać zmiany w lekcji cyklicznej?',
+        subtitle: S().studentName(d.studentId) + ' · ' + series.rhythmLabel,
+        options: options,
+        value: draft.scope || (changedRule ? 'future' : 'one'),
+        note: series.lockedCount ? 'Odbyte, opłacone, odwołane i przeszłe lekcje tej serii (' + series.lockedCount + ') zostają bez zmian.' : '',
+        confirmLabel: 'Zapisz'
+      }).then(function (scope) {
+        if (!scope || !modal.isOpen()) return;
+        if (scope === 'one') {
+          S().ops.updateLesson(d.id, changes);
+          afterSave(modal, 'Zajęcia zaktualizowane', 'Zmiana dotyczy tylko tego terminu');
+          return;
+        }
+        if (changedRule) {
+          const plan = ops.planReschedule(d.id, data, changes, rule, scope);   // świeży plan
+          const res = ops.applyReschedule(plan);
+          if (!res) { UI().toast('Nie udało się zapisać zmian', { type: 'bad' }); return; }
+          afterSave(modal, rule ? 'Seria zmieniona' : 'Lekcja nie jest już cykliczna',
+            (rule ? ops.ruleLabel(plan.rule, plan.anchor) + ' · ' : '') +
+            [res.created ? 'dodano ' + res.created : '', res.removed ? 'usunięto ' + res.removed : '',
+              res.skipped ? 'pominięto ' + res.skipped + ' (kolizje)' : ''].filter(Boolean).join(', '));
+          return;
+        }
+        const res = ops.applySeriesChanges(d.id, changes, scope);
+        if (!res.updated) {
+          UI().toast('Nie zapisano żadnej zmiany', { type: 'bad', desc: 'Wszystkie terminy kolidowałyby z innymi zajęciami.' });
+          return;
+        }
+        afterSave(modal, 'Zaktualizowano ' + U.lessonsLabel(res.updated) + ' z serii',
+          res.skipped.length ? 'Pominięto ' + res.skipped.length + ' z powodu kolizji' : '');
+      });
     }
 
     modal.el.querySelector('[data-save-lesson]').addEventListener('click', function () {
@@ -383,135 +625,181 @@ window.TF = window.TF || {};
       const v = read(form);
       v.duration = currentDuration();
       if (!v.studentId) { UI().toast('Wybierz ucznia', { type: 'warn' }); return; }
+      const rule = currentRule();
+      if (!validRule(rule, v.date)) return;
 
       if (editing) {
         const changes = collectChanges(v);
-        if (!Object.keys(changes).length) {
+        const changedRule = ruleChanged();
+        if (!Object.keys(changes).length && !changedRule) {
           modal.close();
           UI().toast('Nic się nie zmieniło', { type: 'info', duration: 2200 });
           return;
         }
-        const scope = series && form.elements.scope ? form.elements.scope.value : 'one';
-
-        if (scope === 'one') {
+        if (series) { saveSeriesLesson(v, changes, rule, changedRule); return; }
+        if (!rule) {
           S().ops.updateLesson(d.id, changes);
-          afterSave(modal, 'Zajęcia zaktualizowane',
-            series ? 'Zmiana dotyczy tylko tego terminu' : '');
+          afterSave(modal, 'Zajęcia zaktualizowane', '');
           return;
         }
-
-        const pre = S().ops.previewSeriesChanges(d.id, changes, scope);
-        const lista = Object.keys(changes).map(function (k) { return describeChange(k, changes[k]); });
-
-        UI().confirm({
-          title: scope === 'future'
-            ? 'Zapisać zmiany w tym i następnych terminach?'
-            : 'Zapisać zmiany w całej serii?',
-          text: lista.join(' · ') + '\n\nZmiana obejmie ' + U.lessonsLabel(pre.ok.length) + '.',
-          warning: pre.blocked.length
-            ? pre.blocked.length + ' ' + U.plural(pre.blocked.length, 'termin zostanie pominięty', 'terminy zostaną pominięte', 'terminów zostanie pominiętych') +
-              ', bo po zmianie kolidowałyby z innymi zajęciami: ' +
-              pre.blocked.slice(0, 3).map(function (p) { return U.fmtDate(p.next.date, 'short'); }).join(', ') +
-              (pre.blocked.length > 3 ? '…' : '')
-            : '',
-          confirmLabel: 'Zapisz w serii',
-          danger: false
-        }).then(function (ok) {
-          if (!ok) return;
-          const res = S().ops.applySeriesChanges(d.id, changes, scope);
-          if (!res.updated) {
-            UI().toast('Nie zapisano żadnej zmiany', {
-              type: 'bad', desc: 'Wszystkie terminy kolidowałyby z innymi zajęciami.'
-            });
-            return;
-          }
-          afterSave(modal, 'Zaktualizowano ' + U.lessonsLabel(res.updated) + ' z serii',
-            res.skipped.length ? 'Pominięto ' + res.skipped.length + ' z powodu kolizji' : lista[0]);
-        });
-      } else {
-        const data = {
-          studentId: v.studentId, date: v.date, start: v.start, duration: v.duration,
-          mode: v.mode, subject: v.subject, topic: v.topic, price: Number(v.price) || 0,
-          paymentStatus: v.paymentStatus, note: v.note
-        };
-        const type = v.recurrence || 'once';
-        if (type === 'once') {
-          S().ops.addLesson(data);
-          afterSave(modal, 'Zajęcia dodane', U.fmtDate(v.date, 'dow') + ', ' + U.fmtTime(v.start));
-        } else {
-          const res = S().ops.addRecurring(data, {
-            type: type, count: Number(v.recurCount) || 8, days: chosenDays.length ? chosenDays : [U.dow(v.date)]
-          });
-          if (!res.created.length) {
-            UI().toast('Nie dodano żadnych zajęć', {
-              type: 'bad',
-              desc: 'Wszystkie terminy tej serii kolidują z istniejącymi zajęciami. Zmień godzinę lub dzień.'
-            });
-            return;   // modal zostaje otwarty, żeby dało się poprawić
-          }
-          const last = res.created[res.created.length - 1];
-          afterSave(modal, U.lessonsLabel(res.created.length) + ' dodane',
-            'Od ' + U.fmtDate(v.date, 'medium') + ' do ' + U.fmtDate(last.date, 'medium') +
-            (res.skipped.length ? ' · pominięto ' + res.skipped.length + ' ' +
-              U.plural(res.skipped.length, 'kolidujący termin', 'kolidujące terminy', 'kolidujących terminów') : ''));
-        }
+        // pojedyncza lekcja → cykliczna (ta lekcja jest pierwszą w serii)
+        const res = S().ops.createSeries(formData(v), rule, { baseLessonId: d.id, basePatch: changes });
+        afterSave(modal, 'Lekcja jest teraz cykliczna', U.lessonsLabel(res.created.length + 1) + ' · ' + seriesDoneDesc(res, rule, v.date));
+        return;
       }
+
+      const data = formData(v);
+      if (!rule) {
+        S().ops.addLesson(data);
+        afterSave(modal, copy ? 'Kopia zajęć dodana' : 'Zajęcia dodane', U.fmtDate(v.date, 'dow') + ', ' + U.fmtTime(v.start));
+        return;
+      }
+      const res = S().ops.createSeries(data, rule);
+      if (!res.created.length) {
+        UI().toast('Nie dodano żadnych zajęć', {
+          type: 'bad',
+          desc: 'Wszystkie terminy tej serii kolidują z istniejącymi zajęciami. Zmień godzinę lub dzień.'
+        });
+        return;   // okno zostaje otwarte, żeby dało się poprawić
+      }
+      afterSave(modal, U.lessonsLabel(res.created.length) + ' ' + U.plural(res.created.length, 'dodana', 'dodane', 'dodanych'),
+        seriesDoneDesc(res, rule, v.date));
     });
 
     const delBtn = modal.el.querySelector('[data-del-lesson]');
-    if (delBtn) {
-      delBtn.addEventListener('click', function () {
-        const scope = series && form.elements.scope ? form.elements.scope.value : 'one';
-        const targets = S().ops.seriesScope(d.id, scope);
-        const wiele = targets.length > 1;
-        const wartosc = U.sum(targets.filter(function (l) { return l.status === 'planned'; }), function (l) { return l.price; });
+    if (delBtn) delBtn.addEventListener('click', function () { F.deleteLesson(d.id, function () { modal.close(); }); });
 
-        UI().confirm({
-          title: wiele ? 'Usunąć ' + U.lessonsLabel(targets.length) + ' z serii?' : 'Usunąć te zajęcia?',
-          text: wiele
-            ? U.fmtDate(targets[0].date, 'medium') + ' – ' + U.fmtDate(targets[targets.length - 1].date, 'medium') +
-              ' · ' + S().studentName(d.studentId)
-            : U.fmtDate(d.date, 'dow') + ', ' + U.fmtTime(d.start) + ' — ' + S().studentName(d.studentId),
-          warning: wiele
-            ? 'Z prognozy zniknie ' + U.money(wartosc) + ' zaplanowanego przychodu. Tej operacji nie można cofnąć.'
-            : '',
-          confirmLabel: wiele ? 'Usuń ' + targets.length + ' zajęć' : 'Usuń zajęcia'
-        }).then(function (ok) {
-          if (!ok) return;
-          if (wiele) {
-            const n = S().ops.deleteSeries(d.id, scope);
-            afterSave(modal, U.lessonsLabel(n) + ' usunięte', 'Seria skrócona');
-          } else {
-            S().repo('lessons').remove(d.id);
-            afterSave(modal, 'Zajęcia usunięte');
-          }
-        });
+    const copyBtn = modal.el.querySelector('[data-copy-lesson]');
+    if (copyBtn) {
+      copyBtn.addEventListener('click', function () {
+        // kopia z tym, co jest teraz w formularzu (oryginał zostaje bez zmian)
+        const v = read(form);
+        v.duration = currentDuration();
+        modal.close(true);
+        F.copyLesson(Object.assign({}, lesson, formData(v), { id: lesson.id }));
       });
     }
 
-    if (!editing && !d.studentId) { /* czekamy na wybór ucznia */ }
-    else { syncPrice(); }
-    if (d.price === null || d.price === undefined) syncPrice();
+    if (d.price === null || d.price === undefined || (!editing && !copy)) syncPrice();
+    syncRepeat();
     checkConflicts();
-    updateRecurHint();
     return modal;
+  };
+
+  /** „📄 Kopiuj” — formularz NOWEJ lekcji z danymi oryginału (bez płatności, status: zaplanowana) */
+  F.copyLesson = function (src) {
+    const l = typeof src === 'string' ? S().repo('lessons').byId(src) : src;
+    if (!l) return null;
+    return F.lesson({
+      copyFrom: l,
+      studentId: l.studentId, date: l.date, start: l.start, duration: l.duration,
+      mode: l.mode, subject: l.subject, topic: l.topic, price: l.price, note: l.note,
+      paymentStatus: l.paymentStatus === 'free' ? 'free' : 'unpaid'
+    });
+  };
+
+  /**
+   * Usuwanie zajęć — z formularza i z menu lekcji. Lekcja z serii pyta o zakres
+   * jak Kalendarz Google; zamknięte lekcje (odbyte, opłacone, odwołane, przeszłe)
+   * znikają tylko przy „Tylko ta lekcja”.
+   */
+  F.deleteLesson = function (id, done) {
+    const l = S().repo('lessons').byId(id);
+    if (!l) return;
+    const who = S().studentName(l.studentId);
+    const when = U.fmtDate(l.date, 'dow') + ', ' + U.fmtTime(l.start);
+    function finish(title, desc) {
+      if (done) done();
+      UI().toast(title, { type: 'ok', desc: desc });
+      window.TF.Router.refresh();
+    }
+    const series = S().ops.seriesInfo(id);
+    if (!series) {
+      UI().confirm({ title: 'Usunąć te zajęcia?', text: when + ' — ' + who, confirmLabel: 'Usuń zajęcia' }).then(function (ok) {
+        if (!ok) return;
+        S().ops.deleteSeries(id, 'one');
+        finish('Zajęcia usunięte', when);
+      });
+      return;
+    }
+    function desc(scope) {
+      const p = S().ops.previewDelete(id, scope);
+      if (!p.remove.length) return { text: 'Nic do usunięcia — wszystkie lekcje w tym zakresie są już odbyte, opłacone lub odwołane.', n: 0 };
+      const value = U.sum(p.remove.filter((x) => x.status === 'planned'), (x) => Number(x.price) || 0);
+      return {
+        n: p.remove.length,
+        text: 'Usuniemy ' + U.lessonsAcc(p.remove.length, 'zaplanowaną', 'zaplanowane', 'zaplanowanych') +
+          (p.remove.length > 1 ? ' (' + U.fmtDate(p.remove[0].date, 'medium') + ' – ' + U.fmtDate(p.remove[p.remove.length - 1].date, 'medium') + ')' : '') +
+          (value ? ' · −' + U.money(value) + ' w prognozie' : '') +
+          (p.keep.length ? ' · ' + p.keep.length + ' zostanie w historii' : '') + '.'
+      };
+    }
+    const fut = desc('future'), all = desc('all');
+    UI().choice({
+      title: 'Usunąć lekcję cykliczną?',
+      subtitle: who + ' · ' + series.rhythmLabel,
+      options: [
+        { value: 'one', label: 'Tylko ta lekcja', desc: when + '.' },
+        { value: 'future', label: 'Ta i następne', desc: fut.text, disabled: !fut.n },
+        { value: 'all', label: 'Wszystkie w serii', desc: all.text, disabled: !all.n }
+      ],
+      value: 'one',
+      note: series.lockedCount ? 'Odbyte, opłacone, odwołane i przeszłe lekcje zostają w historii — taką lekcję usuniesz pojedynczo („Tylko ta lekcja”).' : '',
+      confirmLabel: 'Usuń',
+      danger: true
+    }).then(function (scope) {
+      if (!scope) return;
+      const res = S().ops.deleteSeries(id, scope);
+      finish(scope === 'one' ? 'Zajęcia usunięte' : U.lessonsLabel(res.removed) + ' ' + U.plural(res.removed, 'usunięta', 'usunięte', 'usuniętych'),
+        scope === 'one' ? when : (res.kept ? res.kept + ' ' + U.plural(res.kept, 'zamknięta została', 'zamknięte zostały', 'zamkniętych zostało') + ' w historii' : 'Seria zakończona'));
+    });
   };
 
   /* ============================================================
      UCZEŃ
+     opts.copyOf — id ucznia, z którego zrobiono tę kopię (rodzeństwo)
      ============================================================ */
-  F.student = function (id) {
+  F.student = function (id, opts) {
+    opts = opts || {};
     const editing = !!id;
     const st = S().settings();
     const s = editing ? S().student(id) : M.Student({});
+    if (editing && !s) { UI().toast('Tego ucznia już nie ma', { type: 'warn' }); return null; }
+    const orig = opts.copyOf ? S().student(opts.copyOf) : null;
+    const suffix = S().ops.COPY_SUFFIX || ' (kopia)';
+
+    /* ---- Cennik: stawki 30/45/90/120 min wyliczają się ze stawki za 60 min
+       i są zaokrąglane w górę do pełnych 5 zł (M.autoRate → U.roundPrice).
+       Kwoty wpisane ręcznie zostają — nie nadpisujemy ich. ---- */
+    const OTHER = M.DURATIONS.filter((d) => d !== 60);
+    const base0 = Number(s.rates && s.rates[60]) || st.defaultPrice || 80;
+    const rateVal = {}, isAuto = {}, rounded = [];
+    rateVal[60] = base0;
+    OTHER.forEach(function (d) {
+      const stored = Number(s.rates && s.rates[d]) || 0;
+      const auto = M.autoRate(base0, d);
+      if (!stored) { rateVal[d] = auto; isAuto[d] = true; }
+      else if (stored === auto) { rateVal[d] = stored; isAuto[d] = true; }
+      else if (M.isLegacyAutoRate(stored, base0, d) && stored % U.PRICE_STEP !== 0) {
+        // kwota wyliczona kiedyś bez zaokrąglania (np. 48 zł) → od razu pełne 5 zł
+        rateVal[d] = U.roundPrice(stored); isAuto[d] = true;
+        rounded.push(d + ' min: ' + stored + ' → ' + rateVal[d] + ' ' + U.curSymbol());
+      } else { rateVal[d] = stored; isAuto[d] = false; }
+    });
 
     const rateFields = M.DURATIONS.map((d) =>
-      '<div class="field"><label>' + d + ' min</label><div class="input-suffix">' +
-      '<input class="input input--sm" type="number" name="rate' + d + '" min="0" step="5" value="' + (s.rates[d] || '') + '">' +
+      '<div class="field"><label>' + d + ' min' + (d !== 60 ? ' <span class="rate-auto" data-auto-tag="' + d + '"' +
+        (isAuto[d] ? '' : ' hidden') + '>auto</span>' : '') + '</label><div class="input-suffix">' +
+      '<input class="input input--sm" type="number" name="rate' + d + '" min="0" step="any" inputmode="decimal" value="' + (rateVal[d] || '') + '"' +
+        (d !== 60 ? ' placeholder="' + M.autoRate(base0, d) + '"' : '') + '>' +
       '<span>' + U.curSymbol() + '</span></div></div>').join('');
 
     const body =
       '<form id="studentForm">' +
+        (orig ? '<div class="insight insight--brand mb-4"><span class="insight__ico">📄</span><div class="insight__body">' +
+          '<strong>Kopia ucznia: ' + U.esc(S().studentName(orig.id)) + '</strong>' +
+          '<p>Skopiowaliśmy kontakt, cennik i ustawienia — bez lekcji i płatności. Wpisz imię (np. rodzeństwa) i popraw szczegóły; ' +
+          'po zmianie imienia dopisek „(kopia)” zniknie z nazwiska.</p></div></div>' : '') +
         '<div class="form-grid">' +
           field('Imię', '<input class="input" name="firstName" value="' + U.esc(s.firstName) + '" required autofocus>') +
           field('Nazwisko', '<input class="input" name="lastName" value="' + U.esc(s.lastName) + '">') +
@@ -541,35 +829,78 @@ window.TF = window.TF || {};
 
         '<div class="section"><div class="section__head"><h2>Cennik ucznia</h2>' +
           '<button type="button" class="btn btn--xs" id="autoRates">Przelicz ze stawki 60 min</button></div>' +
-          '<div class="form-grid" style="grid-template-columns:repeat(5,1fr)">' + rateFields + '</div></div>' +
+          (rounded.length ? '<div class="insight insight--info mb-3" id="ratesRounded"><span class="insight__ico">💰</span><div class="insight__body">' +
+            '<strong>Zaokrągliliśmy wyliczone stawki do pełnych 5 zł</strong><p>' + U.esc(rounded.join(' · ')) +
+            '. Zapisz zmiany, żeby je zachować.</p></div></div>' : '') +
+          '<div class="form-grid rate-grid">' + rateFields + '</div>' +
+          '<p class="tiny dim mt-2">Stawki za 30, 45, 90 i 120 min (oznaczone „auto”) liczą się same ze stawki za 60 min ' +
+            'i są zaokrąglane w górę do pełnych ' + U.PRICE_STEP + ' ' + U.curSymbol() + '. Kwota wpisana ręcznie zostaje bez zmian.</p>' +
+        '</div>' +
       '</form>';
 
     const modal = UI().modal({
-      title: editing ? 'Edytuj ucznia' : 'Nowy uczeń',
+      key: 'student-form',
+      title: editing ? (orig ? 'Edytuj kopię ucznia' : 'Edytuj ucznia') : 'Nowy uczeń',
       subtitle: editing ? S().studentName(id) : 'Podstawowe dane wystarczą — resztę uzupełnisz później',
       size: 'wide',
       body: body,
-      footer: '<div class="grow"></div><button class="btn" data-modal-close>Anuluj</button>' +
-        '<button class="btn btn--brand" data-save>' + (editing ? 'Zapisz zmiany' : 'Dodaj ucznia') + '</button>'
+      footer: (editing && !orig ? '<button class="btn" data-copy-student title="Nowy uczeń z tymi samymi danymi (np. rodzeństwo)">📄 Kopiuj ucznia</button>' : '') +
+        '<div class="grow"></div><button class="btn" data-modal-close>Anuluj</button>' +
+        '<button class="btn btn--brand" data-save>' + (editing ? 'Zapisz zmiany' : 'Dodaj ucznia') + '</button>',
+      footerSplit: editing && !orig
     });
 
     const form = modal.el.querySelector('#studentForm');
-    modal.el.querySelector('#autoRates').addEventListener('click', function () {
+    function setAuto(d, on) {
+      isAuto[d] = on;
+      const tag = modal.el.querySelector('[data-auto-tag="' + d + '"]');
+      if (tag) tag.hidden = !on;
+    }
+    function recalc(all) {
       const base = Number(form.elements.rate60.value) || st.defaultPrice || 80;
-      form.elements.rate30.value = Math.round(base * 0.6);
-      form.elements.rate45.value = Math.round(base * 0.8);
-      form.elements.rate90.value = Math.round(base * 1.45);
-      form.elements.rate120.value = Math.round(base * 1.85);
-      UI().toast('Cennik przeliczony', { type: 'ok', desc: 'Możesz go dowolnie skorygować.' });
+      OTHER.forEach(function (d) {
+        const el = form.elements['rate' + d];
+        el.placeholder = M.autoRate(base, d);
+        if (all || isAuto[d]) { el.value = M.autoRate(base, d); setAuto(d, true); }
+      });
+    }
+    form.addEventListener('input', function (e) {
+      const m = /^rate(\d+)$/.exec(e.target.name || '');
+      if (!m) return;
+      const d = Number(m[1]);
+      if (d === 60) recalc(false);                      // nowa stawka bazowa → przelicz tylko „auto”
+      else setAuto(d, e.target.value === '');           // wpisana ręcznie — nie nadpisujemy
+    });
+    modal.el.querySelector('#autoRates').addEventListener('click', function () {
+      recalc(true);
+      const box = modal.el.querySelector('#ratesRounded');
+      if (box) box.remove();
+      UI().toast('Cennik przeliczony', { type: 'ok', desc: 'Kwoty zaokrąglone w górę do pełnych ' + U.PRICE_STEP + ' ' + U.curSymbol() + '. Możesz je dowolnie skorygować.' });
+    });
+
+    const copyBtn = modal.el.querySelector('[data-copy-student]');
+    if (copyBtn) copyBtn.addEventListener('click', function () {
+      modal.close(true);
+      F.copyStudent(id);
     });
 
     modal.el.querySelector('[data-save]').addEventListener('click', function () {
       if (!form.reportValidity()) return;
       const v = read(form);
+      const base = Number(v.rate60) || st.defaultPrice || 80;
       const rates = {};
-      M.DURATIONS.forEach((d) => { rates[d] = Number(v['rate' + d]) || 0; });
+      M.DURATIONS.forEach((d) => {
+        const val = Number(v['rate' + d]);
+        rates[d] = val > 0 ? val : M.autoRate(base, d);   // puste pole = stawka wyliczona
+      });
+      let lastName = v.lastName;
+      if (orig && v.firstName.trim() !== orig.firstName.trim() && lastName.slice(-suffix.length) === suffix) {
+        lastName = lastName.slice(0, -suffix.length);
+      } else if (orig && v.firstName.trim() !== orig.firstName.trim() && lastName === suffix.trim()) {
+        lastName = '';
+      }
       const payload = {
-        firstName: v.firstName, lastName: v.lastName, phone: v.phone, email: v.email,
+        firstName: v.firstName, lastName: lastName, phone: v.phone, email: v.email,
         parentContact: v.parentContact, grade: v.grade, school: v.school, level: v.level,
         subject: v.subject, startDate: v.startDate, mode: v.mode, status: v.status,
         preferredDay: v.preferredDay === '' ? null : Number(v.preferredDay),
@@ -580,7 +911,7 @@ window.TF = window.TF || {};
 
       if (editing) {
         S().repo('students').update(id, payload);
-        afterSave(modal, 'Dane ucznia zapisane');
+        afterSave(modal, 'Dane ucznia zapisane', orig ? S().studentName(id) : '');
       } else {
         const created = S().ops.addStudent(payload);
         modal.close();
@@ -593,6 +924,27 @@ window.TF = window.TF || {};
       }
     });
     return modal;
+  };
+
+  /** „📄 Kopiuj ucznia” — kopia danych (bez lekcji i płatności) i od razu jej edycja */
+  F.copyStudent = function (id) {
+    const orig = S().student(id);
+    if (!orig) return null;
+    const c = S().ops.copyStudent(id);
+    if (!c) return null;
+    window.TF.Router.go('#/students/' + c.id);
+    const m = F.student(c.id, { copyOf: id });
+    UI().toast('Utworzono kopię ucznia', {
+      type: 'ok', desc: S().studentName(c.id) + ' — bez lekcji i płatności',
+      actionLabel: 'Cofnij',
+      onAction: function () {
+        if (m && m.isOpen()) m.close();
+        S().ops.deleteStudent(c.id);
+        window.TF.Router.go('#/students/' + id);
+        UI().toast('Kopia usunięta', { type: 'info', duration: 2200 });
+      }
+    });
+    return m;
   };
 
   /* ============================================================
@@ -608,7 +960,7 @@ window.TF = window.TF || {};
         '<div class="field span2"><label>Uczeń</label>' +
           '<select class="select" name="studentId" required>' + studentOptions(sid, { emptyLabel: '— wybierz —', all: true }) + '</select>' +
           '<span class="hint" id="dueHint"></span></div>' +
-        field('Kwota', '<div class="input-suffix"><input class="input" type="number" name="amount" min="0" step="5" value="' +
+        field('Kwota', '<div class="input-suffix"><input class="input" type="number" name="amount" min="0" step="any" value="' +
           (prefill.amount || suggested || '') + '" required autofocus><span>' + U.curSymbol() + '</span></div>') +
         field('Data', '<input class="input" type="date" name="date" value="' + (prefill.date || U.today()) + '">') +
         field('Metoda', selectFrom(M.PAYMENT_METHOD, 'method', prefill.method || 'transfer')) +
@@ -683,7 +1035,7 @@ window.TF = window.TF || {};
         '<div class="field span2"><label>Uczeń</label><select class="select" name="studentId" required>' +
           studentOptions(prefill.studentId, { emptyLabel: '— wybierz —' }) + '</select></div>' +
         field('Liczba lekcji', '<input class="input" type="number" name="lessonsCount" min="2" max="60" value="10" required autofocus>') +
-        field('Cena za lekcję', '<div class="input-suffix"><input class="input" type="number" name="pricePerLesson" min="0" step="5" value="' +
+        field('Cena za lekcję', '<div class="input-suffix"><input class="input" type="number" name="pricePerLesson" min="0" step="any" value="' +
           (S().settings().defaultPrice || 80) + '" required><span>' + U.curSymbol() + '</span></div>') +
         field('Data zakupu', '<input class="input" type="date" name="purchasedDate" value="' + U.today() + '">') +
         field('Opłacony', '<label class="check" style="height:40px"><input type="checkbox" name="paid" checked>' +

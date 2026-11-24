@@ -537,9 +537,14 @@
       fitSheets(host);
       fitCardText(host);
       scalePreview(host);
-      const onResize = U.debounce(function () { scalePreview(host); }, 150);
+      // jeden nasłuch zmiany rozmiaru naraz (dawniej przybywał z każdym odświeżeniem widoku)
+      if (window.TF._printResize) window.removeEventListener('resize', window.TF._printResize);
+      const onResize = U.debounce(function () {
+        if (!host.isConnected) { window.removeEventListener('resize', onResize); return; }
+        scalePreview(host);
+      }, 150);
+      window.TF._printResize = onResize;
       window.addEventListener('resize', onResize);
-      window.TF.App.setTimer(function () { if (!host.isConnected) window.removeEventListener('resize', onResize); }, 30000);
 
       /* przełączniki segmentowe */
       host.addEventListener('click', function (e) {

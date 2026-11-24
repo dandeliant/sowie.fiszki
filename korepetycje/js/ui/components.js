@@ -58,7 +58,7 @@ window.TF = window.TF || {};
     });
 
     document.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter' && e.target.matches('[role="button"][data-action]')) {
+      if (e.key === 'Enter' && e.target && e.target.matches && e.target.matches('[role="button"][data-action]')) {
         e.target.click();
       }
     });
@@ -102,8 +102,19 @@ window.TF = window.TF || {};
      ============================================================ */
   const modalStack = [];
 
+  function syncModalClass() {
+    document.body.classList.toggle('has-modal', modalStack.length > 0);
+  }
+
   UI.modal = function (cfg) {
     cfg = cfg || {};
+    /* To samo okno otwarte drugi raz (podwójne kliknięcie, zdublowany nasłuch)
+       zastępuje poprzednie — nigdy nie zostają dwa identyczne okna jedno na drugim,
+       z których ✕ / Anuluj zamyka tylko wierzchnie. */
+    const key = cfg.key === false ? null : (cfg.key || (cfg.title ? 'title:' + cfg.title : null));
+    if (key) {
+      modalStack.filter(function (m) { return m.key === key; }).forEach(function (m) { m.close(true); });
+    }
     const root = document.getElementById('modalRoot');
     const scrim = document.createElement('div');
     scrim.className = 'modal-scrim';
@@ -119,34 +130,56 @@ window.TF = window.TF || {};
     root.appendChild(scrim);
     document.body.style.overflow = 'hidden';
 
+    let closed = false;
     const api = {
       el: scrim,
+      key: key,
       body: scrim.querySelector('.modal__body'),
-      close: function () { destroy(); }
+      close: function (immediate) { destroy(immediate); },
+      isOpen: function () { return !closed; }
     };
 
-    function destroy() {
+    function destroy(immediate) {
+      if (closed) return;                 // drugie wywołanie (np. ✕ + kliknięcie tła) nic nie psuje
+      closed = true;
       const i = modalStack.indexOf(api);
       if (i !== -1) modalStack.splice(i, 1);
-      scrim.style.animation = 'fadeIn 140ms reverse both';
-      setTimeout(() => {
+      syncModalClass();
+      const remove = function () {
         if (scrim.parentNode) scrim.parentNode.removeChild(scrim);
         if (!modalStack.length) document.body.style.overflow = '';
-      }, 130);
+      };
+      if (immediate) remove();
+      else {
+        scrim.style.animation = 'fadeIn 140ms reverse both';
+        setTimeout(remove, 130);
+      }
       if (cfg.onClose) cfg.onClose();
     }
 
+    /* zamykane okno nie przyjmuje już kliknięć (podwójne „Zapisz” nie doda dwóch lekcji) */
     scrim.addEventListener('click', function (e) {
-      if (e.target === scrim && cfg.dismissible !== false) destroy();
+      if (closed) { e.stopPropagation(); e.preventDefault(); }
+    }, true);
+
+    /* tło zamyka tylko kliknięcie zaczęte NA tle — przeciągnięcie zaznaczenia
+       z pola tekstowego poza okno nie zamyka go przypadkiem */
+    let downOnScrim = false;
+    scrim.addEventListener('pointerdown', function (e) { downOnScrim = e.target === scrim; });
+    scrim.addEventListener('click', function (e) {
+      if (closed) return;
+      if (e.target === scrim && downOnScrim && cfg.dismissible !== false) { destroy(); return; }
       if (e.target.closest('[data-modal-close]')) destroy();
     });
 
     modalStack.push(api);
+    syncModalClass();
     if (cfg.onMount) cfg.onMount(api);
 
     // autofocus pierwszego pola
     setTimeout(() => {
-      const f = scrim.querySelector('[autofocus], input:not([type=hidden]), select, textarea');
+      // najpierw pole z [autofocus] (np. data w kopii lekcji), dopiero potem pierwsze pole okna
+      const f = scrim.querySelector('[autofocus]') || scrim.querySelector('input:not([type=hidden]), select, textarea');
       if (f && !cfg.noAutofocus) { try { f.focus(); f.select && f.select(); } catch (e) {} }
     }, 60);
 
@@ -226,9 +259,62 @@ window.TF = window.TF || {};
   };
 
   /* ============================================================
+     WYBÓR JEDNEJ Z OPCJI (np. „Tylko ta lekcja / Ta i następne /
+     Wszystkie w serii” — jak w Kalendarzu Google)
+     cfg.options: [{ value, label, desc, disabled }]
+     → Promise z wybraną wartością albo null (Anuluj / ✕ / Esc / tło)
+     ============================================================ */
+  UI.choice = function (cfg) {
+    return new Promise(function (resolve) {
+      let decided = false;
+      const opts = cfg.options || [];
+      let value = cfg.value;
+      if (!opts.some(function (o) { return o.value === value && !o.disabled; })) {
+        const first = opts.filter(function (o) { return !o.disabled; })[0];
+        value = first ? first.value : null;
+      }
+      const name = 'choice_' + Math.random().toString(36).slice(2, 8);
+      const m = UI.modal({
+        size: 'narrow',
+        title: cfg.title || 'Wybierz',
+        subtitle: cfg.subtitle || '',
+        body: (cfg.text ? '<p class="muted small mb-3" style="white-space:pre-line">' + U.esc(cfg.text) + '</p>' : '') +
+          '<div class="choice-list" role="radiogroup">' + opts.map(function (o) {
+            return '<label class="choice' + (o.disabled ? ' is-disabled' : '') + '">' +
+              '<input type="radio" name="' + name + '" value="' + U.esc(o.value) + '"' +
+                (o.value === value ? ' checked' : '') + (o.disabled ? ' disabled' : '') + '>' +
+              '<span class="choice__dot"></span>' +
+              '<span class="choice__text"><b>' + U.esc(o.label) + '</b>' +
+                (o.desc ? '<small>' + U.esc(o.desc) + '</small>' : '') + '</span></label>';
+          }).join('') + '</div>' +
+          (cfg.note ? '<div class="insight insight--info mt-3"><span class="insight__ico">🔒</span>' +
+            '<div class="insight__body small">' + U.esc(cfg.note) + '</div></div>' : ''),
+        footer:
+          '<div class="grow"></div>' +
+          '<button class="btn" data-choice-no>' + U.esc(cfg.cancelLabel || 'Anuluj') + '</button>' +
+          '<button class="btn ' + (cfg.danger ? 'btn--danger' : 'btn--brand') + '" data-choice-yes>' +
+            U.esc(cfg.confirmLabel || 'OK') + '</button>',
+        noAutofocus: true,
+        onClose: function () { if (!decided) resolve(null); }
+      });
+      m.el.addEventListener('click', function (e) {
+        if (e.target.closest('[data-choice-yes]')) {
+          const r = m.el.querySelector('input[name="' + name + '"]:checked');
+          decided = true; m.close(); resolve(r ? r.value : null);
+        }
+        if (e.target.closest('[data-choice-no]')) { decided = true; m.close(); resolve(null); }
+      });
+      setTimeout(function () {
+        const r = m.el.querySelector('input[name="' + name + '"]:checked');
+        if (r) try { r.focus(); } catch (e) {}
+      }, 60);
+    });
+  };
+
+  /* ============================================================
      MENU KONTEKSTOWE
      ============================================================ */
-  let openMenu = null;
+  let openMenu = null, menuOutside = null;
   UI.menu = function (anchor, items) {
     UI.closeMenu();
     const el = document.createElement('div');
@@ -258,14 +344,24 @@ window.TF = window.TF || {};
       if (it && it.onClick) it.onClick();
     });
     openMenu = el;
+    /* Nasłuch „klik poza menu” należy do TEGO menu i znika razem z nim. Dawniej
+       zostawał po menu zamkniętym przewinięciem i od razu zamykał następne menu
+       (pierwsze kliknięcie w „Więcej” / lekcję w kalendarzu „nic nie robiło”). */
+    function outside(e) { if (openMenu === el && !el.contains(e.target)) UI.closeMenu(); }
+    function onScroll(e) { if (openMenu === el && !el.contains(e.target)) UI.closeMenu(); }
     setTimeout(function () {
-      document.addEventListener('click', outside, { once: true });
-      document.addEventListener('scroll', UI.closeMenu, { once: true, capture: true });
+      if (openMenu !== el) return;
+      document.addEventListener('click', outside);
+      document.addEventListener('scroll', onScroll, true);
+      menuOutside = function () {
+        document.removeEventListener('click', outside);
+        document.removeEventListener('scroll', onScroll, true);
+      };
     }, 0);
-    function outside() { UI.closeMenu(); }
     return el;
   };
   UI.closeMenu = function () {
+    if (menuOutside) { menuOutside(); menuOutside = null; }
     if (openMenu && openMenu.parentNode) openMenu.parentNode.removeChild(openMenu);
     openMenu = null;
   };

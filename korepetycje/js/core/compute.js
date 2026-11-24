@@ -631,6 +631,38 @@ window.TF = window.TF || {};
     };
   };
 
+  /**
+   * Tydzień pon–nd zawierający podaną datę (domyślnie bieżący):
+   * lekcje, godziny, wartość (odbyte + płatne odwołania + zaplanowane),
+   * opłacone, do zapłaty i rozkład na dni — do sekcji „Ten tydzień” na pulpicie.
+   */
+  C.weekSummary = function (anyDate) {
+    const from = U.startOfWeek(anyDate || U.today());
+    const to = U.addDays(from, 6);
+    const ls = S().lessonsBetween(from, to);
+    const active = (l) => !C.isCancelled(l) && l.status !== 'rescheduled';
+    const worth = (l) => (C.isPlanned(l) ? (Number(l.price) || 0) : C.lessonValue(l));
+    const isPaid = (l) => (C.isBillable(l) || C.isPlanned(l)) && (l.paymentStatus === 'paid' || l.paymentStatus === 'package');
+    const act = ls.filter(active);
+    return {
+      from: from, to: to,
+      lessons: act.length,
+      held: ls.filter(C.isHeld).length,
+      planned: ls.filter(C.isPlanned).length,
+      minutes: U.sum(act, (l) => l.duration),
+      value: U.sum(ls, worth),
+      earned: C.revenue(ls),
+      paid: U.sum(ls.filter(isPaid), (l) => Number(l.price) || 0),
+      due: U.sum(ls.filter(C.isDue), C.lessonValue),
+      cancelled: ls.filter((l) => C.isCancelled(l) || l.status === 'no_show').length,
+      utilization: C.utilization(from, to),
+      days: U.rangeDays(from, to).map((d) => {
+        const dl = ls.filter((l) => l.date === d);
+        return { date: d, count: dl.filter(active).length, value: U.sum(dl, worth), work: C.isWorkDay(d) };
+      })
+    };
+  };
+
   /** Zbiorczy pulpit — wszystko czego potrzebuje Dashboard */
   C.dashboard = function () {
     const t = U.today();

@@ -145,10 +145,7 @@ window.TF = window.TF || {};
         preferredTime: p.slots[0][1],
         location: p.mode === 'online' ? 'Google Meet' : 'ul. Kwiatowa ' + (2 + Math.floor(rand() * 40)) + ', u ucznia',
         defaultDuration: p.slots[0][2],
-        rates: {
-          30: Math.round(p.rate * 0.6), 45: Math.round(p.rate * 0.8), 60: p.rate,
-          90: Math.round(p.rate * 1.45), 120: Math.round(p.rate * 1.85)
-        }
+        rates: M.autoRates(p.rate)   // wyliczone stawki zaokrąglone w górę do pełnych 5 zł
       });
       if (p.status === 'ended') s.endDate = U.addDays(today, -(p.endedWeeksAgo * 7));
       students.push(s);

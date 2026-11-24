@@ -52,6 +52,7 @@ window.TF = window.TF || {};
           '<span>' + U.esc(l.topic || l.subject || (s && s.subject) || 'Zajęcia') + '</span>' +
           '<span>·</span><span>' + U.durLabel(l.duration) + '</span>' +
           '<span>·</span><span>' + (l.mode === 'online' ? 'Online' : 'Stacjonarnie') + '</span>' +
+          (S().ops.isRecurring(l) ? '<span>·</span><span title="Lekcja cykliczna">🔁</span>' : '') +
           (now ? '<span class="badge badge--brand">trwa teraz</span>' : '') +
           (past ? '<span class="badge badge--warn">do oznaczenia</span>' : '') +
           (l.status !== 'planned' ? '<span class="badge badge--' + status.cls + '">' + U.esc(status.short) + '</span>' : '') +
@@ -69,7 +70,9 @@ window.TF = window.TF || {};
   L.lessonTableRow = function (l) {
     const s = S().student(l.studentId);
     return '<tr data-clickable data-action="lessonMenuRow" data-id="' + l.id + '">' +
-      '<td class="nowrap"><strong>' + U.fmtDate(l.date) + '</strong><div class="tiny dim">' + U.cap(U.DOW_LONG[U.dow(l.date)]) + '</div></td>' +
+      '<td class="nowrap"><strong>' + U.fmtDate(l.date) + '</strong>' +
+        (S().ops.isRecurring(l) ? ' <span class="rec-ico" title="Lekcja cykliczna">🔁</span>' : '') +
+        '<div class="tiny dim">' + U.cap(U.DOW_LONG[U.dow(l.date)]) + '</div></td>' +
       '<td class="nowrap mono">' + U.fmtTime(l.start) + '–' + U.fmtTime(C().lessonEndTime(l)) + '</td>' +
       '<td><div class="row gap-2">' + UI.avatar(s, 'sm') + '<span class="truncate">' + U.esc(S().studentName(l.studentId)) + '</span></div></td>' +
       '<td class="nowrap small">' + U.esc(l.topic || l.subject || '—') + '</td>' +

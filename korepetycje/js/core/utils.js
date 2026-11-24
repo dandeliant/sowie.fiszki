@@ -27,6 +27,18 @@ window.TF = window.TF || {};
     return ((cur - prev) / Math.abs(prev)) * 100;
   }
 
+  /* ---------------- Ceny ----------------
+     JEDYNE miejsce z regułą zaokrąglania kwot wyliczanych automatycznie
+     (cennik ucznia, cena lekcji o nietypowej długości): w górę do pełnych
+     PRICE_STEP zł — 48 → 50, 54 → 55, 61 → 65. Kwot wpisanych ręcznie
+     nigdy nie zaokrąglamy.                                              */
+  const PRICE_STEP = 5;
+  function roundPrice(v) {
+    const n = Number(v);
+    if (!isFinite(n) || n <= 0) return 0;
+    return Math.ceil(n / PRICE_STEP - 1e-9) * PRICE_STEP;
+  }
+
   /* ---------------- Kolekcje ---------------- */
   function groupBy(arr, keyFn) {
     const out = {};
@@ -313,7 +325,7 @@ window.TF = window.TF || {};
   function pick(rand, arr) { return arr[Math.floor(rand() * arr.length) % arr.length]; }
 
   window.TF.U = {
-    uid, clamp, round, sum, avg, pct, change,
+    uid, clamp, round, sum, avg, pct, change, roundPrice, PRICE_STEP,
     groupBy, sortBy, uniq, clone,
     iso, parse, today, nowMin, addDays, addMonths, diffDays, dow,
     startOfWeek, endOfWeek, startOfMonth, endOfMonth, daysInMonth,

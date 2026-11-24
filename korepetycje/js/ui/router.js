@@ -117,8 +117,12 @@ window.TF.Views = window.TF.Views || {};
     if (badge) badge.hidden = rem === 0;
   };
 
+  /* licznik przejść między adresami (nie rośnie przy odświeżeniu widoku) —
+     widok może jednorazowo zastosować parametry z adresu, np. #/calendar?date=… */
+  R.navSeq = 0;
+
   R.go = function (hash) {
-    if (location.hash === hash) { R.render(); return; }
+    if (location.hash === hash) { R.navSeq++; R.render(); return; }
     location.hash = hash;
   };
 
@@ -133,7 +137,13 @@ window.TF.Views = window.TF.Views || {};
 
     if (window.TF.App && window.TF.App.clearTimers) window.TF.App.clearTimers();
 
-    const host = document.getElementById('view');
+    /* Każdy render dostaje NOWY element #view. Widoki (kalendarz, wydruki) podpinają
+       nasłuchy do kontenera w mount() — na starym elemencie zbierały się z każdym
+       odświeżeniem, więc np. klik w wolne okno kalendarza otwierał kilka identycznych
+       okien „Dodaj zajęcia” naraz i ✕ / Anuluj zamykało tylko wierzchnie z nich. */
+    const old = document.getElementById('view');
+    const host = old.cloneNode(false);
+    old.parentNode.replaceChild(host, old);
     const title = typeof view.title === 'function' ? view.title(R.params) : view.title;
     const sub = typeof view.subtitle === 'function' ? view.subtitle(R.params) : (view.subtitle || '');
     document.body.setAttribute('data-view', R.current);
@@ -159,8 +169,9 @@ window.TF.Views = window.TF.Views || {};
   };
 
   R.start = function () {
-    window.addEventListener('hashchange', R.render);
+    window.addEventListener('hashchange', function () { R.navSeq++; R.render(); });
     if (!location.hash) location.hash = '#/dashboard';
+    R.navSeq++;
     R.render();
   };
 

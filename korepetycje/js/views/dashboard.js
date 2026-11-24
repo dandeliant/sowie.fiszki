@@ -23,7 +23,7 @@
     return 'Dobrej nocy';
   }
 
-  function heroSection(d) {
+  function heroSection(d, w) {
     const st = S().settings();
     const name = st.tutorName ? ', ' + st.tutorName.split(' ')[0] : '';
     const today = new Date();
@@ -35,6 +35,7 @@
       '</div>' +
       '<div class="hero__stats">' +
         '<div class="hero__stat"><small>Dziś</small><strong>' + U.money(d.todayPotential) + '</strong></div>' +
+        '<div class="hero__stat"><small>Ten tydzień</small><strong>' + U.money(w.value) + '</strong></div>' +
         '<div class="hero__stat"><small>Ten miesiąc</small><strong>' + U.money(d.monthRevenue) + '</strong></div>' +
         '<div class="hero__stat"><small>Prognoza</small><strong>' + U.money(d.monthForecast.forecast) + '</strong></div>' +
       '</div>' +
@@ -177,6 +178,38 @@
     });
   }
 
+  /* Ten tydzień (pon–nd): liczby jak w „Ten miesiąc” + pasek dni z liczbą lekcji */
+  function weekSection(w) {
+    const t = U.today();
+    const cells = [
+      { label: 'Lekcje', value: w.lessons, sub: w.held + ' odbytych · ' + w.planned + ' przed nami' },
+      { label: 'Godziny', value: U.num(w.minutes / 60, 1) + ' h' },
+      { label: 'Wartość tygodnia', value: U.money(w.value), sub: 'odbyte i zaplanowane' },
+      { label: 'Zarobione', value: U.money(w.earned), tone: w.earned ? 'ok' : '', sub: 'odbyte i płatne odwołania' },
+      { label: 'Opłacone', value: U.money(w.paid), tone: w.paid ? 'ok' : '' },
+      { label: 'Do zapłaty', value: U.money(w.due), tone: w.due ? 'bad' : '' },
+      { label: 'Odwołania', value: w.cancelled, tone: w.cancelled ? 'warn' : '' },
+      { label: 'Wykorzystanie', value: U.pctLabel(w.utilization, 0) }
+    ];
+    const grid = '<div class="report-grid" style="margin-top:0">' + cells.map((c) =>
+      '<div class="report-cell"><small>' + U.esc(c.label) + '</small><strong class="' +
+      (c.tone === 'ok' ? 'pos-up' : c.tone === 'bad' ? 'pos-down' : '') + '">' + c.value + '</strong>' +
+      (c.sub ? '<span class="tiny dim">' + U.esc(c.sub) + '</span>' : '') + '</div>').join('') + '</div>';
+    const days = '<div class="week-strip mt-4" role="list">' + w.days.map((x) =>
+      '<button type="button" role="listitem" class="week-strip__day' + (x.date === t ? ' is-today' : '') + (x.date < t ? ' is-past' : '') +
+        (!x.work && !x.count ? ' is-off' : '') + '" data-action="calOpen" data-date="' + x.date + '" data-mode="day" ' +
+        'title="' + U.esc(U.cap(U.DOW_LONG[U.dow(x.date)]) + ', ' + U.fmtDate(x.date, 'day') + ' — ' + U.lessonsLabel(x.count)) + '">' +
+        '<small>' + U.DOW_SHORT[U.dow(x.date)] + '</small>' +
+        '<b>' + U.parse(x.date).getDate() + '</b>' +
+        '<span class="week-strip__n">' + (x.count ? x.count + '<span class="hide-sm"> ' + U.plural(x.count, 'lekcja', 'lekcje', 'lekcji') + '</span>' : '—') + '</span>' +
+        '<span class="week-strip__v">' + (x.value ? U.moneyShort(x.value) : '') + '</span>' +
+      '</button>').join('') + '</div>';
+    return UI.card('Ten tydzień', grid + days, {
+      subtitle: U.fmtDate(w.from, 'day') + ' – ' + U.fmtDate(w.to, 'day'),
+      action: '<button class="btn btn--xs" data-action="calOpen" data-date="' + w.from + '" data-mode="week">Kalendarz</button>'
+    });
+  }
+
   function commandCenter(d) {
     const mk = U.monthKey(U.today());
     const sum = C().monthSummary(mk);
@@ -276,10 +309,11 @@
     },
     render: function () {
       const d = C().dashboard();
-      return heroSection(d) +
+      const w = C().weekSummary();
+      return heroSection(d, w) +
         '<div class="section">' + kpis(d) + '</div>' +
         '<div class="section grid grid-2-1">' +
-          '<div class="col gap-4">' + todaySection(d) + commandCenter(d) + revenueSection() + '</div>' +
+          '<div class="col gap-4">' + todaySection(d) + weekSection(w) + commandCenter(d) + revenueSection() + '</div>' +
           '<div class="col gap-4">' + nextLessonSection(d) + attentionSection() + goalSection(d) + potentialSection(d) + '</div>' +
         '</div>' +
         insightsSection();

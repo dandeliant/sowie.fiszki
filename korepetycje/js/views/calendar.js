@@ -74,6 +74,7 @@
       '<span><i class="dot-status st-cancelled"></i> odwołane</span>' +
       '<span><i class="dot-status st-noshow"></i> nieobecność</span>' +
       '<span><i class="dot-status st-free" style="opacity:.5"></i> wolne okno — kliknij, aby dodać</span>' +
+      '<span>🔁 lekcja cykliczna</span>' +
       '</div>';
   }
 
@@ -176,7 +177,8 @@
         evs += '<div class="cal-event ' + eventClass(l) + (h < 34 ? ' cal-event--tiny' : '') + '" draggable="true" ' +
           'data-id="' + l.id + '" data-action="lessonMenu" ' +
           'style="top:' + top + 'px;height:' + h + 'px;left:calc(' + (o.lane * w) + '% + 3px);width:calc(' + w + '% - 6px)">' +
-          '<strong>' + U.fmtTime(l.start) + ' ' + U.esc(S().studentName(l.studentId).split(' ')[0]) + '</strong>' +
+          '<strong>' + (S().ops.isRecurring(l) ? '<i class="rec-ico" title="Lekcja cykliczna">🔁</i>' : '') +
+            U.fmtTime(l.start) + ' ' + U.esc(S().studentName(l.studentId).split(' ')[0]) + '</strong>' +
           '<span>' + U.esc(l.topic || l.subject || '') + ' · ' + U.money(l.price) + '</span>' +
           '</div>';
       });
@@ -216,7 +218,8 @@
         '<div class="cal-month__list">' +
           shown.map((l) => '<div class="cal-month__ev" data-action="lessonMenu" data-id="' + l.id + '">' +
             '<i class="dot-status ' + (window.TF.Models.LESSON_STATUS[l.status] || {}).dot + '"></i>' +
-            '<b>' + U.fmtTime(l.start) + '</b> <span>' + U.esc(S().studentName(l.studentId).split(' ')[0]) + '</span></div>').join('') +
+            '<b>' + U.fmtTime(l.start) + '</b>' + (S().ops.isRecurring(l) ? '<i class="rec-ico" title="Lekcja cykliczna">🔁</i>' : '') +
+            ' <span>' + U.esc(S().studentName(l.studentId).split(' ')[0]) + '</span></div>').join('') +
           (ls.length > 3 ? '<div class="cal-month__more">+' + (ls.length - 3) + ' więcej</div>' : '') +
         '</div></div>';
     }
@@ -270,7 +273,11 @@
     title: 'Kalendarz',
     subtitle: function () { return periodLabel(); },
     render: function (params, query) {
-      if (query && query.date) { state.anchor = query.date; state.mode = query.mode || state.mode; }
+      // #/calendar?date=…&mode=… stosujemy raz na przejście — inaczej „Poprzedni / Następny”
+      // po każdym odświeżeniu wracałyby do daty z adresu
+      const nav = window.TF.Router.navSeq;
+      if (query && query.date && state.navSeq !== nav) { state.anchor = query.date; state.mode = query.mode || state.mode; }
+      state.navSeq = nav;
       const [from, to] = visibleRange();
       let main;
       if (mode() === 'month') main = monthView();

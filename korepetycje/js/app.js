@@ -58,7 +58,7 @@ window.TF = window.TF || {};
   const COLLECTION_LABELS = {
     students: 'Uczniowie', lessons: 'Zajęcia', payments: 'Płatności', packages: 'Pakiety',
     expenses: 'Wydatki', tasks: 'Zadania', notes: 'Notatki', materials: 'Materiały',
-    goals: 'Cele', homework: 'Prace domowe'
+    goals: 'Cele', homework: 'Prace domowe', series: 'Serie lekcji cyklicznych'
   };
 
   App.backupFileName = function () {
@@ -332,6 +332,8 @@ window.TF = window.TF || {};
     const c = C();
     const items = [];
     items.push({ label: S().studentName(l.studentId) + ' · ' + U.fmtDate(l.date), header: true });
+    const series = S().ops.seriesInfo(l.id);
+    if (series) items.push({ label: '🔁 ' + series.rhythmLabel + (series.endLabel ? ' · ' + series.endLabel : ''), header: true });
 
     if (l.status === 'planned') {
       items.push({ label: 'Zakończ lekcję (z notatką)', icon: 'play', onClick: () => F().lessonSummary(l.id) });
@@ -354,56 +356,10 @@ window.TF = window.TF || {};
 
     items.push({ sep: true });
     items.push({ label: 'Profil ucznia', icon: 'user', onClick: () => R().go('#/students/' + l.studentId) });
-    items.push({ label: 'Edytuj zajęcia', icon: 'edit', onClick: () => F().lesson({ id: l.id }) });
-
-    items.push({
-      label: 'Usuń zajęcia', icon: 'trash', danger: true, onClick: function () {
-        UI().confirm({
-          title: 'Usunąć te zajęcia?',
-          text: S().studentName(l.studentId) + ' · ' + U.fmtDate(l.date, 'dow') + ', ' + U.fmtTime(l.start),
-          confirmLabel: 'Usuń'
-        }).then(function (ok) {
-          if (!ok) return;
-          S().repo('lessons').remove(l.id);
-          UI().toast('Zajęcia usunięte', { type: 'ok' });
-          R().refresh();
-        });
-      }
-    });
-
-    /* --- operacje na całej serii --- */
-    const series = S().ops.seriesInfo(l.id);
-    if (series) {
-      items.push({ sep: true });
-      items.push({ label: 'Seria ' + series.rhythmLabel + ' · ' + U.lessonsLabel(series.total), header: true });
-      items.push({
-        label: 'Edytuj tę i następne (' + series.futureCount + ')', icon: 'refresh',
-        onClick: () => F().lesson({ id: l.id, scope: 'future' })
-      });
-      items.push({
-        label: 'Edytuj całą serię (' + series.total + ')', icon: 'edit',
-        onClick: () => F().lesson({ id: l.id, scope: 'all' })
-      });
-      items.push({
-        label: 'Usuń tę i następne (' + series.futureCount + ')', icon: 'trash', danger: true,
-        onClick: function () {
-          const targets = S().ops.seriesScope(l.id, 'future');
-          const value = U.sum(targets.filter((x) => x.status === 'planned'), (x) => x.price);
-          UI().confirm({
-            title: 'Usunąć ' + U.lessonsLabel(targets.length) + ' z serii?',
-            text: U.fmtDate(targets[0].date, 'medium') + ' – ' + U.fmtDate(targets[targets.length - 1].date, 'medium') +
-              ' · ' + S().studentName(l.studentId),
-            warning: 'Z prognozy zniknie ' + U.money(value) + ' zaplanowanego przychodu. Tej operacji nie można cofnąć.',
-            confirmLabel: 'Usuń ' + targets.length + ' zajęć'
-          }).then(function (ok) {
-            if (!ok) return;
-            const n = S().ops.deleteSeries(l.id, 'future');
-            UI().toast(U.lessonsLabel(n) + ' usunięte', { type: 'ok', desc: 'Seria skrócona' });
-            R().refresh();
-          });
-        }
-      });
-    }
+    items.push({ label: series ? 'Edytuj zajęcia / serię' : 'Edytuj zajęcia', icon: 'edit', onClick: () => F().lesson({ id: l.id }) });
+    items.push({ label: '📄 Kopiuj zajęcia', onClick: () => F().copyLesson(l.id) });
+    // lekcja z serii: okno zapyta „Tylko ta lekcja / Ta i następne / Wszystkie w serii”
+    items.push({ label: series ? 'Usuń zajęcia / serię…' : 'Usuń zajęcia', icon: 'trash', danger: true, onClick: () => F().deleteLesson(l.id) });
 
     UI().menu(el, items);
   }
@@ -419,6 +375,7 @@ window.TF = window.TF || {};
       { label: 'Dodaj notatkę', icon: 'note', onClick: () => F().note({ studentId: id }) },
       { sep: true },
       { label: 'Edytuj dane', icon: 'edit', onClick: () => F().student(id) },
+      { label: '📄 Kopiuj ucznia (np. rodzeństwo)', onClick: () => F().copyStudent(id) },
       { label: 'Usuń ucznia', icon: 'trash', danger: true, onClick: () => deleteStudent(id) }
     ]);
   }
@@ -463,6 +420,8 @@ window.TF = window.TF || {};
     }));
     ui.action('addStudent', () => F().student());
     ui.action('editStudent', (el) => F().student(el.getAttribute('data-id')));
+    ui.action('copyStudent', (el) => F().copyStudent(el.getAttribute('data-id')));
+    ui.action('copyLesson', (el) => F().copyLesson(el.getAttribute('data-id')));
     ui.action('deleteStudent', (el) => deleteStudent(el.getAttribute('data-id')));
     ui.action('studentMenu', (el) => studentMenu(el, el.getAttribute('data-id')));
     ui.action('addPayment', (el) => F().payment({ studentId: el.getAttribute('data-student') || undefined }));
@@ -553,6 +512,12 @@ window.TF = window.TF || {};
     ui.action('calNext', () => { window.TF.Views.calendar.shift(1); R().refresh(); });
     ui.action('calToday', () => { window.TF.Views.calendar.goToday(); R().refresh(); });
     ui.action('calMode', (el) => { window.TF.Views.calendar.setMode(el.getAttribute('data-mode')); R().refresh(); });
+    ui.action('calOpen', (el) => {
+      const cal = window.TF.Views.calendar;
+      cal.setDate(el.getAttribute('data-date') || U.today());
+      if (el.getAttribute('data-mode')) cal.state.mode = el.getAttribute('data-mode');   // bez zmiany domyślnego widoku
+      R().go('#/calendar');
+    });
     ui.action('calDay', (el) => {
       window.TF.Views.calendar.setDate(el.getAttribute('data-date'));
       window.TF.Views.calendar.setMode('day');
@@ -760,7 +725,7 @@ window.TF = window.TF || {};
      ============================================================ */
   function bindKeys() {
     document.addEventListener('keydown', function (e) {
-      const inField = e.target.matches('input, textarea, select, [contenteditable]');
+      const inField = !!(e.target && e.target.matches && e.target.matches('input, textarea, select, [contenteditable]'));
 
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
@@ -837,6 +802,8 @@ window.TF = window.TF || {};
     // Sowie Fiszki: dane na koncie (korepetycje-cloud.js); bez niego — jak dawniej, w przeglądarce
     S().useAdapter((window.TF.Cloud && window.TF.Cloud.adapter) || window.TF.Adapters.createDefaultAdapter());
     S().init();
+    // lekcje cykliczne „bez końca”: zawsze zaplanowane ~12 miesięcy do przodu
+    try { S().ops.extendSeries(); } catch (e) { console.error('[TutorFlow] extendSeries', e); }
 
     UI().bind();
     window.TF.Charts.bind();

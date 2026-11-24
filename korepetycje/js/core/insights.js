@@ -60,7 +60,7 @@ window.TF = window.TF || {};
       out.push({
         id: 'unpaid-' + sid, tone: days > 14 ? 'bad' : 'warn', icon: '💰',
         title: s.studentName(sid) + ' ma ' + U.lessonsAcc(arr.length, 'nieopłaconą', 'nieopłacone', 'nieopłaconych'),
-        text: U.money(total) + ' · najstarsza sprzed ' + days + ' ' + U.plural(days, 'dnia', 'dni', 'dni'),
+        text: U.money(total) + (days > 0 ? ' · najstarsza sprzed ' + days + ' ' + U.plural(days, 'dnia', 'dni', 'dni') : days === 0 ? ' · najstarsza z dzisiaj' : ''),
         action: { label: 'Rozlicz', route: '#/students/' + sid },
         priority: days > 14 ? 1 : 3
       });

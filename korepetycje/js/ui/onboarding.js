@@ -191,7 +191,7 @@ window.TF = window.TF || {};
       S().ops.addStudent({
         firstName: data.student.firstName, lastName: data.student.lastName,
         level: data.student.level, subject: data.subject,
-        rates: { 30: Math.round(base * 0.6), 45: Math.round(base * 0.8), 60: base, 90: Math.round(base * 1.45), 120: Math.round(base * 1.85) }
+        rates: window.TF.Models.autoRates(base)   // wyliczone stawki zaokrąglone w górę do pełnych 5 zł
       });
     }
     close();

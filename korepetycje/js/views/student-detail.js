@@ -60,6 +60,7 @@
         '<button class="btn btn--sm" data-action="addPackage" data-student="' + s.id + '">' + icon('card', 14) + ' Pakiet</button>' +
         '<div class="grow"></div>' +
         '<button class="btn btn--sm" data-action="editStudent" data-id="' + s.id + '">' + icon('edit', 14) + ' Edytuj</button>' +
+        '<button class="btn btn--sm" data-action="copyStudent" data-id="' + s.id + '" title="Nowy uczeń z tymi samymi danymi (np. rodzeństwo) — bez lekcji i płatności">📄 Kopiuj</button>' +
         '<button class="btn btn--sm btn--danger-soft" data-action="deleteStudent" data-id="' + s.id + '">' + icon('trash', 14) + '</button>' +
       '</div>' +
       '</div>';
@@ -153,7 +154,9 @@
       '<th>Obecność</th><th>Płatność</th><th>Notatka</th><th></th></tr></thead><tbody>' +
       list.map(function (l) {
         return '<tr>' +
-          '<td class="nowrap"><strong>' + U.fmtDate(l.date) + '</strong><div class="tiny dim">' + U.fmtTime(l.start) + '</div></td>' +
+          '<td class="nowrap"><strong>' + U.fmtDate(l.date) + '</strong>' +
+            (S().ops.isRecurring(l) ? ' <span class="rec-ico" title="Lekcja cykliczna">🔁</span>' : '') +
+            '<div class="tiny dim">' + U.fmtTime(l.start) + '</div></td>' +
           '<td class="small">' + U.esc(l.topic || l.subject || '—') + '</td>' +
           '<td class="num small">' + U.durLabel(l.duration) + '</td>' +
           '<td class="num">' + U.money(l.price) + '</td>' +

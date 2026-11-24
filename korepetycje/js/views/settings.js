@@ -115,7 +115,7 @@
   const COLLECTION_LABELS = {
     students: 'Uczniowie', lessons: 'Zajęcia', payments: 'Płatności', packages: 'Pakiety',
     expenses: 'Wydatki', tasks: 'Zadania', notes: 'Notatki', materials: 'Materiały',
-    goals: 'Cele', homework: 'Prace domowe'
+    goals: 'Cele', homework: 'Prace domowe', series: 'Serie lekcji cyklicznych'
   };
 
   /* formy odmiany: [1, 2–4, 5+] */
@@ -129,7 +129,8 @@
     notes: ['notatka', 'notatki', 'notatek'],
     materials: ['materiał', 'materiały', 'materiałów'],
     goals: ['cel', 'cele', 'celów'],
-    homework: ['praca domowa', 'prace domowe', 'prac domowych']
+    homework: ['praca domowa', 'prace domowe', 'prac domowych'],
+    series: ['seria lekcji cyklicznych', 'serie lekcji cyklicznych', 'serii lekcji cyklicznych']
   };
   function countPhrase(key, n) {
     const f = COLLECTION_PLURALS[key];

@@ -80,6 +80,47 @@ window.TF = window.TF || {};
 
   const DURATIONS = [30, 45, 60, 90, 120];
 
+  /* ---------------- Cennik: stawki wyliczane ze stawki za 60 min ----------------
+     Wynik zaokrąglamy w górę do pełnych 5 zł (U.roundPrice) — 80 zł/60 min
+     daje 50 / 65 / 80 / 120 / 150 zł. */
+  const RATE_FACTORS = { 30: 0.6, 45: 0.8, 60: 1, 90: 1.45, 120: 1.85 };
+  /* Mnożniki z dawnych wersji (bez zaokrąglania) — po nich rozpoznajemy
+     kwoty wyliczone kiedyś automatycznie, np. 48 zł za 30 min przy 80 zł/h. */
+  const LEGACY_RATE_FACTORS = { 30: [0.6], 45: [0.8], 90: [1.4, 1.45], 120: [1.8, 1.85] };
+
+  function autoRate(base, duration) {
+    const b = Number(base) || 0;
+    if (Number(duration) === 60) return b;
+    const f = RATE_FACTORS[duration];
+    return U.roundPrice(b * (f !== undefined ? f : Number(duration) / 60));
+  }
+  function autoRates(base) {
+    const out = {};
+    DURATIONS.forEach(function (d) { out[d] = autoRate(base, d); });
+    return out;
+  }
+  /** Czy zapisana stawka wygląda na wyliczoną automatycznie przez starszą wersję */
+  function isLegacyAutoRate(value, base, duration) {
+    const v = Number(value), b = Number(base);
+    if (!v || !b) return false;
+    return (LEGACY_RATE_FACTORS[duration] || []).some(function (f) { return Math.round(b * f) === v; });
+  }
+
+  /* ---------------- Powtarzanie lekcji (serie) ---------------- */
+  const RECUR_FREQ = {
+    day:   { forms: ['dzień', 'dni', 'dni'] },
+    week:  { forms: ['tydzień', 'tygodnie', 'tygodni'] },
+    month: { forms: ['miesiąc', 'miesiące', 'miesięcy'] },
+    year:  { forms: ['rok', 'lata', 'lat'] }
+  };
+  /* gotowe ustawienia z listy „🔁 Powtarzaj” */
+  const RECUR_PRESETS = {
+    weekly:   { freq: 'week', interval: 1, label: 'Co tydzień' },
+    biweekly: { freq: 'week', interval: 2, label: 'Co 2 tygodnie' },
+    monthly:  { freq: 'month', interval: 1, label: 'Co miesiąc' },
+    yearly:   { freq: 'year', interval: 1, label: 'Co rok' }
+  };
+
   /* ---------------- Domyślne ustawienia ---------------- */
   function defaultSettings() {
     return {
@@ -137,13 +178,7 @@ window.TF = window.TF || {};
       group: !!p.group,
       status: p.status || 'active',                  // active | paused | ended
       defaultDuration: p.defaultDuration || st.defaultDuration || 60,
-      rates: p.rates || {
-        30: Math.round(base * 0.6),
-        45: Math.round(base * 0.8),
-        60: base,
-        90: Math.round(base * 1.4),
-        120: Math.round(base * 1.8)
-      },
+      rates: p.rates || autoRates(base),
       color: p.color || null,
       createdAt: p.createdAt || new Date().toISOString()
     };
@@ -171,6 +206,36 @@ window.TF = window.TF || {};
       packageId: p.packageId || null,
       paymentId: p.paymentId || null,
       createdAt: p.createdAt || new Date().toISOString()
+    };
+  }
+
+  /**
+   * Seria lekcji cyklicznych — sama reguła powtarzania. Lekcje serii to
+   * zwykłe wpisy w `lessons` z polem recurrenceId === series.id, więc
+   * status, płatności, finanse i prognozy działają na nich bez zmian.
+   *   anchor          pierwszy termin reguły (wystąpienie nr 0)
+   *   freq/interval   co ile: day | week | month | year × interval
+   *   days            (tylko week) dni tygodnia 0 = pon … 6 = nd
+   *   end             count (po N lekcjach) | until (do daty) | never (bez końca)
+   *   template        dane nowych lekcji dokładanych automatycznie
+   *   generatedUntil  do kiedy lekcje są już utworzone („bez końca” — 12 mies. do przodu)
+   */
+  function Series(p) {
+    p = p || {};
+    return {
+      id: p.id || U.uid('rec'),
+      studentId: p.studentId || null,
+      anchor: p.anchor || U.today(),
+      freq: p.freq || 'week',
+      interval: Number(p.interval) || 1,
+      days: Array.isArray(p.days) && p.days.length ? p.days.slice() : null,
+      end: p.end || 'count',
+      until: p.until || null,
+      count: p.count === undefined || p.count === null ? null : Number(p.count),
+      template: p.template || {},
+      generatedUntil: p.generatedUntil || null,
+      createdAt: p.createdAt || new Date().toISOString(),
+      updatedAt: p.updatedAt || null
     };
   }
 
@@ -293,7 +358,8 @@ window.TF = window.TF || {};
   window.TF.Models = {
     LESSON_STATUS, PAYMENT_STATUS, PAYMENT_METHOD, STUDENT_STATUS,
     MATERIAL_TYPE, EXPENSE_CATEGORY, PRIORITY, HOMEWORK_STATUS, DURATIONS,
+    RATE_FACTORS, autoRate, autoRates, isLegacyAutoRate, RECUR_FREQ, RECUR_PRESETS,
     defaultSettings,
-    Student, Lesson, Payment, Package, Expense, Task, Note, Material, Goal, Homework
+    Student, Lesson, Series, Payment, Package, Expense, Task, Note, Material, Goal, Homework
   };
 })();
