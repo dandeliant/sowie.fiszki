@@ -114,6 +114,12 @@
 
 Bez nowej migracji. Konta ustawione wcześniej masowo na Premium nadal mają datę trialu — trzeba je raz ustawić ponownie (okienko pokaże je jako „⏳ Premium czasowe do …”).
 
+## 🖨️ Wydruki i karty pracy
+
+**🖨️ Karty pracy — nowy wygląd wydruku i dobór słówek (app.html: wsPage, wsList, wsGapSentences, wsMaskWord, WK_CFG, wsBingo i pozostałe ws*, 24.11.2026, SW v1.274, bez migracji):** wszystkie warianty generatora kart pracy korzystają ze wspólnego szablonu `wsPage`: A4 (`@page` 11–12 mm), zawsze jasne tło (`color-scheme:light` — także podgląd w ciemnym motywie), nagłówek „🦉 Sowie Fiszki · karta pracy” + tytuł zadania + podręcznik/unit, pola `wsFields()`, klucz `wsKey()` zawsze od nowej strony (bez pustej kartki), stopka „© 2026 Sowie Fiszki · sowiefiszki.com”, pasek na ekranie: Drukuj (czeka na `document.fonts.ready`), A−/A+, 🔑 Klucz, Zamknij. W modalu: 🔑 klucz odpowiedzi i 🔠 czcionka (90–130%), podgląd = cała strona A4 w skali (🔍 Powiększ). Listy (`full/blank_*/mixed`) mają emoji, linie 11 mm, klucz, opcje 📖 zdania i 💡 „p _ _ _” i nie otwierają już same okna drukarki; luki w zdaniach (gap_sentences, wordbank) szuka `wsMaskWord` (formy odmienione, „to …”, „sb/sth”, „+ -ing”; zdania bez trafienia pomijane). Domyślne zaznaczenie słówek zależy od wariantu (`WK_CFG`: single/short/sent/pic/max/cap; filtr nie działa, gdy zostawiłby za mało słów); zmiana wariantu przelicza zaznaczenie, dopóki nauczyciel nie kliknie ręcznie (`_wkManual`), „↺ Dobierz do karty” przywraca dobór. Bingo: 3×3/4×4/5×5, pole 🦉 FREE, tryby EN / PL / same obrazki, 4 karty na A4, karteczki do losowania. Labirynt: pola obok trasy nigdy nie zawierają słowa z danego kroku (trasa jednoznaczna), klucz z mini-siatką. Bingo/Domino/Koło/„Ja mam, kto ma?” usuwają duplikaty EN/PL (`wsUniq`); odmiana liczebników — `wsPl`. Testy wydruku: `.claude/sftest/wk-shot.sh` (PDF → obrazy stron przez pdf.js).
+
+Pozostałe wydruki: ekrany z listy unitów (wspólny arkusz `ekpDoc`) — docs/GRY-INNE.md „🖨️ Ekrany do druku”; osobne strony (tracing, Speaking Dice, Match-up, Słownik obrazkowy, karty Memory) — docs/GRY-INNE.md „✂️ Druk z osobnych stron”.
+
 ## 💰 Koszty i terminy odnowienia
 
 | Pozycja | Koszt | Termin / Status |
